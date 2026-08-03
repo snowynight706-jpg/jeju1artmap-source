@@ -11,13 +11,16 @@ import {
   useState,
 } from "react";
 import { bundledLandmarkAssets } from "./landmark-assets";
+import { masterDirectoryRows, type MasterDirectoryRow } from "./master-directory";
 
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
 const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_초고해상도.png";
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
+const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
+const GEO_BOUNDS = { west: 126.5135, east: 126.5365, north: 33.5208, south: 33.499 } as const;
 
 const categories = [
   { id: "landmark", name: "핵심 랜드마크", color: "#df745c", glyph: "景" },
@@ -84,8 +87,13 @@ type DirectoryPlace = {
   address: string;
   x: number;
   y: number;
-  coordinateStatus: "landmark" | "review";
+  coordinateStatus: "landmark" | "review" | "geocoded" | "unresolved";
   sourceLabel: string;
+  sourceUrl?: string;
+  subtype?: string;
+  priority?: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 type ReviewNote = {
@@ -100,6 +108,7 @@ type DocumentState = {
   elements: MapElement[];
   assets: MapAsset[];
   reviewNotes: ReviewNote[];
+  directoryPlaces?: DirectoryPlace[];
 };
 
 const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" | "anchorX" | "anchorY" | "size" | "z"> = {
@@ -134,7 +143,7 @@ const landmarkLocations = [
   { name: "탑동해변공연장", address: "제주특별자치도 제주시 중앙로 2", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e", assetId: "tapdong-seaside-stage-02", x: 37, y: 20 },
 ] as const;
 
-const directoryPlaces: DirectoryPlace[] = [
+const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-jeju-art-platform", name: "제주아트플랫폼", category: "culture", area: "중앙로", address: "제주특별자치도 제주시 중앙로14길 18", x: 31, y: 62, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-artspace-ia", name: "예술공간 이아", category: "culture", area: "중앙로", address: "제주특별자치도 제주시 중앙로14길 21", x: 34, y: 57, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-sanjicheon-gallery", name: "산지천갤러리", category: "culture", area: "산지천", address: "제주특별자치도 제주시 중앙로3길 36", x: 64, y: 40, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
@@ -153,7 +162,51 @@ const directoryPlaces: DirectoryPlace[] = [
   { id: "place-chilseong-buffet", name: "칠성뷔페", category: "food", area: "칠성통", address: "제주특별자치도 제주시 관덕로11길 17", x: 54, y: 54, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
 ];
 
-const directoryByName = new Map(directoryPlaces.map((place) => [place.name, place]));
+const areaFallbacks: Record<string, { x: number; y: number }> = {
+  "관덕로·목관아": { x: 40, y: 59 },
+  "칠성로·탑동": { x: 43, y: 35 },
+  "중앙로 남측": { x: 48, y: 72 },
+  "동문시장·동문로": { x: 65, y: 55 },
+  "산지천·탐라문화광장·서부두": { x: 68, y: 38 },
+  "삼도동": { x: 33, y: 82 },
+  "이도동": { x: 67, y: 84 },
+};
+
+function normalizePlaceName(name: string) {
+  if (name === "제주해변공연장") return "탑동해변공연장";
+  if (name === "제주특별자치도 소통협력센터") return "제주시소통협력센터";
+  return name.trim();
+}
+
+function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
+  const legacyByName = new Map(legacyDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
+  const built = rows
+    .filter((row) => row.address && !DELETED_PLACE_NAMES.has(normalizePlaceName(row.name)))
+    .map((row, index): DirectoryPlace => {
+      const name = normalizePlaceName(row.name);
+      const legacy = legacyByName.get(name);
+      const fallback = areaFallbacks[row.area] ?? { x: 50, y: 50 };
+      return {
+        id: legacy?.id ?? `master-place-${index + 1}`,
+        name,
+        category: row.category,
+        area: row.area,
+        address: row.address,
+        x: legacy?.x ?? fallback.x,
+        y: legacy?.y ?? fallback.y,
+        coordinateStatus: legacy?.coordinateStatus === "landmark" ? "landmark" : "review",
+        sourceLabel: `마스터DB · ${row.subtype}`,
+        sourceUrl: row.sourceUrl,
+        subtype: row.subtype,
+        priority: row.priority,
+      };
+    });
+  const names = new Set(built.map((place) => place.name));
+  return [...built, ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name)))];
+}
+
+const defaultDirectoryPlaces = buildDirectoryPlaces(masterDirectoryRows);
+const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [place.name, place]));
 
 const addressByPlace = new Map(landmarkLocations.map((location) => [location.name, location]));
 
@@ -220,11 +273,52 @@ function sanitizeDocument(document: DocumentState): DocumentState {
   return {
     ...document,
     elements: document.elements.filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim())),
+    directoryPlaces: document.directoryPlaces?.filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim())),
   };
 }
 
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
+function coordinatesToMap(latitude: number, longitude: number) {
+  const x = ((longitude - GEO_BOUNDS.west) / (GEO_BOUNDS.east - GEO_BOUNDS.west)) * 100;
+  const y = ((GEO_BOUNDS.north - latitude) / (GEO_BOUNDS.north - GEO_BOUNDS.south)) * 100;
+  if (x < -2 || x > 102 || y < -2 || y > 102) return null;
+  return { x: clamp(x, 0, 100), y: clamp(y, 0, 100) };
+}
+
+function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
+  if (!value || typeof value !== "object") throw new Error("invalid database");
+  const root = value as Record<string, unknown>;
+  const operation = root.operation_status as { records?: Array<{ name?: string; status?: string }> } | undefined;
+  const closed = new Set((operation?.records ?? []).filter((record) => record.status === "운영 종료").map((record) => record.name ?? ""));
+  const rows: MasterDirectoryRow[] = [];
+  const readSection = (section: "culture" | "food") => {
+    const values = root[section];
+    if (!Array.isArray(values)) return;
+    values.forEach((raw) => {
+      if (!Array.isArray(raw) || raw.length < 4) return;
+      const name = normalizePlaceName(String(raw[1] ?? ""));
+      const address = String(raw[2] ?? "");
+      const subtype = String(raw[3] ?? "");
+      if (!name || !address || closed.has(name) || DELETED_PLACE_NAMES.has(name)) return;
+      if (section === "food" && /소품샵|편집숍|상업공간/.test(subtype) && !/식음|카페/.test(subtype)) return;
+      rows.push({
+        name,
+        address,
+        area: String(raw[0] ?? "기타"),
+        subtype,
+        priority: String(raw[6] ?? ""),
+        sourceUrl: String(raw[section === "culture" ? 11 : 10] ?? ""),
+        category: section === "culture" ? "culture" : /카페|커피|로스터|티하우스|북카페|디저트/.test(subtype) ? "cafe" : "food",
+      });
+    });
+  };
+  readSection("culture");
+  readSection("food");
+  if (!rows.length) throw new Error("no supported rows");
+  return [...new Map(rows.map((row) => [row.name, row])).values()];
 }
 
 export default function Home() {
@@ -233,16 +327,20 @@ export default function Home() {
   const baseMapImgRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  const dbInputRef = useRef<HTMLInputElement>(null);
+  const geocodeRunRef = useRef(0);
   const nextIdRef = useRef(100);
   const nextAssetIdRef = useRef(0);
   const nextNoteIdRef = useRef(0);
   const elementsRef = useRef<MapElement[]>(initialElements);
   const assetsRef = useRef<MapAsset[]>(builtInAssets);
   const notesRef = useRef<ReviewNote[]>([]);
+  const placesRef = useRef<DirectoryPlace[]>(defaultDirectoryPlaces);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
   const [reviewNotes, setReviewNotes] = useState<ReviewNote[]>([]);
+  const [directoryPlaces, setDirectoryPlaces] = useState<DirectoryPlace[]>(defaultDirectoryPlaces);
   const [selectedId, setSelectedId] = useState<string | null>(initialElements[0].id);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<DocumentState[]>([]);
@@ -262,6 +360,7 @@ export default function Home() {
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeCategory, setPlaceCategory] = useState<"all" | "culture" | "cafe" | "food">("all");
   const [focusPulseId, setFocusPulseId] = useState<string | null>(null);
+  const [geocodeProgress, setGeocodeProgress] = useState<{ active: boolean; done: number; total: number; found: number; failed: number }>({ active: false, done: 0, total: 0, found: 0, failed: 0 });
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -279,6 +378,7 @@ export default function Home() {
     elements: elementsRef.current,
     assets: assetsRef.current,
     reviewNotes: notesRef.current,
+    directoryPlaces: placesRef.current,
   }), []);
 
   const setDocument = useCallback((document: DocumentState) => {
@@ -286,9 +386,11 @@ export default function Home() {
     elementsRef.current = clean.elements;
     assetsRef.current = clean.assets;
     notesRef.current = clean.reviewNotes;
+    placesRef.current = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
     setElements(clean.elements);
     setAssets(clean.assets);
     setReviewNotes(clean.reviewNotes);
+    setDirectoryPlaces(placesRef.current);
     setSelectedId(null);
     setSelectedNoteId(null);
   }, []);
@@ -323,6 +425,14 @@ export default function Home() {
     });
   }, []);
 
+  const replaceDirectoryPlaces = useCallback((updater: (current: DirectoryPlace[]) => DirectoryPlace[]) => {
+    setDirectoryPlaces((current) => {
+      const next = updater(current);
+      placesRef.current = next;
+      return next;
+    });
+  }, []);
+
   const updateElement = useCallback((id: string, patch: Partial<MapElement>, record = true) => {
     if (record) pushHistory();
     replaceElements((current) => current.map((element) => (element.id === id ? { ...element, ...patch } : element)));
@@ -344,7 +454,7 @@ export default function Home() {
       (placeCategory === "all" || place.category === placeCategory)
       && (!query || `${place.name} ${place.address} ${place.area}`.toLocaleLowerCase("ko-KR").includes(query))
     ));
-  }, [placeCategory, placeQuery]);
+  }, [directoryPlaces, placeCategory, placeQuery]);
 
   const visibleElements = useMemo(() => [...elements]
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
@@ -414,7 +524,7 @@ export default function Home() {
               ...builtInAssets,
               ...parsedAssets.filter((item) => !builtInAssets.some((builtIn) => builtIn.id === item.id)),
             ];
-            setDocument({ elements: mergedElements, assets: mergedAssets, reviewNotes: parsed.reviewNotes ?? [] });
+            setDocument({ elements: mergedElements, assets: mergedAssets, reviewNotes: parsed.reviewNotes ?? [], directoryPlaces: parsed.directoryPlaces });
             setSaveState("최근 상태 복구됨");
           }
         }
@@ -439,7 +549,7 @@ export default function Home() {
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [assets, currentDocument, elements, hydrated, reviewNotes]);
+  }, [assets, currentDocument, directoryPlaces, elements, hydrated, reviewNotes]);
 
   useEffect(() => {
     if (!toast) return;
@@ -568,6 +678,87 @@ export default function Home() {
     window.setTimeout(() => setFocusPulseId((current) => current === elementId ? null : current), 1300);
   };
 
+  const resetLandmarkPositions = () => {
+    const defaults = new Map(landmarkLocations.map((location) => [location.name, location]));
+    pushHistory();
+    replaceElements((current) => current.map((element) => {
+      const location = defaults.get(element.name);
+      if (element.category !== "landmark" || !location) return element;
+      return { ...element, x: location.x, y: location.y, anchorX: location.x, anchorY: location.y };
+    }));
+    setToast(`기본 랜드마크 ${landmarkLocations.length}곳을 기준 위치로 초기화했습니다.`);
+  };
+
+  const runAddressLookup = async (places: DirectoryPlace[]) => {
+    const runId = ++geocodeRunRef.current;
+    const targets = places.filter((place) => place.coordinateStatus !== "landmark" && place.address);
+    setGeocodeProgress({ active: true, done: 0, total: targets.length, found: 0, failed: 0 });
+    let cache: Record<string, { latitude: number; longitude: number } | null> = {};
+    try { cache = JSON.parse(localStorage.getItem(GEOCODE_CACHE_KEY) ?? "{}"); } catch { cache = {}; }
+    let found = 0;
+    let failed = 0;
+    for (let index = 0; index < targets.length; index += 1) {
+      if (geocodeRunRef.current !== runId) return;
+      const place = targets[index];
+      let result = Object.prototype.hasOwnProperty.call(cache, place.address) ? cache[place.address] : undefined;
+      if (result === undefined) {
+        try {
+          const params = new URLSearchParams({ q: `${place.address}, 대한민국`, format: "jsonv2", limit: "1", countrycodes: "kr", "accept-language": "ko" });
+          const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { headers: { Accept: "application/json" } });
+          if (!response.ok) throw new Error(`geocoder ${response.status}`);
+          const data = await response.json() as Array<{ lat?: string; lon?: string }>;
+          const latitude = Number(data[0]?.lat);
+          const longitude = Number(data[0]?.lon);
+          result = Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+          cache[place.address] = result;
+          localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(cache));
+        } catch {
+          result = null;
+        }
+        if (index < targets.length - 1) await new Promise((resolve) => window.setTimeout(resolve, 1100));
+      }
+      const mapped = result ? coordinatesToMap(result.latitude, result.longitude) : null;
+      if (mapped) {
+        found += 1;
+        replaceDirectoryPlaces((current) => current.map((item) => item.id === place.id ? {
+          ...item, ...mapped, coordinateStatus: "geocoded", latitude: result!.latitude, longitude: result!.longitude,
+        } : item));
+        replaceElements((current) => current.map((element) => (
+          element.directoryId === place.id || element.name === place.name
+            ? { ...element, anchorX: mapped.x, anchorY: mapped.y }
+            : element
+        )));
+      } else {
+        failed += 1;
+        replaceDirectoryPlaces((current) => current.map((item) => item.id === place.id ? { ...item, coordinateStatus: "unresolved" } : item));
+      }
+      setGeocodeProgress({ active: true, done: index + 1, total: targets.length, found, failed });
+    }
+    setGeocodeProgress({ active: false, done: targets.length, total: targets.length, found, failed });
+    setToast(`주소 위치 찾기 완료 · 지도 반영 ${found}곳, 미확정 ${failed}곳`);
+  };
+
+  const importMasterDatabase = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const rows = parseMasterDatabase(JSON.parse(String(reader.result)));
+        const importedPlaces = buildDirectoryPlaces(rows);
+        replaceDirectoryPlaces(() => importedPlaces);
+        setLeftPanelMode("places");
+        setPlaceQuery("");
+        setToast(`마스터 DB ${importedPlaces.length}곳을 등록하고 주소 위치 찾기를 시작합니다.`);
+        void runAddressLookup(importedPlaces);
+      } catch {
+        setToast("문화공간·식음 장소 배열을 확인할 수 없는 DB입니다.");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  };
+
   const openDirectoryPlace = (place: DirectoryPlace) => {
     setActiveCategory("all");
     setViewMode("all");
@@ -595,7 +786,8 @@ export default function Home() {
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
       labelVisible: true,
       address: place.address,
-      memo: `${place.sourceLabel} · ${place.coordinateStatus === "landmark" ? "기본 앵커" : "검수용 임시 좌표"}`,
+      memo: `${place.sourceLabel} · ${place.coordinateStatus === "landmark" ? "기본 앵커" : place.coordinateStatus === "geocoded" ? "주소 자동탐색 앵커(검수 필요)" : "권역 기준 임시 좌표"}`,
+      addressSourceUrl: place.sourceUrl ?? "",
     };
     replaceElements((current) => [...current, next]);
     setSelectedId(next.id);
@@ -741,6 +933,7 @@ export default function Home() {
             ...(Array.isArray(parsed.assets) ? parsed.assets.filter((item) => !builtInAssets.some((builtIn) => builtIn.id === item.id)) : []),
           ],
           reviewNotes: Array.isArray(parsed.reviewNotes) ? parsed.reviewNotes : [],
+          directoryPlaces: Array.isArray(parsed.directoryPlaces) ? parsed.directoryPlaces : defaultDirectoryPlaces,
         });
         setLayoutName(file.name.replace(/\.json$/i, "")); setToast("JSON 배치안을 불러왔습니다. 삭제 대상 장소는 자동 제외됩니다.");
       } catch { setToast("지원하지 않거나 손상된 JSON 파일입니다."); }
@@ -804,8 +997,16 @@ export default function Home() {
             <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
             <div className="group-size-row"><label>일반 마커<input type="number" min="0.8" max="15" step="0.1" value={markerGroupSize} onChange={(event) => setMarkerGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("marker", markerGroupSize)}>전체 적용</button></div>
+            <button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 랜드마크 위치 초기화</button>
           </div>
           </> : <div className="place-directory">
+            <div className="database-import">
+              <div><strong>장소 마스터 DB</strong><span>문화시설·카페·음식점 {directoryPlaces.length}곳</span></div>
+              <button onClick={() => dbInputRef.current?.click()} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 찾는 중" : "DB JSON 불러오기"}</button>
+              <input ref={dbInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importMasterDatabase} />
+              {geocodeProgress.total > 0 && <div className="geocode-progress"><span style={{ width: `${(geocodeProgress.done / geocodeProgress.total) * 100}%` }} /><small>{geocodeProgress.done}/{geocodeProgress.total} · 반영 {geocodeProgress.found} · 미확정 {geocodeProgress.failed}</small></div>}
+              <p>업로드 후 주소를 한 건씩 조회합니다. OpenStreetMap Nominatim 정책에 따라 초당 1건 이하로 처리하고 결과를 이 브라우저에 저장합니다. <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noreferrer">이용정책 ↗</a></p>
+            </div>
             <div className="place-search-wrap"><input value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
               {([
@@ -820,7 +1021,7 @@ export default function Home() {
                 return <button key={place.id} className={`place-row ${placed ? "placed" : ""}`} onDoubleClick={() => openDirectoryPlace(place)} onKeyDown={(event) => { if (event.key === "Enter") openDirectoryPlace(place); }} title="더블클릭하여 지도에 표시" role="listitem">
                   <span className="place-type" style={{ color: meta.color, background: `${meta.color}17`, borderColor: `${meta.color}45` }}>{meta.glyph}</span>
                   <span className="place-copy"><strong>{place.name}</strong><small>{place.area} · {place.address.replace("제주특별자치도 제주시 ", "")}</small><em>{place.sourceLabel}</em></span>
-                  <span className={`coordinate-badge ${place.coordinateStatus}`}>{placed ? "배치됨" : place.coordinateStatus === "landmark" ? "기본 앵커" : "검수 좌표"}</span>
+                  <span className={`coordinate-badge ${place.coordinateStatus}`}>{placed ? "배치됨" : place.coordinateStatus === "landmark" ? "기본 앵커" : place.coordinateStatus === "geocoded" ? "주소 조회" : place.coordinateStatus === "unresolved" ? "위치 미확정" : "권역 임시"}</span>
                 </button>;
               })}
               {!filteredDirectoryPlaces.length && <div className="place-empty">조건에 맞는 장소가 없습니다.</div>}
@@ -865,7 +1066,7 @@ export default function Home() {
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          <footer className="statusbar"><span className="status-ok"><i /> 베이스맵 연결됨</span><span>8944 × 7324 px</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">목록 좌표는 배치 검수용</span></footer>
+          <footer className="statusbar"><span className="status-ok"><i /> 베이스맵 연결됨</span><span>8944 × 7324 px</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">주소 조회 좌표는 최종 검수 필요</span></footer>
         </section>
         {!rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
@@ -878,7 +1079,7 @@ export default function Home() {
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
             <section><div className="section-title"><strong>기본 정보</strong><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="">임시 색상 도형</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
             <section><div className="section-title"><strong>화면상 배치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selected.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selected.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
-            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>직접 편집</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selected.anchorX.toFixed(2)} onChange={(event) => updateElement(selected.id, { anchorX: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selected.anchorY.toFixed(2)} onChange={(event) => updateElement(selected.id, { anchorY: clamp(Number(event.target.value), 0, 100) })} /></label></div><button className="wide-secondary" onClick={() => updateElement(selected.id, { anchorX: selected.x, anchorY: selected.y })}>배치 위치를 앵커로 복사</button><p className="field-help">현재 실제 좌표 DB가 없으므로 사용자가 지정한 정규화 좌표만 저장됩니다.</p></section>
+            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>직접 편집</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selected.anchorX.toFixed(2)} onChange={(event) => updateElement(selected.id, { anchorX: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selected.anchorY.toFixed(2)} onChange={(event) => updateElement(selected.id, { anchorY: clamp(Number(event.target.value), 0, 100) })} /></label></div><button className="wide-secondary" onClick={() => updateElement(selected.id, { anchorX: selected.x, anchorY: selected.y })}>배치 위치를 앵커로 복사</button><p className="field-help">DB 주소 조회 결과 또는 사용자가 보정한 정규화 좌표가 저장됩니다. 자동 조회 좌표는 최종 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
             <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="30" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => updateElement(selected.id, { locked: !selected.locked })}>{selected.locked ? "잠금 해제" : "잠금"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
