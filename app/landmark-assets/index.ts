@@ -1,3 +1,5 @@
+import { tapdongSeasideStageSrc } from "./tapdong-seaside-stage";
+
 export type BundledLandmarkAsset = {
   id: string;
   name: string;
@@ -34,4 +36,5 @@ export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
   { id: "buksugu-03", name: "북수구광장 03", placeName: "북수구광장", status: "review", src: "/landmarks/buksugu-03.png", fileName: "Buksugu_Square_03_128px.png", sourceUrl: drive("1ZGYipbE0KECFHvs0gYOdXipOUPBL0bWr") },
   { id: "tapdong-square-01", name: "탑동광장 01 파도형", placeName: "탑동광장", status: "review", src: "/landmarks/tapdong-square-01.png", fileName: "탑동광장_01_파도형_128px.png", sourceUrl: drive("1Y-uEFAYbcagXLJNgi73UzTHKlgSStzru") },
   { id: "tapdong-square-03", name: "탑동광장 03 쌍돌고래", placeName: "탑동광장", status: "approved", src: "/landmarks/tapdong-square-03.png", fileName: "탑동광장_03_파도형_타공메움_128px.png", sourceUrl: drive("1Zt7947hKrwcB_Kjs-S7-d10UApgw_KAa") },
+  { id: "tapdong-seaside-stage-02", name: "탑동해변공연장 02 실사디테일형", placeName: "탑동해변공연장", status: "approved", src: tapdongSeasideStageSrc, fileName: "FINAL_탑동해변공연장_02_실사디테일형_128px.png", sourceUrl: drive("154ffGChn2e-Rz5hVbd3qg3woI-jA4Fgu") },
 ];

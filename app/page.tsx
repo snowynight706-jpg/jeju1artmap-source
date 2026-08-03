@@ -72,6 +72,19 @@ type MapElement = {
   memo: string;
   address: string;
   addressSourceUrl: string;
+  directoryId?: string;
+};
+
+type DirectoryPlace = {
+  id: string;
+  name: string;
+  category: "culture" | "cafe" | "food";
+  area: string;
+  address: string;
+  x: number;
+  y: number;
+  coordinateStatus: "landmark" | "review";
+  sourceLabel: string;
 };
 
 type ReviewNote = {
@@ -118,8 +131,29 @@ const landmarkLocations = [
   { name: "동문시장", address: "제주특별자치도 제주시 관덕로14길 20", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745", assetId: "dongmun-01", x: 66, y: 55 },
   { name: "북수구광장", address: "제주특별자치도 제주시 일도일동 1232", addressSourceUrl: "https://www.facebook.com/wowjejusi/", assetId: "buksugu-01", x: 62, y: 45 },
   { name: "탑동광장", address: "제주특별자치도 제주시 중앙로 1", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", assetId: "tapdong-square-03", x: 28, y: 20 },
-  { name: "탑동해변공연장", address: "제주특별자치도 제주시 중앙로 2", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e", assetId: null, x: 37, y: 20 },
+  { name: "탑동해변공연장", address: "제주특별자치도 제주시 중앙로 2", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e", assetId: "tapdong-seaside-stage-02", x: 37, y: 20 },
 ] as const;
+
+const directoryPlaces: DirectoryPlace[] = [
+  { id: "place-jeju-art-platform", name: "제주아트플랫폼", category: "culture", area: "중앙로", address: "제주특별자치도 제주시 중앙로14길 18", x: 31, y: 62, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-artspace-ia", name: "예술공간 이아", category: "culture", area: "중앙로", address: "제주특별자치도 제주시 중앙로14길 21", x: 34, y: 57, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-sanjicheon-gallery", name: "산지천갤러리", category: "culture", area: "산지천", address: "제주특별자치도 제주시 중앙로3길 36", x: 64, y: 40, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-kim-manduk-memorial", name: "김만덕기념관", category: "culture", area: "산지천", address: "제주특별자치도 제주시 산지로 7", x: 74, y: 31, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-arario-tapdong", name: "아라리오뮤지엄 탑동시네마", category: "culture", area: "탑동", address: "제주특별자치도 제주시 탑동로 14", x: 18, y: 24, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-tapdong-seaside-stage", name: "탑동해변공연장", category: "culture", area: "탑동", address: "제주특별자치도 제주시 중앙로 2", x: 37, y: 20, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB · 최종 자산 02" },
+  { id: "place-mokgwana", name: "제주목 관아", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 25", x: 39, y: 60, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-gwandeokjeong", name: "관덕정", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 19", x: 37, y: 58, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-kim-manduk-guesthouse", name: "김만덕객주", category: "culture", area: "산지천", address: "제주특별자치도 제주시 임항로 68", x: 75, y: 25, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "place-sotong-center", name: "제주특별자치도 소통협력센터", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 44", x: 45, y: 59, coordinateStatus: "review", sourceLabel: "원도심 조사본 · 공식 주소 확인" },
+  { id: "place-jeju-arts-center", name: "제주특별자치도 문예회관", category: "culture", area: "이도동", address: "제주특별자치도 제주시 동광로 69", x: 74, y: 84, coordinateStatus: "review", sourceLabel: "원도심 정보 v02" },
+  { id: "place-folklore-museum", name: "제주특별자치도 민속자연사박물관", category: "culture", area: "이도동", address: "제주특별자치도 제주시 삼성로 40", x: 64, y: 78, coordinateStatus: "review", sourceLabel: "원도심 정보 v02" },
+  { id: "place-triptea-sanji", name: "제주트립티 산지", category: "cafe", area: "산지천", address: "제주특별자치도 제주시 관덕로17길 29", x: 65, y: 43, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
+  { id: "place-coffee-finder", name: "커피파인더", category: "cafe", area: "이도동", address: "제주특별자치도 제주시 서광로32길 20", x: 61, y: 91, coordinateStatus: "review", sourceLabel: "원도심 정보 v02" },
+  { id: "place-idongat", name: "이돈갓", category: "food", area: "칠성통", address: "제주특별자치도 제주시 칠성로길 27", x: 58, y: 51, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
+  { id: "place-chilseong-buffet", name: "칠성뷔페", category: "food", area: "칠성통", address: "제주특별자치도 제주시 관덕로11길 17", x: 54, y: 54, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
+];
+
+const directoryByName = new Map(directoryPlaces.map((place) => [place.name, place]));
 
 const addressByPlace = new Map(landmarkLocations.map((location) => [location.name, location]));
 
@@ -138,6 +172,7 @@ const builtInAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
 
 const initialElements: MapElement[] = landmarkLocations.map((location, index) => {
   const asset = builtInAssets.find((item) => item.id === location.assetId);
+  const directoryPlace = directoryByName.get(location.name);
   return {
     ...elementDefaults,
     id: `default-landmark-${index + 1}`,
@@ -155,6 +190,7 @@ const initialElements: MapElement[] = landmarkLocations.map((location, index) =>
     address: location.address,
     addressSourceUrl: location.addressSourceUrl,
     memo: "초기 배치 좌표는 검수용이며 실제 위치 앵커는 장소 DB 확인 후 확정 필요",
+    directoryId: directoryPlace?.id,
   };
 });
 
@@ -215,6 +251,10 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
+  const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places">("assets");
+  const [placeQuery, setPlaceQuery] = useState("");
+  const [placeCategory, setPlaceCategory] = useState<"all" | "culture" | "cafe" | "food">("all");
+  const [focusPulseId, setFocusPulseId] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -291,6 +331,14 @@ export default function Home() {
   const selectedAsset = selected ? assets.find((asset) => asset.id === selected.assetId) ?? null : null;
   const compatibleAssets = selected ? assets.filter((asset) => !asset.placeName || asset.placeName === selected.name) : assets;
 
+  const filteredDirectoryPlaces = useMemo(() => {
+    const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
+    return directoryPlaces.filter((place) => (
+      (placeCategory === "all" || place.category === placeCategory)
+      && (!query || `${place.name} ${place.address} ${place.area}`.toLocaleLowerCase("ko-KR").includes(query))
+    ));
+  }, [placeCategory, placeQuery]);
+
   const visibleElements = useMemo(() => [...elements]
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
     .filter((element) => viewMode !== "landmarks" || element.category === "landmark")
@@ -334,7 +382,13 @@ export default function Home() {
         if (raw) {
           const parsed = JSON.parse(raw) as Partial<DocumentState>;
           if (Array.isArray(parsed.elements)) {
-            const parsedElements = (parsed.elements as MapElement[]).map((item) => ({ ...elementDefaults, ...item }));
+            const parsedElements = (parsed.elements as MapElement[]).map((item) => {
+              const restored = { ...elementDefaults, ...item };
+              if (restored.name === "탑동해변공연장" && !restored.assetId) {
+                return { ...restored, assetId: "tapdong-seaside-stage-02", status: "approved" as AssetStatus, directoryId: "place-tapdong-seaside-stage" };
+              }
+              return restored;
+            });
             const mergedElements = [
               ...parsedElements,
               ...initialElements.filter((defaultItem) => !parsedElements.some((item) => item.name === defaultItem.name)),
@@ -480,6 +534,57 @@ export default function Home() {
     const point = clientToMap(event.clientX, event.clientY);
     pushHistory();
     setInteraction({ type: "drag", id: element.id, offsetX: point.x - element.x, offsetY: point.y - element.y });
+  };
+
+  const focusMapPosition = (x: number, y: number, elementId: string) => {
+    const stageRect = stageRef.current?.getBoundingClientRect();
+    const targetZoom = 1.55;
+    if (stageRect) {
+      const unscaledWidth = stageRect.width / Math.max(zoom, 0.01);
+      const unscaledHeight = stageRect.height / Math.max(zoom, 0.01);
+      setPan({
+        x: -((x - 50) / 100) * unscaledWidth * targetZoom,
+        y: -((y - 50) / 100) * unscaledHeight * targetZoom,
+      });
+    }
+    setZoom(targetZoom);
+    setFocusPulseId(elementId);
+    window.setTimeout(() => setFocusPulseId((current) => current === elementId ? null : current), 1300);
+  };
+
+  const openDirectoryPlace = (place: DirectoryPlace) => {
+    setActiveCategory("all");
+    setViewMode("all");
+    setRightOpen(true);
+    setSelectedNoteId(null);
+    const existing = elementsRef.current.find((item) => item.directoryId === place.id || item.name === place.name);
+    if (existing) {
+      setSelectedId(existing.id);
+      focusMapPosition(existing.x, existing.y, existing.id);
+      setToast(`${place.name} 위치로 이동했습니다.`);
+      return;
+    }
+    pushHistory();
+    const next: MapElement = {
+      ...elementDefaults,
+      id: `element-${++nextIdRef.current}`,
+      directoryId: place.id,
+      name: place.name,
+      category: place.category,
+      x: place.x,
+      y: place.y,
+      anchorX: place.x,
+      anchorY: place.y,
+      size: place.category === "culture" ? 3 : 1.7,
+      z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
+      labelVisible: true,
+      address: place.address,
+      memo: `${place.sourceLabel} · ${place.coordinateStatus === "landmark" ? "기본 앵커" : "검수용 임시 좌표"}`,
+    };
+    replaceElements((current) => [...current, next]);
+    setSelectedId(next.id);
+    focusMapPosition(next.x, next.y, next.id);
+    setToast(`${place.name} 마커를 추가하고 위치로 이동했습니다.`);
   };
 
   const addDummy = (category: CategoryId) => {
@@ -659,8 +764,13 @@ export default function Home() {
 
       <section className={`workspace ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"}`}>
         <aside className="panel asset-panel" aria-label="자산 목록">
-          <div className="panel-heading"><div><strong>자산</strong><span>{layoutName} · {elements.length}개 배치</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
-          <div className="panel-search">자산명 검색 <kbd>⌘ K</kbd></div>
+          <div className="panel-heading"><div><strong>{leftPanelMode === "assets" ? "자산" : "장소 탐색"}</strong><span>{leftPanelMode === "assets" ? `${layoutName} · ${elements.length}개 배치` : `조사 목록 ${directoryPlaces.length}곳 · 더블클릭 이동`}</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
+          <div className="panel-tabs" role="tablist" aria-label="왼쪽 패널 내용">
+            <button className={leftPanelMode === "assets" ? "active" : ""} onClick={() => setLeftPanelMode("assets")} role="tab" aria-selected={leftPanelMode === "assets"}>아이콘·마커</button>
+            <button className={leftPanelMode === "places" ? "active" : ""} onClick={() => setLeftPanelMode("places")} role="tab" aria-selected={leftPanelMode === "places"}>장소 탐색 <span>{directoryPlaces.length}</span></button>
+          </div>
+          {leftPanelMode === "assets" ? <>
+          <div className="panel-search">자산 목록 <kbd>{assets.length}</kbd></div>
           <div className="category-filter">
             <button className={activeCategory === "all" ? "active" : ""} onClick={() => setActiveCategory("all")}><span className="category-dot all-dot" /> 전체 자산 <em>{elements.length}</em></button>
             {categories.map((category) => <button key={category.id} className={activeCategory === category.id ? "active" : ""} onClick={() => setActiveCategory(category.id)}><span className="category-dot" style={{ background: category.color }} /> {category.name}<em>{elements.filter((item) => item.category === category.id).length}</em></button>)}
@@ -679,6 +789,27 @@ export default function Home() {
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
             <div className="group-size-row"><label>일반 마커<input type="number" min="0.8" max="15" step="0.1" value={markerGroupSize} onChange={(event) => setMarkerGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("marker", markerGroupSize)}>전체 적용</button></div>
           </div>
+          </> : <div className="place-directory">
+            <div className="place-search-wrap"><input value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
+            <div className="place-filter" role="group" aria-label="장소 분류">
+              {([
+                ["all", "전체"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"],
+              ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? directoryPlaces.length : directoryPlaces.filter((place) => place.category === id).length}</span></button>)}
+            </div>
+            <p className="place-directory-hint">목록을 더블클릭하면 마커를 만들거나 기존 요소를 찾아 지도 중앙에 표시합니다.</p>
+            <div className="place-list" role="list" aria-label="조사 장소 목록">
+              {filteredDirectoryPlaces.map((place) => {
+                const placed = elements.some((element) => element.directoryId === place.id || element.name === place.name);
+                const meta = categoryOf(place.category);
+                return <button key={place.id} className={`place-row ${placed ? "placed" : ""}`} onDoubleClick={() => openDirectoryPlace(place)} onKeyDown={(event) => { if (event.key === "Enter") openDirectoryPlace(place); }} title="더블클릭하여 지도에 표시" role="listitem">
+                  <span className="place-type" style={{ color: meta.color, background: `${meta.color}17`, borderColor: `${meta.color}45` }}>{meta.glyph}</span>
+                  <span className="place-copy"><strong>{place.name}</strong><small>{place.area} · {place.address.replace("제주특별자치도 제주시 ", "")}</small><em>{place.sourceLabel}</em></span>
+                  <span className={`coordinate-badge ${place.coordinateStatus}`}>{placed ? "배치됨" : place.coordinateStatus === "landmark" ? "기본 앵커" : "검수 좌표"}</span>
+                </button>;
+              })}
+              {!filteredDirectoryPlaces.length && <div className="place-empty">조건에 맞는 장소가 없습니다.</div>}
+            </div>
+          </div>}
           <div className="review-list">
             <div className="review-list-head"><strong>골목 검토 메모</strong><span>{reviewNotes.length}</span></div>
             <button className={`memo-add ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>{memoMode ? "지도에서 위치를 클릭하세요" : "＋ 검토 메모 핀 추가"}</button>
@@ -704,7 +835,7 @@ export default function Home() {
                 <div className="element-layer">{visibleElements.map((element) => {
                   const meta = categoryOf(element.category); const isSelected = selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  return <div key={element.id} className={`map-element ${isSelected ? "selected" : ""} ${element.locked ? "locked" : ""} ${viewMode === "collisions" ? collisionClass : ""} ${viewMode === "labels" ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={(event) => startDrag(event, element)}>
+                  return <div key={element.id} className={`map-element ${isSelected ? "selected" : ""} ${focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${viewMode === "collisions" ? collisionClass : ""} ${viewMode === "labels" ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={(event) => startDrag(event, element)}>
                     {(viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>
                     {element.status !== "approved" && viewMode !== "labels" && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
@@ -718,7 +849,7 @@ export default function Home() {
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          <footer className="statusbar"><span className="status-ok"><i /> 베이스맵 연결됨</span><span>8944 × 7324 px</span><span>요소 {visibleElements.length} / {elements.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">실제 위치 데이터 미적용</span></footer>
+          <footer className="statusbar"><span className="status-ok"><i /> 베이스맵 연결됨</span><span>8944 × 7324 px</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">목록 좌표는 배치 검수용</span></footer>
         </section>
         {!rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 

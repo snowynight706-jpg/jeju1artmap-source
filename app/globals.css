@@ -56,6 +56,12 @@ button { color: inherit; }
 .panel-reopen.left { left: 0; border-radius: 0 8px 8px 0; }
 .panel-reopen.right { right: 0; border-radius: 8px 0 0 8px; }
 
+.panel-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 7px 9px; border-bottom: 1px solid var(--line); background: #f7f9f8; }
+.panel-tabs button { height: 30px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #6d7975; cursor: pointer; font-size: 9px; }
+.panel-tabs button:hover { background: white; border-color: var(--line); }
+.panel-tabs button.active { background: white; border-color: #bed8d2; color: #286f66; box-shadow: 0 1px 4px rgb(39 66 59 / 7%); font-weight: 700; }
+.panel-tabs button span { display: inline; margin-left: 3px; padding: 1px 4px; border-radius: 8px; background: var(--emerald-soft); color: #32776e; font-size: 7px; }
+
 .panel-search { margin: 12px 14px 8px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: white; color: #98a39f; font-size: 11px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
 kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; background: #f7f9f8; font: 9px Arial; }
 .category-filter { padding: 4px 8px 10px; border-bottom: 1px solid var(--line); }
@@ -86,6 +92,33 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .asset-card i { color: var(--emerald); font-style: normal; }
 .asset-note { margin: 9px 12px; display: flex; gap: 7px; color: #7b6851; background: #fbf4e8; border: 1px solid #eadcc5; padding: 8px; border-radius: 8px; font-size: 9px; line-height: 1.5; }
 .asset-note span { width: 15px; height: 15px; flex: 0 0 15px; border-radius: 50%; background: #dfb46c; color: white; display: grid; place-items: center; }
+
+.place-directory { padding-top: 10px; }
+.place-search-wrap { position: relative; margin: 0 10px 8px; }
+.place-search-wrap input { width: 100%; height: 34px; padding: 0 30px 0 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font-size: 10px; }
+.place-search-wrap input:focus { outline: 2px solid #c5e2dc; border-color: var(--emerald); }
+.place-search-wrap button { position: absolute; right: 5px; top: 5px; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: #84908c; cursor: pointer; }
+.place-filter { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 0 10px 8px; }
+.place-filter button { height: 28px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: white; color: #687570; cursor: pointer; font-size: 8px; }
+.place-filter button span { min-width: 17px; padding: 1px 4px; border-radius: 8px; background: #f0f3f2; color: #83908b; font-size: 7px; }
+.place-filter button.active { border-color: #b9d6d0; background: var(--emerald-soft); color: #286f66; font-weight: 700; }
+.place-filter button.active span { background: white; color: #34786f; }
+.place-directory-hint { margin: 0 10px 8px; padding: 7px 8px; border-radius: 7px; background: #f4f7f6; color: #7a8782; font-size: 8px; line-height: 1.45; }
+.place-list { height: calc(100vh - 390px); min-height: 180px; overflow-y: auto; padding: 0 7px 7px; }
+.place-row { width: 100%; min-height: 62px; display: grid; grid-template-columns: 31px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 6px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: default; }
+.place-row:hover, .place-row:focus-visible { border-color: var(--line); background: white; outline: none; box-shadow: 0 3px 10px rgb(37 55 50 / 5%); }
+.place-row:active { transform: translateY(1px); }
+.place-row.placed { background: #f8fbfa; }
+.place-type { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid; border-radius: 8px; font-size: 10px; font-weight: 800; }
+.place-copy { min-width: 0; }
+.place-copy strong, .place-copy small, .place-copy em { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.place-copy strong { color: #34413d; font-size: 10px; }
+.place-copy small { margin-top: 3px; color: #74817d; font-size: 8px; }
+.place-copy em { margin-top: 3px; color: #97a19e; font-size: 7px; font-style: normal; }
+.coordinate-badge { align-self: start; margin-top: 4px; padding: 3px 5px; border-radius: 8px; background: #f0f2f1; color: #74807c; font-size: 7px; white-space: nowrap; }
+.coordinate-badge.landmark { background: var(--emerald-soft); color: #32766d; }
+.place-row.placed .coordinate-badge { background: #dceee9; color: #2c7167; }
+.place-empty { display: grid; place-items: center; height: 120px; color: #89948f; font-size: 9px; }
 
 .canvas-column { min-width: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) 28px; background: #e9ecea; }
 .canvas-toolbar { display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid var(--line-strong); background: #f8faf9; z-index: 10; }
@@ -128,6 +161,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-element.collision-hard .icon-visual { filter: drop-shadow(0 0 4px rgb(197 53 39 / 80%)); }
 .map-element.collision-near .icon-visual { filter: drop-shadow(0 0 3px rgb(215 129 27 / 75%)); }
 .map-element.selected::after { content: ""; position: absolute; inset: -7px; border: 1.5px solid #238b80; border-radius: 6px; box-shadow: 0 0 0 1px white; pointer-events: none; }
+.map-element.focus-pulse::before { content: ""; position: absolute; inset: -15px; border: 3px solid rgb(36 142 129 / 78%); border-radius: 50%; pointer-events: none; animation: focus-ring 1.25s ease-out both; }
+@keyframes focus-ring { 0% { transform: scale(.72); opacity: 0; } 20% { opacity: 1; } 100% { transform: scale(1.45); opacity: 0; } }
 .resize-handle { position: absolute; right: -11px; bottom: -11px; width: 13px; height: 13px; padding: 0; border: 2px solid white; border-radius: 3px; background: var(--emerald); box-shadow: 0 0 0 1px #237c72; cursor: nwse-resize; z-index: 4; }
 .review-flag { position: absolute; top: -13px; right: -5px; padding: 2px 4px; border-radius: 4px; background: #f0aa4b; color: white; font-size: clamp(4px, .55vw, 7px); font-weight: 700; white-space: nowrap; }
 .label { position: absolute; color: #26332f; background: rgb(255 255 255 / 88%); border: 1px solid rgb(91 106 101 / 20%); border-radius: 3px; padding: 2px 4px; box-shadow: 0 1px 2px rgb(27 36 33 / 8%); font-size: clamp(5px, .75vw, 9px); font-weight: 700; white-space: nowrap; }
