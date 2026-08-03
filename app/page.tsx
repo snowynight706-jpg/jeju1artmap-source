@@ -17,6 +17,7 @@ const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골�
 const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_초고해상도.png";
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
+const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 
 const categories = [
   { id: "landmark", name: "핵심 랜드마크", color: "#df745c", glyph: "景" },
@@ -127,7 +128,6 @@ const landmarkLocations = [
   { name: "제주목 관아", address: "제주특별자치도 제주시 관덕로 25", addressSourceUrl: "https://www.jeju.go.kr/mokkwana/", assetId: "mokgwana-01", x: 39, y: 60 },
   { name: "관덕정", address: "제주특별자치도 제주시 관덕로 19", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500057", assetId: "gwandeokjeong-01", x: 37, y: 58 },
   { name: "칠성로", address: "제주특별자치도 제주시 관덕로13길 12 일대", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750", assetId: "chilsungro", x: 58, y: 50 },
-  { name: "산짓물공원", address: "제주특별자치도 제주시 건입동 1343", addressSourceUrl: "https://easyjeju.net/pages.php?no=725&p=tourist", assetId: null, x: 72, y: 43 },
   { name: "동문시장", address: "제주특별자치도 제주시 관덕로14길 20", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745", assetId: "dongmun-01", x: 66, y: 55 },
   { name: "북수구광장", address: "제주특별자치도 제주시 일도일동 1232", addressSourceUrl: "https://www.facebook.com/wowjejusi/", assetId: "buksugu-01", x: 62, y: 45 },
   { name: "탑동광장", address: "제주특별자치도 제주시 중앙로 1", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", assetId: "tapdong-square-03", x: 28, y: 20 },
@@ -216,6 +216,13 @@ function cloneDocument(document: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(document)) as DocumentState;
 }
 
+function sanitizeDocument(document: DocumentState): DocumentState {
+  return {
+    ...document,
+    elements: document.elements.filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim())),
+  };
+}
+
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
@@ -275,7 +282,7 @@ export default function Home() {
   }), []);
 
   const setDocument = useCallback((document: DocumentState) => {
-    const clean = cloneDocument(document);
+    const clean = sanitizeDocument(cloneDocument(document));
     elementsRef.current = clean.elements;
     assetsRef.current = clean.assets;
     notesRef.current = clean.reviewNotes;
@@ -378,6 +385,15 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
+        const savedLayouts = JSON.parse(localStorage.getItem(LAYOUTS_KEY) ?? "{}") as Record<string, { updatedAt: string; document: DocumentState }>;
+        let layoutsChanged = false;
+        Object.values(savedLayouts).forEach((saved) => {
+          if (!saved?.document?.elements?.some((element) => DELETED_PLACE_NAMES.has(element.name.trim()))) return;
+          saved.document = sanitizeDocument(saved.document);
+          layoutsChanged = true;
+        });
+        if (layoutsChanged) localStorage.setItem(LAYOUTS_KEY, JSON.stringify(savedLayouts));
+
         const raw = localStorage.getItem(AUTOSAVE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as Partial<DocumentState>;
@@ -726,7 +742,7 @@ export default function Home() {
           ],
           reviewNotes: Array.isArray(parsed.reviewNotes) ? parsed.reviewNotes : [],
         });
-        setLayoutName(file.name.replace(/\.json$/i, "")); setToast("JSON 배치안을 불러왔습니다.");
+        setLayoutName(file.name.replace(/\.json$/i, "")); setToast("JSON 배치안을 불러왔습니다. 삭제 대상 장소는 자동 제외됩니다.");
       } catch { setToast("지원하지 않거나 손상된 JSON 파일입니다."); }
     };
     reader.readAsText(file); event.target.value = "";
