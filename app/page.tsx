@@ -11,6 +11,13 @@ import {
   useState,
 } from "react";
 import { bundledLandmarkAssets } from "./landmark-assets";
+import {
+  bundledMarkerAssets,
+  markerAssetId,
+  recommendedMarkerStyle,
+  type BundledMarkerCategory,
+  type BundledMarkerStyle,
+} from "./marker-assets";
 import { masterDirectoryRows, type MasterDirectoryRow } from "./master-directory";
 
 const MAP_ASPECT = 8944 / 7324;
@@ -210,7 +217,7 @@ const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [place.nam
 
 const addressByPlace = new Map(landmarkLocations.map((location) => [location.name, location]));
 
-const builtInAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
+const builtInLandmarkAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
   const location = addressByPlace.get(asset.placeName);
   return {
     ...asset,
@@ -222,6 +229,23 @@ const builtInAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
     builtIn: true,
   };
 });
+
+const builtInMarkerAssets: MapAsset[] = bundledMarkerAssets.map((asset) => ({
+  ...asset,
+  fileType: "svg",
+  sourceLabel: `Google Drive · 범용마커 · ${asset.fileName}`,
+  builtIn: true,
+}));
+
+const builtInAssets: MapAsset[] = [...builtInLandmarkAssets, ...builtInMarkerAssets];
+
+function isBundledMarkerCategory(category: CategoryId): category is BundledMarkerCategory {
+  return category === "culture" || category === "cafe" || category === "food" || category === "parking";
+}
+
+function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = recommendedMarkerStyle) {
+  return isBundledMarkerCategory(category) ? markerAssetId(style, category) : null;
+}
 
 const initialElements: MapElement[] = landmarkLocations.map((location, index) => {
   const asset = builtInAssets.find((item) => item.id === location.assetId);
@@ -272,7 +296,14 @@ function cloneDocument(document: DocumentState): DocumentState {
 function sanitizeDocument(document: DocumentState): DocumentState {
   return {
     ...document,
-    elements: document.elements.filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim())),
+    elements: document.elements
+      .filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim()))
+      .map((element) => {
+        const defaultAssetId = defaultMarkerAssetId(element.category);
+        return !element.assetId && defaultAssetId
+          ? { ...element, assetId: defaultAssetId, status: "review" as AssetStatus }
+          : element;
+      }),
     directoryPlaces: document.directoryPlaces?.filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim())),
   };
 }
@@ -367,6 +398,7 @@ export default function Home() {
   const [memoMode, setMemoMode] = useState(false);
   const [landmarkGroupSize, setLandmarkGroupSize] = useState(6.2);
   const [markerGroupSize, setMarkerGroupSize] = useState(1.7);
+  const [markerStyle, setMarkerStyle] = useState<BundledMarkerStyle>(recommendedMarkerStyle);
   const [interaction, setInteraction] = useState<
     | { type: "pan"; startX: number; startY: number; panX: number; panY: number }
     | { type: "drag"; id: string; offsetX: number; offsetY: number }
@@ -446,7 +478,9 @@ export default function Home() {
   const selected = elements.find((element) => element.id === selectedId) ?? null;
   const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
   const selectedAsset = selected ? assets.find((asset) => asset.id === selected.assetId) ?? null : null;
-  const compatibleAssets = selected ? assets.filter((asset) => !asset.placeName || asset.placeName === selected.name) : assets;
+  const compatibleAssets = selected ? assets.filter((asset) => (
+    asset.placeName ? asset.placeName === selected.name : asset.category === selected.category
+  )) : assets;
 
   const filteredDirectoryPlaces = useMemo(() => {
     const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
@@ -512,6 +546,10 @@ export default function Home() {
               const restored = { ...elementDefaults, ...item };
               if (restored.name === "탑동해변공연장" && !restored.assetId) {
                 return { ...restored, assetId: "tapdong-seaside-stage-02", status: "approved" as AssetStatus, directoryId: "place-tapdong-seaside-stage" };
+              }
+              const markerDefault = defaultMarkerAssetId(restored.category);
+              if (!restored.assetId && markerDefault) {
+                return { ...restored, assetId: markerDefault, status: "review" as AssetStatus };
               }
               return restored;
             });
@@ -785,6 +823,8 @@ export default function Home() {
       size: place.category === "culture" ? 3 : 1.7,
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
       labelVisible: true,
+      assetId: defaultMarkerAssetId(place.category),
+      status: defaultMarkerAssetId(place.category) ? "review" : "unchecked",
       address: place.address,
       memo: `${place.sourceLabel} · ${place.coordinateStatus === "landmark" ? "기본 앵커" : place.coordinateStatus === "geocoded" ? "주소 자동탐색 앵커(검수 필요)" : "권역 기준 임시 좌표"}`,
       addressSourceUrl: place.sourceUrl ?? "",
@@ -861,6 +901,17 @@ export default function Home() {
       group === "landmark" ? (item.category === "landmark" ? { ...item, size } : item) : (item.category !== "landmark" ? { ...item, size } : item)
     )));
     setToast(group === "landmark" ? `랜드마크 ${size.toFixed(1)}% 일괄 적용` : `일반 마커 ${size.toFixed(1)}% 일괄 적용`);
+  };
+
+  const applyMarkerStyle = (style: BundledMarkerStyle) => {
+    pushHistory();
+    setMarkerStyle(style);
+    replaceElements((current) => current.map((item) => {
+      const nextAssetId = defaultMarkerAssetId(item.category, style);
+      return nextAssetId ? { ...item, assetId: nextAssetId, status: "review" as AssetStatus } : item;
+    }));
+    const styleName = style === "01" ? "기본 핀형" : style === "02" ? "아치 배지형" : "유기적 원형";
+    setToast(`범용 마커를 ${style}안 ${styleName}으로 통일했습니다.`);
   };
 
   const duplicateSelected = () => {
@@ -994,6 +1045,17 @@ export default function Home() {
             {categories.map((category) => <button key={category.id} className="asset-card" onClick={() => addDummy(category.id)}><span className="asset-preview" style={{ color: category.color, borderColor: `${category.color}55`, background: `${category.color}16` }}>{category.glyph}</span><span><strong>{category.name}</strong><small>임시 도형</small></span><i>＋</i></button>)}
           </div>
           <div className="group-size-panel">
+            <div className="marker-style-panel">
+              <div className="review-list-head"><strong>범용 마커 스타일</strong><span>검수 중</span></div>
+              <div className="marker-style-options" role="group" aria-label="범용 마커 스타일 일괄 적용">
+                {([
+                  ["01", "기본 핀형"],
+                  ["02", "아치 배지형"],
+                  ["03", "유기적 원형"],
+                ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={`/markers/범용마커_${style}_culture.svg`} alt="" /><span><b>{style}안</b><small>{label}</small></span></button>)}
+              </div>
+              <p className="marker-style-help">문화시설·카페·음식점·주차장에 같은 시안을 일괄 적용합니다. 01안은 제작 기준상 우선 추천안이며 아직 최종 승인 전입니다.</p>
+            </div>
             <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
             <div className="group-size-row"><label>일반 마커<input type="number" min="0.8" max="15" step="0.1" value={markerGroupSize} onChange={(event) => setMarkerGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("marker", markerGroupSize)}>전체 적용</button></div>
