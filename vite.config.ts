@@ -13,8 +13,8 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
   main: "./worker/index.ts",
-  compatibility_date: "2026-08-03",
-  compatibility_flags: ["nodejs_compat"],
+  // Local preview still requires the flag explicitly; production Workers use the platform default.
+  ...(process.env.npm_lifecycle_event === "dev" ? { compatibility_flags: ["nodejs_compat"] } : {}),
   d1_databases: d1
     ? [
         {

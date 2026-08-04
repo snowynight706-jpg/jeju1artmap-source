@@ -19,6 +19,7 @@ import {
   type BundledMarkerStyle,
 } from "./marker-assets";
 import { masterDirectoryRows, type MasterDirectoryRow } from "./master-directory";
+import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places";
 
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -27,7 +28,6 @@ const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
-const GEO_BOUNDS = { west: 126.5135, east: 126.5365, north: 33.5208, south: 33.499 } as const;
 
 const categories = [
   { id: "landmark", name: "핵심 랜드마크", color: "#df745c", glyph: "景" },
@@ -73,6 +73,8 @@ type MapElement = {
   labelVisible: boolean;
   labelPosition: LabelPosition;
   labelGap: number;
+  labelOffsetX: number;
+  labelOffsetY: number;
   opacity: number;
   connectorVisible: boolean;
   connectorColor: string;
@@ -122,6 +124,8 @@ const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" |
   labelVisible: false,
   labelPosition: "bottom",
   labelGap: 8,
+  labelOffsetX: 0,
+  labelOffsetY: 0,
   opacity: 100,
   connectorVisible: false,
   connectorColor: "#537b74",
@@ -203,6 +207,7 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
     .map((row, index): DirectoryPlace => {
       const name = normalizePlaceName(row.name);
       const legacy = legacyByName.get(name);
+      const geocoded = geocodedPlaces[name] ?? geocodedPlaces[row.name];
       const fallback = areaFallbacks[row.area] ?? { x: 50, y: 50 };
       return {
         id: legacy?.id ?? `master-place-${index + 1}`,
@@ -210,9 +215,11 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
         category: row.category,
         area: row.area,
         address: row.address,
-        x: legacy?.x ?? fallback.x,
-        y: legacy?.y ?? fallback.y,
-        coordinateStatus: legacy?.coordinateStatus === "landmark" ? "landmark" : "review",
+        x: geocoded?.x ?? legacy?.x ?? fallback.x,
+        y: geocoded?.y ?? legacy?.y ?? fallback.y,
+        coordinateStatus: geocoded ? "geocoded" : legacy?.coordinateStatus === "landmark" ? "landmark" : "unresolved",
+        latitude: geocoded?.latitude,
+        longitude: geocoded?.longitude,
         sourceLabel: `마스터DB · ${row.subtype}`,
         sourceUrl: row.sourceUrl,
         subtype: row.subtype,
@@ -222,8 +229,14 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
   const names = new Set(built.map((place) => place.name));
   return [
     ...built,
-    ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))),
-    ...supportDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))),
+    ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))).map((place) => {
+      const geocoded = geocodedPlaces[normalizePlaceName(place.name)];
+      return geocoded ? { ...place, ...geocoded, coordinateStatus: "geocoded" as const } : place;
+    }),
+    ...supportDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))).map((place) => {
+      const geocoded = geocodedPlaces[place.name];
+      return geocoded ? { ...place, ...geocoded, coordinateStatus: "geocoded" as const } : { ...place, coordinateStatus: "unresolved" as const };
+    }),
   ];
 }
 
@@ -237,10 +250,10 @@ const builtInLandmarkAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
   return {
     ...asset,
     category: "landmark",
-    fileType: "png",
+    fileType: "image",
     address: location?.address ?? "",
     addressSourceUrl: location?.addressSourceUrl ?? "",
-    sourceLabel: `Google Drive · 03_128px_검수본 · ${asset.fileName}`,
+    sourceLabel: `Google Drive 원본 · 1024px WebP 최적화 · ${asset.fileName}`,
     builtIn: true,
   };
 });
@@ -265,15 +278,18 @@ function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = 
 const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, index) => {
   const asset = builtInAssets.find((item) => item.id === location.assetId);
   const directoryPlace = directoryByName.get(location.name);
+  const geocoded = geocodedPlaces[location.name];
+  const x = geocoded?.x ?? location.x;
+  const y = geocoded?.y ?? location.y;
   return {
     ...elementDefaults,
     id: `default-landmark-${index + 1}`,
     name: location.name,
     category: "landmark",
-    x: location.x,
-    y: location.y,
-    anchorX: location.x,
-    anchorY: location.y,
+    x,
+    y,
+    anchorX: x,
+    anchorY: y,
     size: 6.2,
     z: index + 1,
     labelVisible: true,
@@ -281,7 +297,7 @@ const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, i
     status: asset?.status ?? "unchecked",
     address: location.address,
     addressSourceUrl: location.addressSourceUrl,
-    memo: "초기 배치 좌표는 검수용이며 실제 위치 앵커는 장소 DB 확인 후 확정 필요",
+    memo: geocoded ? "주소·장소명 검색 결과를 v15 지도 범위에 반영한 기본 위치. 필요하면 화면상 위치를 직접 보정하세요." : "주소 검색 미확정 · 직접 위치 검수 필요",
     directoryId: directoryPlace?.id,
   };
 });
@@ -308,8 +324,8 @@ function buildStarterMarkers(places: DirectoryPlace[]): MapElement[] {
     const occurrence = areaCounts.get(place.area) ?? 0;
     areaCounts.set(place.area, occurrence + 1);
     const offset = starterOffsets[occurrence % starterOffsets.length];
-    const x = clamp(place.x + offset.x, 3, 97);
-    const y = clamp(place.y + offset.y, 3, 97);
+    const x = place.coordinateStatus === "geocoded" ? place.x : clamp(place.x + offset.x, 3, 97);
+    const y = place.coordinateStatus === "geocoded" ? place.y : clamp(place.y + offset.y, 3, 97);
     const assetId = defaultMarkerAssetId(place.category);
     return {
       ...elementDefaults,
@@ -347,11 +363,16 @@ function categoryOf(id: CategoryId) {
   return categories.find((category) => category.id === id) ?? categories[6];
 }
 
-function labelStyle(position: LabelPosition, gap: number) {
-  if (position === "top") return { left: "50%", bottom: `calc(100% + ${gap}px)`, transform: "translateX(-50%)" };
-  if (position === "bottom") return { left: "50%", top: `calc(100% + ${gap}px)`, transform: "translateX(-50%)" };
-  if (position === "left") return { right: `calc(100% + ${gap}px)`, top: "50%", transform: "translateY(-50%)" };
-  return { left: `calc(100% + ${gap}px)`, top: "50%", transform: "translateY(-50%)" };
+type VisualBounds = { left: number; top: number; right: number; bottom: number };
+
+function labelStyle(position: LabelPosition, gap: number, offsetX: number, offsetY: number, zoom: number, bounds: VisualBounds = { left: 0, top: 0, right: 1, bottom: 1 }) {
+  const centerX = ((bounds.left + bounds.right) / 2) * 100;
+  const centerY = ((bounds.top + bounds.bottom) / 2) * 100;
+  const crispScale = `scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})`;
+  if (position === "top") return { left: `calc(${centerX}% + ${offsetX}px)`, bottom: `calc(${(1 - bounds.top) * 100}% + ${gap - offsetY}px)`, transform: `translateX(-50%) ${crispScale}` };
+  if (position === "bottom") return { left: `calc(${centerX}% + ${offsetX}px)`, top: `calc(${bounds.bottom * 100}% + ${gap + offsetY}px)`, transform: `translateX(-50%) ${crispScale}` };
+  if (position === "left") return { right: `calc(${(1 - bounds.left) * 100}% + ${gap - offsetX}px)`, top: `calc(${centerY}% + ${offsetY}px)`, transform: `translateY(-50%) ${crispScale}` };
+  return { left: `calc(${bounds.right * 100}% + ${gap + offsetX}px)`, top: `calc(${centerY}% + ${offsetY}px)`, transform: `translateY(-50%) ${crispScale}` };
 }
 
 function cloneDocument(document: DocumentState): DocumentState {
@@ -378,9 +399,7 @@ function csvCell(value: unknown) {
 }
 
 function coordinatesToMap(latitude: number, longitude: number) {
-  const x = ((longitude - GEO_BOUNDS.west) / (GEO_BOUNDS.east - GEO_BOUNDS.west)) * 100;
-  const y = ((GEO_BOUNDS.north - latitude) / (GEO_BOUNDS.north - GEO_BOUNDS.south)) * 100;
-  if (x < -2 || x > 102 || y < -2 || y > 102) return null;
+  const { x, y } = projectGeographicCoordinates(latitude, longitude);
   return { x: clamp(x, 0, 100), y: clamp(y, 0, 100) };
 }
 
@@ -433,6 +452,7 @@ export default function Home() {
   const assetsRef = useRef<MapAsset[]>(builtInAssets);
   const notesRef = useRef<ReviewNote[]>([]);
   const placesRef = useRef<DirectoryPlace[]>(defaultDirectoryPlaces);
+  const measuredAssetIdsRef = useRef(new Set<string>());
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -465,6 +485,7 @@ export default function Home() {
   const [landmarkGroupSize, setLandmarkGroupSize] = useState(6.2);
   const [markerGroupSize, setMarkerGroupSize] = useState(1.7);
   const [markerStyle, setMarkerStyle] = useState<BundledMarkerStyle>(recommendedMarkerStyle);
+  const [assetVisualBounds, setAssetVisualBounds] = useState<Record<string, VisualBounds>>({});
   const [interaction, setInteraction] = useState<
     | { type: "pan"; startX: number; startY: number; panX: number; panY: number }
     | { type: "drag"; id: string; offsetX: number; offsetY: number }
@@ -544,12 +565,48 @@ export default function Home() {
     replaceNotes((current) => current.map((note) => note.id === id ? { ...note, ...patch } : note));
   }, [pushHistory, replaceNotes]);
 
+  const measureAssetBounds = useCallback((assetId: string, image: HTMLImageElement) => {
+    if (measuredAssetIdsRef.current.has(assetId) || !image.naturalWidth || !image.naturalHeight) return;
+    measuredAssetIdsRef.current.add(assetId);
+    try {
+      const size = 192;
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) return;
+      context.clearRect(0, 0, size, size);
+      context.drawImage(image, 0, 0, size, size);
+      const pixels = context.getImageData(0, 0, size, size).data;
+      let minX = size; let minY = size; let maxX = -1; let maxY = -1;
+      for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) {
+        if (pixels[(y * size + x) * 4 + 3] < 32) continue;
+        minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+      if (maxX < minX || maxY < minY) return;
+      setAssetVisualBounds((current) => ({ ...current, [assetId]: { left: minX / size, top: minY / size, right: (maxX + 1) / size, bottom: (maxY + 1) / size } }));
+    } catch {
+      measuredAssetIdsRef.current.delete(assetId);
+    }
+  }, []);
+
   const selected = elements.find((element) => element.id === selectedId) ?? null;
   const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
   const selectedAsset = selected ? assets.find((asset) => asset.id === selected.assetId) ?? null : null;
   const compatibleAssets = selected ? assets.filter((asset) => (
     asset.placeName ? asset.placeName === selected.name : asset.category === selected.category
   )) : assets;
+  const landmarkAssetGroups = useMemo(() => {
+    const groups = new Map<string, MapAsset[]>();
+    assets.filter((asset) => asset.category === "landmark" && asset.placeName).forEach((asset) => {
+      const group = groups.get(asset.placeName!) ?? [];
+      group.push(asset);
+      groups.set(asset.placeName!, group);
+    });
+    return [...groups.entries()].map(([placeName, candidates]) => ({ placeName, candidates }));
+  }, [assets]);
+  const generalMarkerAssets = useMemo(() => assets.filter((asset) => asset.category !== "landmark"), [assets]);
+  const customLandmarkAssets = useMemo(() => assets.filter((asset) => asset.category === "landmark" && !asset.placeName), [assets]);
 
   const filteredDirectoryPlaces = useMemo(() => {
     const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
@@ -617,7 +674,17 @@ export default function Home() {
           const parsed = JSON.parse(raw) as Partial<DocumentState>;
           if (Array.isArray(parsed.elements)) {
             const parsedElements = (parsed.elements as MapElement[]).map((item) => {
-              const restored = { ...elementDefaults, ...item };
+              const correctedPlace = defaultDirectoryPlaces.find((place) => place.id === item.directoryId || normalizePlaceName(place.name) === normalizePlaceName(item.name));
+              const shouldMoveToCorrectedPosition = Boolean(correctedPlace?.coordinateStatus === "geocoded" && (/^(default-landmark|starter-marker)-/.test(item.id) || /초기 구성용|초기 배치/.test(item.memo ?? "")));
+              const restored = {
+                ...elementDefaults,
+                ...item,
+                ...(correctedPlace?.coordinateStatus === "geocoded" ? {
+                  anchorX: correctedPlace.x,
+                  anchorY: correctedPlace.y,
+                  ...(shouldMoveToCorrectedPosition ? { x: correctedPlace.x, y: correctedPlace.y } : {}),
+                } : {}),
+              };
               if (restored.name === "탑동해변공연장" && !restored.assetId) {
                 return { ...restored, assetId: "tapdong-seaside-stage-02", status: "approved" as AssetStatus, directoryId: "place-tapdong-seaside-stage" };
               }
@@ -791,14 +858,17 @@ export default function Home() {
   };
 
   const resetLandmarkPositions = () => {
-    const defaults = new Map(landmarkLocations.map((location) => [location.name, location]));
+    const defaults = new Map(landmarkLocations.map((location) => {
+      const geocoded = geocodedPlaces[location.name];
+      return [location.name, { ...location, x: geocoded?.x ?? location.x, y: geocoded?.y ?? location.y }];
+    }));
     pushHistory();
     replaceElements((current) => current.map((element) => {
       const location = defaults.get(element.name);
       if (element.category !== "landmark" || !location) return element;
       return { ...element, x: location.x, y: location.y, anchorX: location.x, anchorY: location.y };
     }));
-    setToast(`기본 랜드마크 ${landmarkLocations.length}곳을 기준 위치로 초기화했습니다.`);
+    setToast(`랜드마크 ${landmarkLocations.length}곳을 주소·장소명 검색 기준 위치로 초기화했습니다.`);
   };
 
   const runAddressLookup = async (places: DirectoryPlace[], movePlacedElements = false) => {
@@ -948,19 +1018,6 @@ export default function Home() {
     setToast(`${place.name} 마커를 추가하고 위치로 이동했습니다.`);
   };
 
-  const addDummy = (category: CategoryId) => {
-    pushHistory();
-    const meta = categoryOf(category);
-    const count = elementsRef.current.filter((item) => item.category === category).length + 1;
-    const size = category === "landmark" ? 6.4 : category === "culture" || category === "park" ? 3 : 1.7;
-    const next: MapElement = {
-      ...elementDefaults, id: `element-${++nextIdRef.current}`, name: `${meta.name} ${count}`, category,
-      x: 50, y: 50, anchorX: 50, anchorY: 50, size, z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
-      labelVisible: category === "landmark",
-    };
-    replaceElements((current) => [...current, next]); setSelectedId(next.id); setSelectedNoteId(null);
-  };
-
   const addAssetElement = (asset: MapAsset) => {
     pushHistory();
     const count = elementsRef.current.filter((item) => item.assetId === asset.id).length + 1;
@@ -972,6 +1029,20 @@ export default function Home() {
       assetId: asset.id, status: asset.status, address: asset.address ?? "", addressSourceUrl: asset.addressSourceUrl ?? "",
     };
     replaceElements((current) => [...current, next]); setSelectedId(next.id); setSelectedNoteId(null);
+  };
+
+  const applyLandmarkCandidate = (asset: MapAsset) => {
+    const existing = elementsRef.current.find((element) => normalizePlaceName(element.name) === normalizePlaceName(asset.placeName ?? ""));
+    if (!existing) {
+      addAssetElement(asset);
+      setToast(`${asset.placeName}에 ${asset.name} 후보를 적용했습니다.`);
+      return;
+    }
+    updateElement(existing.id, { assetId: asset.id, status: asset.status });
+    setSelectedId(existing.id);
+    setSelectedNoteId(null);
+    focusMapPosition(existing.x, existing.y, existing.id);
+    setToast(`${asset.placeName} 리소스를 ${asset.name}(으)로 교체했습니다.`);
   };
 
   const uploadAsset = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1152,10 +1223,19 @@ export default function Home() {
             <select aria-label="업로드 자산 카테고리" value={assetCategory} onChange={(event) => setAssetCategory(event.target.value as CategoryId)}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
             <select aria-label="업로드 자산 검수 상태" value={assetStatus} onChange={(event) => setAssetStatus(event.target.value as AssetStatus)}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select>
           </div><button className="upload-button" onClick={() => fileInputRef.current?.click()}>PNG·SVG 자산 불러오기</button><input ref={fileInputRef} className="visually-hidden" type="file" accept="image/png,image/webp,image/svg+xml,.svg" multiple onChange={uploadAsset} /></div>
-          <div className="asset-list-header"><span>{assets.length ? "프로젝트 자산" : "더미 자산"}</span><small>클릭하여 중앙에 추가</small></div>
+          <div className="asset-list-header"><span>프로젝트 자산</span><small>후보 클릭으로 적용·교체</small></div>
           <div className="asset-grid compact-assets">
-            {assets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
-            {categories.map((category) => <button key={category.id} className="asset-card" onClick={() => addDummy(category.id)}><span className="asset-preview" style={{ color: category.color, borderColor: `${category.color}55`, background: `${category.color}16` }}>{category.glyph}</span><span><strong>{category.name}</strong><small>임시 도형</small></span><i>＋</i></button>)}
+            <div className="landmark-resource-heading"><strong>랜드마크 후보 리소스</strong><small>한 장소에서 여러 안을 선택할 수 있습니다.</small></div>
+            {landmarkAssetGroups.map(({ placeName, candidates }) => {
+              const activeAssetId = elements.find((element) => normalizePlaceName(element.name) === normalizePlaceName(placeName))?.assetId;
+              return <article className="landmark-resource-group" key={placeName}>
+                <div><strong>{placeName}</strong><small>{candidates.length}개 후보 · 1024px</small></div>
+                <div className="landmark-candidate-row">{candidates.map((asset) => <button key={asset.id} className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>
+              </article>;
+            })}
+            {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
+            <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·주차장</strong><small>SVG라서 확대해도 선명합니다.</small></div>
+            {generalMarkerAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
           </div>
           <div className="group-size-panel">
             <div className="marker-style-panel">
@@ -1242,9 +1322,9 @@ export default function Home() {
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
                   return <div key={element.id} className={`map-element ${isSelected ? "selected" : ""} ${focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${viewMode === "collisions" ? collisionClass : ""} ${viewMode === "labels" ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={(event) => startDrag(event, element)}>
                     {(viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
-                    <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>
+                    <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>
                     {element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {element.labelVisible && <div className="label" style={labelStyle(element.labelPosition, element.labelGap)}>{element.name}</div>}
+                    {element.labelVisible && <div className="label" style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, asset ? assetVisualBounds[asset.id] : undefined)}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -1265,11 +1345,11 @@ export default function Home() {
             <section><div className="section-title"><strong>지도 위치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selectedNote.x.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selectedNote.y.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div></section>
             <section><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></section>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
-            <section><div className="section-title"><strong>기본 정보</strong><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="">임시 색상 도형</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
+            <section><div className="section-title"><strong>기본 정보</strong><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
             <section><div className="section-title"><strong>화면상 배치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selected.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selected.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>직접 편집</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selected.anchorX.toFixed(2)} onChange={(event) => updateElement(selected.id, { anchorX: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selected.anchorY.toFixed(2)} onChange={(event) => updateElement(selected.id, { anchorY: clamp(Number(event.target.value), 0, 100) })} /></label></div><button className="wide-secondary" onClick={() => updateElement(selected.id, { anchorX: selected.x, anchorY: selected.y })}>배치 위치를 앵커로 복사</button><p className="field-help">DB 주소 조회 결과 또는 사용자가 보정한 정규화 좌표가 저장됩니다. 자동 조회 좌표는 최종 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
-            <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="30" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label></section>
+            <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -60, 60) })} /></label><label>상하 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -60, 60) })} /></label></div><p className="field-help">투명 여백을 제외한 실제 아이콘 가장자리를 기준으로 배치됩니다. +X는 오른쪽, +Y는 아래쪽입니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => updateElement(selected.id, { locked: !selected.locked })}>{selected.locked ? "잠금 해제" : "잠금"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>
