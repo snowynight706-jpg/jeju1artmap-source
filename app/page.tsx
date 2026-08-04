@@ -31,6 +31,7 @@ const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
 const CALIBRATION_SETTINGS_KEY = "jeju-wondosim-map-review:calibration-settings:v1";
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
+const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 
 const categories = [
@@ -691,6 +692,15 @@ export default function Home() {
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeCategory, setPlaceCategory] = useState<CategoryId | "all">("all");
+  const [expandedVisibilityGroups, setExpandedVisibilityGroups] = useState<Record<CategoryId, boolean>>({
+    landmark: true,
+    culture: false,
+    cafe: false,
+    food: false,
+    parking: false,
+    park: false,
+    utility: false,
+  });
   const [focusPulseId, setFocusPulseId] = useState<string | null>(null);
   const [geocodeProgress, setGeocodeProgress] = useState<{ active: boolean; done: number; total: number; found: number; failed: number }>({ active: false, done: 0, total: 0, found: 0, failed: 0 });
   const [leftOpen, setLeftOpen] = useState(true);
@@ -1020,6 +1030,11 @@ export default function Home() {
       .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
   }, [elements, placeCategory, placeQuery]);
 
+  const visibilityChecklistGroups = useMemo(() => categories.map((category) => ({
+    category,
+    elements: visibilityChecklistElements.filter((element) => element.category === category.id),
+  })).filter((group) => group.elements.length > 0), [visibilityChecklistElements]);
+
   const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
     counts[category.id] = elements.filter((element) => element.category === category.id).length;
     return counts;
@@ -1073,6 +1088,16 @@ export default function Home() {
           layoutsChanged = true;
         });
         if (layoutsChanged) localStorage.setItem(LAYOUTS_KEY, JSON.stringify(savedLayouts));
+
+        try {
+          const savedVisibilityGroups = JSON.parse(localStorage.getItem(VISIBILITY_GROUPS_KEY) ?? "null") as Partial<Record<CategoryId, boolean>> | null;
+          if (savedVisibilityGroups) {
+            setExpandedVisibilityGroups((current) => categories.reduce<Record<CategoryId, boolean>>((next, category) => {
+              next[category.id] = typeof savedVisibilityGroups[category.id] === "boolean" ? savedVisibilityGroups[category.id]! : current[category.id];
+              return next;
+            }, { ...current }));
+          }
+        } catch {}
 
         const persistentCalibration = (() => {
           try {
@@ -1160,6 +1185,13 @@ export default function Home() {
     }, 450);
     return () => window.clearTimeout(timer);
   }, [assets, calibrationPoints, currentDocument, directoryPlaces, elements, hydrated, landmarkDefaultPositions, reviewNotes]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(VISIBILITY_GROUPS_KEY, JSON.stringify(expandedVisibilityGroups));
+    } catch {}
+  }, [expandedVisibilityGroups, hydrated]);
 
   useEffect(() => {
     if (!hydrated || !primaryCalibrationRemoteReady) return;
@@ -2276,16 +2308,33 @@ export default function Home() {
               <div className="review-list-head"><strong>지도 표시 체크리스트</strong><span>{elements.filter((element) => element.mapVisible).length}/{elements.length}</span></div>
               <p>체크를 끄면 배치 정보는 유지한 채 지도와 고화질 출력에서만 숨겨집니다.</p>
               <div className="marker-visibility-list">
-                {visibilityChecklistElements.map((element) => {
-                  const meta = categoryOf(element.category);
-                  return <div key={element.id} className={`marker-visibility-row ${element.mapVisible ? "visible" : "hidden"}`}>
-                    <label title={`${element.name} 지도 표시 전환`}>
-                      <input type="checkbox" checked={element.mapVisible} onChange={(event) => toggleElementMapVisibility(element, event.target.checked)} />
-                      <i style={{ background: meta.color }} />
-                      <span><b>{element.name}</b><small>{meta.name}{element.locked ? " · 좌표 고정" : ""}</small></span>
-                    </label>
-                    <button onClick={() => { setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); if (element.mapVisible) focusMapPosition(element.x, element.y, element.id); }} aria-label={`${element.name} 선택`}>선택</button>
-                  </div>;
+                {visibilityChecklistGroups.map(({ category, elements: groupElements }) => {
+                  const visibleCount = groupElements.filter((element) => element.mapVisible).length;
+                  const expanded = Boolean(placeQuery.trim()) || expandedVisibilityGroups[category.id];
+                  return <section key={category.id} className={`marker-visibility-group ${expanded ? "expanded" : "collapsed"}`}>
+                    <button
+                      type="button"
+                      className="marker-visibility-group-toggle"
+                      aria-expanded={expanded}
+                      aria-controls={`visibility-group-${category.id}`}
+                      onClick={() => setExpandedVisibilityGroups((current) => ({ ...current, [category.id]: !current[category.id] }))}
+                    >
+                      <span className="marker-folder-icon" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                      <i style={{ background: category.color }} />
+                      <strong>{category.name}</strong>
+                      <span className="marker-group-count">{visibleCount}/{groupElements.length}</span>
+                    </button>
+                    {expanded && <div id={`visibility-group-${category.id}`} className="marker-visibility-group-items">
+                      {groupElements.map((element) => <div key={element.id} className={`marker-visibility-row ${element.mapVisible ? "visible" : "hidden"}`}>
+                        <label title={`${element.name} 지도 표시 전환`}>
+                          <input type="checkbox" checked={element.mapVisible} onChange={(event) => toggleElementMapVisibility(element, event.target.checked)} />
+                          <i style={{ background: category.color }} />
+                          <span><b>{element.name}</b><small>{element.locked ? "좌표 고정" : "배치됨"}</small></span>
+                        </label>
+                        <button onClick={() => { setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); if (element.mapVisible) focusMapPosition(element.x, element.y, element.id); }} aria-label={`${element.name} 선택`}>선택</button>
+                      </div>)}
+                    </div>}
+                  </section>;
                 })}
                 {!visibilityChecklistElements.length && <div className="place-empty">조건에 맞는 배치 마커가 없습니다.</div>}
               </div>

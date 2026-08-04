@@ -156,7 +156,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .place-row.placed { background: #f8fbfa; }
 .marker-visibility-panel { margin: 10px; padding: 9px; border: 1px solid #d4e2de; border-radius: 9px; background: #fbfdfc; }
 .marker-visibility-panel > p { margin: -1px 3px 8px; color: #82908b; font-size: 8px; line-height: 1.45; }
-.marker-visibility-list { max-height: 210px; overflow-y: auto; display: grid; gap: 3px; padding-right: 2px; }
+.marker-visibility-list { max-height: 280px; overflow-y: auto; display: grid; gap: 5px; padding-right: 2px; }
+.marker-visibility-group { overflow: hidden; border: 1px solid #e0e8e5; border-radius: 8px; background: white; }
+.marker-visibility-group-toggle { width: 100%; min-height: 34px; display: grid; grid-template-columns: 13px 7px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 5px 7px; border: 0; background: #f8fbfa; color: #51625c; cursor: pointer; text-align: left; }
+.marker-visibility-group-toggle:hover { background: #f0f7f5; color: #2f6d64; }
+.marker-visibility-group-toggle:focus-visible { position: relative; z-index: 1; outline: 2px solid #83bcb2; outline-offset: -2px; }
+.marker-visibility-group-toggle > i { width: 7px; height: 7px; border-radius: 50%; }
+.marker-visibility-group-toggle strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
+.marker-folder-icon { color: #6d7d77; font-size: 9px; text-align: center; }
+.marker-group-count { min-width: 29px; padding: 2px 5px; border-radius: 9px; background: #eaf1ef; color: #697872; text-align: center; font-size: 7px; font-variant-numeric: tabular-nums; }
+.marker-visibility-group-items { display: grid; gap: 3px; padding: 4px; border-top: 1px solid #e6ecea; background: #fbfdfc; }
 .marker-visibility-row { min-height: 35px; display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; gap: 5px; padding: 4px 5px; border: 1px solid transparent; border-radius: 7px; background: white; }
 .marker-visibility-row:hover { border-color: #d4e2de; }
 .marker-visibility-row.hidden { background: #f2f4f3; opacity: .68; }
