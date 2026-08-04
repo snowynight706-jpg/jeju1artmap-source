@@ -136,12 +136,20 @@ type CalibrationPoint = {
   targetY: number;
 };
 
+type LandmarkDefaultPosition = {
+  elementId: string;
+  name: string;
+  x: number;
+  y: number;
+};
+
 type DocumentState = {
   elements: MapElement[];
   assets: MapAsset[];
   reviewNotes: ReviewNote[];
   directoryPlaces?: DirectoryPlace[];
   calibrationPoints?: CalibrationPoint[];
+  landmarkDefaultPositions?: LandmarkDefaultPosition[];
 };
 
 const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" | "anchorX" | "anchorY" | "size" | "z"> = {
@@ -435,6 +443,13 @@ function buildStarterMarkers(places: DirectoryPlace[]): MapElement[] {
 
 const initialElements: MapElement[] = [...initialLandmarkElements, ...buildStarterMarkers(defaultDirectoryPlaces)];
 
+const factoryLandmarkDefaultPositions: LandmarkDefaultPosition[] = initialLandmarkElements.map((element) => ({
+  elementId: element.id,
+  name: normalizePlaceName(element.name),
+  x: element.x,
+  y: element.y,
+}));
+
 const statusText: Record<AssetStatus, string> = { approved: "승인 완료", review: "검수 중", unchecked: "미검수" };
 const reviewStatusText: Record<ReviewStatus, string> = { delete: "삭제 검토", weaken: "약화 검토", keep: "유지", hierarchy: "도로 위계 조정" };
 
@@ -553,6 +568,7 @@ export default function Home() {
   const notesRef = useRef<ReviewNote[]>([]);
   const placesRef = useRef<DirectoryPlace[]>(defaultDirectoryPlaces);
   const calibrationPointsRef = useRef<CalibrationPoint[]>(initialCalibrationPoints);
+  const landmarkDefaultsRef = useRef<LandmarkDefaultPosition[]>(factoryLandmarkDefaultPositions);
   const measuredAssetIdsRef = useRef(new Set<string>());
   const calibrationLiveApplyRef = useRef(false);
 
@@ -561,6 +577,7 @@ export default function Home() {
   const [reviewNotes, setReviewNotes] = useState<ReviewNote[]>([]);
   const [directoryPlaces, setDirectoryPlaces] = useState<DirectoryPlace[]>(defaultDirectoryPlaces);
   const [calibrationPoints, setCalibrationPoints] = useState<CalibrationPoint[]>(initialCalibrationPoints);
+  const [landmarkDefaultPositions, setLandmarkDefaultPositions] = useState<LandmarkDefaultPosition[]>(factoryLandmarkDefaultPositions);
   const [selectedId, setSelectedId] = useState<string | null>(initialElements[0].id);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<DocumentState[]>([]);
@@ -612,12 +629,20 @@ export default function Home() {
     reviewNotes: notesRef.current,
     directoryPlaces: placesRef.current,
     calibrationPoints: calibrationPointsRef.current,
+    landmarkDefaultPositions: landmarkDefaultsRef.current,
   }), []);
 
   const setDocument = useCallback((document: DocumentState) => {
     const clean = sanitizeDocument(cloneDocument(document));
     const hadCalibration = clean.calibrationPoints?.length === initialCalibrationPoints.length;
     const restoredCalibrationPoints = hadCalibration ? clean.calibrationPoints! : initialCalibrationPoints;
+    const restoredLandmarkDefaults = Array.isArray(clean.landmarkDefaultPositions) && clean.landmarkDefaultPositions.length
+      ? clean.landmarkDefaultPositions.map((position) => ({
+          ...position,
+          x: clamp(position.x, 0, 100),
+          y: clamp(position.y, 0, 100),
+        }))
+      : factoryLandmarkDefaultPositions.map((position) => ({ ...position }));
     const restoredPlaces = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
     const restoredNames = new Set(restoredPlaces.map((place) => normalizePlaceName(place.name)));
     const mergedPlaces = [...restoredPlaces, ...supportDirectoryPlaces.filter((place) => !restoredNames.has(normalizePlaceName(place.name)))].map((place) => {
@@ -640,11 +665,13 @@ export default function Home() {
     notesRef.current = clean.reviewNotes;
     placesRef.current = mergedPlaces;
     calibrationPointsRef.current = restoredCalibrationPoints;
+    landmarkDefaultsRef.current = restoredLandmarkDefaults;
     setElements(migratedElements);
     setAssets(clean.assets);
     setReviewNotes(clean.reviewNotes);
     setDirectoryPlaces(placesRef.current);
     setCalibrationPoints(restoredCalibrationPoints);
+    setLandmarkDefaultPositions(restoredLandmarkDefaults);
     setCalibrationDirty(false);
     setSelectedId(null);
     setSelectedNoteId(null);
@@ -684,6 +711,14 @@ export default function Home() {
     setDirectoryPlaces((current) => {
       const next = updater(current);
       placesRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const replaceLandmarkDefaults = useCallback((updater: (current: LandmarkDefaultPosition[]) => LandmarkDefaultPosition[]) => {
+    setLandmarkDefaultPositions((current) => {
+      const next = updater(current);
+      landmarkDefaultsRef.current = next;
       return next;
     });
   }, []);
@@ -795,6 +830,9 @@ export default function Home() {
   const selected = elements.find((element) => element.id === selectedId) ?? null;
   const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
   const selectedCalibrationPoint = selected ? calibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
+  const selectedLandmarkDefault = selected?.category === "landmark" ? landmarkDefaultPositions.find((position) =>
+    position.elementId === selected.id || position.name === normalizePlaceName(selected.name)
+  ) ?? { elementId: selected.id, name: normalizePlaceName(selected.name), x: selected.x, y: selected.y } : null;
   const selectedAsset = selected ? assets.find((asset) => asset.id === selected.assetId) ?? null : null;
   const compatibleAssets = selected ? assets.filter((asset) => (
     asset.placeName ? asset.placeName === selected.name : asset.category === selected.category
@@ -906,7 +944,7 @@ export default function Home() {
               ...builtInAssets,
               ...parsedAssets.filter((item) => !builtInAssets.some((builtIn) => builtIn.id === item.id)),
             ];
-            setDocument({ elements: mergedElements, assets: mergedAssets, reviewNotes: parsed.reviewNotes ?? [], directoryPlaces: parsed.directoryPlaces, calibrationPoints: parsed.calibrationPoints });
+            setDocument({ elements: mergedElements, assets: mergedAssets, reviewNotes: parsed.reviewNotes ?? [], directoryPlaces: parsed.directoryPlaces, calibrationPoints: parsed.calibrationPoints, landmarkDefaultPositions: parsed.landmarkDefaultPositions });
             setSaveState("최근 상태 복구됨");
           }
         }
@@ -931,7 +969,7 @@ export default function Home() {
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [assets, currentDocument, directoryPlaces, elements, hydrated, reviewNotes]);
+  }, [assets, calibrationPoints, currentDocument, directoryPlaces, elements, hydrated, landmarkDefaultPositions, reviewNotes]);
 
   useEffect(() => {
     if (!toast) return;
@@ -1100,19 +1138,77 @@ export default function Home() {
     window.setTimeout(() => setFocusPulseId((current) => current === elementId ? null : current), 1300);
   };
 
-  const resetLandmarkPositions = () => {
-    const defaults = new Map<string, { x: number; y: number }>(landmarkLocations.map((location) => {
-      const geocoded = geocodedPlaces[location.name];
-      const mapped = calibratedPlaceCoordinates(location.name, geocoded?.latitude, geocoded?.longitude, calibrationPointsRef.current);
-      return [location.name, { x: mapped?.x ?? location.x, y: mapped?.y ?? location.y }] as const;
-    }));
+  const findLandmarkDefault = useCallback((element: MapElement) => landmarkDefaultsRef.current.find((position) =>
+    position.elementId === element.id || position.name === normalizePlaceName(element.name)
+  ) ?? null, []);
+
+  const updateLandmarkDefault = (element: MapElement, patch: Partial<Pick<LandmarkDefaultPosition, "x" | "y">>) => {
+    if (element.category !== "landmark") return;
     pushHistory();
-    replaceElements((current) => current.map((element) => {
-      const location = defaults.get(element.name);
-      if (element.category !== "landmark" || !location) return element;
-      return { ...element, x: location.x, y: location.y, anchorX: location.x, anchorY: location.y };
+    replaceLandmarkDefaults((current) => {
+      const existing = current.find((position) => position.elementId === element.id || position.name === normalizePlaceName(element.name));
+      const nextPosition: LandmarkDefaultPosition = {
+        elementId: existing?.elementId ?? element.id,
+        name: existing?.name ?? normalizePlaceName(element.name),
+        x: clamp(patch.x ?? existing?.x ?? element.x, 0, 100),
+        y: clamp(patch.y ?? existing?.y ?? element.y, 0, 100),
+      };
+      return existing
+        ? current.map((position) => position === existing ? nextPosition : position)
+        : [...current, nextPosition];
+    });
+  };
+
+  const saveLandmarkAsDefault = (element: MapElement) => {
+    updateLandmarkDefault(element, { x: element.x, y: element.y });
+    setToast(`${element.name}의 현재 위치를 기본 위치로 저장했습니다.`);
+  };
+
+  const saveAllLandmarksAsDefault = () => {
+    const landmarkElements = elementsRef.current.filter((element) => element.category === "landmark");
+    pushHistory();
+    replaceLandmarkDefaults((current) => landmarkElements.map((element) => {
+      const existing = current.find((position) => position.elementId === element.id || position.name === normalizePlaceName(element.name));
+      return { elementId: existing?.elementId ?? element.id, name: existing?.name ?? normalizePlaceName(element.name), x: element.x, y: element.y };
     }));
-    setToast(`랜드마크 ${landmarkLocations.length}곳을 6개 기준점 보정 위치로 초기화했습니다.`);
+    setToast(`현재 배치를 랜드마크 ${landmarkElements.length}곳의 기본 위치로 저장했습니다.`);
+  };
+
+  const moveLandmarkToDefault = (element: MapElement) => {
+    const position = findLandmarkDefault(element);
+    if (!position) return;
+    pushHistory();
+    const nextPoints = calibrationPointsRef.current.map((point) => point.name === normalizePlaceName(element.name)
+      ? { ...point, targetX: position.x, targetY: position.y }
+      : point);
+    calibrationPointsRef.current = nextPoints;
+    setCalibrationPoints(nextPoints);
+    if (nextPoints.some((point, index) => point.targetX !== calibrationPoints[index]?.targetX || point.targetY !== calibrationPoints[index]?.targetY)) setCalibrationDirty(true);
+    replaceElements((current) => current.map((item) => item.id === element.id
+      ? { ...item, x: position.x, y: position.y, anchorX: position.x, anchorY: position.y }
+      : item));
+    setToast(`${element.name}을 저장된 기본 위치로 이동했습니다.`);
+  };
+
+  const resetLandmarkPositions = () => {
+    const defaultsById = new Map(landmarkDefaultsRef.current.map((position) => [position.elementId, position]));
+    const defaultsByName = new Map(landmarkDefaultsRef.current.map((position) => [position.name, position]));
+    pushHistory();
+    const nextPoints = calibrationPointsRef.current.map((point) => {
+      const position = defaultsByName.get(point.name);
+      return position ? { ...point, targetX: position.x, targetY: position.y } : point;
+    });
+    calibrationPointsRef.current = nextPoints;
+    setCalibrationPoints(nextPoints);
+    setCalibrationDirty(true);
+    replaceElements((current) => current.map((element) => {
+      if (element.category !== "landmark") return element;
+      const position = defaultsById.get(element.id) ?? defaultsByName.get(normalizePlaceName(element.name));
+      if (!position) return element;
+      return { ...element, x: position.x, y: position.y, anchorX: position.x, anchorY: position.y };
+    }));
+    window.setTimeout(() => autoArrangeLabels(false, true), 0);
+    setToast(`랜드마크 ${landmarkDefaultsRef.current.length}곳을 사용자가 저장한 기본 위치로 초기화했습니다.`);
   };
 
   const runAddressLookup = async (places: DirectoryPlace[], movePlacedElements = false) => {
@@ -1604,7 +1700,7 @@ export default function Home() {
 
   const exportJson = () => {
     const payload = {
-      schemaVersion: 4, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted" },
+      schemaVersion: 5, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted", landmarkDefaults: "user-editable" },
       ...cloneDocument(currentDocument()),
     };
     download(`제주원도심_배치안_${layoutName.replaceAll(" ", "_")}.json`, JSON.stringify(payload, null, 2), "application/json");
@@ -1629,6 +1725,7 @@ export default function Home() {
           reviewNotes: Array.isArray(parsed.reviewNotes) ? parsed.reviewNotes : [],
           directoryPlaces: Array.isArray(parsed.directoryPlaces) ? parsed.directoryPlaces : defaultDirectoryPlaces,
           calibrationPoints: Array.isArray(parsed.calibrationPoints) ? parsed.calibrationPoints : initialCalibrationPoints,
+          landmarkDefaultPositions: Array.isArray(parsed.landmarkDefaultPositions) ? parsed.landmarkDefaultPositions : factoryLandmarkDefaultPositions,
         });
         setLayoutName(file.name.replace(/\.json$/i, "")); setToast("JSON 배치안을 불러왔습니다. 삭제 대상 장소는 자동 제외됩니다.");
       } catch { setToast("지원하지 않거나 손상된 JSON 파일입니다."); }
@@ -1717,7 +1814,10 @@ export default function Home() {
             <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
             <div className="group-size-row"><label>일반 마커<input type="number" min="0.8" max="15" step="0.1" value={markerGroupSize} onChange={(event) => setMarkerGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("marker", markerGroupSize)}>전체 적용</button></div>
-            <button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 랜드마크 위치 초기화</button>
+            <div className="landmark-default-actions">
+              <button onClick={saveAllLandmarksAsDefault}>현재 배치를 기본 위치로 저장</button>
+              <button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 저장된 기본 위치로 초기화</button>
+            </div>
           </div>
           </> : leftPanelMode === "places" ? <div className="place-directory">
             <div className="composition-helper">
@@ -1850,6 +1950,7 @@ export default function Home() {
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
             <section><div className="section-title"><strong>기본 정보</strong><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
             <section><div className="section-title"><strong>화면상 배치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selected.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selected.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
+            {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 위치</strong><span>초기화 기준</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 위치를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 위치로 이동</button></div><p className="field-help">이 값은 자동 저장·배치안·JSON에 포함됩니다. 전체 초기화 시 배치 위치와 실제 위치 앵커가 이 좌표로 돌아옵니다.</p></section>}
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedCalibrationPoint ? "보정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ 6점 보정 기준</b><span>{calibrationLiveApply ? "이 좌표를 바꾸면 가까운 장소가 실시간으로 함께 보정됩니다." : "기준점을 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요."}</span></div>}<div className="field-row"><label>X<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElement(selected.id, { anchorX: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElement(selected.id, { anchorY: clamp(Number(event.target.value), 0, 100) })} /></label></div><button className="wide-secondary" onClick={() => selectedCalibrationPoint ? switchLeftPanel("calibration") : updateElement(selected.id, { anchorX: selected.x, anchorY: selected.y })}>{selectedCalibrationPoint ? "좌표 보정 패널 열기" : "배치 위치를 앵커로 복사"}</button><p className="field-help">{selectedCalibrationPoint ? "기준점의 수정값은 거리 가중 방식으로 주변 장소에 적용됩니다." : "DB 주소 조회 결과 또는 사용자가 보정한 정규화 좌표가 저장됩니다. 자동 조회 좌표는 최종 검수가 필요합니다."}</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
             <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -60, 60) })} /></label><label>상하 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -60, 60) })} /></label></div><p className="field-help">투명 여백을 제외한 실제 아이콘 가장자리를 기준으로 배치됩니다. +X는 오른쪽, +Y는 아래쪽입니다.</p></section>
