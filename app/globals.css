@@ -212,6 +212,24 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .calibration-summary span { margin-top: 4px; color: #6d817b; font-size: 8px; line-height: 1.45; }
 .calibration-help { margin: 8px 2px 10px; color: #73817c; font-size: 8px; line-height: 1.55; }
 .calibration-list { display: grid; gap: 6px; }
+.calibration-folder { overflow: hidden; margin-top: 8px; border: 1px solid #d9e6e2; border-radius: 9px; background: white; }
+.calibration-folder-toggle { width: 100%; min-height: 36px; display: grid; grid-template-columns: 13px 20px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 8px; border: 0; background: #f4faf8; color: #45625b; cursor: pointer; text-align: left; }
+.calibration-folder-toggle:hover { background: #edf7f4; color: #286f66; }
+.calibration-folder-toggle:focus-visible { outline: 2px solid #83bcb2; outline-offset: -2px; }
+.calibration-folder-toggle > i { width: 19px; height: 19px; display: grid; place-items: center; border-radius: 50%; background: var(--emerald); color: white; font-size: 8px; font-style: normal; font-weight: 800; }
+.calibration-folder-toggle > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
+.calibration-folder-toggle > span:last-child { min-width: 22px; padding: 2px 5px; border-radius: 9px; background: white; color: #63756f; text-align: center; font-size: 7px; font-variant-numeric: tabular-nums; }
+.calibration-folder.secondary { border-color: #ded8ea; }
+.calibration-folder.secondary .calibration-folder-toggle { background: #f7f5fb; color: #62567f; }
+.calibration-folder.secondary .calibration-folder-toggle:hover { background: #f0ecf7; }
+.calibration-folder.secondary .calibration-folder-toggle > i { background: #7969a3; }
+.calibration-folder.tertiary { border-color: #ead9bd; }
+.calibration-folder.tertiary .calibration-folder-toggle { background: #fff9ef; color: #765a35; }
+.calibration-folder.tertiary .calibration-folder-toggle:hover { background: #fff4e3; }
+.calibration-folder.tertiary .calibration-folder-toggle > i { background: #bd8032; }
+.calibration-folder-items { display: grid; gap: 6px; padding: 6px; border-top: 1px solid #e4ece9; background: #fbfdfc; }
+.calibration-folder.secondary .calibration-folder-items { border-top-color: #e7e1ef; background: #fdfcff; }
+.calibration-folder.tertiary .calibration-folder-items { border-top-color: #eee0ca; background: #fffdf8; }
 .calibration-card { padding: 7px; border: 1px solid var(--line); border-radius: 9px; background: white; transition: border-color .15s, box-shadow .15s; }
 .calibration-card.active { border-color: #58a397; box-shadow: 0 0 0 2px rgb(63 146 135 / 10%); }
 .calibration-focus { width: 100%; display: grid; grid-template-columns: 23px minmax(0, 1fr); align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
@@ -230,12 +248,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .calibration-actions button.primary { border-color: var(--emerald); background: var(--emerald); color: white; }
 .calibration-actions button.primary.attention { box-shadow: 0 0 0 3px rgb(63 146 135 / 16%); animation: calibration-attention 1.2s ease-in-out infinite alternate; }
 .calibration-anchor-align { width: 100%; min-height: 31px; margin-top: 6px; border: 1px solid #8fc1b8; border-radius: 7px; background: #edf7f4; color: #286f66; cursor: pointer; font-size: 8px; font-weight: 700; }
-.secondary-calibration-list { margin-top: 10px; padding-top: 9px; border-top: 1px solid #dfe7e4; }
 .calibration-card.secondary { border-color: #d9d2e8; background: #fbf9fe; }
 .calibration-card.secondary .calibration-focus > b { background: #7969a3; }
 .calibration-card.tertiary { border-color: #e7cfa9; background: #fffaf2; }
 .calibration-card.tertiary .calibration-focus > b { background: #bd8032; }
-.tertiary-calibration-list { border-top-color: #eadbc3; }
 .secondary-empty { margin: 0; padding: 9px; border: 1px dashed #d8dedd; border-radius: 8px; color: #84908c; font-size: 8px; line-height: 1.45; }
 @keyframes calibration-attention { from { filter: brightness(.98); } to { filter: brightness(1.1); } }
 .calibration-warning { margin: 7px 2px 0; color: #9b6b32; font-size: 7px; line-height: 1.45; }

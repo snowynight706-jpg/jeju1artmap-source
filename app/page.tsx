@@ -34,6 +34,7 @@ const CALIBRATION_SETTINGS_KEY = "jeju-wondosim-map-review:calibration-settings:
 const LOCKED_COORDINATE_SETTINGS_KEY = "jeju-wondosim-map-review:locked-coordinate-settings:v1";
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
+const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 
 const categories = [
@@ -53,6 +54,7 @@ type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
 type ViewMode = "all" | "landmarks" | "markers" | "labels" | "anchors" | "clearance" | "collisions" | "dim" | "gray" | "nomap";
 type BaseMapMode = "svg" | "png" | "uploaded";
 type CoordinateLockFilter = "all" | "unlocked" | "locked";
+type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 
 type UploadedBaseMap = {
   available: boolean;
@@ -896,6 +898,11 @@ export default function Home() {
     park: false,
     utility: false,
   });
+  const [expandedCalibrationGroups, setExpandedCalibrationGroups] = useState<Record<CalibrationGroupId, boolean>>({
+    primary: true,
+    secondary: true,
+    tertiary: true,
+  });
   const [focusPulseId, setFocusPulseId] = useState<string | null>(null);
   const [geocodeProgress, setGeocodeProgress] = useState<{ active: boolean; done: number; total: number; found: number; failed: number }>({ active: false, done: 0, total: 0, found: 0, failed: 0 });
   const [leftOpen, setLeftOpen] = useState(true);
@@ -1342,6 +1349,17 @@ export default function Home() {
           }
         } catch {}
 
+        try {
+          const savedCalibrationGroups = JSON.parse(localStorage.getItem(CALIBRATION_GROUPS_KEY) ?? "null") as Partial<Record<CalibrationGroupId, boolean>> | null;
+          if (savedCalibrationGroups) {
+            setExpandedCalibrationGroups((current) => ({
+              primary: typeof savedCalibrationGroups.primary === "boolean" ? savedCalibrationGroups.primary : current.primary,
+              secondary: typeof savedCalibrationGroups.secondary === "boolean" ? savedCalibrationGroups.secondary : current.secondary,
+              tertiary: typeof savedCalibrationGroups.tertiary === "boolean" ? savedCalibrationGroups.tertiary : current.tertiary,
+            }));
+          }
+        } catch {}
+
         const persistentCalibration = (() => {
           try {
             return JSON.parse(localStorage.getItem(CALIBRATION_SETTINGS_KEY) ?? "null") as { calibrationPoints?: CalibrationPoint[]; landmarkDefaultPositions?: LandmarkDefaultPosition[]; updatedAt?: string } | null;
@@ -1451,6 +1469,13 @@ export default function Home() {
       localStorage.setItem(VISIBILITY_GROUPS_KEY, JSON.stringify(expandedVisibilityGroups));
     } catch {}
   }, [expandedVisibilityGroups, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(CALIBRATION_GROUPS_KEY, JSON.stringify(expandedCalibrationGroups));
+    } catch {}
+  }, [expandedCalibrationGroups, hydrated]);
 
   useEffect(() => {
     if (!hydrated || !primaryCalibrationRemoteReady) return;
@@ -2754,48 +2779,61 @@ export default function Home() {
             </div>
             <label className="calibration-live-toggle"><input type="checkbox" checked={calibrationLiveApply} onChange={(event) => { setCalibrationLiveApply(event.target.checked); if (event.target.checked && calibrationDirty) applyCalibrationToAll(); }} /><span><b>실시간 보정</b><small>끄면 기준점만 옮기고 버튼으로 일괄 적용</small></span></label>
             <p className="calibration-help">1차 기준점 6곳으로 전체를 맞추고, 확정 랜드마크를 2차 지역 기준으로 사용합니다. 그 밖의 좌표 고정 요소는 실제 주소 좌표가 확인된 경우 자동으로 3차 근거리 기준점이 되어 주변 미고정 장소의 대략적 위치를 보완합니다.</p>
-            <div className="calibration-list">
-              {calibrationPoints.map((point, index) => {
-                const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
-                return <article key={point.id} className={`calibration-card ${selectedId === element?.id ? "active" : ""}`}>
-                  <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
-                    <b>{index + 1}</b><span><strong>{point.name}</strong><small>보정 ΔX {(point.targetX - point.sourceX).toFixed(1)} · ΔY {(point.targetY - point.sourceY).toFixed(1)}</small></span>
-                  </button>
-                  <div className="calibration-coordinate-row">
-                    <label>X<input disabled={Boolean(element?.locked)} type="number" min="0" max="100" step="0.1" value={point.targetX.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetX: Number(event.target.value) })} /></label>
-                    <label>Y<input disabled={Boolean(element?.locked)} type="number" min="0" max="100" step="0.1" value={point.targetY.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetY: Number(event.target.value) })} /></label>
-                    <div className="calibration-nudge" aria-label={`${point.name} 미세 이동`}>
-                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY - 0.1 })} aria-label="위로">↑</button>
-                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX - 0.1 })} aria-label="왼쪽으로">←</button>
-                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX + 0.1 })} aria-label="오른쪽으로">→</button>
-                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY + 0.1 })} aria-label="아래로">↓</button>
+            <section className={`calibration-folder primary ${expandedCalibrationGroups.primary ? "expanded" : "collapsed"}`}>
+              <button type="button" className="calibration-folder-toggle" aria-expanded={expandedCalibrationGroups.primary} aria-controls="calibration-group-primary" onClick={() => setExpandedCalibrationGroups((current) => ({ ...current, primary: !current.primary }))}>
+                <span className="marker-folder-icon" aria-hidden="true">{expandedCalibrationGroups.primary ? "▾" : "▸"}</span><i>1</i><strong>1차 전체 기준점</strong><span>{calibrationPoints.length}</span>
+              </button>
+              {expandedCalibrationGroups.primary && <div id="calibration-group-primary" className="calibration-folder-items calibration-list">
+                {calibrationPoints.map((point, index) => {
+                  const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
+                  return <article key={point.id} className={`calibration-card ${selectedId === element?.id ? "active" : ""}`}>
+                    <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
+                      <b>{index + 1}</b><span><strong>{point.name}</strong><small>보정 ΔX {(point.targetX - point.sourceX).toFixed(1)} · ΔY {(point.targetY - point.sourceY).toFixed(1)}</small></span>
+                    </button>
+                    <div className="calibration-coordinate-row">
+                      <label>X<input disabled={Boolean(element?.locked)} type="number" min="0" max="100" step="0.1" value={point.targetX.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetX: Number(event.target.value) })} /></label>
+                      <label>Y<input disabled={Boolean(element?.locked)} type="number" min="0" max="100" step="0.1" value={point.targetY.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetY: Number(event.target.value) })} /></label>
+                      <div className="calibration-nudge" aria-label={`${point.name} 미세 이동`}>
+                        <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY - 0.1 })} aria-label="위로">↑</button>
+                        <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX - 0.1 })} aria-label="왼쪽으로">←</button>
+                        <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX + 0.1 })} aria-label="오른쪽으로">→</button>
+                        <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY + 0.1 })} aria-label="아래로">↓</button>
+                      </div>
                     </div>
-                  </div>
-                </article>;
-              })}
-            </div>
-            <div className="secondary-calibration-list">
-              <div className="review-list-head"><strong>2차 확정 기준점</strong><span>{secondaryCalibrationPoints.length}</span></div>
-              {secondaryCalibrationPoints.length ? secondaryCalibrationPoints.map((point) => {
-                const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
-                return <article key={point.id} className={`calibration-card secondary ${selectedId === element?.id ? "active" : ""}`}>
-                  <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
-                    <b>S</b><span><strong>{point.name}</strong><small>기본 앵커 {point.targetX.toFixed(1)}, {point.targetY.toFixed(1)} · 주변 보정 고정점</small></span>
-                  </button>
-                </article>;
-              }) : <p className="secondary-empty">랜드마크의 기본 위치를 확정하면 여기에 추가됩니다.</p>}
-            </div>
-            <div className="secondary-calibration-list tertiary-calibration-list">
-              <div className="review-list-head"><strong>3차 고정 좌표 기준점</strong><span>{tertiaryCalibrationPoints.length}</span></div>
-              {tertiaryCalibrationPoints.length ? tertiaryCalibrationPoints.map((point) => {
-                const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
-                return <article key={point.id} className={`calibration-card tertiary ${selectedId === element?.id ? "active" : ""}`}>
-                  <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
-                    <b>3</b><span><strong>{point.name}</strong><small>고정 앵커 {point.targetX.toFixed(1)}, {point.targetY.toFixed(1)} · 근거리 보정</small></span>
-                  </button>
-                </article>;
-              }) : <p className="secondary-empty">실제 주소 좌표가 있는 요소를 좌표 고정하면 자동으로 추가됩니다.</p>}
-            </div>
+                  </article>;
+                })}
+              </div>}
+            </section>
+            <section className={`calibration-folder secondary ${expandedCalibrationGroups.secondary ? "expanded" : "collapsed"}`}>
+              <button type="button" className="calibration-folder-toggle" aria-expanded={expandedCalibrationGroups.secondary} aria-controls="calibration-group-secondary" onClick={() => setExpandedCalibrationGroups((current) => ({ ...current, secondary: !current.secondary }))}>
+                <span className="marker-folder-icon" aria-hidden="true">{expandedCalibrationGroups.secondary ? "▾" : "▸"}</span><i>2</i><strong>2차 확정 기준점</strong><span>{secondaryCalibrationPoints.length}</span>
+              </button>
+              {expandedCalibrationGroups.secondary && <div id="calibration-group-secondary" className="calibration-folder-items">
+                {secondaryCalibrationPoints.length ? secondaryCalibrationPoints.map((point) => {
+                  const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
+                  return <article key={point.id} className={`calibration-card secondary ${selectedId === element?.id ? "active" : ""}`}>
+                    <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
+                      <b>S</b><span><strong>{point.name}</strong><small>기본 앵커 {point.targetX.toFixed(1)}, {point.targetY.toFixed(1)} · 주변 보정 고정점</small></span>
+                    </button>
+                  </article>;
+                }) : <p className="secondary-empty">랜드마크의 기본 위치를 확정하면 여기에 추가됩니다.</p>}
+              </div>}
+            </section>
+            <section className={`calibration-folder tertiary ${expandedCalibrationGroups.tertiary ? "expanded" : "collapsed"}`}>
+              <button type="button" className="calibration-folder-toggle" aria-expanded={expandedCalibrationGroups.tertiary} aria-controls="calibration-group-tertiary" onClick={() => setExpandedCalibrationGroups((current) => ({ ...current, tertiary: !current.tertiary }))}>
+                <span className="marker-folder-icon" aria-hidden="true">{expandedCalibrationGroups.tertiary ? "▾" : "▸"}</span><i>3</i><strong>3차 고정 좌표 기준점</strong><span>{tertiaryCalibrationPoints.length}</span>
+              </button>
+              {expandedCalibrationGroups.tertiary && <div id="calibration-group-tertiary" className="calibration-folder-items">
+                {tertiaryCalibrationPoints.length ? tertiaryCalibrationPoints.map((point) => {
+                  const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
+                  return <article key={point.id} className={`calibration-card tertiary ${selectedId === element?.id ? "active" : ""}`}>
+                    <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
+                      <b>3</b><span><strong>{point.name}</strong><small>고정 앵커 {point.targetX.toFixed(1)}, {point.targetY.toFixed(1)} · 근거리 보정</small></span>
+                    </button>
+                  </article>;
+                }) : <p className="secondary-empty">실제 주소 좌표가 있는 요소를 좌표 고정하면 자동으로 추가됩니다.</p>}
+              </div>}
+            </section>
             <div className="calibration-actions">
               <button className={`primary ${calibrationDirty ? "attention" : ""}`} onClick={applyCalibrationToAll}>전체 좌표 보정 적용{calibrationDirty ? " · 변경 있음" : ""}</button>
               <button onClick={resetCalibrationPoints}>1차 6점 초기화</button>
