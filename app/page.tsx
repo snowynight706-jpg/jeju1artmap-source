@@ -615,6 +615,7 @@ export default function Home() {
   const [calibrationDirty, setCalibrationDirty] = useState(false);
   const [showCalibrationSource, setShowCalibrationSource] = useState(true);
   const [assetVisualBounds, setAssetVisualBounds] = useState<Record<string, VisualBounds>>({});
+  const [labelsRefreshing, setLabelsRefreshing] = useState(false);
   const [interaction, setInteraction] = useState<
     | { type: "pan"; startX: number; startY: number; panX: number; panY: number }
     | { type: "drag"; id: string; offsetX: number; offsetY: number }
@@ -1460,11 +1461,24 @@ export default function Home() {
       .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || b.z - a.z);
     if (!candidates.length) {
       setToast("자동 정리할 표시 라벨이 없습니다.");
+      setLabelsRefreshing(false);
       return;
     }
     if (record) pushHistory();
     const assetById = new Map(assetsRef.current.map((asset) => [asset.id, asset]));
-    const occupied: NormalizedRect[] = elementsRef.current.filter((element) => element.category === "landmark").map((element) => {
+    const stageRect = stageRef.current?.getBoundingClientRect();
+    const measuredLabelSizes = new Map<string, { width: number; height: number }>();
+    if (stageRect?.width && stageRect.height) {
+      stageRef.current?.querySelectorAll<HTMLElement>("[data-label-id]").forEach((label) => {
+        const id = label.dataset.labelId;
+        const rect = label.getBoundingClientRect();
+        if (id && rect.width && rect.height) measuredLabelSizes.set(id, {
+          width: rect.width / stageRect.width * 100,
+          height: rect.height / stageRect.height * 100,
+        });
+      });
+    }
+    const iconRects = elementsRef.current.map((element) => {
       const asset = element.assetId ? assetById.get(element.assetId) : undefined;
       const bounds = asset ? assetVisualBounds[asset.id] : undefined;
       const leftFactor = bounds?.left ?? 0.05;
@@ -1472,49 +1486,167 @@ export default function Home() {
       const topFactor = bounds?.top ?? 0.05;
       const bottomFactor = bounds?.bottom ?? 0.95;
       const elementHeight = element.size * MAP_ASPECT / 1.12;
-      return {
+      return { id: element.id, category: element.category, rect: {
+        left: element.x + (leftFactor - 0.5) * element.size,
+        right: element.x + (rightFactor - 0.5) * element.size,
+        top: element.y + (topFactor - 0.5) * elementHeight,
+        bottom: element.y + (bottomFactor - 0.5) * elementHeight,
+      } };
+    });
+    const updates = new Map<string, Pick<MapElement, "labelPosition" | "labelOffsetX" | "labelOffsetY">>();
+    const placedLabels: Array<{ id: string; category: CategoryId; rect: NormalizedRect }> = [];
+    const positionOrder: LabelPosition[] = ["bottom", "top", "right", "left"];
+    const lateralShifts = [0, -18, 18, -36, 36, -54, 54, -72, 72, -96, 96, -120, 120, -144, 144, -160, 160];
+    const outwardShifts = [0, 12, 24, 36, 48, 64, 84, 108, 136, 160];
+    candidates.forEach((element) => {
+      const asset = element.assetId ? assetById.get(element.assetId) : undefined;
+      const bounds = asset ? assetVisualBounds[asset.id] : undefined;
+      const leftFactor = bounds?.left ?? 0.05;
+      const rightFactor = bounds?.right ?? 0.95;
+      const topFactor = bounds?.top ?? 0.05;
+      const bottomFactor = bounds?.bottom ?? 0.95;
+      const characterCount = Array.from(element.name).length;
+      const measuredLabel = measuredLabelSizes.get(element.id);
+      const labelWidth = measuredLabel?.width ?? clamp((characterCount * 0.8 + 1.05) / Math.max(zoom, 0.22), 2.8, 28);
+      const labelHeight = measuredLabel?.height ?? 1.72 / Math.max(zoom, 0.22);
+      const elementHeight = element.size * MAP_ASPECT / 1.12;
+      const visualRect = {
         left: element.x + (leftFactor - 0.5) * element.size,
         right: element.x + (rightFactor - 0.5) * element.size,
         top: element.y + (topFactor - 0.5) * elementHeight,
         bottom: element.y + (bottomFactor - 0.5) * elementHeight,
       };
-    });
-    const updates = new Map<string, Pick<MapElement, "labelPosition" | "labelOffsetX" | "labelOffsetY">>();
-    const positionOrder: LabelPosition[] = ["bottom", "top", "right", "left"];
-    const shifts = [0, -22, 22, -44, 44, -60, 60];
-    candidates.forEach((element) => {
-      const characterCount = Array.from(element.name).length;
-      const labelWidth = clamp(characterCount * 0.78 + 1.1, 2.8, 21);
-      const labelHeight = 1.65;
-      const elementHeight = element.size * MAP_ASPECT / 1.12;
-      const gapX = 0.7 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
-      const gapY = 0.7 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+      const visualCenterX = (visualRect.left + visualRect.right) / 2;
+      const visualCenterY = (visualRect.top + visualRect.bottom) / 2;
+      const gapX = 0.42 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
+      const gapY = 0.42 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
       const orderedPositions = [element.labelPosition, ...positionOrder.filter((position) => position !== element.labelPosition)];
-      let best: { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number } | null = null;
-      orderedPositions.forEach((position, positionIndex) => shifts.forEach((shift) => {
-        const offsetX = position === "top" || position === "bottom" ? shift : 0;
-        const offsetY = position === "left" || position === "right" ? shift : 0;
+      let best: { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number; collisions: number } | null = null;
+      orderedPositions.forEach((position, positionIndex) => lateralShifts.forEach((lateralShift) => outwardShifts.forEach((outwardShift) => {
+        const offsetX = position === "top" || position === "bottom"
+          ? lateralShift
+          : position === "left" ? -outwardShift : outwardShift;
+        const offsetY = position === "left" || position === "right"
+          ? lateralShift
+          : position === "top" ? -outwardShift : outwardShift;
         const normalizedOffsetX = offsetX / EXPORT_CANONICAL_WIDTH * 100;
         const normalizedOffsetY = offsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
-        let centerX = element.x + normalizedOffsetX;
-        let centerY = element.y + normalizedOffsetY;
-        if (position === "top") centerY -= elementHeight / 2 + gapY + labelHeight / 2;
-        if (position === "bottom") centerY += elementHeight / 2 + gapY + labelHeight / 2;
-        if (position === "left") centerX -= element.size / 2 + gapX + labelWidth / 2;
-        if (position === "right") centerX += element.size / 2 + gapX + labelWidth / 2;
+        let centerX = visualCenterX + normalizedOffsetX;
+        let centerY = visualCenterY + normalizedOffsetY;
+        if (position === "top") centerY = visualRect.top - gapY - labelHeight / 2 + normalizedOffsetY;
+        if (position === "bottom") centerY = visualRect.bottom + gapY + labelHeight / 2 + normalizedOffsetY;
+        if (position === "left") centerX = visualRect.left - gapX - labelWidth / 2 + normalizedOffsetX;
+        if (position === "right") centerX = visualRect.right + gapX + labelWidth / 2 + normalizedOffsetX;
         const rect = { left: centerX - labelWidth / 2, right: centerX + labelWidth / 2, top: centerY - labelHeight / 2, bottom: centerY + labelHeight / 2 };
-        const overlapCount = occupied.reduce((count, item) => count + (rectsOverlap(rect, item) ? 1 : 0), 0);
+        const labelOverlapCount = placedLabels.reduce((count, item) => count + (rectsOverlap(rect, item.rect, 0.22) ? 1 : 0), 0);
+        const iconOverlapScore = iconRects.reduce((score, item) => {
+          if (item.id === element.id || !rectsOverlap(rect, item.rect, 0.14)) return score;
+          return score + (item.category === "landmark" ? 3 : 1);
+        }, 0);
         const overflow = Math.max(0, -rect.left) + Math.max(0, rect.right - 100) + Math.max(0, -rect.top) + Math.max(0, rect.bottom - 100);
-        const score = overlapCount * 1000 + overflow * 100 + positionIndex * 3 + Math.abs(shift) / 22;
-        if (!best || score < best.score) best = { rect, position, offsetX, offsetY, score };
-      }));
-      const selectedBest = best as { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number } | null;
+        const collisions = labelOverlapCount + iconOverlapScore;
+        const distancePenalty = (Math.abs(lateralShift) + Math.abs(outwardShift) * 1.25) / 18;
+        const score = labelOverlapCount * 12000 + iconOverlapScore * 7000 + overflow * 4000 + positionIndex * 4 + distancePenalty;
+        if (!best || score < best.score) best = { rect, position, offsetX, offsetY, score, collisions };
+      })));
+      const selectedBest = best as { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number; collisions: number } | null;
       if (!selectedBest) return;
-      occupied.push(selectedBest.rect);
+      placedLabels.push({ id: element.id, category: element.category, rect: selectedBest.rect });
       updates.set(element.id, { labelPosition: selectedBest.position, labelOffsetX: selectedBest.offsetX, labelOffsetY: selectedBest.offsetY });
     });
     replaceElements((current) => current.map((element) => updates.has(element.id) ? { ...element, ...updates.get(element.id)! } : element));
-    if (notify) setToast(`전체 좌표와 라벨 ${updates.size}개를 정리했습니다. 랜드마크 라벨을 먼저 배치했습니다.`);
+    window.setTimeout(() => resolveRenderedLabelOverlaps(updates.size, notify), 0);
+  };
+
+  function resolveRenderedLabelOverlaps(total: number, notify: boolean, pass = 0) {
+    window.requestAnimationFrame(() => {
+      const stage = stageRef.current;
+      if (!stage) {
+        setLabelsRefreshing(false);
+        return;
+      }
+      const priority = new Map([...elementsRef.current]
+        .filter((element) => element.labelVisible)
+        .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || b.z - a.z)
+        .map((element, index) => [element.id, index]));
+      const nodes = [...stage.querySelectorAll<HTMLElement>("[data-label-id]")]
+        .map((node) => {
+          const id = node.dataset.labelId;
+          const element = elementsRef.current.find((item) => item.id === id);
+          return id && element ? { id, element, rect: node.getBoundingClientRect() } : null;
+        })
+        .filter((item): item is { id: string; element: MapElement; rect: DOMRect } => Boolean(item?.rect.width && item.rect.height))
+        .sort((a, b) => (priority.get(a.id) ?? 9999) - (priority.get(b.id) ?? 9999));
+      const overlaps = (a: DOMRect | NormalizedRect, b: DOMRect | NormalizedRect, margin = 4) => (
+        a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin
+      );
+      const shiftRect = (rect: DOMRect | NormalizedRect, dx: number, dy: number): NormalizedRect => ({
+        left: rect.left + dx, right: rect.right + dx, top: rect.top + dy, bottom: rect.bottom + dy,
+      });
+      const stageRect = stage.getBoundingClientRect();
+      const fixed: Array<{ id: string; rect: NormalizedRect }> = [];
+      const adjustments = new Map<string, { x: number; y: number }>();
+
+      nodes.forEach((item) => {
+        let current: NormalizedRect = { left: item.rect.left, right: item.rect.right, top: item.rect.top, bottom: item.rect.bottom };
+        let deltaX = 0;
+        let deltaY = 0;
+        for (let attempt = 0; attempt < Math.max(4, fixed.length * 3); attempt += 1) {
+          const conflict = fixed.find((placed) => overlaps(current, placed.rect));
+          if (!conflict) break;
+          const margin = 5;
+          const moves = [
+            { x: conflict.rect.left - margin - current.right, y: 0 },
+            { x: conflict.rect.right + margin - current.left, y: 0 },
+            { x: 0, y: conflict.rect.top - margin - current.bottom },
+            { x: 0, y: conflict.rect.bottom + margin - current.top },
+          ];
+          const bestMove = moves.map((move) => {
+            const candidate = shiftRect(current, move.x, move.y);
+            const collisionCount = fixed.reduce((count, placed) => count + (overlaps(candidate, placed.rect) ? 1 : 0), 0);
+            const overflow = Math.max(0, stageRect.left - candidate.left) + Math.max(0, candidate.right - stageRect.right)
+              + Math.max(0, stageRect.top - candidate.top) + Math.max(0, candidate.bottom - stageRect.bottom);
+            return { ...move, candidate, score: collisionCount * 10000 + overflow * 120 + Math.abs(move.x) + Math.abs(move.y) };
+          }).sort((a, b) => a.score - b.score)[0];
+          current = bestMove.candidate;
+          deltaX += bestMove.x;
+          deltaY += bestMove.y;
+        }
+        fixed.push({ id: item.id, rect: current });
+        if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) adjustments.set(item.id, { x: deltaX, y: deltaY });
+      });
+
+      if (adjustments.size && pass < 5) {
+        const scale = Math.max(zoom, 0.22);
+        replaceElements((current) => current.map((element) => {
+          const adjustment = adjustments.get(element.id);
+          return adjustment ? {
+            ...element,
+            labelOffsetX: clamp(element.labelOffsetX + adjustment.x / scale, -240, 240),
+            labelOffsetY: clamp(element.labelOffsetY + adjustment.y / scale, -240, 240),
+          } : element;
+        }));
+        window.setTimeout(() => resolveRenderedLabelOverlaps(total, notify, pass + 1), 0);
+        return;
+      }
+
+      let remaining = 0;
+      for (let index = 0; index < nodes.length; index += 1) for (let other = index + 1; other < nodes.length; other += 1) {
+        if (overlaps(nodes[index].rect, nodes[other].rect, 0)) remaining += 1;
+      }
+      if (notify) setToast(remaining
+        ? `라벨 위치 ${total}개를 새로고침했습니다. 밀집 구간 겹침 ${remaining}건은 개별 조정해 주세요.`
+        : `라벨 위치 ${total}개를 새로고침했습니다. 랜드마크 우선으로 겹침 없이 정리했습니다.`);
+      setLabelsRefreshing(false);
+    });
+  }
+
+  const refreshLabelPositions = () => {
+    if (labelsRefreshing) return;
+    setLabelsRefreshing(true);
+    window.requestAnimationFrame(() => {
+      autoArrangeLabels(true, true);
+    });
   };
 
   const moveLayer = (direction: "front" | "back" | "forward" | "backward") => {
@@ -1902,7 +2034,7 @@ export default function Home() {
         {!leftOpen && <button className="panel-reopen left" onClick={() => setLeftOpen(true)}>자산 ›</button>}
 
         <section className="canvas-column">
-          <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className="inline-tool" onClick={() => autoArrangeLabels()}>라벨 자동 정리</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className="canvas-hint">{calibrationMode ? "기준점 이동 → 전체 좌표 보정 적용" : "휠 확대 · 빈 공간 드래그 · 방향키 미세 조정"}</div></div>
+          <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className="canvas-hint">{calibrationMode ? "기준점 이동 → 전체 좌표 보정 적용" : "휠 확대 · 빈 공간 드래그 · 방향키 미세 조정"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${memoMode ? "memo-cursor" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
               <div className={`map-stage ${stageMapClass} ${calibrationMode ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={handleStagePointerDown}>
@@ -1926,7 +2058,7 @@ export default function Home() {
                     {(viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>
                     {element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {element.labelVisible && <div className="label" style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, asset ? assetVisualBounds[asset.id] : undefined)}>{element.name}</div>}
+                    {element.labelVisible && <div className="label" data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, asset ? assetVisualBounds[asset.id] : undefined)}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -1953,7 +2085,7 @@ export default function Home() {
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 위치</strong><span>초기화 기준</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 위치를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 위치로 이동</button></div><p className="field-help">이 값은 자동 저장·배치안·JSON에 포함됩니다. 전체 초기화 시 배치 위치와 실제 위치 앵커가 이 좌표로 돌아옵니다.</p></section>}
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedCalibrationPoint ? "보정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ 6점 보정 기준</b><span>{calibrationLiveApply ? "이 좌표를 바꾸면 가까운 장소가 실시간으로 함께 보정됩니다." : "기준점을 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요."}</span></div>}<div className="field-row"><label>X<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElement(selected.id, { anchorX: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElement(selected.id, { anchorY: clamp(Number(event.target.value), 0, 100) })} /></label></div><button className="wide-secondary" onClick={() => selectedCalibrationPoint ? switchLeftPanel("calibration") : updateElement(selected.id, { anchorX: selected.x, anchorY: selected.y })}>{selectedCalibrationPoint ? "좌표 보정 패널 열기" : "배치 위치를 앵커로 복사"}</button><p className="field-help">{selectedCalibrationPoint ? "기준점의 수정값은 거리 가중 방식으로 주변 장소에 적용됩니다." : "DB 주소 조회 결과 또는 사용자가 보정한 정규화 좌표가 저장됩니다. 자동 조회 좌표는 최종 검수가 필요합니다."}</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
-            <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -60, 60) })} /></label><label>상하 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -60, 60) })} /></label></div><p className="field-help">투명 여백을 제외한 실제 아이콘 가장자리를 기준으로 배치됩니다. +X는 오른쪽, +Y는 아래쪽입니다.</p></section>
+            <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">투명 여백을 제외한 실제 아이콘 가장자리를 기준으로 배치됩니다. 새로고침은 랜드마크 라벨을 먼저 고정한 뒤 나머지 겹침을 피하며, 실행 후에도 개별 미세 조정할 수 있습니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => updateElement(selected.id, { locked: !selected.locked })}>{selected.locked ? "잠금 해제" : "잠금"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>

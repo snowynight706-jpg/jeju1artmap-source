@@ -211,6 +211,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .inline-memo.active { border-color: #d89a4b; background: #fff5e8; color: #995f19; }
 .inline-tool:hover { border-color: #b7d2cc; background: var(--emerald-soft); color: #2d7268; }
 .inline-tool:disabled { cursor: wait; opacity: .62; }
+.inline-tool.label-refresh { display: inline-flex; align-items: center; gap: 5px; border-color: #9fcac2; background: #edf7f4; color: #286f66; font-weight: 700; }
+.inline-tool.label-refresh span { display: inline-block; font-size: 13px; line-height: 1; }
+.inline-tool.label-refresh.refreshing span { animation: spin .65s linear infinite; }
 .map-viewport { position: relative; min-height: 0; overflow: hidden; cursor: grab; background-color: #e5e9e7; background-image: radial-gradient(#ccd4d0 1px, transparent 1px); background-size: 18px 18px; touch-action: none; }
 .map-viewport.is-panning { cursor: grabbing; }
 .map-viewport.memo-cursor { cursor: crosshair; }
