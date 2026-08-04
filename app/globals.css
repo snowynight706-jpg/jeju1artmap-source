@@ -176,6 +176,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .marker-visibility-row b { color: #4f605a; font-size: 8px; }
 .marker-visibility-row small { margin-top: 2px; color: #84908c; font-size: 7px; }
 .marker-visibility-row button { height: 25px; border: 1px solid var(--line); border-radius: 6px; background: white; color: #537168; cursor: pointer; font-size: 7px; }
+.unified-place-panel { margin-bottom: 12px; }
+.unified-place-list { max-height: calc(100vh - 500px); min-height: 180px; }
+.unified-place-row.hidden { opacity: 1; background: #f4f6f5; }
+.unified-place-row.hidden b { color: #7d8985; }
+.unified-place-row.hidden button { border-style: dashed; background: #fbfcfc; }
 .place-type { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid; border-radius: 8px; font-size: 10px; font-weight: 800; }
 .place-copy { min-width: 0; }
 .place-copy strong, .place-copy small, .place-copy em { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -316,6 +321,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .coordinate-lock-toggle input { position: absolute; width: 1px !important; height: 1px !important; opacity: 0; pointer-events: none; }
 .coordinate-lock-toggle span { display: block; min-width: 72px; padding: 4px 7px; border: 1px solid #d0dad7; border-radius: 11px; background: #f0f3f2; color: #72807b; text-align: center; font-size: 8px; font-weight: 700; cursor: pointer; }
 .coordinate-lock-toggle.active span { border-color: #aa8b68; background: #f6eadc; color: #815d35; }
+.label-lock-toggle span { min-width: 76px; }
+.label-lock-toggle.active span { border-color: #7b9fca; background: #eaf2fb; color: #416c9d; }
 .status-pill { padding: 3px 6px; border-radius: 10px; font-size: 8px !important; }
 .status-pill.review { background: #fff0dc; color: #9a641d; }.status-pill.unchecked { background: #ecefed; color: #69736f; }.status-pill.approved { background: var(--emerald-soft); color: #2d756b; }
 .property-form label { display: block; margin-top: 9px; color: #65716d; font-size: 9px; }

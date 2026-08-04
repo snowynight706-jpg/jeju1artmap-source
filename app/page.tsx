@@ -88,6 +88,7 @@ type MapElement = {
   size: number;
   z: number;
   labelVisible: boolean;
+  labelLocked: boolean;
   labelPosition: LabelPosition;
   labelGap: number;
   labelOffsetX: number;
@@ -121,6 +122,17 @@ type DirectoryPlace = {
   priority?: string;
   latitude?: number;
   longitude?: number;
+};
+
+type UnifiedPlaceRow = {
+  id: string;
+  name: string;
+  category: CategoryId;
+  address: string;
+  area: string;
+  sourceLabel: string;
+  place?: DirectoryPlace;
+  element?: MapElement;
 };
 
 type ReviewNote = {
@@ -160,6 +172,7 @@ type DocumentState = {
 
 const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" | "anchorX" | "anchorY" | "size" | "z"> = {
   labelVisible: false,
+  labelLocked: false,
   labelPosition: "bottom",
   labelGap: 8,
   labelOffsetX: 0,
@@ -439,6 +452,7 @@ const builtInMarkerAssets: MapAsset[] = bundledMarkerAssets.map((asset) => ({
 }));
 
 const builtInAssets: MapAsset[] = [...builtInLandmarkAssets, ...builtInMarkerAssets];
+const canonicalMarkerAssetIds = new Set(builtInMarkerAssets.map((asset) => asset.id));
 
 function isBundledMarkerCategory(category: CategoryId): category is BundledMarkerCategory {
   return category !== "landmark";
@@ -577,23 +591,71 @@ function cloneDocument(document: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(document)) as DocumentState;
 }
 
+function uniqueRuntimeId(prefix: "element" | "asset" | "review", existingIds: Iterable<string>) {
+  const used = new Set(existingIds);
+  let candidate = "";
+  do {
+    const token = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    candidate = `${prefix}-${token}`;
+  } while (used.has(candidate));
+  return candidate;
+}
+
+function recoveredElementId(element: MapElement, index: number, used: Set<string>) {
+  const identity = (element.directoryId || `${element.category}-${normalizePlaceName(element.name)}`)
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9가-힣_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 52) || "marker";
+  let candidate = `recovered-${identity}-${index + 1}`;
+  let suffix = 2;
+  while (used.has(candidate)) candidate = `recovered-${identity}-${index + 1}-${suffix++}`;
+  return candidate;
+}
+
+function ensureIndependentElementIdentity(elements: MapElement[]) {
+  const usedIds = new Set<string>();
+  const usedDirectoryIds = new Set<string>();
+  return elements.map((element, index) => {
+    const requestedId = typeof element.id === "string" ? element.id.trim() : "";
+    const id = requestedId && !usedIds.has(requestedId)
+      ? requestedId
+      : recoveredElementId(element, index, usedIds);
+    usedIds.add(id);
+
+    const directoryId = element.directoryId?.trim();
+    const hasIndependentDirectoryBinding = Boolean(directoryId) && !usedDirectoryIds.has(directoryId!);
+    if (hasIndependentDirectoryBinding) usedDirectoryIds.add(directoryId!);
+    return {
+      ...element,
+      id,
+      directoryId: hasIndependentDirectoryBinding ? directoryId : undefined,
+    };
+  });
+}
+
 function sanitizeDocument(document: DocumentState): DocumentState {
+  const sanitizedElements = document.elements
+    .filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim()))
+    .map((element) => {
+      const normalized = {
+        ...elementDefaults,
+        ...element,
+        locked: Boolean(element.locked),
+        labelLocked: Boolean(element.labelLocked),
+        mapVisible: element.mapVisible !== false,
+      };
+      const defaultAssetId = defaultMarkerAssetId(normalized.category);
+      const needsCanonicalMarker = normalized.category !== "landmark"
+        && (!normalized.assetId || !canonicalMarkerAssetIds.has(normalized.assetId));
+      return needsCanonicalMarker && defaultAssetId
+        ? { ...normalized, assetId: defaultAssetId, status: "review" as AssetStatus }
+        : normalized;
+    });
   return {
     ...document,
-    elements: document.elements
-      .filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim()))
-      .map((element) => {
-        const normalized = {
-          ...elementDefaults,
-          ...element,
-          locked: Boolean(element.locked),
-          mapVisible: element.mapVisible !== false,
-        };
-        const defaultAssetId = defaultMarkerAssetId(normalized.category);
-        return !normalized.assetId && defaultAssetId
-          ? { ...normalized, assetId: defaultAssetId, status: "review" as AssetStatus }
-          : normalized;
-      }),
+    elements: ensureIndependentElementIdentity(sanitizedElements),
+    assets: document.assets.filter((asset) => asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id)),
     directoryPlaces: document.directoryPlaces?.filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim())),
   };
 }
@@ -650,9 +712,6 @@ export default function Home() {
   const dbInputRef = useRef<HTMLInputElement>(null);
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const geocodeRunRef = useRef(0);
-  const nextIdRef = useRef(100);
-  const nextAssetIdRef = useRef(0);
-  const nextNoteIdRef = useRef(0);
   const elementsRef = useRef<MapElement[]>(initialElements);
   const assetsRef = useRef<MapAsset[]>(builtInAssets);
   const notesRef = useRef<ReviewNote[]>([]);
@@ -739,12 +798,18 @@ export default function Home() {
     const hadCalibration = clean.calibrationPoints?.length === initialCalibrationPoints.length;
     const restoredCalibrationPoints = hadCalibration ? clean.calibrationPoints! : initialCalibrationPoints;
     const restoredLandmarkDefaults = Array.isArray(clean.landmarkDefaultPositions) && clean.landmarkDefaultPositions.length
-      ? clean.landmarkDefaultPositions.map((position) => ({
-          ...position,
-          x: clamp(position.x, 0, 100),
-          y: clamp(position.y, 0, 100),
-          confirmed: Boolean(position.confirmed),
-        }))
+      ? clean.landmarkDefaultPositions.map((position) => {
+          const matchingLandmark = clean.elements.find((element) => (
+            element.category === "landmark" && normalizePlaceName(element.name) === normalizePlaceName(position.name)
+          ));
+          return {
+            ...position,
+            elementId: matchingLandmark?.id ?? position.elementId,
+            x: clamp(position.x, 0, 100),
+            y: clamp(position.y, 0, 100),
+            confirmed: Boolean(position.confirmed),
+          };
+        })
       : factoryLandmarkDefaultPositions.map((position) => ({ ...position }));
     const restoredEffectivePoints = buildEffectiveCalibrationPoints(restoredCalibrationPoints, restoredLandmarkDefaults);
     const restoredPlaces = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
@@ -789,7 +854,7 @@ export default function Home() {
 
   const replaceElements = useCallback((updater: (current: MapElement[]) => MapElement[]) => {
     setElements((current) => {
-      const next = updater(current);
+      const next = ensureIndependentElementIdentity(updater(current));
       elementsRef.current = next;
       return next;
     });
@@ -1014,29 +1079,53 @@ export default function Home() {
   const generalMarkerAssets = useMemo(() => assets.filter((asset) => asset.category !== "landmark"), [assets]);
   const customLandmarkAssets = useMemo(() => assets.filter((asset) => asset.category === "landmark" && !asset.placeName), [assets]);
 
-  const filteredDirectoryPlaces = useMemo(() => {
-    const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
-    return directoryPlaces.filter((place) => (
-      (placeCategory === "all" || place.category === placeCategory)
-      && (!query || `${place.name} ${place.address} ${place.area}`.toLocaleLowerCase("ko-KR").includes(query))
-    ));
-  }, [directoryPlaces, placeCategory, placeQuery]);
+  const allUnifiedPlaceRows = useMemo<UnifiedPlaceRow[]>(() => {
+    const elementsByDirectoryId = new Map(elements.filter((element) => element.directoryId).map((element) => [element.directoryId!, element]));
+    const elementsByName = new Map(elements.map((element) => [normalizePlaceName(element.name), element]));
+    const claimedElementIds = new Set<string>();
+    const rows: UnifiedPlaceRow[] = directoryPlaces.map((place) => {
+      const element = elementsByDirectoryId.get(place.id) ?? elementsByName.get(normalizePlaceName(place.name));
+      if (element) claimedElementIds.add(element.id);
+      return {
+        id: `place-row-${place.id}`,
+        name: place.name,
+        category: element?.category ?? place.category,
+        address: place.address,
+        area: place.area,
+        sourceLabel: place.sourceLabel,
+        place,
+        element,
+      };
+    });
+    elements.forEach((element) => {
+      if (claimedElementIds.has(element.id)) return;
+      rows.push({
+        id: `element-row-${element.id}`,
+        name: element.name,
+        category: element.category,
+        address: element.address,
+        area: element.category === "landmark" ? "랜드마크" : "사용자 배치",
+        sourceLabel: element.memo || "지도 배치 요소",
+        element,
+      });
+    });
+    return rows.sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
+  }, [directoryPlaces, elements]);
 
-  const visibilityChecklistElements = useMemo(() => {
+  const unifiedPlaceRows = useMemo(() => {
     const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
-    return [...elements]
-      .filter((element) => placeCategory === "all" || element.category === placeCategory)
-      .filter((element) => !query || `${element.name} ${element.address}`.toLocaleLowerCase("ko-KR").includes(query))
-      .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
-  }, [elements, placeCategory, placeQuery]);
+    return allUnifiedPlaceRows
+      .filter((row) => placeCategory === "all" || row.category === placeCategory)
+      .filter((row) => !query || `${row.name} ${row.address} ${row.area}`.toLocaleLowerCase("ko-KR").includes(query));
+  }, [allUnifiedPlaceRows, placeCategory, placeQuery]);
 
-  const visibilityChecklistGroups = useMemo(() => categories.map((category) => ({
+  const unifiedPlaceGroups = useMemo(() => categories.map((category) => ({
     category,
-    elements: visibilityChecklistElements.filter((element) => element.category === category.id),
-  })).filter((group) => group.elements.length > 0), [visibilityChecklistElements]);
+    rows: unifiedPlaceRows.filter((row) => row.category === category.id),
+  })).filter((group) => group.rows.length > 0), [unifiedPlaceRows]);
 
   const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
-    counts[category.id] = elements.filter((element) => element.category === category.id).length;
+    counts[category.id] = elements.filter((element) => element.category === category.id && element.mapVisible).length;
     return counts;
   }, { landmark: 0, culture: 0, cafe: 0, food: 0, parking: 0, park: 0, utility: 0 }), [elements]);
 
@@ -1405,7 +1494,7 @@ export default function Home() {
       event.stopPropagation();
       const point = clientToMap(event.clientX, event.clientY);
       pushHistory();
-      const note: ReviewNote = { id: `review-${++nextNoteIdRef.current}`, x: point.x, y: point.y, status: "weaken", text: "" };
+      const note: ReviewNote = { id: uniqueRuntimeId("review", notesRef.current.map((item) => item.id)), x: point.x, y: point.y, status: "weaken", text: "" };
       replaceNotes((current) => [...current, note]);
       setSelectedId(null); setSelectedNoteId(note.id); setMemoMode(false); setRightOpen(true);
       return;
@@ -1592,7 +1681,12 @@ export default function Home() {
     }
     pushHistory();
     const maxZ = Math.max(0, ...elementsRef.current.map((element) => element.z));
-    const restored = missing.map((element, index) => ({ ...element, id: `element-${++nextIdRef.current}`, z: maxZ + index + 1 }));
+    const usedIds = new Set(elementsRef.current.map((element) => element.id));
+    const restored = missing.map((element, index) => {
+      const id = uniqueRuntimeId("element", usedIds);
+      usedIds.add(id);
+      return { ...element, id, z: maxZ + index + 1 };
+    });
     replaceElements((current) => [...current, ...restored]);
     setActiveCategory("all");
     setViewMode("all");
@@ -1650,6 +1744,7 @@ export default function Home() {
     setSelectedNoteId(null);
     const existing = elementsRef.current.find((item) => item.directoryId === place.id || item.name === place.name);
     if (existing) {
+      if (!existing.mapVisible) updateElement(existing.id, { mapVisible: true });
       setSelectedId(existing.id);
       focusMapPosition(existing.x, existing.y, existing.id);
       setToast(`${place.name} 위치로 이동했습니다.`);
@@ -1658,7 +1753,7 @@ export default function Home() {
     pushHistory();
     const next: MapElement = {
       ...elementDefaults,
-      id: `element-${++nextIdRef.current}`,
+      id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)),
       directoryId: place.id,
       name: place.name,
       category: place.category,
@@ -1683,7 +1778,33 @@ export default function Home() {
 
   const toggleElementMapVisibility = (element: MapElement, visible: boolean) => {
     updateElement(element.id, { mapVisible: visible });
-    setToast(`${element.name} 마커를 지도에서 ${visible ? "표시" : "숨김"} 처리했습니다.`);
+    setToast(`${element.name} 마커를 ${visible ? "배치" : "미배치"} 상태로 변경했습니다.`);
+  };
+
+  const setUnifiedPlacePlacement = (row: UnifiedPlaceRow, placed: boolean) => {
+    if (row.element) {
+      toggleElementMapVisibility(row.element, placed);
+      if (placed) {
+        setSelectedId(row.element.id);
+        setSelectedNoteId(null);
+        setRightOpen(true);
+        focusMapPosition(row.element.x, row.element.y, row.element.id);
+      }
+      return;
+    }
+    if (placed && row.place) openDirectoryPlace(row.place);
+  };
+
+  const selectUnifiedPlace = (row: UnifiedPlaceRow) => {
+    if (row.element) {
+      if (!row.element.mapVisible) toggleElementMapVisibility(row.element, true);
+      setSelectedId(row.element.id);
+      setSelectedNoteId(null);
+      setRightOpen(true);
+      focusMapPosition(row.element.x, row.element.y, row.element.id);
+      return;
+    }
+    if (row.place) openDirectoryPlace(row.place);
   };
 
   const addAssetElement = (asset: MapAsset) => {
@@ -1691,7 +1812,7 @@ export default function Home() {
     const count = elementsRef.current.filter((item) => item.assetId === asset.id).length + 1;
     const size = asset.category === "landmark" ? 6.4 : asset.category === "culture" || asset.category === "park" ? 3 : 1.7;
     const next: MapElement = {
-      ...elementDefaults, id: `element-${++nextIdRef.current}`, name: asset.placeName ?? (count > 1 ? `${asset.name} ${count}` : asset.name),
+      ...elementDefaults, id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)), name: asset.placeName ?? (count > 1 ? `${asset.name} ${count}` : asset.name),
       category: asset.category, x: 50, y: 50, anchorX: 50, anchorY: 50, size,
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1, labelVisible: asset.category === "landmark",
       assetId: asset.id, status: asset.status, address: asset.address ?? "", addressSourceUrl: asset.addressSourceUrl ?? "",
@@ -1724,7 +1845,7 @@ export default function Home() {
         pushHistory();
         const extension = file.name.split(".").pop()?.toLowerCase();
         const asset: MapAsset = {
-          id: `asset-${++nextAssetIdRef.current}`, name: file.name.replace(/\.[^.]+$/, ""), category: assetCategory,
+          id: uniqueRuntimeId("asset", assetsRef.current.map((item) => item.id)), name: file.name.replace(/\.[^.]+$/, ""), category: assetCategory,
           status: assetStatus, src, fileType: extension === "svg" ? "svg" : extension === "png" ? "png" : "image",
           sourceLabel: `사용자 업로드 · ${file.name}`,
           builtIn: false,
@@ -1780,7 +1901,7 @@ export default function Home() {
   const autoArrangeLabels = (record = true, notify = true) => {
     const candidates = elementsRef.current
       .filter((element) => element.mapVisible && element.labelVisible)
-      .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || b.z - a.z);
+      .sort((a, b) => Number(b.category === "landmark" || b.labelLocked) - Number(a.category === "landmark" || a.labelLocked) || b.z - a.z);
     if (!candidates.length) {
       setToast("자동 정리할 표시 라벨이 없습니다.");
       setLabelsRefreshing(false);
@@ -1842,7 +1963,7 @@ export default function Home() {
       const visualCenterY = (visualRect.top + visualRect.bottom) / 2;
       const gapX = 0.42 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
       const gapY = 0.42 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
-      if (element.category === "landmark") {
+      if (element.category === "landmark" || element.labelLocked) {
         const normalizedOffsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
         const normalizedOffsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
         let centerX = visualCenterX + normalizedOffsetX;
@@ -1901,7 +2022,7 @@ export default function Home() {
       }
       const priority = new Map([...elementsRef.current]
         .filter((element) => element.labelVisible)
-        .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || b.z - a.z)
+        .sort((a, b) => Number(b.category === "landmark" || b.labelLocked) - Number(a.category === "landmark" || a.labelLocked) || b.z - a.z)
         .map((element, index) => [element.id, index]));
       const nodes = [...stage.querySelectorAll<HTMLElement>("[data-label-id]")]
         .map((node) => {
@@ -1923,7 +2044,7 @@ export default function Home() {
 
       nodes.forEach((item) => {
         let current: NormalizedRect = { left: item.rect.left, right: item.rect.right, top: item.rect.top, bottom: item.rect.bottom };
-        if (item.element.category === "landmark") {
+        if (item.element.category === "landmark" || item.element.labelLocked) {
           fixed.push({ id: item.id, rect: current });
           return;
         }
@@ -1974,7 +2095,7 @@ export default function Home() {
       }
       if (notify) setToast(remaining
         ? `라벨 위치 ${total}개를 새로고침했습니다. 밀집 구간 겹침 ${remaining}건은 개별 조정해 주세요.`
-        : `라벨 위치 ${total}개를 새로고침했습니다. 랜드마크 우선으로 겹침 없이 정리했습니다.`);
+        : `라벨 위치 ${total}개를 새로고침했습니다. 랜드마크와 고정 라벨 주위로 겹침 없이 정리했습니다.`);
       setLabelsRefreshing(false);
     });
   }
@@ -2020,7 +2141,15 @@ export default function Home() {
   const duplicateSelected = () => {
     if (!selected) return;
     pushHistory();
-    const duplicate = { ...selected, id: `element-${++nextIdRef.current}`, name: `${selected.name} 복사본`, x: clamp(selected.x + 1.2, 0, 100), y: clamp(selected.y + 1.2, 0, 100), z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1 };
+    const duplicate = {
+      ...selected,
+      id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)),
+      directoryId: undefined,
+      name: `${selected.name} 복사본`,
+      x: clamp(selected.x + 1.2, 0, 100),
+      y: clamp(selected.y + 1.2, 0, 100),
+      z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
+    };
     replaceElements((current) => [...current, duplicate]); setSelectedId(duplicate.id);
   };
 
@@ -2240,10 +2369,10 @@ export default function Home() {
 
       <section className={`workspace ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"} ${leftPanelMode === "calibration" && leftOpen ? "calibration-open" : ""}`}>
         <aside ref={leftPanelRef} className="panel asset-panel" aria-label="자산 목록">
-          <div className="panel-heading"><div><strong>{leftPanelMode === "assets" ? "자산" : leftPanelMode === "places" ? "장소 탐색" : "좌표 기준점"}</strong><span>{leftPanelMode === "assets" ? `${layoutName} · ${elements.length}개 배치` : leftPanelMode === "places" ? `조사 목록 ${directoryPlaces.length}곳 · 더블클릭 이동` : `기준점 ${calibrationPoints.length}곳 · 실시간 보정`}</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
+          <div className="panel-heading"><div><strong>{leftPanelMode === "assets" ? "자산" : leftPanelMode === "places" ? "장소 탐색" : "좌표 기준점"}</strong><span>{leftPanelMode === "assets" ? `${layoutName} · ${elements.filter((element) => element.mapVisible).length}개 배치` : leftPanelMode === "places" ? `통합 목록 ${allUnifiedPlaceRows.length}곳 · 배치/미배치 관리` : `기준점 ${calibrationPoints.length}곳 · 실시간 보정`}</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
           <div className="panel-tabs" role="tablist" aria-label="왼쪽 패널 내용">
             <button className={leftPanelMode === "assets" ? "active" : ""} onClick={() => switchLeftPanel("assets")} role="tab" aria-selected={leftPanelMode === "assets"}>아이콘·마커</button>
-            <button className={leftPanelMode === "places" ? "active" : ""} onClick={() => switchLeftPanel("places")} role="tab" aria-selected={leftPanelMode === "places"}>장소 탐색 <span>{directoryPlaces.length}</span></button>
+            <button className={leftPanelMode === "places" ? "active" : ""} onClick={() => switchLeftPanel("places")} role="tab" aria-selected={leftPanelMode === "places"}>장소 탐색 <span>{allUnifiedPlaceRows.length}</span></button>
             <button className={leftPanelMode === "calibration" ? "active" : ""} onClick={() => switchLeftPanel("calibration")} role="tab" aria-selected={leftPanelMode === "calibration"}>좌표 보정 <span>6</span></button>
           </div>
           {leftPanelMode === "assets" ? <>
@@ -2304,43 +2433,8 @@ export default function Home() {
               <div className="composition-actions"><button onClick={applyStarterComposition}>기본 구성 복원</button><button onClick={alignPlacedMarkersByAddress} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 확인 중" : "배치 장소 주소로 정렬"}</button></div>
               <p>주소 정렬은 일반 마커의 앵커를 갱신하고 기존 리소스 오프셋을 유지합니다. 이후 속성 패널의 앵커·출력 오프셋 값으로 세부 보정할 수 있습니다.</p>
             </div>
-            <div className="marker-visibility-panel">
-              <div className="review-list-head"><strong>지도 표시 체크리스트</strong><span>{elements.filter((element) => element.mapVisible).length}/{elements.length}</span></div>
-              <p>체크를 끄면 배치 정보는 유지한 채 지도와 고화질 출력에서만 숨겨집니다.</p>
-              <div className="marker-visibility-list">
-                {visibilityChecklistGroups.map(({ category, elements: groupElements }) => {
-                  const visibleCount = groupElements.filter((element) => element.mapVisible).length;
-                  const expanded = Boolean(placeQuery.trim()) || expandedVisibilityGroups[category.id];
-                  return <section key={category.id} className={`marker-visibility-group ${expanded ? "expanded" : "collapsed"}`}>
-                    <button
-                      type="button"
-                      className="marker-visibility-group-toggle"
-                      aria-expanded={expanded}
-                      aria-controls={`visibility-group-${category.id}`}
-                      onClick={() => setExpandedVisibilityGroups((current) => ({ ...current, [category.id]: !current[category.id] }))}
-                    >
-                      <span className="marker-folder-icon" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
-                      <i style={{ background: category.color }} />
-                      <strong>{category.name}</strong>
-                      <span className="marker-group-count">{visibleCount}/{groupElements.length}</span>
-                    </button>
-                    {expanded && <div id={`visibility-group-${category.id}`} className="marker-visibility-group-items">
-                      {groupElements.map((element) => <div key={element.id} className={`marker-visibility-row ${element.mapVisible ? "visible" : "hidden"}`}>
-                        <label title={`${element.name} 지도 표시 전환`}>
-                          <input type="checkbox" checked={element.mapVisible} onChange={(event) => toggleElementMapVisibility(element, event.target.checked)} />
-                          <i style={{ background: category.color }} />
-                          <span><b>{element.name}</b><small>{element.locked ? "좌표 고정" : "배치됨"}</small></span>
-                        </label>
-                        <button onClick={() => { setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); if (element.mapVisible) focusMapPosition(element.x, element.y, element.id); }} aria-label={`${element.name} 선택`}>선택</button>
-                      </div>)}
-                    </div>}
-                  </section>;
-                })}
-                {!visibilityChecklistElements.length && <div className="place-empty">조건에 맞는 배치 마커가 없습니다.</div>}
-              </div>
-            </div>
             <div className="database-import">
-              <div><strong>장소 마스터 DB</strong><span>문화·식음·주차·편의 {directoryPlaces.length}곳</span></div>
+              <div><strong>통합 장소 DB</strong><span>랜드마크·일반 장소 {allUnifiedPlaceRows.length}곳</span></div>
               <button onClick={() => dbInputRef.current?.click()} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 찾는 중" : "DB JSON 불러오기"}</button>
               <input ref={dbInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importMasterDatabase} />
               {geocodeProgress.total > 0 && <div className="geocode-progress"><span style={{ width: `${(geocodeProgress.done / geocodeProgress.total) * 100}%` }} /><small>{geocodeProgress.done}/{geocodeProgress.total} · 반영 {geocodeProgress.found} · 미확정 {geocodeProgress.failed}</small></div>}
@@ -2350,20 +2444,39 @@ export default function Home() {
             <div className="place-filter" role="group" aria-label="장소 분류">
               {([
                 ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
-              ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? directoryPlaces.length : id === "landmark" || id === "park" ? elements.filter((element) => element.category === id).length : directoryPlaces.filter((place) => place.category === id).length}</span></button>)}
+              ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? allUnifiedPlaceRows.length : allUnifiedPlaceRows.filter((row) => row.category === id).length}</span></button>)}
             </div>
-            <p className="place-directory-hint">목록을 더블클릭하면 마커를 만들거나 기존 요소를 찾아 지도 중앙에 표시합니다.</p>
-            <div className="place-list" role="list" aria-label="조사 장소 목록">
-              {filteredDirectoryPlaces.map((place) => {
-                const placed = elements.some((element) => element.directoryId === place.id || element.name === place.name);
-                const meta = categoryOf(place.category);
-                return <button key={place.id} className={`place-row ${placed ? "placed" : ""}`} onDoubleClick={() => openDirectoryPlace(place)} onKeyDown={(event) => { if (event.key === "Enter") openDirectoryPlace(place); }} title="더블클릭하여 지도에 표시" role="listitem">
-                  <span className="place-type" style={{ color: meta.color, background: `${meta.color}17`, borderColor: `${meta.color}45` }}>{meta.glyph}</span>
-                  <span className="place-copy"><strong>{place.name}</strong><small>{place.area} · {place.address.replace("제주특별자치도 제주시 ", "")}</small><em>{place.sourceLabel}</em></span>
-                  <span className={`coordinate-badge ${place.coordinateStatus}`}>{placed ? "배치됨" : place.coordinateStatus === "landmark" ? "기본 앵커" : place.coordinateStatus === "geocoded" ? "주소 조회" : place.coordinateStatus === "unresolved" ? "위치 미확정" : "권역 임시"}</span>
-                </button>;
-              })}
-              {!filteredDirectoryPlaces.length && <div className="place-empty">조건에 맞는 장소가 없습니다.</div>}
+            <div className="marker-visibility-panel unified-place-panel">
+              <div className="review-list-head"><strong>배치 목록</strong><span>{unifiedPlaceRows.filter((row) => row.element?.mapVisible).length}/{unifiedPlaceRows.length}</span></div>
+              <p>체크 상태는 배치/미배치만 사용합니다. 미배치로 바꿔도 좌표와 편집 정보는 보존됩니다.</p>
+              <div className="marker-visibility-list unified-place-list" role="list" aria-label="통합 장소 배치 목록">
+                {unifiedPlaceGroups.map(({ category, rows }) => {
+                  const placedCount = rows.filter((row) => row.element?.mapVisible).length;
+                  const expanded = Boolean(placeQuery.trim()) || expandedVisibilityGroups[category.id];
+                  return <section key={category.id} className={`marker-visibility-group ${expanded ? "expanded" : "collapsed"}`}>
+                    <button type="button" className="marker-visibility-group-toggle" aria-expanded={expanded} aria-controls={`place-group-${category.id}`} onClick={() => setExpandedVisibilityGroups((current) => ({ ...current, [category.id]: !current[category.id] }))}>
+                      <span className="marker-folder-icon" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                      <i style={{ background: category.color }} />
+                      <strong>{category.name}</strong>
+                      <span className="marker-group-count">{placedCount}/{rows.length}</span>
+                    </button>
+                    {expanded && <div id={`place-group-${category.id}`} className="marker-visibility-group-items">
+                      {rows.map((row) => {
+                        const placed = Boolean(row.element?.mapVisible);
+                        return <div key={row.id} className={`marker-visibility-row unified-place-row ${placed ? "visible" : "hidden"}`} role="listitem">
+                          <label title={`${row.name} ${placed ? "미배치" : "배치"}로 변경`}>
+                            <input type="checkbox" checked={placed} onChange={(event) => setUnifiedPlacePlacement(row, event.target.checked)} />
+                            <i style={{ background: category.color }} />
+                            <span><b>{row.name}</b><small>{placed ? "배치" : "미배치"}{row.element?.locked ? " · 좌표 고정" : ""}</small></span>
+                          </label>
+                          <button onClick={() => selectUnifiedPlace(row)} aria-label={`${row.name} ${placed ? "선택" : "배치"}`}>{placed ? "선택" : "배치"}</button>
+                        </div>;
+                      })}
+                    </div>}
+                  </section>;
+                })}
+                {!unifiedPlaceRows.length && <div className="place-empty">조건에 맞는 장소가 없습니다.</div>}
+              </div>
             </div>
           </div> : <div className="calibration-panel">
             <div className="calibration-summary">
@@ -2472,8 +2585,8 @@ export default function Home() {
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selected.locked ? "좌표 고정됨" : selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : "2차 확정 보정 기준"}</b><span>{selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
-            <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">투명 여백을 제외한 실제 아이콘 가장자리를 기준으로 배치됩니다. 새로고침은 랜드마크 라벨을 먼저 고정한 뒤 나머지 겹침을 피하며, 실행 후에도 개별 미세 조정할 수 있습니다.</p></section>
-            <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "지도에서 숨김" : "지도에 표시"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
+            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">랜드마크와 라벨 고정 ON 요소는 현재 위치를 유지합니다. 나머지 라벨은 고정 라벨과 아이콘을 피해 상·하·좌·우로 배치되며 결과는 자동 저장됩니다.</p></section>
+            <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>
       </section>
