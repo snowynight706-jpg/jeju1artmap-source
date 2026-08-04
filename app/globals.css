@@ -322,8 +322,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .section-title strong { font-size: 11px; }
 .section-title > span { font-size: 9px; color: var(--muted); }
 .section-title-actions { display: flex; align-items: center; gap: 6px; }
-.coordinate-lock-toggle { margin: 0 !important; }
-.coordinate-lock-toggle input { position: absolute; width: 1px !important; height: 1px !important; opacity: 0; pointer-events: none; }
+.coordinate-lock-toggle { position: relative; margin: 0 !important; }
+.coordinate-lock-toggle input { position: absolute; inset: 0; z-index: 1; width: 100% !important; height: 100% !important; margin: 0; opacity: 0; cursor: pointer; }
+.coordinate-lock-toggle input:disabled { cursor: not-allowed; }
 .coordinate-lock-toggle span { display: block; min-width: 72px; padding: 4px 7px; border: 1px solid #d0dad7; border-radius: 11px; background: #f0f3f2; color: #72807b; text-align: center; font-size: 8px; font-weight: 700; cursor: pointer; }
 .coordinate-lock-toggle.active span { border-color: #aa8b68; background: #f6eadc; color: #815d35; }
 .label-lock-toggle span { min-width: 76px; }
