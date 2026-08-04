@@ -1,3 +1,5 @@
+import { masterDirectoryRows, masterDirectorySource, retiredMasterDirectoryIds } from "../../master-directory";
+
 export const runtime = "edge";
 
 const CATEGORIES = new Set(["landmark", "culture", "cafe", "food", "shop", "parking", "park", "utility"]);
@@ -23,6 +25,12 @@ type PlaceDirectoryInput = {
   mapUrl: string;
   checkedAt: string;
 };
+
+const SOURCE_STATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_directory_source_state (
+  id INTEGER PRIMARY KEY,
+  source_version TEXT NOT NULL,
+  imported_at TEXT NOT NULL
+)`;
 
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
@@ -64,10 +72,92 @@ function ownerAccess(request: Request, runtime: RuntimeEnv) {
   return { canEdit: Boolean(ownerEmail && currentEmail === ownerEmail), currentEmail };
 }
 
+function normalizePlaceName(name: string) {
+  if (name === "제주해변공연장") return "탑동해변공연장";
+  if (name === "제주특별자치도 소통협력센터") return "제주시소통협력센터";
+  return name.trim();
+}
+
+function bundledRows(): PlaceDirectoryInput[] {
+  return masterDirectoryRows.map((row) => ({
+    id: row.id,
+    name: normalizePlaceName(row.name),
+    category: row.category,
+    area: row.area,
+    address: row.address,
+    subtype: row.subtype,
+    priority: row.priority,
+    description: row.description,
+    operatingInfo: row.operatingInfo,
+    notes: row.notes,
+    sourceUrl: row.sourceUrl,
+    mapUrl: row.mapUrl,
+    checkedAt: row.checkedAt,
+  }));
+}
+
+function insertDirectoryStatement(db: D1Database, row: PlaceDirectoryInput, updatedAt: string, updatedBy: string) {
+  return db.prepare(
+    `INSERT INTO place_directory
+      (id, name, category, area, address, subtype, priority, description, operating_info,
+       notes, source_url, map_url, checked_at, updated_at, updated_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    row.id, row.name, row.category, row.area, row.address, row.subtype, row.priority,
+    row.description, row.operatingInfo, row.notes, row.sourceUrl, row.mapUrl, row.checkedAt,
+    updatedAt, updatedBy,
+  );
+}
+
+async function syncBundledDirectory(db: D1Database) {
+  await db.prepare(SOURCE_STATE_TABLE_SQL).run();
+  const sourceState = await db.prepare(
+    "SELECT source_version AS sourceVersion FROM place_directory_source_state WHERE id = 1",
+  ).first<{ sourceVersion: string }>();
+  if (sourceState?.sourceVersion === masterDirectorySource.version) return;
+
+  const existingResult = await db.prepare(
+    `SELECT id, name, category, area, address, subtype, priority, description,
+      operating_info AS operatingInfo, notes, source_url AS sourceUrl,
+      map_url AS mapUrl, checked_at AS checkedAt
+     FROM place_directory ORDER BY name COLLATE NOCASE`,
+  ).all() as { results: PlaceDirectoryInput[] };
+  const existingByName = new Map(
+    existingResult.results.map((row) => [normalizePlaceName(row.name).toLocaleLowerCase("ko-KR"), row]),
+  );
+  const sourceRows = bundledRows().map((row) => {
+    const existing = existingByName.get(row.name.toLocaleLowerCase("ko-KR"));
+    return existing ? { ...row, id: existing.id } : row;
+  });
+  const sourceNames = new Set(sourceRows.map((row) => row.name.toLocaleLowerCase("ko-KR")));
+  const retiredIds = new Set<string>(retiredMasterDirectoryIds);
+  const retainedRows = existingResult.results.filter((row) => (
+    !sourceNames.has(normalizePlaceName(row.name).toLocaleLowerCase("ko-KR")) && !retiredIds.has(row.id)
+  ));
+  const updatedAt = new Date().toISOString();
+  const updatedBy = `source:${masterDirectorySource.version}`;
+  const statements = [db.prepare("DELETE FROM place_directory")];
+  [...sourceRows, ...retainedRows].forEach((row) => {
+    statements.push(insertDirectoryStatement(db, row, updatedAt, updatedBy));
+  });
+  statements.push(db.prepare(
+    `INSERT INTO place_directory_revision (id, updated_at, updated_by)
+     VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+  ).bind(updatedAt, updatedBy));
+  statements.push(db.prepare(
+    `INSERT INTO place_directory_source_state (id, source_version, imported_at)
+     VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET source_version = excluded.source_version, imported_at = excluded.imported_at`,
+  ).bind(masterDirectorySource.version, updatedAt));
+  await db.batch(statements);
+}
+
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit } = ownerAccess(request, runtime);
   if (!runtime.DB) return json({ rows: [], persistent: false, canEdit, updatedAt: null }, 503);
+  await syncBundledDirectory(runtime.DB);
   const [rowsResult, revision] = await Promise.all([
     runtime.DB.prepare(
       `SELECT id, name, category, area, address, subtype, priority, description,
@@ -113,16 +203,7 @@ export async function PUT(request: Request) {
   const updatedAt = new Date().toISOString();
   const statements = [runtime.DB.prepare("DELETE FROM place_directory")];
   validRows.forEach((row) => {
-    statements.push(runtime.DB!.prepare(
-      `INSERT INTO place_directory
-        (id, name, category, area, address, subtype, priority, description, operating_info,
-         notes, source_url, map_url, checked_at, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      row.id, row.name, row.category, row.area, row.address, row.subtype, row.priority,
-      row.description, row.operatingInfo, row.notes, row.sourceUrl, row.mapUrl, row.checkedAt,
-      updatedAt, currentEmail,
-    ));
+    statements.push(insertDirectoryStatement(runtime.DB!, row, updatedAt, currentEmail));
   });
   statements.push(runtime.DB.prepare(
     `INSERT INTO place_directory_revision (id, updated_at, updated_by)

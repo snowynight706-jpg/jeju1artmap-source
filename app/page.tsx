@@ -470,13 +470,13 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
   const legacyByName = new Map(legacyDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
   const built = rows
     .filter((row) => row.address && !DELETED_PLACE_NAMES.has(normalizePlaceName(row.name)))
-    .map((row, index): DirectoryPlace => {
+    .map((row): DirectoryPlace => {
       const name = normalizePlaceName(row.name);
       const legacy = legacyByName.get(name);
       const geocoded = geocodedPlaces[name] ?? geocodedPlaces[row.name];
       const fallback = areaFallbacks[row.area] ?? { x: 50, y: 50 };
       return {
-        id: legacy?.id ?? `master-place-${index + 1}`,
+        id: legacy?.id ?? row.id,
         name,
         category: row.category,
         area: row.area,
@@ -490,6 +490,11 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
         sourceUrl: row.sourceUrl,
         subtype: row.subtype,
         priority: row.priority,
+        description: row.description,
+        operatingInfo: row.operatingInfo,
+        notes: row.notes,
+        mapUrl: row.mapUrl,
+        checkedAt: row.checkedAt,
       };
     });
   const names = new Set(built.map((place) => place.name));

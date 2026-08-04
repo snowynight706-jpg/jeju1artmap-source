@@ -52,3 +52,9 @@ export const placeDirectoryRevision = sqliteTable("place_directory_revision", {
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by").notNull(),
 });
+
+export const placeDirectorySourceState = sqliteTable("place_directory_source_state", {
+  id: integer("id").primaryKey(),
+  sourceVersion: text("source_version").notNull(),
+  importedAt: text("imported_at").notNull(),
+});
