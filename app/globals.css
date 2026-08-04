@@ -252,8 +252,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-loading span { width: 24px; height: 24px; margin: auto; border: 2px solid #c8d6d2; border-top-color: var(--emerald); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .element-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
-.map-element { position: absolute; transform: translate(-50%, -50%); aspect-ratio: 1.12; pointer-events: auto; cursor: pointer; touch-action: none; }
-.map-element.calibration-reference { cursor: pointer; }
+.map-element { position: absolute; transform: translate(-50%, -50%); aspect-ratio: 1.12; pointer-events: auto; cursor: grab; touch-action: none; user-select: none; }
+.map-element.calibration-reference { cursor: crosshair; }
+.map-viewport.is-dragging-element .map-element:not(.locked) { cursor: grabbing; }
 .map-element.calibration-reference .icon-visual { filter: drop-shadow(0 0 4px rgb(32 137 123 / 50%)); }
 .map-element.calibration-reference::before { content: ""; position: absolute; inset: -10px; border: 1.5px dashed rgb(40 139 125 / 72%); border-radius: 50%; pointer-events: none; animation: calibration-ring 1.8s ease-in-out infinite alternate; }
 @keyframes calibration-ring { from { transform: scale(.96); opacity: .55; } to { transform: scale(1.05); opacity: 1; } }
