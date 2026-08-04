@@ -50,6 +50,7 @@ type LabelPosition = "top" | "bottom" | "left" | "right";
 type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
 type ViewMode = "all" | "landmarks" | "markers" | "labels" | "anchors" | "clearance" | "collisions" | "dim" | "gray" | "nomap";
 type BaseMapMode = "svg" | "png" | "uploaded";
+type CoordinateLockFilter = "all" | "unlocked" | "locked";
 
 type UploadedBaseMap = {
   available: boolean;
@@ -150,7 +151,7 @@ type CalibrationPoint = {
   sourceY: number;
   targetX: number;
   targetY: number;
-  tier?: "primary" | "secondary";
+  tier?: "primary" | "secondary" | "tertiary";
 };
 
 type LandmarkDefaultPosition = {
@@ -236,7 +237,12 @@ const initialCalibrationPoints: CalibrationPoint[] = CALIBRATION_LANDMARK_NAMES.
   };
 });
 
-function buildEffectiveCalibrationPoints(primaryPoints: CalibrationPoint[], defaults: LandmarkDefaultPosition[]) {
+function buildEffectiveCalibrationPoints(
+  primaryPoints: CalibrationPoint[],
+  defaults: LandmarkDefaultPosition[],
+  elements: MapElement[] = [],
+  directoryPlaces: DirectoryPlace[] = [],
+) {
   const primaryNames = new Set(primaryPoints.map((point) => point.name));
   const secondaryPoints: CalibrationPoint[] = defaults.flatMap((position, index) => {
     if (!position.confirmed || primaryNames.has(position.name)) return [];
@@ -252,7 +258,33 @@ function buildEffectiveCalibrationPoints(primaryPoints: CalibrationPoint[], defa
       tier: "secondary" as const,
     }];
   });
-  return [...primaryPoints.map((point) => ({ ...point, tier: "primary" as const })), ...secondaryPoints];
+  const establishedNames = new Set([...primaryNames, ...secondaryPoints.map((point) => point.name)]);
+  const placesById = new Map(directoryPlaces.map((place) => [place.id, place]));
+  const placesByName = new Map(directoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
+  const tertiaryNames = new Set<string>();
+  const tertiaryPoints: CalibrationPoint[] = elements.flatMap((element) => {
+    const name = normalizePlaceName(element.name);
+    if (!element.locked || !element.mapVisible || establishedNames.has(name) || tertiaryNames.has(name)) return [];
+    const place = (element.directoryId ? placesById.get(element.directoryId) : undefined) ?? placesByName.get(name);
+    const geocoded = geocodedPlaces[name];
+    const source = geocoded
+      ? { x: geocoded.x, y: geocoded.y }
+      : Number.isFinite(place?.latitude) && Number.isFinite(place?.longitude)
+        ? projectGeographicCoordinates(place!.latitude!, place!.longitude!)
+        : null;
+    if (!source || !Number.isFinite(element.anchorX) || !Number.isFinite(element.anchorY)) return [];
+    tertiaryNames.add(name);
+    return [{
+      id: `tertiary-${element.id}`,
+      name,
+      sourceX: source.x,
+      sourceY: source.y,
+      targetX: element.anchorX,
+      targetY: element.anchorY,
+      tier: "tertiary" as const,
+    }];
+  });
+  return [...primaryPoints.map((point) => ({ ...point, tier: "primary" as const })), ...secondaryPoints, ...tertiaryPoints];
 }
 
 function canonicalAnchorForElement(
@@ -293,27 +325,26 @@ function singleStageCalibratedCoordinates(sourceX: number, sourceY: number, poin
   };
 }
 
-function calibratedCoordinates(sourceX: number, sourceY: number, points: CalibrationPoint[]) {
-  const primaryPoints = points.filter((point) => point.tier !== "secondary");
-  const secondaryPoints = points.filter((point) => point.tier === "secondary");
-  const primaryResult = singleStageCalibratedCoordinates(sourceX, sourceY, primaryPoints);
-  if (!secondaryPoints.length) return primaryResult;
+function applyLocalCalibrationStage(
+  sourceX: number,
+  sourceY: number,
+  baseResult: { x: number; y: number },
+  controls: CalibrationPoint[],
+  projectControl: (point: CalibrationPoint) => { x: number; y: number },
+  options: { radius: number; fadePower: number; maxControls: number; strength: number; maxCorrection: number },
+) {
+  if (!controls.length) return baseResult;
+  const exact = controls.find((point) => Math.hypot(sourceX - point.sourceX, sourceY - point.sourceY) < 0.001);
+  if (exact) return { x: exact.targetX, y: exact.targetY };
 
-  const exactSecondary = secondaryPoints.find((point) => Math.hypot(sourceX - point.sourceX, sourceY - point.sourceY) < 0.001);
-  if (exactSecondary) return { x: exactSecondary.targetX, y: exactSecondary.targetY };
-
-  const localControls = secondaryPoints.map((point) => {
-    const primaryProjected = singleStageCalibratedCoordinates(point.sourceX, point.sourceY, primaryPoints);
-    const distanceSquared = (primaryResult.x - primaryProjected.x) ** 2 + ((primaryResult.y - primaryProjected.y) / MAP_ASPECT) ** 2;
-    return {
-      distanceSquared,
-      dx: point.targetX - primaryProjected.x,
-      dy: point.targetY - primaryProjected.y,
-    };
-  }).sort((a, b) => a.distanceSquared - b.distanceSquared).slice(0, 4);
+  const localControls = controls.map((point) => {
+    const projected = projectControl(point);
+    const distanceSquared = (baseResult.x - projected.x) ** 2 + ((baseResult.y - projected.y) / MAP_ASPECT) ** 2;
+    return { distanceSquared, dx: point.targetX - projected.x, dy: point.targetY - projected.y };
+  }).sort((a, b) => a.distanceSquared - b.distanceSquared).slice(0, options.maxControls);
   const nearestDistance = Math.sqrt(localControls[0]?.distanceSquared ?? Number.POSITIVE_INFINITY);
-  const localFade = Math.pow(clamp(1 - nearestDistance / 32, 0, 1), 1.35);
-  if (!localFade) return primaryResult;
+  const localFade = Math.pow(clamp(1 - nearestDistance / options.radius, 0, 1), options.fadePower);
+  if (!localFade) return baseResult;
   let weightSum = 0;
   let dx = 0;
   let dy = 0;
@@ -323,10 +354,25 @@ function calibratedCoordinates(sourceX: number, sourceY: number, points: Calibra
     dx += control.dx * weight;
     dy += control.dy * weight;
   });
-  return {
-    x: clamp(primaryResult.x + dx / Math.max(weightSum, 1) * localFade, 0, 100),
-    y: clamp(primaryResult.y + dy / Math.max(weightSum, 1) * localFade, 0, 100),
-  };
+  const correctionX = clamp(dx / Math.max(weightSum, 1) * localFade * options.strength, -options.maxCorrection, options.maxCorrection);
+  const correctionY = clamp(dy / Math.max(weightSum, 1) * localFade * options.strength, -options.maxCorrection, options.maxCorrection);
+  return { x: clamp(baseResult.x + correctionX, 0, 100), y: clamp(baseResult.y + correctionY, 0, 100) };
+}
+
+function calibratedCoordinates(sourceX: number, sourceY: number, points: CalibrationPoint[]) {
+  const primaryPoints = points.filter((point) => point.tier !== "secondary" && point.tier !== "tertiary");
+  const secondaryPoints = points.filter((point) => point.tier === "secondary");
+  const tertiaryPoints = points.filter((point) => point.tier === "tertiary");
+  const primaryResult = singleStageCalibratedCoordinates(sourceX, sourceY, primaryPoints);
+  const secondaryResult = applyLocalCalibrationStage(sourceX, sourceY, primaryResult, secondaryPoints, (point) => (
+    singleStageCalibratedCoordinates(point.sourceX, point.sourceY, primaryPoints)
+  ), { radius: 32, fadePower: 1.35, maxControls: 4, strength: 1, maxCorrection: 100 });
+  return applyLocalCalibrationStage(sourceX, sourceY, secondaryResult, tertiaryPoints, (point) => {
+    const projectedPrimary = singleStageCalibratedCoordinates(point.sourceX, point.sourceY, primaryPoints);
+    return applyLocalCalibrationStage(point.sourceX, point.sourceY, projectedPrimary, secondaryPoints, (secondaryPoint) => (
+      singleStageCalibratedCoordinates(secondaryPoint.sourceX, secondaryPoint.sourceY, primaryPoints)
+    ), { radius: 32, fadePower: 1.35, maxControls: 4, strength: 1, maxCorrection: 100 });
+  }, { radius: 18, fadePower: 1.65, maxControls: 3, strength: 0.72, maxCorrection: 4.5 });
 }
 
 function calibratedPlaceCoordinates(name: string, latitude: number | undefined, longitude: number | undefined, points: CalibrationPoint[]) {
@@ -751,6 +797,7 @@ export default function Home() {
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeCategory, setPlaceCategory] = useState<CategoryId | "all">("all");
+  const [coordinateLockFilter, setCoordinateLockFilter] = useState<CoordinateLockFilter>("all");
   const [expandedVisibilityGroups, setExpandedVisibilityGroups] = useState<Record<CategoryId, boolean>>({
     landmark: true,
     culture: false,
@@ -813,10 +860,11 @@ export default function Home() {
           };
         })
       : factoryLandmarkDefaultPositions.map((position) => ({ ...position }));
-    const restoredEffectivePoints = buildEffectiveCalibrationPoints(restoredCalibrationPoints, restoredLandmarkDefaults);
     const restoredPlaces = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
     const restoredNames = new Set(restoredPlaces.map((place) => normalizePlaceName(place.name)));
-    const mergedPlaces = [...restoredPlaces, ...supportDirectoryPlaces.filter((place) => !restoredNames.has(normalizePlaceName(place.name)))].map((place) => {
+    const restoredPlaceSet = [...restoredPlaces, ...supportDirectoryPlaces.filter((place) => !restoredNames.has(normalizePlaceName(place.name)))];
+    const restoredEffectivePoints = buildEffectiveCalibrationPoints(restoredCalibrationPoints, restoredLandmarkDefaults, clean.elements, restoredPlaceSet);
+    const mergedPlaces = restoredPlaceSet.map((place) => {
       if (hadCalibration) return place;
       const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, restoredEffectivePoints);
       return mapped ? { ...place, ...mapped } : place;
@@ -908,7 +956,7 @@ export default function Home() {
       return primary ? { ...position, x: primary.targetX, y: primary.targetY } : position;
     }));
     setCalibrationDirty(false);
-    const effectivePoints = buildEffectiveCalibrationPoints(appliedPoints, landmarkDefaultsRef.current);
+    const effectivePoints = buildEffectiveCalibrationPoints(appliedPoints, landmarkDefaultsRef.current, elementsRef.current, placesRef.current);
 
     const mappedPlaces = placesRef.current.map((place) => {
       const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, effectivePoints);
@@ -1054,11 +1102,13 @@ export default function Home() {
 
   const selected = elements.find((element) => element.id === selectedId) ?? null;
   const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
-  const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions), [calibrationPoints, landmarkDefaultPositions]);
+  const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces), [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions]);
   const secondaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"), [effectiveCalibrationPoints]);
+  const tertiaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"), [effectiveCalibrationPoints]);
   const selectedPrimaryCalibrationPoint = selected ? calibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
   const selectedSecondaryCalibrationPoint = selected ? secondaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
-  const selectedCalibrationPoint = selectedPrimaryCalibrationPoint ?? selectedSecondaryCalibrationPoint;
+  const selectedTertiaryCalibrationPoint = selected ? tertiaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
+  const selectedCalibrationPoint = selectedPrimaryCalibrationPoint ?? selectedSecondaryCalibrationPoint ?? selectedTertiaryCalibrationPoint;
   const selectedLandmarkDefault = selected?.category === "landmark" ? landmarkDefaultPositions.find((position) =>
     position.elementId === selected.id || position.name === normalizePlaceName(selected.name)
   ) ?? { elementId: selected.id, name: normalizePlaceName(selected.name), x: selected.anchorX, y: selected.anchorY, confirmed: false } : null;
@@ -1114,12 +1164,23 @@ export default function Home() {
     return rows.sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
   }, [directoryPlaces, elements]);
 
-  const unifiedPlaceRows = useMemo(() => {
+  const searchedUnifiedPlaceRows = useMemo(() => {
     const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
     return allUnifiedPlaceRows
       .filter((row) => placeCategory === "all" || row.category === placeCategory)
       .filter((row) => !query || `${row.name} ${row.address} ${row.area}`.toLocaleLowerCase("ko-KR").includes(query));
   }, [allUnifiedPlaceRows, placeCategory, placeQuery]);
+
+  const coordinateLockCounts = useMemo(() => searchedUnifiedPlaceRows.reduce((counts, row) => {
+    if (!row.element) return counts;
+    counts[row.element.locked ? "locked" : "unlocked"] += 1;
+    return counts;
+  }, { locked: 0, unlocked: 0 }), [searchedUnifiedPlaceRows]);
+
+  const unifiedPlaceRows = useMemo(() => searchedUnifiedPlaceRows.filter((row) => (
+    coordinateLockFilter === "all"
+      || (coordinateLockFilter === "locked" ? Boolean(row.element?.locked) : Boolean(row.element && !row.element.locked))
+  )), [coordinateLockFilter, searchedUnifiedPlaceRows]);
 
   const unifiedPlaceGroups = useMemo(() => categories.map((category) => ({
     category,
@@ -1687,7 +1748,7 @@ export default function Home() {
         }
         if (index < targets.length - 1) await new Promise((resolve) => window.setTimeout(resolve, 1100));
       }
-      const mapped = result ? coordinatesToMap(result.latitude, result.longitude, buildEffectiveCalibrationPoints(calibrationPointsRef.current, landmarkDefaultsRef.current)) : null;
+      const mapped = result ? coordinatesToMap(result.latitude, result.longitude, buildEffectiveCalibrationPoints(calibrationPointsRef.current, landmarkDefaultsRef.current, elementsRef.current, placesRef.current)) : null;
       if (mapped) {
         found += 1;
         replaceDirectoryPlaces((current) => current.map((item) => item.id === place.id ? {
@@ -2490,8 +2551,13 @@ export default function Home() {
                 ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
               ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? allUnifiedPlaceRows.length : allUnifiedPlaceRows.filter((row) => row.category === id).length}</span></button>)}
             </div>
+            <div className="coordinate-lock-filter" role="group" aria-label="좌표 고정 상태 필터">
+              <button className={coordinateLockFilter === "all" ? "active" : ""} onClick={() => setCoordinateLockFilter("all")}>전체 <span>{searchedUnifiedPlaceRows.length}</span></button>
+              <button className={`unlocked ${coordinateLockFilter === "unlocked" ? "active" : ""}`} onClick={() => setCoordinateLockFilter("unlocked")}>좌표 미고정 <span>{coordinateLockCounts.unlocked}</span></button>
+              <button className={coordinateLockFilter === "locked" ? "active" : ""} onClick={() => setCoordinateLockFilter("locked")}>좌표 고정 <span>{coordinateLockCounts.locked}</span></button>
+            </div>
             <div className="marker-visibility-panel unified-place-panel">
-              <div className="review-list-head"><strong>배치 목록</strong><span>{unifiedPlaceRows.filter((row) => row.element?.mapVisible).length}/{unifiedPlaceRows.length}</span></div>
+              <div className="review-list-head"><strong>배치 목록</strong><span>미고정 {coordinateLockCounts.unlocked} · 고정 {coordinateLockCounts.locked}</span></div>
               <p>체크 상태는 배치/미배치만 사용합니다. 미배치로 바꿔도 좌표와 편집 정보는 보존됩니다.</p>
               <div className="marker-visibility-list unified-place-list" role="list" aria-label="통합 장소 배치 목록">
                 {unifiedPlaceGroups.map(({ category, rows }) => {
@@ -2507,11 +2573,12 @@ export default function Home() {
                     {expanded && <div id={`place-group-${category.id}`} className="marker-visibility-group-items">
                       {rows.map((row) => {
                         const placed = Boolean(row.element?.mapVisible);
-                        return <div key={row.id} className={`marker-visibility-row unified-place-row ${placed ? "visible" : "hidden"}`} role="listitem">
+                        const hasCoordinateState = Boolean(row.element);
+                        return <div key={row.id} className={`marker-visibility-row unified-place-row ${placed ? "visible" : "hidden"} ${hasCoordinateState && !row.element?.locked ? "coordinate-unlocked" : ""}`} role="listitem">
                           <label title={`${row.name} ${placed ? "미배치" : "배치"}로 변경`}>
                             <input type="checkbox" checked={placed} onChange={(event) => setUnifiedPlacePlacement(row, event.target.checked)} />
                             <i style={{ background: category.color }} />
-                            <span><b>{row.name}</b><small>{placed ? "배치" : "미배치"}{row.element?.locked ? " · 좌표 고정" : ""}</small></span>
+                            <span><b>{row.name}</b><small>{placed ? "배치" : "미배치"}{hasCoordinateState && <em className={row.element?.locked ? "locked" : "unlocked"}>{row.element?.locked ? "좌표 고정" : "좌표 미고정"}</em>}</small></span>
                           </label>
                           <button onClick={() => selectUnifiedPlace(row)} aria-label={`${row.name} ${placed ? "선택" : "배치"}`}>{placed ? "선택" : "배치"}</button>
                         </div>;
@@ -2524,11 +2591,11 @@ export default function Home() {
             </div>
           </div> : <div className="calibration-panel">
             <div className="calibration-summary">
-              <div><strong>계층형 좌표 보정망</strong><span>1차 6점 + 확정 랜드마크 {secondaryCalibrationPoints.length}곳 · {calibrationLiveApply ? "1차 기준 변경을 주변 장소에 실시간 반영합니다." : "기준값을 맞춘 뒤 보정 버튼으로 전체에 적용합니다."}</span></div>
+              <div><strong>계층형 좌표 보정망</strong><span>1차 6점 + 2차 {secondaryCalibrationPoints.length}점 + 고정 좌표 3차 {tertiaryCalibrationPoints.length}점 · {calibrationLiveApply ? "기준 변경을 주변 미고정 장소에 실시간 반영합니다." : "기준값을 맞춘 뒤 보정 버튼으로 전체에 적용합니다."}</span></div>
               <label className="switch" title="기존 기준 위치 표시"><input type="checkbox" checked={showCalibrationSource} onChange={(event) => setShowCalibrationSource(event.target.checked)} /><span /></label>
             </div>
             <label className="calibration-live-toggle"><input type="checkbox" checked={calibrationLiveApply} onChange={(event) => { setCalibrationLiveApply(event.target.checked); if (event.target.checked && calibrationDirty) applyCalibrationToAll(); }} /><span><b>실시간 보정</b><small>끄면 기준점만 옮기고 버튼으로 일괄 적용</small></span></label>
-            <p className="calibration-help">1차 기준점 6곳은 아래 X·Y와 화살표로 조정합니다. 추가 랜드마크는 우측 속성에서 앵커를 맞춰 기본 위치로 저장한 뒤 ‘2차 기준점으로 확정’하면 주변 마커 보정에 사용됩니다.</p>
+            <p className="calibration-help">1차 기준점 6곳으로 전체를 맞추고, 확정 랜드마크를 2차 지역 기준으로 사용합니다. 그 밖의 좌표 고정 요소는 실제 주소 좌표가 확인된 경우 자동으로 3차 근거리 기준점이 되어 주변 미고정 장소의 대략적 위치를 보완합니다.</p>
             <div className="calibration-list">
               {calibrationPoints.map((point, index) => {
                 const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
@@ -2560,6 +2627,17 @@ export default function Home() {
                 </article>;
               }) : <p className="secondary-empty">랜드마크의 기본 위치를 확정하면 여기에 추가됩니다.</p>}
             </div>
+            <div className="secondary-calibration-list tertiary-calibration-list">
+              <div className="review-list-head"><strong>3차 고정 좌표 기준점</strong><span>{tertiaryCalibrationPoints.length}</span></div>
+              {tertiaryCalibrationPoints.length ? tertiaryCalibrationPoints.map((point) => {
+                const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
+                return <article key={point.id} className={`calibration-card tertiary ${selectedId === element?.id ? "active" : ""}`}>
+                  <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
+                    <b>3</b><span><strong>{point.name}</strong><small>고정 앵커 {point.targetX.toFixed(1)}, {point.targetY.toFixed(1)} · 근거리 보정</small></span>
+                  </button>
+                </article>;
+              }) : <p className="secondary-empty">실제 주소 좌표가 있는 요소를 좌표 고정하면 자동으로 추가됩니다.</p>}
+            </div>
             <div className="calibration-actions">
               <button className={`primary ${calibrationDirty ? "attention" : ""}`} onClick={applyCalibrationToAll}>전체 좌표 보정 적용{calibrationDirty ? " · 변경 있음" : ""}</button>
               <button onClick={resetCalibrationPoints}>1차 6점 초기화</button>
@@ -2587,6 +2665,7 @@ export default function Home() {
                   {([ [0, 1], [1, 2], [2, 3], [2, 4], [4, 5], [5, 1], [0, 3] ] as Array<[number, number]>).map(([from, to]) => <line key={`${from}-${to}`} x1={calibrationPoints[from].targetX} y1={calibrationPoints[from].targetY} x2={calibrationPoints[to].targetX} y2={calibrationPoints[to].targetY} className="calibration-mesh-line" />)}
                   {showCalibrationSource && calibrationPoints.map((point) => <g key={`source-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-offset-line" /><circle cx={point.sourceX} cy={point.sourceY} r="0.34" className="calibration-source-dot" /></g>)}
                   {secondaryCalibrationPoints.map((point) => <g key={`secondary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-secondary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.45" className="calibration-secondary-dot" /></g>)}
+                  {tertiaryCalibrationPoints.map((point) => <g key={`tertiary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-tertiary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.4" className="calibration-tertiary-dot" /></g>)}
                 </svg>}
                 <svg className="connector-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{visibleElements.map((element) => {
                   const showAnchor = viewMode === "anchors" || element.connectorVisible || selectedId === element.id;
@@ -2613,14 +2692,14 @@ export default function Home() {
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.14" fill={selected.connectorColor} />
                   </g>
                 </svg>}
-                {calibrationMode && <div className="calibration-badge-layer">{calibrationPoints.map((point, index) => <span key={`badge-${point.id}`} className="calibration-map-badge" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>{index + 1}</span>)}{secondaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge secondary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>S</span>)}</div>}
+                {calibrationMode && <div className="calibration-badge-layer">{calibrationPoints.map((point, index) => <span key={`badge-${point.id}`} className="calibration-map-badge" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>{index + 1}</span>)}{secondaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge secondary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>S</span>)}{tertiaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge tertiary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>3</span>)}</div>}
                 <div className="review-pin-layer">{reviewNotes.map((note, index) => <button key={note.id} className={`review-pin ${note.status} ${selectedNoteId === note.id ? "selected" : ""}`} style={{ left: `${note.x}%`, top: `${note.y}%` }} onPointerDown={(event) => { event.stopPropagation(); setSelectedNoteId(note.id); setSelectedId(null); setRightOpen(true); }} title={`${reviewStatusText[note.status]}: ${note.text || "내용 없음"}`}><span>{index + 1}</span></button>)}</div>
               </div>
             </div>
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 보정망 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer>
+          <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 + 3차 ${tertiaryCalibrationPoints.length}점 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer>
         </section>
         {!rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
@@ -2631,10 +2710,10 @@ export default function Home() {
             <section><div className="section-title"><strong>지도 위치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selectedNote.x.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selectedNote.y.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div></section>
             <section><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></section>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
-            <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 보정·주소 정렬·앵커 이동 등 모든 좌표 변경에서 제외됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => updateElement(selected.id, { locked: event.target.checked })} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
+            <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
             <section><div className="section-title"><strong>리소스 출력 오프셋</strong><label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 변경 ON" : "출력위치 변경 OFF"}</span></label></div>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>오프셋 0</button></div></>}<p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 리소스 출력 위치가 유지됩니다." : resourceOutputDragMode ? "출력위치 변경 ON: 드래그와 방향키는 앵커를 고정한 채 이미지 리소스만 이동합니다." : "기본 상태: 드래그와 방향키는 실제 위치 앵커를 이동하며 현재 ΔX·ΔY는 유지됩니다."}</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
-            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selected.locked ? "좌표 고정됨" : selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : "2차 확정 보정 기준"}</b><span>{selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
+            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : selected.locked ? "좌표 고정됨" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 움직이지 않으며 가까운 미고정 장소의 대략적 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
             <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">랜드마크와 라벨 고정 ON 요소는 현재 위치를 유지합니다. 나머지 라벨은 고정 라벨과 아이콘을 피해 상·하·좌·우로 배치되며 결과는 자동 저장됩니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
