@@ -834,11 +834,13 @@ function applyLockedCoordinateSettings(
   places: DirectoryPlace[],
 ) {
   const byKey = new Map(settings.map((setting) => [setting.key, setting]));
-  const existingKeys = new Set(elements.map(lockedCoordinateKey));
+  const byName = new Map(settings.map((setting) => [normalizePlaceName(setting.name), setting]));
+  const consumedSettingKeys = new Set<string>();
   const restored = elements.map((element) => {
     if (PRIMARY_CALIBRATION_NAMES.has(normalizePlaceName(element.name))) return element;
-    const setting = byKey.get(lockedCoordinateKey(element));
+    const setting = byKey.get(lockedCoordinateKey(element)) ?? byName.get(normalizePlaceName(element.name));
     if (!setting) return { ...element, locked: false };
+    consumedSettingKeys.add(setting.key);
     return {
       ...element,
       locked: true,
@@ -852,7 +854,7 @@ function applyLockedCoordinateSettings(
   const placesById = new Map(places.map((place) => [place.id, place]));
   const placesByName = new Map(places.map((place) => [normalizePlaceName(place.name), place]));
   settings.forEach((setting) => {
-    if (existingKeys.has(setting.key)) return;
+    if (consumedSettingKeys.has(setting.key)) return;
     const place = (setting.directoryId ? placesById.get(setting.directoryId) : undefined) ?? placesByName.get(setting.name);
     const category = place?.category ?? setting.category;
     const assetId = defaultMarkerAssetId(category);

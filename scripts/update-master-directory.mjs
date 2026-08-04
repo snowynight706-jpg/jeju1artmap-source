@@ -14,7 +14,7 @@ const previousIds = new Map();
 const retainedRetiredIds = new Set(["master-place-7"]);
 let previousIndex = 0;
 
-for (const match of previousSource.matchAll(/\{\s*(?:id:\s*"([^"]+)",\s*)?name:\s*"([^"]+)"/g)) {
+for (const match of previousSource.matchAll(/\{\s*(?:"?id"?:\s*"([^"]+)",\s*)?"?name"?:\s*"([^"]+)"/g)) {
   previousIndex += 1;
   previousIds.set(match[2], match[1] || `master-place-${previousIndex}`);
 }
