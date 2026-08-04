@@ -5,7 +5,7 @@ export type MasterDirectoryRow = {
   subtype: string;
   priority: string;
   sourceUrl: string;
-  category: "culture" | "cafe" | "food";
+  category: "culture" | "cafe" | "food" | "shop";
 };
 
 export const masterDirectoryRows: MasterDirectoryRow[] = [
@@ -98,4 +98,3 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
   { name: "하토말차", address: "제주특별자치도 제주시 남성로 167 2층", area: "삼도동", subtype: "카페·티하우스", priority: "추천", sourceUrl: "https://www.instagram.com/hato_jeju/", category: "cafe" },
   { name: "한일동문식당", address: "제주특별자치도 제주시 동문로 6-4 1층", area: "동문시장·동문로", subtype: "음식점", priority: "참고", sourceUrl: "https://m.visitjeju.net/kr/themtour/view?contentsid=CNTS_300000000013849", category: "food" },
 ];
-

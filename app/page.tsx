@@ -42,6 +42,7 @@ const categories = [
   { id: "culture", name: "일반 문화시설", color: "#4d9a91", glyph: "文" },
   { id: "cafe", name: "카페", color: "#b7835b", glyph: "珈" },
   { id: "food", name: "음식점", color: "#d8974f", glyph: "食" },
+  { id: "shop", name: "소품샵", color: "#9a6dae", glyph: "物" },
   { id: "parking", name: "주차장", color: "#667f8b", glyph: "P" },
   { id: "park", name: "공원·광장", color: "#69a56d", glyph: "休" },
   { id: "utility", name: "기타 편의시설", color: "#8f7ea7", glyph: "＋" },
@@ -115,7 +116,7 @@ type MapElement = {
 type DirectoryPlace = {
   id: string;
   name: string;
-  category: "culture" | "cafe" | "food" | "parking" | "utility";
+  category: "culture" | "cafe" | "food" | "shop" | "parking" | "utility";
   area: string;
   address: string;
   x: number;
@@ -616,7 +617,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function categoryOf(id: CategoryId) {
-  return categories.find((category) => category.id === id) ?? categories[6];
+  return categories.find((category) => category.id === id) ?? categories[categories.length - 1];
 }
 
 type VisualBounds = { left: number; top: number; right: number; bottom: number };
@@ -715,7 +716,7 @@ function sanitizeDocument(document: DocumentState): DocumentState {
   return {
     ...document,
     elements: ensureIndependentElementIdentity(sanitizedElements),
-    assets: document.assets.filter((asset) => asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id)),
+    assets: document.assets.filter((asset) => asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id) || asset.builtIn === false),
     directoryPlaces: document.directoryPlaces?.filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim())),
   };
 }
@@ -820,7 +821,7 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
       const address = String(raw[2] ?? "");
       const subtype = String(raw[3] ?? "");
       if (!name || !address || closed.has(name) || DELETED_PLACE_NAMES.has(name)) return;
-      if (section === "food" && /소품샵|편집숍|상업공간/.test(subtype) && !/식음|카페/.test(subtype)) return;
+      const isShop = section === "food" && /소품샵|편집숍|기념품|굿즈숍|상업공간/.test(subtype) && !/식음|카페|커피|음식/.test(subtype);
       rows.push({
         name,
         address,
@@ -828,7 +829,7 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
         subtype,
         priority: String(raw[6] ?? ""),
         sourceUrl: String(raw[section === "culture" ? 11 : 10] ?? ""),
-        category: section === "culture" ? "culture" : /카페|커피|로스터|티하우스|북카페|디저트/.test(subtype) ? "cafe" : "food",
+        category: section === "culture" ? "culture" : isShop ? "shop" : /카페|커피|로스터|티하우스|북카페|디저트/.test(subtype) ? "cafe" : "food",
       });
     });
   };
@@ -894,6 +895,7 @@ export default function Home() {
     culture: false,
     cafe: false,
     food: false,
+    shop: false,
     parking: false,
     park: false,
     utility: false,
@@ -1336,7 +1338,7 @@ export default function Home() {
   const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
     counts[category.id] = elements.filter((element) => element.category === category.id && element.mapVisible).length;
     return counts;
-  }, { landmark: 0, culture: 0, cafe: 0, food: 0, parking: 0, park: 0, utility: 0 }), [elements]);
+  }, { landmark: 0, culture: 0, cafe: 0, food: 0, shop: 0, parking: 0, park: 0, utility: 0 }), [elements]);
 
   const visibleElements = useMemo(() => [...elements]
     .filter((element) => element.mapVisible)
@@ -2732,7 +2734,7 @@ export default function Home() {
               </article>;
             })}
             {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
-            <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·주차장·편의시설</strong><small>모든 범용 마커를 SVG로 구성해 확대·출력 시 선명합니다.</small></div>
+            <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·소품샵·주차장·편의시설</strong><small>모든 범용 마커를 SVG로 구성해 확대·출력 시 선명합니다.</small></div>
             {generalMarkerAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
           </div>
           <div className="group-size-panel">
@@ -2745,7 +2747,7 @@ export default function Home() {
                   ["03", "유기적 원형"],
                 ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={`/markers/범용마커_${style}_culture.svg`} alt="" /><span><b>{style}안</b><small>{label}</small></span></button>)}
               </div>
-              <p className="marker-style-help">문화시설·카페·음식점·주차장·공원·편의시설에 같은 시안을 일괄 적용합니다. 01안은 제작 기준상 우선 추천안이며 아직 최종 승인 전입니다.</p>
+              <p className="marker-style-help">문화시설·카페·음식점·소품샵·주차장·공원·편의시설에 같은 시안을 일괄 적용합니다. 01안은 제작 기준상 우선 추천안이며 아직 최종 승인 전입니다.</p>
             </div>
             <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
@@ -2763,6 +2765,7 @@ export default function Home() {
                 <span><i style={{ background: categoryOf("culture").color }} />문화 <b>{placedCategoryCounts.culture}</b></span>
                 <span><i style={{ background: categoryOf("cafe").color }} />카페 <b>{placedCategoryCounts.cafe}</b></span>
                 <span><i style={{ background: categoryOf("food").color }} />음식 <b>{placedCategoryCounts.food}</b></span>
+                <span><i style={{ background: categoryOf("shop").color }} />소품샵 <b>{placedCategoryCounts.shop}</b></span>
                 <span><i style={{ background: categoryOf("parking").color }} />주차 <b>{placedCategoryCounts.parking}</b></span>
                 <span><i style={{ background: categoryOf("utility").color }} />편의 <b>{placedCategoryCounts.utility}</b></span>
               </div>
@@ -2779,7 +2782,7 @@ export default function Home() {
             <div className="place-search-wrap"><input value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
               {([
-                ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
+                ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["shop", "소품샵"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
               ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? allUnifiedPlaceRows.length : allUnifiedPlaceRows.filter((row) => row.category === id).length}</span></button>)}
             </div>
             <div className="coordinate-lock-filter" role="group" aria-label="좌표 고정 상태 필터">
