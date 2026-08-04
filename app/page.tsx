@@ -24,6 +24,8 @@ import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places"
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
 const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_초고해상도.png";
+const UPLOADED_MAP_API = "/api/base-map";
+const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
@@ -44,6 +46,18 @@ type AssetStatus = "approved" | "review" | "unchecked";
 type LabelPosition = "top" | "bottom" | "left" | "right";
 type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
 type ViewMode = "all" | "landmarks" | "markers" | "labels" | "anchors" | "clearance" | "collisions" | "dim" | "gray" | "nomap";
+type BaseMapMode = "svg" | "png" | "uploaded";
+
+type UploadedBaseMap = {
+  available: boolean;
+  canUpload?: boolean;
+  name: string;
+  width: number;
+  height: number;
+  uploadedAt: string;
+  size: number;
+  contentType: string;
+};
 
 type MapAsset = {
   id: string;
@@ -311,7 +325,7 @@ const defaultDirectoryPlaces = buildDirectoryPlaces(masterDirectoryRows).map((pl
 });
 const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [place.name, place]));
 
-const addressByPlace = new Map(landmarkLocations.map((location) => [location.name, location]));
+const addressByPlace = new Map<string, (typeof landmarkLocations)[number]>(landmarkLocations.map((location) => [location.name, location]));
 
 const builtInLandmarkAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
   const location = addressByPlace.get(asset.placeName);
@@ -336,7 +350,7 @@ const builtInMarkerAssets: MapAsset[] = bundledMarkerAssets.map((asset) => ({
 const builtInAssets: MapAsset[] = [...builtInLandmarkAssets, ...builtInMarkerAssets];
 
 function isBundledMarkerCategory(category: CategoryId): category is BundledMarkerCategory {
-  return category === "culture" || category === "cafe" || category === "food" || category === "parking";
+  return category !== "landmark";
 }
 
 function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = recommendedMarkerStyle) {
@@ -444,6 +458,22 @@ function labelStyle(position: LabelPosition, gap: number, offsetX: number, offse
   return { left: `calc(${bounds.right * 100}% + ${gap + offsetX}px)`, top: `calc(${centerY}% + ${offsetY}px)`, transform: `translateY(-50%) ${crispScale}` };
 }
 
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`image load failed: ${src}`));
+    image.src = src;
+  });
+}
+
+type NormalizedRect = { left: number; top: number; right: number; bottom: number };
+
+function rectsOverlap(a: NormalizedRect, b: NormalizedRect, margin = 0.18) {
+  return a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin;
+}
+
 function cloneDocument(document: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(document)) as DocumentState;
 }
@@ -513,6 +543,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const dbInputRef = useRef<HTMLInputElement>(null);
+  const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const geocodeRunRef = useRef(0);
   const nextIdRef = useRef(100);
   const nextAssetIdRef = useRef(0);
@@ -523,6 +554,7 @@ export default function Home() {
   const placesRef = useRef<DirectoryPlace[]>(defaultDirectoryPlaces);
   const calibrationPointsRef = useRef<CalibrationPoint[]>(initialCalibrationPoints);
   const measuredAssetIdsRef = useRef(new Set<string>());
+  const calibrationLiveApplyRef = useRef(false);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -539,7 +571,12 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [zoom, setZoom] = useState(0.72);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [baseMap, setBaseMap] = useState<"svg" | "png">("svg");
+  const [baseMap, setBaseMap] = useState<BaseMapMode>("svg");
+  const [uploadedBaseMap, setUploadedBaseMap] = useState<UploadedBaseMap | null>(null);
+  const [baseMapCanUpload, setBaseMapCanUpload] = useState<boolean | null>(null);
+  const [baseMapUploading, setBaseMapUploading] = useState(false);
+  const [exportWidth, setExportWidth] = useState<8944 | 12000>(12000);
+  const [exporting, setExporting] = useState(false);
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
@@ -557,6 +594,8 @@ export default function Home() {
   const [markerGroupSize, setMarkerGroupSize] = useState(1.7);
   const [markerStyle, setMarkerStyle] = useState<BundledMarkerStyle>(recommendedMarkerStyle);
   const [calibrationMode, setCalibrationMode] = useState(false);
+  const [calibrationLiveApply, setCalibrationLiveApply] = useState(false);
+  const [calibrationDirty, setCalibrationDirty] = useState(false);
   const [showCalibrationSource, setShowCalibrationSource] = useState(true);
   const [assetVisualBounds, setAssetVisualBounds] = useState<Record<string, VisualBounds>>({});
   const [interaction, setInteraction] = useState<
@@ -606,6 +645,7 @@ export default function Home() {
     setReviewNotes(clean.reviewNotes);
     setDirectoryPlaces(placesRef.current);
     setCalibrationPoints(restoredCalibrationPoints);
+    setCalibrationDirty(false);
     setSelectedId(null);
     setSelectedNoteId(null);
   }, []);
@@ -652,6 +692,7 @@ export default function Home() {
     if (record) pushHistory();
     calibrationPointsRef.current = nextPoints;
     setCalibrationPoints(nextPoints);
+    setCalibrationDirty(false);
 
     const mappedPlaces = placesRef.current.map((place) => {
       const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, nextPoints);
@@ -687,8 +728,24 @@ export default function Home() {
       ...(patch.targetX === undefined ? {} : { targetX: clamp(patch.targetX, 0, 100) }),
       ...(patch.targetY === undefined ? {} : { targetY: clamp(patch.targetY, 0, 100) }),
     } : point);
-    applyCalibrationPoints(nextPoints, false, record);
-  }, [applyCalibrationPoints]);
+    if (calibrationLiveApplyRef.current) {
+      applyCalibrationPoints(nextPoints, false, record);
+      return;
+    }
+    if (record) pushHistory();
+    calibrationPointsRef.current = nextPoints;
+    setCalibrationPoints(nextPoints);
+    setCalibrationDirty(true);
+    const changed = nextPoints.find((point) => point.id === id);
+    if (!changed) return;
+    replaceElements((current) => current.map((element) => normalizePlaceName(element.name) === changed.name ? {
+      ...element,
+      x: changed.targetX,
+      y: changed.targetY,
+      anchorX: changed.targetX,
+      anchorY: changed.targetY,
+    } : element));
+  }, [applyCalibrationPoints, pushHistory, replaceElements]);
 
   const resetCalibrationPoints = () => {
     applyCalibrationPoints(initialCalibrationPoints.map((point) => ({ ...point })), true);
@@ -697,7 +754,7 @@ export default function Home() {
 
   const applyCalibrationToAll = () => {
     applyCalibrationPoints(calibrationPointsRef.current.map((point) => ({ ...point })), true);
-    setToast(`기준점 ${calibrationPointsRef.current.length}곳을 기준으로 배치 요소 전체를 다시 정렬했습니다.`);
+    window.setTimeout(() => autoArrangeLabels(false, true), 0);
   };
 
   const updateElement = useCallback((id: string, patch: Partial<MapElement>, record = true) => {
@@ -888,6 +945,23 @@ export default function Home() {
   }, [baseMap]);
 
   useEffect(() => {
+    calibrationLiveApplyRef.current = calibrationLiveApply;
+  }, [calibrationLiveApply]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${UPLOADED_MAP_API}?meta=1`, { cache: "no-store" })
+      .then(async (response) => response.ok ? await response.json() as UploadedBaseMap : null)
+      .then((metadata) => {
+        if (cancelled || !metadata) return;
+        setBaseMapCanUpload(Boolean(metadata.canUpload));
+        if (metadata.available) setUploadedBaseMap(metadata);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const handleMove = (event: PointerEvent) => {
       if (!interaction) return;
       if (interaction.type === "pan") {
@@ -1027,10 +1101,10 @@ export default function Home() {
   };
 
   const resetLandmarkPositions = () => {
-    const defaults = new Map(landmarkLocations.map((location) => {
+    const defaults = new Map<string, { x: number; y: number }>(landmarkLocations.map((location) => {
       const geocoded = geocodedPlaces[location.name];
       const mapped = calibratedPlaceCoordinates(location.name, geocoded?.latitude, geocoded?.longitude, calibrationPointsRef.current);
-      return [location.name, { ...location, x: mapped?.x ?? location.x, y: mapped?.y ?? location.y }];
+      return [location.name, { x: mapped?.x ?? location.x, y: mapped?.y ?? location.y }] as const;
     }));
     pushHistory();
     replaceElements((current) => current.map((element) => {
@@ -1243,6 +1317,110 @@ export default function Home() {
     event.target.value = "";
   };
 
+  const uploadBaseMap = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 60 * 1024 * 1024) {
+      setToast("베이스 지도는 60MB 이하 PNG·JPG·WebP·SVG 이미지로 올려주세요.");
+      return;
+    }
+    setBaseMapUploading(true);
+    try {
+      const localUrl = URL.createObjectURL(file);
+      const image = await loadImage(localUrl);
+      const width = image.naturalWidth;
+      const height = image.naturalHeight;
+      URL.revokeObjectURL(localUrl);
+      if (!width || !height) throw new Error("invalid dimensions");
+      const aspectDifference = Math.abs(width / height - MAP_ASPECT) / MAP_ASPECT;
+      if (aspectDifference > 0.025) {
+        setToast(`지도 비율이 기준(${Math.round(MAP_ASPECT * 1000) / 1000})과 달라 업로드하지 않았습니다. 같은 영역·비율의 지도를 사용해 주세요.`);
+        return;
+      }
+      const params = new URLSearchParams({ name: file.name, width: String(width), height: String(height) });
+      const response = await fetch(`${UPLOADED_MAP_API}?${params.toString()}`, {
+        method: "POST",
+        headers: { "content-type": file.type || "image/png" },
+        body: file,
+      });
+      if (!response.ok) throw new Error(`upload ${response.status}`);
+      const metadata = await response.json() as UploadedBaseMap;
+      setUploadedBaseMap(metadata);
+      setBaseMapCanUpload(Boolean(metadata.canUpload));
+      setMapLoaded(false);
+      setBaseMap("uploaded");
+      setToast(`${file.name}을(를) 사이트 베이스 지도로 저장했습니다.`);
+    } catch {
+      setToast("베이스 지도를 저장하지 못했습니다. 소유자 로그인과 파일 형식을 확인해 주세요.");
+    } finally {
+      setBaseMapUploading(false);
+    }
+  };
+
+  const autoArrangeLabels = (record = true, notify = true) => {
+    const candidates = elementsRef.current
+      .filter((element) => element.labelVisible)
+      .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || b.z - a.z);
+    if (!candidates.length) {
+      setToast("자동 정리할 표시 라벨이 없습니다.");
+      return;
+    }
+    if (record) pushHistory();
+    const assetById = new Map(assetsRef.current.map((asset) => [asset.id, asset]));
+    const occupied: NormalizedRect[] = elementsRef.current.filter((element) => element.category === "landmark").map((element) => {
+      const asset = element.assetId ? assetById.get(element.assetId) : undefined;
+      const bounds = asset ? assetVisualBounds[asset.id] : undefined;
+      const leftFactor = bounds?.left ?? 0.05;
+      const rightFactor = bounds?.right ?? 0.95;
+      const topFactor = bounds?.top ?? 0.05;
+      const bottomFactor = bounds?.bottom ?? 0.95;
+      const elementHeight = element.size * MAP_ASPECT / 1.12;
+      return {
+        left: element.x + (leftFactor - 0.5) * element.size,
+        right: element.x + (rightFactor - 0.5) * element.size,
+        top: element.y + (topFactor - 0.5) * elementHeight,
+        bottom: element.y + (bottomFactor - 0.5) * elementHeight,
+      };
+    });
+    const updates = new Map<string, Pick<MapElement, "labelPosition" | "labelOffsetX" | "labelOffsetY">>();
+    const positionOrder: LabelPosition[] = ["bottom", "top", "right", "left"];
+    const shifts = [0, -22, 22, -44, 44, -60, 60];
+    candidates.forEach((element) => {
+      const characterCount = Array.from(element.name).length;
+      const labelWidth = clamp(characterCount * 0.78 + 1.1, 2.8, 21);
+      const labelHeight = 1.65;
+      const elementHeight = element.size * MAP_ASPECT / 1.12;
+      const gapX = 0.7 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
+      const gapY = 0.7 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+      const orderedPositions = [element.labelPosition, ...positionOrder.filter((position) => position !== element.labelPosition)];
+      let best: { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number } | null = null;
+      orderedPositions.forEach((position, positionIndex) => shifts.forEach((shift) => {
+        const offsetX = position === "top" || position === "bottom" ? shift : 0;
+        const offsetY = position === "left" || position === "right" ? shift : 0;
+        const normalizedOffsetX = offsetX / EXPORT_CANONICAL_WIDTH * 100;
+        const normalizedOffsetY = offsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+        let centerX = element.x + normalizedOffsetX;
+        let centerY = element.y + normalizedOffsetY;
+        if (position === "top") centerY -= elementHeight / 2 + gapY + labelHeight / 2;
+        if (position === "bottom") centerY += elementHeight / 2 + gapY + labelHeight / 2;
+        if (position === "left") centerX -= element.size / 2 + gapX + labelWidth / 2;
+        if (position === "right") centerX += element.size / 2 + gapX + labelWidth / 2;
+        const rect = { left: centerX - labelWidth / 2, right: centerX + labelWidth / 2, top: centerY - labelHeight / 2, bottom: centerY + labelHeight / 2 };
+        const overlapCount = occupied.reduce((count, item) => count + (rectsOverlap(rect, item) ? 1 : 0), 0);
+        const overflow = Math.max(0, -rect.left) + Math.max(0, rect.right - 100) + Math.max(0, -rect.top) + Math.max(0, rect.bottom - 100);
+        const score = overlapCount * 1000 + overflow * 100 + positionIndex * 3 + Math.abs(shift) / 22;
+        if (!best || score < best.score) best = { rect, position, offsetX, offsetY, score };
+      }));
+      const selectedBest = best as { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number } | null;
+      if (!selectedBest) return;
+      occupied.push(selectedBest.rect);
+      updates.set(element.id, { labelPosition: selectedBest.position, labelOffsetX: selectedBest.offsetX, labelOffsetY: selectedBest.offsetY });
+    });
+    replaceElements((current) => current.map((element) => updates.has(element.id) ? { ...element, ...updates.get(element.id)! } : element));
+    if (notify) setToast(`전체 좌표와 라벨 ${updates.size}개를 정리했습니다. 랜드마크 라벨을 먼저 배치했습니다.`);
+  };
+
   const moveLayer = (direction: "front" | "back" | "forward" | "backward") => {
     if (!selected) return;
     const zs = elementsRef.current.map((item) => item.z);
@@ -1318,6 +1496,112 @@ export default function Home() {
     window.setTimeout(() => URL.revokeObjectURL(url), 500);
   };
 
+  const downloadBlob = (name: string, blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = name;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
+
+  const exportHighResolutionPng = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setToast(`${exportWidth.toLocaleString()}px 고화질 사본을 합성하고 있습니다.`);
+    try {
+      const outputHeight = Math.round(exportWidth / MAP_ASPECT);
+      const canvas = document.createElement("canvas");
+      canvas.width = exportWidth;
+      canvas.height = outputHeight;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("canvas unavailable");
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.fillStyle = "#f4f2ed";
+      context.fillRect(0, 0, exportWidth, outputHeight);
+
+      const mapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
+      const baseImage = await loadImage(mapSrc);
+      context.drawImage(baseImage, 0, 0, exportWidth, outputHeight);
+
+      const assetSources = [...new Set(elementsRef.current.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
+      const loadedAssets = new Map<string, HTMLImageElement>();
+      await Promise.all(assetSources.map(async (src) => {
+        try { loadedAssets.set(src, await loadImage(src)); } catch { /* 개별 자산 실패는 나머지 합성을 막지 않습니다. */ }
+      }));
+      const ordered = [...elementsRef.current].sort((a, b) => a.z - b.z);
+      ordered.forEach((element) => {
+        const asset = assetsRef.current.find((item) => item.id === element.assetId);
+        const image = asset ? loadedAssets.get(asset.src) : undefined;
+        if (!image) return;
+        const boxWidth = exportWidth * element.size / 100;
+        const boxHeight = boxWidth / 1.12;
+        const centerX = exportWidth * element.x / 100;
+        const centerY = outputHeight * element.y / 100;
+        const fit = Math.min(boxWidth / image.naturalWidth, boxHeight / image.naturalHeight);
+        const drawWidth = image.naturalWidth * fit;
+        const drawHeight = image.naturalHeight * fit;
+        context.save();
+        context.globalAlpha = element.opacity / 100;
+        context.shadowColor = "rgba(30,43,39,.13)";
+        context.shadowBlur = exportWidth / EXPORT_CANONICAL_WIDTH * 2;
+        context.shadowOffsetY = exportWidth / EXPORT_CANONICAL_WIDTH * 2;
+        context.drawImage(image, centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight);
+        context.restore();
+      });
+
+      const drawLabels = (items: MapElement[]) => items.forEach((element) => {
+        if (!element.labelVisible) return;
+        const fontSize = exportWidth / EXPORT_CANONICAL_WIDTH * 10;
+        const paddingX = exportWidth / EXPORT_CANONICAL_WIDTH * 4;
+        const paddingY = exportWidth / EXPORT_CANONICAL_WIDTH * 2.5;
+        const gap = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelGap;
+        const offsetX = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelOffsetX;
+        const offsetY = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelOffsetY;
+        const centerX = exportWidth * element.x / 100;
+        const centerY = outputHeight * element.y / 100;
+        const boxWidth = exportWidth * element.size / 100;
+        const boxHeight = boxWidth / 1.12;
+        context.save();
+        context.globalAlpha = element.opacity / 100;
+        context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
+        context.textBaseline = "middle";
+        const metrics = context.measureText(element.name);
+        const labelWidth = metrics.width + paddingX * 2;
+        const labelHeight = fontSize * 1.25 + paddingY * 2;
+        let x = centerX + offsetX;
+        let y = centerY + offsetY;
+        if (element.labelPosition === "top") y -= boxHeight / 2 + gap + labelHeight / 2;
+        if (element.labelPosition === "bottom") y += boxHeight / 2 + gap + labelHeight / 2;
+        if (element.labelPosition === "left") x -= boxWidth / 2 + gap + labelWidth / 2;
+        if (element.labelPosition === "right") x += boxWidth / 2 + gap + labelWidth / 2;
+        context.fillStyle = "rgba(255,255,255,.95)";
+        context.strokeStyle = "rgba(91,106,101,.24)";
+        context.lineWidth = Math.max(1, exportWidth / EXPORT_CANONICAL_WIDTH);
+        context.beginPath();
+        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, exportWidth / EXPORT_CANONICAL_WIDTH * 3);
+        context.fill();
+        context.stroke();
+        context.fillStyle = "#26332f";
+        context.textAlign = "center";
+        context.fillText(element.name, x, y + fontSize * 0.02);
+        context.restore();
+      });
+      drawLabels(ordered.filter((element) => element.category !== "landmark"));
+      drawLabels(ordered.filter((element) => element.category === "landmark"));
+
+      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("png encoding failed")), "image/png"));
+      const sizeMb = blob.size / 1024 / 1024;
+      downloadBlob(`제주원도심_전체배치_고화질_${exportWidth}px.png`, blob);
+      setToast(`고화질 PNG 사본을 만들었습니다 · ${exportWidth.toLocaleString()}×${outputHeight.toLocaleString()}px · ${sizeMb.toFixed(1)}MB`);
+    } catch {
+      setToast("고화질 사본 생성에 실패했습니다. 8,944px로 낮추거나 업로드 지도 상태를 확인해 주세요.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const exportJson = () => {
     const payload = {
       schemaVersion: 4, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted" },
@@ -1359,6 +1643,8 @@ export default function Home() {
   };
 
   const stageMapClass = viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
+  const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
+  const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
 
   return (
     <main className="app-shell">
@@ -1380,6 +1666,7 @@ export default function Home() {
           <option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option>
           <option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
         </select></label>
+        <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
         <div className="toolbar-group muted-actions"><button onClick={exportJson}>JSON ↓</button><button onClick={() => jsonInputRef.current?.click()}>JSON ↑</button><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
       </header>
 
@@ -1412,7 +1699,7 @@ export default function Home() {
               </article>;
             })}
             {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
-            <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·주차장</strong><small>SVG라서 확대해도 선명합니다.</small></div>
+            <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·주차장·편의시설</strong><small>모든 범용 마커를 SVG로 구성해 확대·출력 시 선명합니다.</small></div>
             {generalMarkerAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
           </div>
           <div className="group-size-panel">
@@ -1425,7 +1712,7 @@ export default function Home() {
                   ["03", "유기적 원형"],
                 ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={`/markers/범용마커_${style}_culture.svg`} alt="" /><span><b>{style}안</b><small>{label}</small></span></button>)}
               </div>
-              <p className="marker-style-help">문화시설·카페·음식점·주차장에 같은 시안을 일괄 적용합니다. 01안은 제작 기준상 우선 추천안이며 아직 최종 승인 전입니다.</p>
+              <p className="marker-style-help">문화시설·카페·음식점·주차장·공원·편의시설에 같은 시안을 일괄 적용합니다. 01안은 제작 기준상 우선 추천안이며 아직 최종 승인 전입니다.</p>
             </div>
             <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
@@ -1474,10 +1761,11 @@ export default function Home() {
             </div>
           </div> : <div className="calibration-panel">
             <div className="calibration-summary">
-              <div><strong>6점 실시간 보정망</strong><span>기준점 한 곳을 움직이면 가까운 장소부터 비례 보정됩니다.</span></div>
-              <label className="switch"><input type="checkbox" checked={showCalibrationSource} onChange={(event) => setShowCalibrationSource(event.target.checked)} /><span /></label>
+              <div><strong>6점 기준 좌표 보정망</strong><span>{calibrationLiveApply ? "기준점 이동이 주변 장소에 실시간 반영됩니다." : "기준점을 옮긴 뒤 보정 버튼을 눌러 전체에 적용합니다."}</span></div>
+              <label className="switch" title="기존 기준 위치 표시"><input type="checkbox" checked={showCalibrationSource} onChange={(event) => setShowCalibrationSource(event.target.checked)} /><span /></label>
             </div>
-            <p className="calibration-help">번호가 붙은 랜드마크를 지도에서 드래그하거나 아래 X·Y 값을 수정하세요. 기준점과 자동 배치 요소는 즉시 이동하며, 이미 손으로 옮긴 요소는 현재 배치를 유지하고 실제 위치 앵커만 갱신합니다.</p>
+            <label className="calibration-live-toggle"><input type="checkbox" checked={calibrationLiveApply} onChange={(event) => { setCalibrationLiveApply(event.target.checked); if (event.target.checked && calibrationDirty) applyCalibrationToAll(); }} /><span><b>실시간 보정</b><small>끄면 기준점만 옮기고 버튼으로 일괄 적용</small></span></label>
+            <p className="calibration-help">번호가 붙은 랜드마크를 지도에서 드래그하거나 아래 X·Y 값을 수정하세요. 수동 모드에서는 기준점 6곳을 모두 맞춘 다음 ‘전체 좌표 보정 적용’을 누르면 됩니다.</p>
             <div className="calibration-list">
               {calibrationPoints.map((point, index) => {
                 const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
@@ -1499,10 +1787,10 @@ export default function Home() {
               })}
             </div>
             <div className="calibration-actions">
-              <button className="primary" onClick={applyCalibrationToAll}>전체 기본좌표 다시 적용</button>
+              <button className={`primary ${calibrationDirty ? "attention" : ""}`} onClick={applyCalibrationToAll}>전체 좌표 보정 적용{calibrationDirty ? " · 변경 있음" : ""}</button>
               <button onClick={resetCalibrationPoints}>기준점·좌표 초기화</button>
             </div>
-            <p className="calibration-warning">‘전체 기본좌표 다시 적용’은 수동 배치까지 현재 보정망에 맞춥니다. 실행 취소로 되돌릴 수 있습니다.</p>
+            <p className="calibration-warning">‘전체 좌표 보정 적용’은 수동 배치까지 현재 보정망에 맞춥니다. 실행 취소로 되돌릴 수 있습니다.</p>
           </div>}
           <div className="review-list">
             <div className="review-list-head"><strong>골목 검토 메모</strong><span>{reviewNotes.length}</span></div>
@@ -1514,12 +1802,12 @@ export default function Home() {
         {!leftOpen && <button className="panel-reopen left" onClick={() => setLeftOpen(true)}>자산 ›</button>}
 
         <section className="canvas-column">
-          <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button></div><span className="map-file">v15 · 골목추가정리 검수본</span><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className="canvas-hint">{calibrationMode ? "번호 랜드마크 드래그 · 방향키 0.08% · Shift 0.5%" : "휠 확대 · 빈 공간 드래그 · 방향키 미세 조정"}</div></div>
+          <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className="inline-tool" onClick={() => autoArrangeLabels()}>라벨 자동 정리</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className="canvas-hint">{calibrationMode ? "기준점 이동 → 전체 좌표 보정 적용" : "휠 확대 · 빈 공간 드래그 · 방향키 미세 조정"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${memoMode ? "memo-cursor" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
               <div className={`map-stage ${stageMapClass} ${calibrationMode ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={handleStagePointerDown}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
-                <img ref={baseMapImgRef} className="base-map" src={baseMap === "svg" ? MAP_SVG : MAP_PNG} alt="제주 원도심 v15 검수용 베이스맵" draggable={false} onLoad={() => setMapLoaded(true)} />
+                <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} onLoad={() => setMapLoaded(true)} />
                 {calibrationMode && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
                   {([ [0, 1], [1, 2], [2, 3], [2, 4], [4, 5], [5, 1], [0, 3] ] as Array<[number, number]>).map(([from, to]) => <line key={`${from}-${to}`} x1={calibrationPoints[from].targetX} y1={calibrationPoints[from].targetY} x2={calibrationPoints[to].targetX} y2={calibrationPoints[to].targetY} className="calibration-mesh-line" />)}
                   {showCalibrationSource && calibrationPoints.map((point) => <g key={`source-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-offset-line" /><circle cx={point.sourceX} cy={point.sourceY} r="0.34" className="calibration-source-dot" /></g>)}
@@ -1549,7 +1837,7 @@ export default function Home() {
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          <footer className="statusbar"><span className="status-ok"><i /> 베이스맵 연결됨</span><span>6점 좌표 보정망 적용</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">주소 조회 좌표는 최종 검수 필요</span></footer>
+          <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : "6점 좌표 보정망 적용"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">랜드마크 우선 라벨 자동 정리 지원</span></footer>
         </section>
         {!rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
@@ -1562,7 +1850,7 @@ export default function Home() {
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
             <section><div className="section-title"><strong>기본 정보</strong><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
             <section><div className="section-title"><strong>화면상 배치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selected.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selected.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
-            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedCalibrationPoint ? "보정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ 6점 보정 기준</b><span>이 좌표를 바꾸면 가까운 장소의 기본좌표가 실시간으로 함께 보정됩니다.</span></div>}<div className="field-row"><label>X<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElement(selected.id, { anchorX: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElement(selected.id, { anchorY: clamp(Number(event.target.value), 0, 100) })} /></label></div><button className="wide-secondary" onClick={() => selectedCalibrationPoint ? switchLeftPanel("calibration") : updateElement(selected.id, { anchorX: selected.x, anchorY: selected.y })}>{selectedCalibrationPoint ? "좌표 보정 패널 열기" : "배치 위치를 앵커로 복사"}</button><p className="field-help">{selectedCalibrationPoint ? "기준점의 수정값은 거리 가중 방식으로 주변 장소에 적용됩니다." : "DB 주소 조회 결과 또는 사용자가 보정한 정규화 좌표가 저장됩니다. 자동 조회 좌표는 최종 검수가 필요합니다."}</p></section>
+            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedCalibrationPoint ? "보정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ 6점 보정 기준</b><span>{calibrationLiveApply ? "이 좌표를 바꾸면 가까운 장소가 실시간으로 함께 보정됩니다." : "기준점을 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요."}</span></div>}<div className="field-row"><label>X<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElement(selected.id, { anchorX: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={(selectedCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedCalibrationPoint ? updateCalibrationPoint(selectedCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElement(selected.id, { anchorY: clamp(Number(event.target.value), 0, 100) })} /></label></div><button className="wide-secondary" onClick={() => selectedCalibrationPoint ? switchLeftPanel("calibration") : updateElement(selected.id, { anchorX: selected.x, anchorY: selected.y })}>{selectedCalibrationPoint ? "좌표 보정 패널 열기" : "배치 위치를 앵커로 복사"}</button><p className="field-help">{selectedCalibrationPoint ? "기준점의 수정값은 거리 가중 방식으로 주변 장소에 적용됩니다." : "DB 주소 조회 결과 또는 사용자가 보정한 정규화 좌표가 저장됩니다. 자동 조회 좌표는 최종 검수가 필요합니다."}</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
             <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -60, 60) })} /></label><label>상하 미세 조정<input type="number" min="-60" max="60" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -60, 60) })} /></label></div><p className="field-help">투명 여백을 제외한 실제 아이콘 가장자리를 기준으로 배치됩니다. +X는 오른쪽, +Y는 아래쪽입니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => updateElement(selected.id, { locked: !selected.locked })}>{selected.locked ? "잠금 해제" : "잠금"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>

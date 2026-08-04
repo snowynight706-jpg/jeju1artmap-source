@@ -1,4 +1,4 @@
-export type BundledMarkerCategory = "culture" | "cafe" | "food" | "parking";
+export type BundledMarkerCategory = "culture" | "cafe" | "food" | "parking" | "park" | "utility";
 export type BundledMarkerStyle = "01" | "02" | "03";
 
 export type BundledMarkerAsset = {
@@ -19,9 +19,11 @@ const labels: Record<BundledMarkerCategory, string> = {
   cafe: "카페",
   food: "음식점",
   parking: "주차장",
+  park: "공원·광장",
+  utility: "편의시설",
 };
 
-const sourceIds: Record<`${BundledMarkerStyle}-${BundledMarkerCategory}`, string> = {
+const sourceIds: Partial<Record<`${BundledMarkerStyle}-${BundledMarkerCategory}`, string>> = {
   "01-culture": "11uZ2NNRPPxvvEFm3XzrhHnsvGc_a8Lbx",
   "01-cafe": "1yUUC-aI16laDGM-8m3guPwV_fvTdEbVK",
   "01-food": "1pVZYVC0D7TKA7MFaJHZGtNlzAy96ZtWi",
@@ -37,7 +39,7 @@ const sourceIds: Record<`${BundledMarkerStyle}-${BundledMarkerCategory}`, string
 };
 
 const styles: BundledMarkerStyle[] = ["01", "02", "03"];
-const categories: BundledMarkerCategory[] = ["culture", "cafe", "food", "parking"];
+const categories: BundledMarkerCategory[] = ["culture", "cafe", "food", "parking", "park", "utility"];
 
 export const bundledMarkerAssets: BundledMarkerAsset[] = styles.flatMap((style) => (
   categories.map((category) => {
@@ -51,7 +53,7 @@ export const bundledMarkerAssets: BundledMarkerAsset[] = styles.flatMap((style) 
       status: "review" as const,
       src: `/markers/${fileName}`,
       fileName,
-      sourceUrl: drive(sourceIds[key]),
+      sourceUrl: sourceIds[key] ? drive(sourceIds[key]!) : "",
     };
   })
 ));
