@@ -27,6 +27,7 @@ const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골�
 const UPLOADED_MAP_API = "/api/base-map";
 const CALIBRATION_SETTINGS_API = "/api/calibration-settings";
 const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
+const PLACE_DIRECTORY_API = "/api/place-directory";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -116,7 +117,7 @@ type MapElement = {
 type DirectoryPlace = {
   id: string;
   name: string;
-  category: "culture" | "cafe" | "food" | "shop" | "parking" | "utility";
+  category: CategoryId;
   area: string;
   address: string;
   x: number;
@@ -126,8 +127,29 @@ type DirectoryPlace = {
   sourceUrl?: string;
   subtype?: string;
   priority?: string;
+  description?: string;
+  operatingInfo?: string;
+  notes?: string;
+  mapUrl?: string;
+  checkedAt?: string;
   latitude?: number;
   longitude?: number;
+};
+
+type PlaceDirectoryRecord = {
+  id: string;
+  name: string;
+  category: CategoryId;
+  area: string;
+  address: string;
+  subtype: string;
+  priority: string;
+  description: string;
+  operatingInfo: string;
+  notes: string;
+  sourceUrl: string;
+  mapUrl: string;
+  checkedAt: string;
 };
 
 type UnifiedPlaceRow = {
@@ -488,6 +510,54 @@ const defaultDirectoryPlaces = buildDirectoryPlaces(masterDirectoryRows).map((pl
   const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, initialCalibrationPoints);
   return mapped ? { ...place, ...mapped } : place;
 });
+
+function directoryRecordFromPlace(place: DirectoryPlace): PlaceDirectoryRecord {
+  return {
+    id: place.id,
+    name: normalizePlaceName(place.name),
+    category: place.category,
+    area: place.area ?? "",
+    address: place.address ?? "",
+    subtype: place.subtype ?? "",
+    priority: place.priority ?? "",
+    description: place.description ?? "",
+    operatingInfo: place.operatingInfo ?? "",
+    notes: place.notes ?? "",
+    sourceUrl: place.sourceUrl ?? "",
+    mapUrl: place.mapUrl ?? "",
+    checkedAt: place.checkedAt ?? "",
+  };
+}
+
+function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: DirectoryPlace[]): DirectoryPlace[] {
+  const currentById = new Map(current.map((place) => [place.id, place]));
+  const currentByName = new Map(current.map((place) => [normalizePlaceName(place.name), place]));
+  const defaultById = new Map(defaultDirectoryPlaces.map((place) => [place.id, place]));
+  const defaultByName = new Map(defaultDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
+  return records.map((record) => {
+    const base = currentById.get(record.id)
+      ?? currentByName.get(normalizePlaceName(record.name))
+      ?? defaultById.get(record.id)
+      ?? defaultByName.get(normalizePlaceName(record.name));
+    const addressChanged = Boolean(base && base.address.trim() !== record.address.trim());
+    return {
+      ...(base ?? {
+        x: 50,
+        y: 50,
+        coordinateStatus: "unresolved" as const,
+        sourceLabel: "내부 DB",
+      }),
+      ...record,
+      sourceLabel: `내부 DB${record.subtype ? ` · ${record.subtype}` : ""}`,
+      ...(addressChanged && base?.coordinateStatus !== "landmark" ? {
+        coordinateStatus: "unresolved" as const,
+        latitude: undefined,
+        longitude: undefined,
+      } : {}),
+    };
+  });
+}
+
 const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [place.name, place]));
 
 const addressByPlace = new Map<string, (typeof landmarkLocations)[number]>(landmarkLocations.map((location) => [location.name, location]));
@@ -521,6 +591,15 @@ function isBundledMarkerCategory(category: CategoryId): category is BundledMarke
 
 function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = recommendedMarkerStyle) {
   return isBundledMarkerCategory(category) ? markerAssetId(style, category) : null;
+}
+
+function assetIdAfterDirectoryCategoryChange(element: MapElement, category: CategoryId) {
+  if (element.category === category) return element.assetId;
+  if (category === "landmark") return null;
+  if (element.category === "landmark" || canonicalMarkerAssetIds.has(element.assetId ?? "")) {
+    return defaultMarkerAssetId(category);
+  }
+  return element.assetId;
 }
 
 const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, index) => {
@@ -859,6 +938,7 @@ export default function Home() {
   const calibrationLiveApplyRef = useRef(false);
   const localCalibrationUpdatedAtRef = useRef(0);
   const localLockedCoordinatesUpdatedAtRef = useRef(0);
+  const placeDirectoryLoadedRef = useRef(false);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -925,6 +1005,15 @@ export default function Home() {
   const [primaryCalibrationRemoteReady, setPrimaryCalibrationRemoteReady] = useState(false);
   const [lockedCoordinateStorage, setLockedCoordinateStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [lockedCoordinatesRemoteReady, setLockedCoordinatesRemoteReady] = useState(false);
+  const [placeDirectoryStorage, setPlaceDirectoryStorage] = useState<"loading" | "persistent" | "bundled">("loading");
+  const [placeDirectoryCanEdit, setPlaceDirectoryCanEdit] = useState(false);
+  const [placeDirectoryUpdatedAt, setPlaceDirectoryUpdatedAt] = useState<string | null>(null);
+  const [databaseEditorOpen, setDatabaseEditorOpen] = useState(false);
+  const [databaseEditorSaving, setDatabaseEditorSaving] = useState(false);
+  const [databaseEditorDirty, setDatabaseEditorDirty] = useState(false);
+  const [databaseEditorQuery, setDatabaseEditorQuery] = useState("");
+  const [databaseEditorSelectedId, setDatabaseEditorSelectedId] = useState<string | null>(null);
+  const [databaseDraftPlaces, setDatabaseDraftPlaces] = useState<DirectoryPlace[]>([]);
   const [interaction, setInteraction] = useState<
     | { type: "pan"; startX: number; startY: number; panX: number; panY: number }
     | { type: "resize"; id: string; startX: number; startSize: number }
@@ -1335,6 +1424,17 @@ export default function Home() {
     rows: unifiedPlaceRows.filter((row) => row.category === category.id),
   })).filter((group) => group.rows.length > 0), [unifiedPlaceRows]);
 
+  const selectedDatabasePlace = useMemo(
+    () => databaseDraftPlaces.find((place) => place.id === databaseEditorSelectedId) ?? null,
+    [databaseDraftPlaces, databaseEditorSelectedId],
+  );
+  const filteredDatabaseDraftPlaces = useMemo(() => {
+    const query = databaseEditorQuery.trim().toLocaleLowerCase("ko-KR");
+    return databaseDraftPlaces
+      .filter((place) => !query || `${place.name} ${place.address} ${place.area} ${place.subtype ?? ""}`.toLocaleLowerCase("ko-KR").includes(query))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [databaseDraftPlaces, databaseEditorQuery]);
+
   const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
     counts[category.id] = elements.filter((element) => element.category === category.id && element.mapVisible).length;
     return counts;
@@ -1526,6 +1626,56 @@ export default function Home() {
       localStorage.setItem(CALIBRATION_GROUPS_KEY, JSON.stringify(expandedCalibrationGroups));
     } catch {}
   }, [expandedCalibrationGroups, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || placeDirectoryLoadedRef.current) return;
+    placeDirectoryLoadedRef.current = true;
+    let cancelled = false;
+    fetch(PLACE_DIRECTORY_API, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as {
+          rows?: PlaceDirectoryRecord[];
+          persistent?: boolean;
+          canEdit?: boolean;
+          updatedAt?: string | null;
+        } | null;
+        if (!response.ok && response.status !== 503) throw new Error("directory load failed");
+        return payload;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setPlaceDirectoryCanEdit(Boolean(payload?.canEdit));
+        setPlaceDirectoryUpdatedAt(payload?.updatedAt ?? null);
+        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+        if (!payload?.persistent || !rows.length) {
+          setPlaceDirectoryStorage("bundled");
+          return;
+        }
+        const merged = mergeDirectoryRecords(rows, placesRef.current);
+        const byId = new Map(merged.map((place) => [place.id, place]));
+        const byName = new Map(merged.map((place) => [normalizePlaceName(place.name), place]));
+        replaceDirectoryPlaces(() => merged);
+        replaceElements((current) => current.map((element) => {
+          const place = (element.directoryId ? byId.get(element.directoryId) : undefined)
+            ?? byName.get(normalizePlaceName(element.name));
+          if (!place) return element;
+          return {
+            ...element,
+            directoryId: place.id,
+            name: place.name,
+            category: place.category,
+            address: place.address,
+            addressSourceUrl: place.sourceUrl ?? "",
+            assetId: assetIdAfterDirectoryCategoryChange(element, place.category),
+          };
+        }));
+        setPlaceDirectoryStorage("persistent");
+      })
+      .catch(() => {
+        if (!cancelled) setPlaceDirectoryStorage("bundled");
+      });
+    return () => { cancelled = true; };
+  }, [hydrated, replaceDirectoryPlaces, replaceElements]);
 
   useEffect(() => {
     if (!hydrated || !primaryCalibrationRemoteReady) return;
@@ -1744,7 +1894,7 @@ export default function Home() {
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (!selectedId || ["INPUT", "SELECT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName)) return;
+      if (databaseEditorOpen || !selectedId || ["INPUT", "SELECT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName)) return;
       const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       const direction = directions[event.key];
       if (!direction) return;
@@ -1771,7 +1921,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [resourceOutputDragMode, selectedId, updateCalibrationPoint, updateElement, updateElementAnchor]);
+  }, [databaseEditorOpen, resourceOutputDragMode, selectedId, updateCalibrationPoint, updateElement, updateElementAnchor]);
 
   const undo = () => {
     if (!undoStack.length) return;
@@ -2143,6 +2293,128 @@ export default function Home() {
       return;
     }
     if (row.place) openDirectoryPlace(row.place);
+  };
+
+  const openDatabaseEditor = () => {
+    if (!placeDirectoryCanEdit) {
+      setToast("내부 DB 수정은 소유자 로그인 후 사용할 수 있습니다.");
+      return;
+    }
+    const draft = placesRef.current.map((place) => ({ ...place }));
+    setDatabaseDraftPlaces(draft);
+    setDatabaseEditorSelectedId(draft[0]?.id ?? null);
+    setDatabaseEditorQuery("");
+    setDatabaseEditorDirty(false);
+    setDatabaseEditorOpen(true);
+  };
+
+  const closeDatabaseEditor = () => {
+    if (databaseEditorDirty && !window.confirm("저장하지 않은 DB 편집 내용을 닫을까요?")) return;
+    setDatabaseEditorOpen(false);
+    setDatabaseEditorDirty(false);
+  };
+
+  const updateDatabaseDraftPlace = (id: string, patch: Partial<DirectoryPlace>) => {
+    setDatabaseDraftPlaces((current) => current.map((place) => place.id === id ? { ...place, ...patch } : place));
+    setDatabaseEditorDirty(true);
+  };
+
+  const addDatabaseDraftPlace = () => {
+    const id = uniqueRuntimeId("db-place", databaseDraftPlaces.map((place) => place.id));
+    const next: DirectoryPlace = {
+      id,
+      name: "새 장소",
+      category: "culture",
+      area: "",
+      address: "",
+      x: 50,
+      y: 50,
+      coordinateStatus: "unresolved",
+      sourceLabel: "내부 DB · 신규",
+      subtype: "",
+      priority: "",
+      description: "",
+      operatingInfo: "",
+      notes: "",
+      sourceUrl: "",
+      mapUrl: "",
+      checkedAt: "",
+    };
+    setDatabaseDraftPlaces((current) => [next, ...current]);
+    setDatabaseEditorSelectedId(id);
+    setDatabaseEditorQuery("");
+    setDatabaseEditorDirty(true);
+  };
+
+  const removeDatabaseDraftPlace = (place: DirectoryPlace) => {
+    const attached = elementsRef.current.find((element) => element.directoryId === place.id || normalizePlaceName(element.name) === normalizePlaceName(place.name));
+    if (attached) {
+      setToast(`${place.name}은(는) 지도 요소가 남아 있습니다. 요소를 먼저 삭제한 뒤 DB에서 제거해 주세요.`);
+      return;
+    }
+    setDatabaseDraftPlaces((current) => current.filter((item) => item.id !== place.id));
+    setDatabaseEditorSelectedId((current) => current === place.id ? null : current);
+    setDatabaseEditorDirty(true);
+  };
+
+  const applyPersistentDirectoryRows = (rows: PlaceDirectoryRecord[], updatedAt: string | null) => {
+    const merged = mergeDirectoryRecords(rows, placesRef.current);
+    const byId = new Map(merged.map((place) => [place.id, place]));
+    const byName = new Map(merged.map((place) => [normalizePlaceName(place.name), place]));
+    replaceDirectoryPlaces(() => merged);
+    replaceElements((current) => current.map((element) => {
+      const place = (element.directoryId ? byId.get(element.directoryId) : undefined)
+        ?? byName.get(normalizePlaceName(element.name));
+      if (!place) return element;
+      return {
+        ...element,
+        directoryId: place.id,
+        name: place.name,
+        category: place.category,
+        address: place.address,
+        addressSourceUrl: place.sourceUrl ?? "",
+        assetId: assetIdAfterDirectoryCategoryChange(element, place.category),
+      };
+    }));
+    setPlaceDirectoryUpdatedAt(updatedAt);
+    setPlaceDirectoryStorage("persistent");
+  };
+
+  const saveDatabaseEditor = async () => {
+    if (!placeDirectoryCanEdit || databaseEditorSaving) return;
+    const records = databaseDraftPlaces.map(directoryRecordFromPlace);
+    const normalizedNames = records.map((row) => normalizePlaceName(row.name).toLocaleLowerCase("ko-KR"));
+    if (records.some((row) => !row.name || !row.category)) {
+      setToast("장소명과 분류는 필수입니다.");
+      return;
+    }
+    if (new Set(normalizedNames).size !== normalizedNames.length) {
+      setToast("같은 장소명이 두 번 등록되어 있습니다. 중복 항목을 정리해 주세요.");
+      return;
+    }
+    if (records.length < placesRef.current.length && !window.confirm(`DB 항목 ${placesRef.current.length - records.length}개를 영구 삭제합니다. 계속할까요?`)) return;
+    setDatabaseEditorSaving(true);
+    try {
+      const response = await fetch(PLACE_DIRECTORY_API, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ rows: records, baseUpdatedAt: placeDirectoryUpdatedAt ?? "" }),
+      });
+      const payload = await response.json().catch(() => null) as { rows?: PlaceDirectoryRecord[]; updatedAt?: string | null; error?: string } | null;
+      if (response.status === 409) {
+        setToast("다른 작업에서 DB가 먼저 변경되었습니다. 새로고침 후 다시 편집해 주세요.");
+        return;
+      }
+      if (!response.ok || !Array.isArray(payload?.rows)) throw new Error(payload?.error ?? "save failed");
+      applyPersistentDirectoryRows(payload.rows, payload.updatedAt ?? null);
+      setDatabaseDraftPlaces(mergeDirectoryRecords(payload.rows, databaseDraftPlaces));
+      setDatabaseEditorDirty(false);
+      setToast(`내부 장소 DB ${payload.rows.length}곳을 영구 저장했습니다.`);
+    } catch {
+      setToast("내부 DB 저장에 실패했습니다. 소유자 로그인과 저장소 상태를 확인해 주세요.");
+    } finally {
+      setDatabaseEditorSaving(false);
+    }
   };
 
   const addAssetElement = (asset: MapAsset) => {
@@ -2773,11 +3045,16 @@ export default function Home() {
               <p>주소 정렬은 일반 마커의 앵커를 갱신하고 기존 리소스 오프셋을 유지합니다. 이후 속성 패널의 앵커·출력 오프셋 값으로 세부 보정할 수 있습니다.</p>
             </div>
             <div className="database-import">
-              <div><strong>통합 장소 DB</strong><span>랜드마크·일반 장소 {allUnifiedPlaceRows.length}곳</span></div>
-              <button onClick={() => dbInputRef.current?.click()} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 찾는 중" : "DB JSON 불러오기"}</button>
+              <div><strong>통합 장소 DB</strong><span>{placeDirectoryStorage === "persistent" ? "영구 DB" : placeDirectoryStorage === "bundled" ? "기본 DB" : "확인 중"} · {allUnifiedPlaceRows.length}곳</span></div>
+              <div className="database-action-grid">
+                {placeDirectoryCanEdit
+                  ? <button className="primary" onClick={openDatabaseEditor}>DB 직접 편집</button>
+                  : <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}
+                <button onClick={() => dbInputRef.current?.click()} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 찾는 중" : "JSON 불러오기"}</button>
+              </div>
               <input ref={dbInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importMasterDatabase} />
               {geocodeProgress.total > 0 && <div className="geocode-progress"><span style={{ width: `${(geocodeProgress.done / geocodeProgress.total) * 100}%` }} /><small>{geocodeProgress.done}/{geocodeProgress.total} · 반영 {geocodeProgress.found} · 미확정 {geocodeProgress.failed}</small></div>}
-              <p>업로드 후 주소를 한 건씩 조회합니다. OpenStreetMap Nominatim 정책에 따라 초당 1건 이하로 처리하고 결과를 이 브라우저에 저장합니다. <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noreferrer">이용정책 ↗</a></p>
+              <p>직접 편집은 장소 정보 원본을 영구 저장합니다. 좌표·고정·라벨·자산 배치는 별도 상태로 보존됩니다. JSON 업로드 후 주소 확인은 이 브라우저에서 진행됩니다.</p>
             </div>
             <div className="place-search-wrap"><input value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
@@ -2967,6 +3244,58 @@ export default function Home() {
           </div>}
         </aside>
       </section>
+      {databaseEditorOpen && <div className="database-editor-backdrop" role="presentation">
+        <section className="database-editor" role="dialog" aria-modal="true" aria-labelledby="database-editor-title">
+          <header className="database-editor-header">
+            <div><strong id="database-editor-title">내부 장소 DB 직접 편집</strong><span>{databaseDraftPlaces.length}곳 · 좌표와 지도 배치는 별도 보존</span></div>
+            <button onClick={closeDatabaseEditor} aria-label="DB 편집 닫기">×</button>
+          </header>
+          <div className="database-editor-body">
+            <aside className="database-editor-list-pane">
+              <div className="database-editor-list-tools">
+                <input value={databaseEditorQuery} onChange={(event) => setDatabaseEditorQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="DB 장소 검색" />
+                <button onClick={addDatabaseDraftPlace}>＋ 신규</button>
+              </div>
+              <div className="database-editor-list" role="listbox" aria-label="DB 장소 목록">
+                {filteredDatabaseDraftPlaces.map((place) => {
+                  const category = categoryOf(place.category);
+                  return <button key={place.id} className={databaseEditorSelectedId === place.id ? "active" : ""} onClick={() => setDatabaseEditorSelectedId(place.id)} role="option" aria-selected={databaseEditorSelectedId === place.id}>
+                    <i style={{ background: category.color }} /><span><b>{place.name || "이름 없음"}</b><small>{category.name} · {place.area || "권역 미입력"}</small></span>
+                  </button>;
+                })}
+                {!filteredDatabaseDraftPlaces.length && <p>검색 결과가 없습니다.</p>}
+              </div>
+            </aside>
+            <div className="database-editor-form-pane">
+              {selectedDatabasePlace ? <div className="database-editor-form">
+                <div className="database-form-row primary-fields">
+                  <label>장소명 <em>필수</em><input value={selectedDatabasePlace.name} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { name: event.target.value })} /></label>
+                  <label>분류 <em>필수</em><select value={selectedDatabasePlace.category} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                </div>
+                <div className="database-form-row">
+                  <label>세부 지역<input value={selectedDatabasePlace.area} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { area: event.target.value })} /></label>
+                  <label>세부 유형<input value={selectedDatabasePlace.subtype ?? ""} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { subtype: event.target.value })} /></label>
+                </div>
+                <label>주소<input value={selectedDatabasePlace.address} maxLength={260} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { address: event.target.value })} /></label>
+                <div className="database-form-row">
+                  <label>우선도<input value={selectedDatabasePlace.priority ?? ""} maxLength={80} placeholder="추천·참고·검토" onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { priority: event.target.value })} /></label>
+                  <label>확인일<input type="date" value={selectedDatabasePlace.checkedAt ?? ""} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { checkedAt: event.target.value })} /></label>
+                </div>
+                <label>설명<textarea value={selectedDatabasePlace.description ?? ""} maxLength={1600} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { description: event.target.value })} /></label>
+                <label>운영정보<textarea value={selectedDatabasePlace.operatingInfo ?? ""} maxLength={1000} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { operatingInfo: event.target.value })} /></label>
+                <label>비고·주의사항<textarea value={selectedDatabasePlace.notes ?? ""} maxLength={1600} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { notes: event.target.value })} /></label>
+                <label>사진·소개 자료 URL<input type="url" value={selectedDatabasePlace.sourceUrl ?? ""} maxLength={1200} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { sourceUrl: event.target.value })} /></label>
+                <label>지도·코스 자료 URL<input type="url" value={selectedDatabasePlace.mapUrl ?? ""} maxLength={1200} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { mapUrl: event.target.value })} /></label>
+                <div className="database-record-meta"><span>ID {selectedDatabasePlace.id}</span><button className="danger" onClick={() => removeDatabaseDraftPlace(selectedDatabasePlace)}>DB 항목 삭제</button></div>
+              </div> : <div className="database-editor-empty"><strong>편집할 장소를 선택하세요.</strong><p>신규 장소는 왼쪽의 ＋ 신규 버튼으로 추가할 수 있습니다.</p></div>}
+            </div>
+          </div>
+          <footer className="database-editor-footer">
+            <span>{databaseEditorDirty ? "저장하지 않은 변경 있음" : placeDirectoryStorage === "persistent" ? `영구 DB 동기화${placeDirectoryUpdatedAt ? ` · ${new Date(placeDirectoryUpdatedAt).toLocaleString("ko-KR")}` : ""}` : "기본 DB를 처음 저장할 준비가 됐습니다."}</span>
+            <div><button onClick={() => download(`제주원도심_내부DB_백업_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ exportedAt: new Date().toISOString(), rows: databaseDraftPlaces.map(directoryRecordFromPlace) }, null, 2), "application/json")}>JSON 백업</button><button onClick={closeDatabaseEditor}>취소</button><button className="primary" disabled={!databaseEditorDirty || databaseEditorSaving} onClick={() => void saveDatabaseEditor()}>{databaseEditorSaving ? "저장 중…" : "영구 DB 저장"}</button></div>
+          </footer>
+        </section>
+      </div>}
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
   );

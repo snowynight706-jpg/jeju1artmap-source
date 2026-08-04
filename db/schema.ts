@@ -28,3 +28,27 @@ export const lockedCoordinateRevision = sqliteTable("locked_coordinate_revision"
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by").notNull(),
 });
+
+export const placeDirectory = sqliteTable("place_directory", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  area: text("area").notNull(),
+  address: text("address").notNull(),
+  subtype: text("subtype").notNull(),
+  priority: text("priority").notNull(),
+  description: text("description").notNull(),
+  operatingInfo: text("operating_info").notNull(),
+  notes: text("notes").notNull(),
+  sourceUrl: text("source_url").notNull(),
+  mapUrl: text("map_url").notNull(),
+  checkedAt: text("checked_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+});
+
+export const placeDirectoryRevision = sqliteTable("place_directory_revision", {
+  id: integer("id").primaryKey(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+});

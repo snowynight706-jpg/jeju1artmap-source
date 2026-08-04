@@ -1,6 +1,6 @@
 export const runtime = "edge";
 
-const CATEGORIES = new Set(["landmark", "culture", "cafe", "food", "parking", "park", "utility"]);
+const CATEGORIES = new Set(["landmark", "culture", "cafe", "food", "shop", "parking", "park", "utility"]);
 const PRIMARY_NAMES = new Set([
   "관덕정",
   "제주아트플랫폼",
