@@ -89,7 +89,7 @@ type MapElement = {
 type DirectoryPlace = {
   id: string;
   name: string;
-  category: "culture" | "cafe" | "food";
+  category: "culture" | "cafe" | "food" | "parking" | "utility";
   area: string;
   address: string;
   x: number;
@@ -179,6 +179,17 @@ const areaFallbacks: Record<string, { x: number; y: number }> = {
   "이도동": { x: 67, y: 84 },
 };
 
+const supportDirectoryPlaces: DirectoryPlace[] = [
+  { id: "support-tapdong-parking-1", name: "탑동 제1공영주차장", category: "parking", area: "칠성로·탑동", address: "제주특별자치도 제주시 탑동로2길 4", x: 31, y: 28, coordinateStatus: "review", sourceLabel: "편의시설 조사 · 주소 검수 필요", sourceUrl: "https://app.modu.kr/p/157567", subtype: "공영주차장", priority: "추천" },
+  { id: "support-chilseong-parking-1", name: "칠성제1공영주차장", category: "parking", area: "칠성로·탑동", address: "제주특별자치도 제주시 관덕로13길 12", x: 56, y: 48, coordinateStatus: "review", sourceLabel: "편의시설 조사 · 주소 검수 필요", sourceUrl: "https://thejade.kr/page.php?p=sub_1_2", subtype: "공영주차장", priority: "추천" },
+  { id: "support-dongmun-parking", name: "동문재래시장 공영주차장", category: "parking", area: "동문시장·동문로", address: "제주특별자치도 제주시 중앙로13길 16-8", x: 68, y: 53, coordinateStatus: "review", sourceLabel: "편의시설 조사 · 주소 검수 필요", subtype: "공영주차장", priority: "추천" },
+  { id: "support-buksugu-parking", name: "북수구공영주차장", category: "parking", area: "산지천·탐라문화광장·서부두", address: "제주특별자치도 제주시 일도일동 1230-5", x: 66, y: 43, coordinateStatus: "review", sourceLabel: "편의시설 조사 · 주소 검수 필요", subtype: "공영주차장", priority: "추천" },
+  { id: "support-tapdong-info", name: "탑동관광안내소", category: "utility", area: "칠성로·탑동", address: "제주특별자치도 제주시 탑동로2길 4", x: 34, y: 29.5, coordinateStatus: "review", sourceLabel: "VISIT JEJU 관광안내소 정보", sourceUrl: "https://m.visitjeju.net/kr/knowledge/view?knwld_seq=396", subtype: "관광안내소", priority: "추천" },
+  { id: "support-dongmun-center", name: "동문시장 고객지원센터·화장실", category: "utility", area: "동문시장·동문로", address: "제주특별자치도 제주시 관덕로14길 20", x: 66, y: 57, coordinateStatus: "review", sourceLabel: "동문시장 편의시설 조사 · 현장 검수 필요", sourceUrl: "https://easyjeju.net/pages.php?no=724&p=tourist", subtype: "고객지원·화장실", priority: "추천" },
+  { id: "support-dongmun-public-toilet", name: "동문공설시장 공중화장실", category: "utility", area: "동문시장·동문로", address: "제주특별자치도 제주시 일도일동 1104", x: 71, y: 56, coordinateStatus: "review", sourceLabel: "동문시장 편의시설 조사 · 현장 검수 필요", subtype: "공중화장실", priority: "참고" },
+  { id: "support-tapdong-toilet", name: "탑동광장 무장애 화장실", category: "utility", area: "칠성로·탑동", address: "제주특별자치도 제주시 중앙로 1", x: 26, y: 24, coordinateStatus: "review", sourceLabel: "탑동광장 무장애 편의정보 · 현장 검수 필요", sourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", subtype: "무장애 화장실", priority: "추천" },
+];
+
 function normalizePlaceName(name: string) {
   if (name === "제주해변공연장") return "탑동해변공연장";
   if (name === "제주특별자치도 소통협력센터") return "제주시소통협력센터";
@@ -209,7 +220,11 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
       };
     });
   const names = new Set(built.map((place) => place.name));
-  return [...built, ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name)))];
+  return [
+    ...built,
+    ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))),
+    ...supportDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))),
+  ];
 }
 
 const defaultDirectoryPlaces = buildDirectoryPlaces(masterDirectoryRows);
@@ -247,7 +262,7 @@ function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = 
   return isBundledMarkerCategory(category) ? markerAssetId(style, category) : null;
 }
 
-const initialElements: MapElement[] = landmarkLocations.map((location, index) => {
+const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, index) => {
   const asset = builtInAssets.find((item) => item.id === location.assetId);
   const directoryPlace = directoryByName.get(location.name);
   return {
@@ -270,6 +285,56 @@ const initialElements: MapElement[] = landmarkLocations.map((location, index) =>
     directoryId: directoryPlace?.id,
   };
 });
+
+const starterPlaceNames = new Set([
+  "갤러리 레미콘 산지천", "고요산책", "나이롱책방", "비아아트·대동호텔 아트센터",
+  "사진예술공간 큰바다영", "스튜디오126", "아트스페이스 빈공간", "종이잡지클럽 제주",
+  "THE BARN BERLIN JEJU", "내음커피바", "리듬앤브루스", "마음에온[溫]", "마일스 탑동점",
+  "먼슬리 제주", "무화과한입", "아일랜드팩토리 풍류", "어반브루잉", "카페단단",
+  "D&DEPARTMENT JEJU 식음공간", "산지키친", "연호제 구내식당", "웰컴버거",
+  "자양식당", "적점", "진아떡집", "첨목",
+  ...supportDirectoryPlaces.map((place) => place.name),
+]);
+
+const starterOffsets = [
+  { x: -5.4, y: -4.2 }, { x: 4.8, y: -4.5 }, { x: -7.2, y: 0.5 }, { x: 7.1, y: 0.6 },
+  { x: -4.8, y: 4.8 }, { x: 4.9, y: 4.7 }, { x: 0, y: -7.1 }, { x: 0.2, y: 7.2 },
+  { x: -9.2, y: -3.1 }, { x: 9.1, y: -2.8 }, { x: -8.8, y: 4.2 }, { x: 8.8, y: 4.1 },
+] as const;
+
+function buildStarterMarkers(places: DirectoryPlace[]): MapElement[] {
+  const areaCounts = new Map<string, number>();
+  return places.filter((place) => starterPlaceNames.has(place.name) && !landmarkLocations.some((item) => item.name === place.name)).map((place, index) => {
+    const occurrence = areaCounts.get(place.area) ?? 0;
+    areaCounts.set(place.area, occurrence + 1);
+    const offset = starterOffsets[occurrence % starterOffsets.length];
+    const x = clamp(place.x + offset.x, 3, 97);
+    const y = clamp(place.y + offset.y, 3, 97);
+    const assetId = defaultMarkerAssetId(place.category);
+    return {
+      ...elementDefaults,
+      id: `starter-marker-${index + 1}`,
+      directoryId: place.id,
+      name: place.name,
+      category: place.category,
+      x,
+      y,
+      anchorX: place.x,
+      anchorY: place.y,
+      size: place.category === "culture" ? 2.5 : 1.65,
+      z: landmarkLocations.length + index + 1,
+      labelVisible: place.category === "culture" || place.category === "parking",
+      labelGap: 4,
+      assetId,
+      status: assetId ? "review" : "unchecked",
+      address: place.address,
+      addressSourceUrl: place.sourceUrl ?? "",
+      memo: `${place.sourceLabel} · 초기 구성용 시각 배치. 실제 위치 앵커와 화면상 위치를 검수해 주세요.`,
+    };
+  });
+}
+
+const initialElements: MapElement[] = [...initialLandmarkElements, ...buildStarterMarkers(defaultDirectoryPlaces)];
 
 const statusText: Record<AssetStatus, string> = { approved: "승인 완료", review: "검수 중", unchecked: "미검수" };
 const reviewStatusText: Record<ReviewStatus, string> = { delete: "삭제 검토", weaken: "약화 검토", keep: "유지", hierarchy: "도로 위계 조정" };
@@ -355,6 +420,7 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
 export default function Home() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const leftPanelRef = useRef<HTMLElement>(null);
   const baseMapImgRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
@@ -389,7 +455,7 @@ export default function Home() {
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places">("assets");
   const [placeQuery, setPlaceQuery] = useState("");
-  const [placeCategory, setPlaceCategory] = useState<"all" | "culture" | "cafe" | "food">("all");
+  const [placeCategory, setPlaceCategory] = useState<"all" | "culture" | "cafe" | "food" | "parking" | "utility">("all");
   const [focusPulseId, setFocusPulseId] = useState<string | null>(null);
   const [geocodeProgress, setGeocodeProgress] = useState<{ active: boolean; done: number; total: number; found: number; failed: number }>({ active: false, done: 0, total: 0, found: 0, failed: 0 });
   const [leftOpen, setLeftOpen] = useState(true);
@@ -415,10 +481,13 @@ export default function Home() {
 
   const setDocument = useCallback((document: DocumentState) => {
     const clean = sanitizeDocument(cloneDocument(document));
+    const restoredPlaces = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
+    const restoredNames = new Set(restoredPlaces.map((place) => normalizePlaceName(place.name)));
+    const mergedPlaces = [...restoredPlaces, ...supportDirectoryPlaces.filter((place) => !restoredNames.has(normalizePlaceName(place.name)))];
     elementsRef.current = clean.elements;
     assetsRef.current = clean.assets;
     notesRef.current = clean.reviewNotes;
-    placesRef.current = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
+    placesRef.current = mergedPlaces;
     setElements(clean.elements);
     setAssets(clean.assets);
     setReviewNotes(clean.reviewNotes);
@@ -489,6 +558,11 @@ export default function Home() {
       && (!query || `${place.name} ${place.address} ${place.area}`.toLocaleLowerCase("ko-KR").includes(query))
     ));
   }, [directoryPlaces, placeCategory, placeQuery]);
+
+  const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
+    counts[category.id] = elements.filter((element) => element.category === category.id).length;
+    return counts;
+  }, { landmark: 0, culture: 0, cafe: 0, food: 0, parking: 0, park: 0, utility: 0 }), [elements]);
 
   const visibleElements = useMemo(() => [...elements]
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
@@ -727,7 +801,7 @@ export default function Home() {
     setToast(`기본 랜드마크 ${landmarkLocations.length}곳을 기준 위치로 초기화했습니다.`);
   };
 
-  const runAddressLookup = async (places: DirectoryPlace[]) => {
+  const runAddressLookup = async (places: DirectoryPlace[], movePlacedElements = false) => {
     const runId = ++geocodeRunRef.current;
     const targets = places.filter((place) => place.coordinateStatus !== "landmark" && place.address);
     setGeocodeProgress({ active: true, done: 0, total: targets.length, found: 0, failed: 0 });
@@ -763,7 +837,12 @@ export default function Home() {
         } : item));
         replaceElements((current) => current.map((element) => (
           element.directoryId === place.id || element.name === place.name
-            ? { ...element, anchorX: mapped.x, anchorY: mapped.y }
+            ? {
+              ...element,
+              anchorX: mapped.x,
+              anchorY: mapped.y,
+              ...(movePlacedElements ? { x: mapped.x, y: mapped.y } : {}),
+            }
             : element
         )));
       } else {
@@ -774,6 +853,40 @@ export default function Home() {
     }
     setGeocodeProgress({ active: false, done: targets.length, total: targets.length, found, failed });
     setToast(`주소 위치 찾기 완료 · 지도 반영 ${found}곳, 미확정 ${failed}곳`);
+  };
+
+  const applyStarterComposition = () => {
+    const existingNames = new Set(elementsRef.current.map((element) => normalizePlaceName(element.name)));
+    const missing = buildStarterMarkers(placesRef.current).filter((element) => !existingNames.has(normalizePlaceName(element.name)));
+    if (!missing.length) {
+      setToast("핵심 구성요소가 이미 모두 배치되어 있습니다.");
+      return;
+    }
+    pushHistory();
+    const maxZ = Math.max(0, ...elementsRef.current.map((element) => element.z));
+    const restored = missing.map((element, index) => ({ ...element, id: `element-${++nextIdRef.current}`, z: maxZ + index + 1 }));
+    replaceElements((current) => [...current, ...restored]);
+    setActiveCategory("all");
+    setViewMode("all");
+    setToast(`초기 구성요소 ${restored.length}곳을 추가했습니다. 기존 배치 위치는 유지했습니다.`);
+  };
+
+  const alignPlacedMarkersByAddress = () => {
+    const placedIds = new Set(elementsRef.current.map((element) => element.directoryId).filter(Boolean));
+    const placedNames = new Set(elementsRef.current.map((element) => normalizePlaceName(element.name)));
+    const targets = placesRef.current.filter((place) => placedIds.has(place.id) || placedNames.has(normalizePlaceName(place.name)));
+    if (!targets.length) {
+      setToast("주소로 정렬할 일반 장소가 없습니다.");
+      return;
+    }
+    pushHistory();
+    setToast(`배치된 일반 장소 ${targets.length}곳의 주소 위치를 찾기 시작합니다.`);
+    void runAddressLookup(targets, true);
+  };
+
+  const switchLeftPanel = (mode: "assets" | "places") => {
+    setLeftPanelMode(mode);
+    window.requestAnimationFrame(() => leftPanelRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
   };
 
   const importMasterDatabase = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1023,11 +1136,11 @@ export default function Home() {
       </header>
 
       <section className={`workspace ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"}`}>
-        <aside className="panel asset-panel" aria-label="자산 목록">
+        <aside ref={leftPanelRef} className="panel asset-panel" aria-label="자산 목록">
           <div className="panel-heading"><div><strong>{leftPanelMode === "assets" ? "자산" : "장소 탐색"}</strong><span>{leftPanelMode === "assets" ? `${layoutName} · ${elements.length}개 배치` : `조사 목록 ${directoryPlaces.length}곳 · 더블클릭 이동`}</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
           <div className="panel-tabs" role="tablist" aria-label="왼쪽 패널 내용">
-            <button className={leftPanelMode === "assets" ? "active" : ""} onClick={() => setLeftPanelMode("assets")} role="tab" aria-selected={leftPanelMode === "assets"}>아이콘·마커</button>
-            <button className={leftPanelMode === "places" ? "active" : ""} onClick={() => setLeftPanelMode("places")} role="tab" aria-selected={leftPanelMode === "places"}>장소 탐색 <span>{directoryPlaces.length}</span></button>
+            <button className={leftPanelMode === "assets" ? "active" : ""} onClick={() => switchLeftPanel("assets")} role="tab" aria-selected={leftPanelMode === "assets"}>아이콘·마커</button>
+            <button className={leftPanelMode === "places" ? "active" : ""} onClick={() => switchLeftPanel("places")} role="tab" aria-selected={leftPanelMode === "places"}>장소 탐색 <span>{directoryPlaces.length}</span></button>
           </div>
           {leftPanelMode === "assets" ? <>
           <div className="panel-search">자산 목록 <kbd>{assets.length}</kbd></div>
@@ -1062,8 +1175,21 @@ export default function Home() {
             <button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 랜드마크 위치 초기화</button>
           </div>
           </> : <div className="place-directory">
+            <div className="composition-helper">
+              <div className="composition-head"><div><strong>지도 구성 도우미</strong><span>핵심 구성은 기본 적용되어 있으며 개별 편집할 수 있습니다.</span></div><b>{elements.length}개 배치</b></div>
+              <div className="composition-counts" aria-label="현재 구성요소 수">
+                <span><i style={{ background: categoryOf("landmark").color }} />랜드마크 <b>{placedCategoryCounts.landmark}</b></span>
+                <span><i style={{ background: categoryOf("culture").color }} />문화 <b>{placedCategoryCounts.culture}</b></span>
+                <span><i style={{ background: categoryOf("cafe").color }} />카페 <b>{placedCategoryCounts.cafe}</b></span>
+                <span><i style={{ background: categoryOf("food").color }} />음식 <b>{placedCategoryCounts.food}</b></span>
+                <span><i style={{ background: categoryOf("parking").color }} />주차 <b>{placedCategoryCounts.parking}</b></span>
+                <span><i style={{ background: categoryOf("utility").color }} />편의 <b>{placedCategoryCounts.utility}</b></span>
+              </div>
+              <div className="composition-actions"><button onClick={applyStarterComposition}>기본 구성 복원</button><button onClick={alignPlacedMarkersByAddress} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 확인 중" : "배치 장소 주소로 정렬"}</button></div>
+              <p>주소 정렬은 일반 마커의 배치 위치와 앵커를 함께 갱신합니다. 이후 드래그·방향키·속성 패널로 세부 보정할 수 있습니다.</p>
+            </div>
             <div className="database-import">
-              <div><strong>장소 마스터 DB</strong><span>문화시설·카페·음식점 {directoryPlaces.length}곳</span></div>
+              <div><strong>장소 마스터 DB</strong><span>문화·식음·주차·편의 {directoryPlaces.length}곳</span></div>
               <button onClick={() => dbInputRef.current?.click()} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 찾는 중" : "DB JSON 불러오기"}</button>
               <input ref={dbInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importMasterDatabase} />
               {geocodeProgress.total > 0 && <div className="geocode-progress"><span style={{ width: `${(geocodeProgress.done / geocodeProgress.total) * 100}%` }} /><small>{geocodeProgress.done}/{geocodeProgress.total} · 반영 {geocodeProgress.found} · 미확정 {geocodeProgress.failed}</small></div>}
@@ -1072,7 +1198,7 @@ export default function Home() {
             <div className="place-search-wrap"><input value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
               {([
-                ["all", "전체"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"],
+                ["all", "전체"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["parking", "주차장"], ["utility", "편의시설"],
               ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? directoryPlaces.length : directoryPlaces.filter((place) => place.category === id).length}</span></button>)}
             </div>
             <p className="place-directory-hint">목록을 더블클릭하면 마커를 만들거나 기존 요소를 찾아 지도 중앙에 표시합니다.</p>
@@ -1117,7 +1243,7 @@ export default function Home() {
                   return <div key={element.id} className={`map-element ${isSelected ? "selected" : ""} ${focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${viewMode === "collisions" ? collisionClass : ""} ${viewMode === "labels" ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={(event) => startDrag(event, element)}>
                     {(viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>
-                    {element.status !== "approved" && viewMode !== "labels" && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
+                    {element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
                     {element.labelVisible && <div className="label" style={labelStyle(element.labelPosition, element.labelGap)}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;

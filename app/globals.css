@@ -94,6 +94,21 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .asset-note span { width: 15px; height: 15px; flex: 0 0 15px; border-radius: 50%; background: #dfb46c; color: white; display: grid; place-items: center; }
 
 .place-directory { padding-top: 10px; }
+.composition-helper { margin: 0 10px 9px; padding: 10px; border: 1px solid #bcd8d2; border-radius: 10px; background: linear-gradient(145deg, #f4faf8, #edf6f3); box-shadow: 0 4px 14px rgb(49 102 92 / 7%); }
+.composition-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.composition-head strong, .composition-head span { display: block; }
+.composition-head strong { color: #2d5f57; font-size: 10px; }
+.composition-head span { margin-top: 3px; color: #71827d; font-size: 7px; line-height: 1.35; }
+.composition-head > b { flex: 0 0 auto; padding: 3px 6px; border-radius: 9px; background: white; color: #31766d; font-size: 7px; }
+.composition-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 9px; }
+.composition-counts span { min-width: 0; display: flex; align-items: center; gap: 4px; color: #5f706a; font-size: 7px; white-space: nowrap; }
+.composition-counts i { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; }
+.composition-counts b { margin-left: auto; color: #2c6f66; font-size: 7px; }
+.composition-actions { display: grid; grid-template-columns: 1fr 1.25fr; gap: 5px; margin-top: 9px; }
+.composition-actions button { min-width: 0; height: 29px; border: 1px solid #afd1ca; border-radius: 7px; background: white; color: #316f66; cursor: pointer; font-size: 8px; font-weight: 700; }
+.composition-actions button:last-child { border-color: #3f9287; background: var(--emerald); color: white; }
+.composition-actions button:disabled { cursor: wait; opacity: .65; }
+.composition-helper > p { margin: 7px 0 0; color: #7a8984; font-size: 7px; line-height: 1.45; }
 .database-import { margin: 0 10px 9px; padding: 9px; border: 1px solid #d7e4e0; border-radius: 9px; background: #f7faf9; }
 .database-import > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
 .database-import strong { color: #3c4b46; font-size: 10px; }
@@ -109,7 +124,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .place-search-wrap input { width: 100%; height: 34px; padding: 0 30px 0 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--ink); font-size: 10px; }
 .place-search-wrap input:focus { outline: 2px solid #c5e2dc; border-color: var(--emerald); }
 .place-search-wrap button { position: absolute; right: 5px; top: 5px; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: #84908c; cursor: pointer; }
-.place-filter { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 0 10px 8px; }
+.place-filter { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 0 10px 8px; }
 .place-filter button { height: 28px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: white; color: #687570; cursor: pointer; font-size: 8px; }
 .place-filter button span { min-width: 17px; padding: 1px 4px; border-radius: 8px; background: #f0f3f2; color: #83908b; font-size: 7px; }
 .place-filter button.active { border-color: #b9d6d0; background: var(--emerald-soft); color: #286f66; font-weight: 700; }
