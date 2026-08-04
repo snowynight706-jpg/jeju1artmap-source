@@ -154,6 +154,19 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .place-row:hover, .place-row:focus-visible { border-color: var(--line); background: white; outline: none; box-shadow: 0 3px 10px rgb(37 55 50 / 5%); }
 .place-row:active { transform: translateY(1px); }
 .place-row.placed { background: #f8fbfa; }
+.marker-visibility-panel { margin: 10px; padding: 9px; border: 1px solid #d4e2de; border-radius: 9px; background: #fbfdfc; }
+.marker-visibility-panel > p { margin: -1px 3px 8px; color: #82908b; font-size: 8px; line-height: 1.45; }
+.marker-visibility-list { max-height: 210px; overflow-y: auto; display: grid; gap: 3px; padding-right: 2px; }
+.marker-visibility-row { min-height: 35px; display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; gap: 5px; padding: 4px 5px; border: 1px solid transparent; border-radius: 7px; background: white; }
+.marker-visibility-row:hover { border-color: #d4e2de; }
+.marker-visibility-row.hidden { background: #f2f4f3; opacity: .68; }
+.marker-visibility-row label { min-width: 0; display: grid; grid-template-columns: 15px 7px minmax(0, 1fr); align-items: center; gap: 6px; cursor: pointer; }
+.marker-visibility-row input { width: 14px; height: 14px; accent-color: var(--emerald); }
+.marker-visibility-row i { width: 7px; height: 7px; border-radius: 50%; }
+.marker-visibility-row b, .marker-visibility-row small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.marker-visibility-row b { color: #4f605a; font-size: 8px; }
+.marker-visibility-row small { margin-top: 2px; color: #84908c; font-size: 7px; }
+.marker-visibility-row button { height: 25px; border: 1px solid var(--line); border-radius: 6px; background: white; color: #537168; cursor: pointer; font-size: 7px; }
 .place-type { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid; border-radius: 8px; font-size: 10px; font-weight: 800; }
 .place-copy { min-width: 0; }
 .place-copy strong, .place-copy small, .place-copy em { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -288,6 +301,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .section-title { min-height: 22px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .section-title strong { font-size: 11px; }
 .section-title > span { font-size: 9px; color: var(--muted); }
+.section-title-actions { display: flex; align-items: center; gap: 6px; }
+.coordinate-lock-toggle { margin: 0 !important; }
+.coordinate-lock-toggle input { position: absolute; width: 1px !important; height: 1px !important; opacity: 0; pointer-events: none; }
+.coordinate-lock-toggle span { display: block; min-width: 72px; padding: 4px 7px; border: 1px solid #d0dad7; border-radius: 11px; background: #f0f3f2; color: #72807b; text-align: center; font-size: 8px; font-weight: 700; cursor: pointer; }
+.coordinate-lock-toggle.active span { border-color: #aa8b68; background: #f6eadc; color: #815d35; }
 .status-pill { padding: 3px 6px; border-radius: 10px; font-size: 8px !important; }
 .status-pill.review { background: #fff0dc; color: #9a641d; }.status-pill.unchecked { background: #ecefed; color: #69736f; }.status-pill.approved { background: var(--emerald-soft); color: #2d756b; }
 .property-form label { display: block; margin-top: 9px; color: #65716d; font-size: 9px; }
@@ -352,6 +370,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .default-confirm-toggle small { margin-top: 2px; color: #877f98; font-size: 7px; line-height: 1.4; }
 .offset-nudge-grid { display: grid; grid-template-columns: repeat(4, 1fr) 1.8fr; gap: 4px; margin-top: 7px; }
 .offset-nudge-grid button { height: 27px; border: 1px solid var(--line); border-radius: 6px; background: #f8faf9; color: #536b64; cursor: pointer; font-size: 9px; }
+.offset-nudge-grid button:disabled { opacity: .42; cursor: not-allowed; }
 .offset-nudge-grid button.reset { border-color: #b9d7d1; background: var(--emerald-soft); color: #2e6f66; font-size: 7px; font-weight: 700; }
 .review-list-head { display: flex; align-items: center; justify-content: space-between; margin: 0 3px 7px; font-size: 10px; }
 .review-list-head span { min-width: 18px; padding: 2px 5px; border-radius: 9px; background: #edf2f0; color: var(--muted); text-align: center; font-size: 8px; }

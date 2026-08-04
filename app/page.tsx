@@ -97,6 +97,7 @@ type MapElement = {
   assetId: string | null;
   status: AssetStatus;
   locked: boolean;
+  mapVisible: boolean;
   memo: string;
   address: string;
   addressSourceUrl: string;
@@ -168,6 +169,7 @@ const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" |
   assetId: null,
   status: "unchecked",
   locked: false,
+  mapVisible: true,
   memo: "",
   address: "",
   addressSourceUrl: "",
@@ -564,10 +566,16 @@ function sanitizeDocument(document: DocumentState): DocumentState {
     elements: document.elements
       .filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim()))
       .map((element) => {
-        const defaultAssetId = defaultMarkerAssetId(element.category);
-        return !element.assetId && defaultAssetId
-          ? { ...element, assetId: defaultAssetId, status: "review" as AssetStatus }
-          : element;
+        const normalized = {
+          ...elementDefaults,
+          ...element,
+          locked: Boolean(element.locked),
+          mapVisible: element.mapVisible !== false,
+        };
+        const defaultAssetId = defaultMarkerAssetId(normalized.category);
+        return !normalized.assetId && defaultAssetId
+          ? { ...normalized, assetId: defaultAssetId, status: "review" as AssetStatus }
+          : normalized;
       }),
     directoryPlaces: document.directoryPlaces?.filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim())),
   };
@@ -665,7 +673,7 @@ export default function Home() {
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
   const [placeQuery, setPlaceQuery] = useState("");
-  const [placeCategory, setPlaceCategory] = useState<"all" | "culture" | "cafe" | "food" | "parking" | "utility">("all");
+  const [placeCategory, setPlaceCategory] = useState<CategoryId | "all">("all");
   const [focusPulseId, setFocusPulseId] = useState<string | null>(null);
   const [geocodeProgress, setGeocodeProgress] = useState<{ active: boolean; done: number; total: number; found: number; failed: number }>({ active: false, done: 0, total: 0, found: 0, failed: 0 });
   const [leftOpen, setLeftOpen] = useState(true);
@@ -792,10 +800,14 @@ export default function Home() {
   const applyCalibrationPoints = useCallback((nextPoints: CalibrationPoint[], _moveAllVisual = false, record = true) => {
     void _moveAllVisual;
     if (record) pushHistory();
-    calibrationPointsRef.current = nextPoints;
-    setCalibrationPoints(nextPoints);
+    const lockedNames = new Set(elementsRef.current.filter((element) => element.locked).map((element) => normalizePlaceName(element.name)));
+    const appliedPoints = nextPoints.map((point) => lockedNames.has(point.name)
+      ? calibrationPointsRef.current.find((current) => current.id === point.id) ?? point
+      : point);
+    calibrationPointsRef.current = appliedPoints;
+    setCalibrationPoints(appliedPoints);
     setCalibrationDirty(false);
-    const effectivePoints = buildEffectiveCalibrationPoints(nextPoints, landmarkDefaultsRef.current);
+    const effectivePoints = buildEffectiveCalibrationPoints(appliedPoints, landmarkDefaultsRef.current);
 
     const mappedPlaces = placesRef.current.map((place) => {
       const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, effectivePoints);
@@ -805,6 +817,7 @@ export default function Home() {
     const placesByName = new Map(mappedPlaces.map((place) => [normalizePlaceName(place.name), place]));
     replaceDirectoryPlaces(() => mappedPlaces);
     replaceElements((current) => current.map((element) => {
+      if (element.locked) return element;
       const reference = effectivePoints.find((point) => point.name === normalizePlaceName(element.name));
       const place = (element.directoryId ? placesById.get(element.directoryId) : undefined) ?? placesByName.get(normalizePlaceName(element.name));
       let mapped = reference ? { x: reference.targetX, y: reference.targetY } : place ? { x: place.x, y: place.y } : null;
@@ -826,6 +839,12 @@ export default function Home() {
   }, [pushHistory, replaceDirectoryPlaces, replaceElements]);
 
   const updateCalibrationPoint = useCallback((id: string, patch: Partial<Pick<CalibrationPoint, "targetX" | "targetY">>, record = true) => {
+    const currentPoint = calibrationPointsRef.current.find((point) => point.id === id);
+    const lockedReference = currentPoint && elementsRef.current.find((element) => normalizePlaceName(element.name) === currentPoint.name && element.locked);
+    if (lockedReference) {
+      setToast(`${lockedReference.name}은(는) 좌표가 고정되어 있습니다.`);
+      return;
+    }
     const nextPoints = calibrationPointsRef.current.map((point) => point.id === id ? {
       ...point,
       ...(patch.targetX === undefined ? {} : { targetX: clamp(patch.targetX, 0, 100) }),
@@ -841,7 +860,7 @@ export default function Home() {
     setCalibrationDirty(true);
     const changed = nextPoints.find((point) => point.id === id);
     if (!changed) return;
-    replaceElements((current) => current.map((element) => normalizePlaceName(element.name) === changed.name ? {
+    replaceElements((current) => current.map((element) => normalizePlaceName(element.name) === changed.name && !element.locked ? {
       ...element,
       x: clamp(changed.targetX + element.x - element.anchorX, 0, 100),
       y: clamp(changed.targetY + element.y - element.anchorY, 0, 100),
@@ -861,7 +880,7 @@ export default function Home() {
   };
 
   const moveAllResourcesToAnchors = () => {
-    const targets = elementsRef.current.filter((element) => Number.isFinite(element.anchorX) && Number.isFinite(element.anchorY));
+    const targets = elementsRef.current.filter((element) => !element.locked && Number.isFinite(element.anchorX) && Number.isFinite(element.anchorY));
     if (!targets.length) {
       setToast("기준좌표가 설정된 마커가 없습니다.");
       return;
@@ -881,6 +900,10 @@ export default function Home() {
   }, [pushHistory, replaceElements]);
 
   const updateElementAnchor = useCallback((element: MapElement, nextAnchorX: number, nextAnchorY: number, record = true) => {
+    if (element.locked) {
+      setToast(`${element.name}은(는) 좌표가 고정되어 있습니다.`);
+      return;
+    }
     const anchorX = clamp(nextAnchorX, 0, 100);
     const anchorY = clamp(nextAnchorY, 0, 100);
     updateElement(element.id, {
@@ -958,12 +981,21 @@ export default function Home() {
     ));
   }, [directoryPlaces, placeCategory, placeQuery]);
 
+  const visibilityChecklistElements = useMemo(() => {
+    const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
+    return [...elements]
+      .filter((element) => placeCategory === "all" || element.category === placeCategory)
+      .filter((element) => !query || `${element.name} ${element.address}`.toLocaleLowerCase("ko-KR").includes(query))
+      .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
+  }, [elements, placeCategory, placeQuery]);
+
   const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
     counts[category.id] = elements.filter((element) => element.category === category.id).length;
     return counts;
   }, { landmark: 0, culture: 0, cafe: 0, food: 0, parking: 0, park: 0, utility: 0 }), [elements]);
 
   const visibleElements = useMemo(() => [...elements]
+    .filter((element) => element.mapVisible)
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
     .filter((element) => viewMode !== "landmarks" || element.category === "landmark")
     .filter((element) => viewMode !== "markers" || element.category !== "landmark")
@@ -1011,12 +1043,13 @@ export default function Home() {
         });
         if (layoutsChanged) localStorage.setItem(LAYOUTS_KEY, JSON.stringify(savedLayouts));
 
-        let persistentCalibration: { calibrationPoints?: CalibrationPoint[]; landmarkDefaultPositions?: LandmarkDefaultPosition[] } | null = null;
-        try {
-          persistentCalibration = JSON.parse(localStorage.getItem(CALIBRATION_SETTINGS_KEY) ?? "null") as typeof persistentCalibration;
-        } catch {
-          persistentCalibration = null;
-        }
+        const persistentCalibration = (() => {
+          try {
+            return JSON.parse(localStorage.getItem(CALIBRATION_SETTINGS_KEY) ?? "null") as { calibrationPoints?: CalibrationPoint[]; landmarkDefaultPositions?: LandmarkDefaultPosition[] } | null;
+          } catch {
+            return null;
+          }
+        })();
 
         const raw = localStorage.getItem(AUTOSAVE_KEY);
         if (raw) {
@@ -1028,7 +1061,7 @@ export default function Home() {
               const restored = {
                 ...elementDefaults,
                 ...item,
-                ...(correctedPlace?.coordinateStatus === "geocoded" ? {
+                ...(correctedPlace?.coordinateStatus === "geocoded" && !item.locked ? {
                   anchorX: correctedPlace.x,
                   anchorY: correctedPlace.y,
                   ...(shouldMoveToCorrectedPosition ? { x: correctedPlace.x, y: correctedPlace.y } : {}),
@@ -1289,6 +1322,10 @@ export default function Home() {
   };
 
   const moveLandmarkToDefault = (element: MapElement) => {
+    if (element.locked) {
+      setToast(`${element.name}은(는) 좌표가 고정되어 있습니다.`);
+      return;
+    }
     const position = findLandmarkDefault(element);
     if (!position) return;
     pushHistory();
@@ -1308,7 +1345,9 @@ export default function Home() {
     const defaultsById = new Map(landmarkDefaultsRef.current.map((position) => [position.elementId, position]));
     const defaultsByName = new Map(landmarkDefaultsRef.current.map((position) => [position.name, position]));
     pushHistory();
+    const lockedNames = new Set(elementsRef.current.filter((element) => element.locked).map((element) => normalizePlaceName(element.name)));
     const nextPoints = calibrationPointsRef.current.map((point) => {
+      if (lockedNames.has(point.name)) return point;
       const position = defaultsByName.get(point.name);
       return position ? { ...point, targetX: position.x, targetY: position.y } : point;
     });
@@ -1316,7 +1355,7 @@ export default function Home() {
     setCalibrationPoints(nextPoints);
     setCalibrationDirty(true);
     replaceElements((current) => current.map((element) => {
-      if (element.category !== "landmark") return element;
+      if (element.category !== "landmark" || element.locked) return element;
       const position = defaultsById.get(element.id) ?? defaultsByName.get(normalizePlaceName(element.name));
       if (!position) return element;
       return { ...element, x: clamp(position.x + element.x - element.anchorX, 0, 100), y: clamp(position.y + element.y - element.anchorY, 0, 100), anchorX: position.x, anchorY: position.y };
@@ -1360,7 +1399,7 @@ export default function Home() {
           ...item, ...mapped, coordinateStatus: "geocoded", latitude: result!.latitude, longitude: result!.longitude,
         } : item));
         replaceElements((current) => current.map((element) => (
-          element.directoryId === place.id || element.name === place.name
+          (element.directoryId === place.id || element.name === place.name) && !element.locked
             ? {
               ...element,
               anchorX: mapped.x,
@@ -1480,6 +1519,11 @@ export default function Home() {
     setToast(`${place.name} 마커를 추가하고 위치로 이동했습니다.`);
   };
 
+  const toggleElementMapVisibility = (element: MapElement, visible: boolean) => {
+    updateElement(element.id, { mapVisible: visible });
+    setToast(`${element.name} 마커를 지도에서 ${visible ? "표시" : "숨김"} 처리했습니다.`);
+  };
+
   const addAssetElement = (asset: MapAsset) => {
     pushHistory();
     const count = elementsRef.current.filter((item) => item.assetId === asset.id).length + 1;
@@ -1573,7 +1617,7 @@ export default function Home() {
 
   const autoArrangeLabels = (record = true, notify = true) => {
     const candidates = elementsRef.current
-      .filter((element) => element.labelVisible)
+      .filter((element) => element.mapVisible && element.labelVisible)
       .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || b.z - a.z);
     if (!candidates.length) {
       setToast("자동 정리할 표시 라벨이 없습니다.");
@@ -1594,7 +1638,7 @@ export default function Home() {
         });
       });
     }
-    const iconRects = elementsRef.current.map((element) => {
+    const iconRects = elementsRef.current.filter((element) => element.mapVisible).map((element) => {
       const asset = element.assetId ? assetById.get(element.assetId) : undefined;
       const bounds = asset ? assetVisualBounds[asset.id] : undefined;
       const leftFactor = bounds?.left ?? 0.05;
@@ -1636,6 +1680,18 @@ export default function Home() {
       const visualCenterY = (visualRect.top + visualRect.bottom) / 2;
       const gapX = 0.42 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
       const gapY = 0.42 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+      if (element.category === "landmark") {
+        const normalizedOffsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
+        const normalizedOffsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+        let centerX = visualCenterX + normalizedOffsetX;
+        let centerY = visualCenterY + normalizedOffsetY;
+        if (element.labelPosition === "top") centerY = visualRect.top - gapY - labelHeight / 2 + normalizedOffsetY;
+        if (element.labelPosition === "bottom") centerY = visualRect.bottom + gapY + labelHeight / 2 + normalizedOffsetY;
+        if (element.labelPosition === "left") centerX = visualRect.left - gapX - labelWidth / 2 + normalizedOffsetX;
+        if (element.labelPosition === "right") centerX = visualRect.right + gapX + labelWidth / 2 + normalizedOffsetX;
+        placedLabels.push({ id: element.id, category: element.category, rect: { left: centerX - labelWidth / 2, right: centerX + labelWidth / 2, top: centerY - labelHeight / 2, bottom: centerY + labelHeight / 2 } });
+        return;
+      }
       const orderedPositions = [element.labelPosition, ...positionOrder.filter((position) => position !== element.labelPosition)];
       let best: { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number; collisions: number } | null = null;
       orderedPositions.forEach((position, positionIndex) => lateralShifts.forEach((lateralShift) => outwardShifts.forEach((outwardShift) => {
@@ -1705,6 +1761,10 @@ export default function Home() {
 
       nodes.forEach((item) => {
         let current: NormalizedRect = { left: item.rect.left, right: item.rect.right, top: item.rect.top, bottom: item.rect.bottom };
+        if (item.element.category === "landmark") {
+          fixed.push({ id: item.id, rect: current });
+          return;
+        }
         let deltaX = 0;
         let deltaY = 0;
         for (let attempt = 0; attempt < Math.max(4, fixed.length * 3); attempt += 1) {
@@ -1869,12 +1929,13 @@ export default function Home() {
       const baseImage = await loadImage(mapSrc);
       context.drawImage(baseImage, 0, 0, exportWidth, outputHeight);
 
-      const assetSources = [...new Set(elementsRef.current.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
+      const exportElements = elementsRef.current.filter((element) => element.mapVisible);
+      const assetSources = [...new Set(exportElements.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
       const loadedAssets = new Map<string, HTMLImageElement>();
       await Promise.all(assetSources.map(async (src) => {
         try { loadedAssets.set(src, await loadImage(src)); } catch { /* 개별 자산 실패는 나머지 합성을 막지 않습니다. */ }
       }));
-      const ordered = [...elementsRef.current].sort((a, b) => a.z - b.z);
+      const ordered = [...exportElements].sort((a, b) => a.z - b.z);
       ordered.forEach((element) => {
         const asset = assetsRef.current.find((item) => item.id === element.assetId);
         const image = asset ? loadedAssets.get(asset.src) : undefined;
@@ -2081,6 +2142,24 @@ export default function Home() {
               <div className="composition-actions"><button onClick={applyStarterComposition}>기본 구성 복원</button><button onClick={alignPlacedMarkersByAddress} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 확인 중" : "배치 장소 주소로 정렬"}</button></div>
               <p>주소 정렬은 일반 마커의 앵커를 갱신하고 기존 리소스 오프셋을 유지합니다. 이후 속성 패널의 앵커·출력 오프셋 값으로 세부 보정할 수 있습니다.</p>
             </div>
+            <div className="marker-visibility-panel">
+              <div className="review-list-head"><strong>지도 표시 체크리스트</strong><span>{elements.filter((element) => element.mapVisible).length}/{elements.length}</span></div>
+              <p>체크를 끄면 배치 정보는 유지한 채 지도와 고화질 출력에서만 숨겨집니다.</p>
+              <div className="marker-visibility-list">
+                {visibilityChecklistElements.map((element) => {
+                  const meta = categoryOf(element.category);
+                  return <div key={element.id} className={`marker-visibility-row ${element.mapVisible ? "visible" : "hidden"}`}>
+                    <label title={`${element.name} 지도 표시 전환`}>
+                      <input type="checkbox" checked={element.mapVisible} onChange={(event) => toggleElementMapVisibility(element, event.target.checked)} />
+                      <i style={{ background: meta.color }} />
+                      <span><b>{element.name}</b><small>{meta.name}{element.locked ? " · 좌표 고정" : ""}</small></span>
+                    </label>
+                    <button onClick={() => { setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); if (element.mapVisible) focusMapPosition(element.x, element.y, element.id); }} aria-label={`${element.name} 선택`}>선택</button>
+                  </div>;
+                })}
+                {!visibilityChecklistElements.length && <div className="place-empty">조건에 맞는 배치 마커가 없습니다.</div>}
+              </div>
+            </div>
             <div className="database-import">
               <div><strong>장소 마스터 DB</strong><span>문화·식음·주차·편의 {directoryPlaces.length}곳</span></div>
               <button onClick={() => dbInputRef.current?.click()} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 찾는 중" : "DB JSON 불러오기"}</button>
@@ -2091,8 +2170,8 @@ export default function Home() {
             <div className="place-search-wrap"><input value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
               {([
-                ["all", "전체"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["parking", "주차장"], ["utility", "편의시설"],
-              ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? directoryPlaces.length : directoryPlaces.filter((place) => place.category === id).length}</span></button>)}
+                ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
+              ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? directoryPlaces.length : id === "landmark" || id === "park" ? elements.filter((element) => element.category === id).length : directoryPlaces.filter((place) => place.category === id).length}</span></button>)}
             </div>
             <p className="place-directory-hint">목록을 더블클릭하면 마커를 만들거나 기존 요소를 찾아 지도 중앙에 표시합니다.</p>
             <div className="place-list" role="list" aria-label="조사 장소 목록">
@@ -2122,13 +2201,13 @@ export default function Home() {
                     <b>{index + 1}</b><span><strong>{point.name}</strong><small>보정 ΔX {(point.targetX - point.sourceX).toFixed(1)} · ΔY {(point.targetY - point.sourceY).toFixed(1)}</small></span>
                   </button>
                   <div className="calibration-coordinate-row">
-                    <label>X<input type="number" min="0" max="100" step="0.1" value={point.targetX.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetX: Number(event.target.value) })} /></label>
-                    <label>Y<input type="number" min="0" max="100" step="0.1" value={point.targetY.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetY: Number(event.target.value) })} /></label>
+                    <label>X<input disabled={Boolean(element?.locked)} type="number" min="0" max="100" step="0.1" value={point.targetX.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetX: Number(event.target.value) })} /></label>
+                    <label>Y<input disabled={Boolean(element?.locked)} type="number" min="0" max="100" step="0.1" value={point.targetY.toFixed(2)} onChange={(event) => updateCalibrationPoint(point.id, { targetY: Number(event.target.value) })} /></label>
                     <div className="calibration-nudge" aria-label={`${point.name} 미세 이동`}>
-                      <button onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY - 0.1 })} aria-label="위로">↑</button>
-                      <button onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX - 0.1 })} aria-label="왼쪽으로">←</button>
-                      <button onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX + 0.1 })} aria-label="오른쪽으로">→</button>
-                      <button onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY + 0.1 })} aria-label="아래로">↓</button>
+                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY - 0.1 })} aria-label="위로">↑</button>
+                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX - 0.1 })} aria-label="왼쪽으로">←</button>
+                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetX: point.targetX + 0.1 })} aria-label="오른쪽으로">→</button>
+                      <button disabled={Boolean(element?.locked)} onClick={() => updateCalibrationPoint(point.id, { targetY: point.targetY + 0.1 })} aria-label="아래로">↓</button>
                     </div>
                   </div>
                 </article>;
@@ -2209,13 +2288,13 @@ export default function Home() {
             <section><div className="section-title"><strong>지도 위치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selectedNote.x.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selectedNote.y.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div></section>
             <section><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></section>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
-            <section><div className="section-title"><strong>기본 정보</strong><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
-            <section><div className="section-title"><strong>리소스 출력 오프셋</strong><span>앵커 기준</span></div>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>오프셋 0</button></div></>}<p className="field-help">지도에서는 요소를 선택만 합니다. 리소스 위치는 앵커와의 ΔX·ΔY 또는 화살표 버튼으로 조정합니다.</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
+            <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 보정·주소 정렬·앵커 이동 등 모든 좌표 변경에서 제외됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => updateElement(selected.id, { locked: event.target.checked })} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리<select value={selected.category} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
+            <section><div className="section-title"><strong>리소스 출력 오프셋</strong><span>{selected.locked ? "좌표 고정됨" : "앵커 기준"}</span></div>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>오프셋 0</button></div></>}<p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 리소스 출력 위치가 유지됩니다." : "지도에서는 요소를 선택만 합니다. 리소스 위치는 앵커와의 ΔX·ΔY 또는 화살표 버튼으로 조정합니다."}</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 항상 최우선 보정 기준으로 유지됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
-            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : "2차 확정 보정 기준"}</b><span>{selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
+            <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selected.locked ? "좌표 고정됨" : selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : "2차 확정 보정 기준"}</b><span>{selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
             <section><div className="section-title"><strong>라벨</strong><label className="switch"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">투명 여백을 제외한 실제 아이콘 가장자리를 기준으로 배치됩니다. 새로고침은 랜드마크 라벨을 먼저 고정한 뒤 나머지 겹침을 피하며, 실행 후에도 개별 미세 조정할 수 있습니다.</p></section>
-            <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => updateElement(selected.id, { locked: !selected.locked })}>{selected.locked ? "잠금 해제" : "잠금"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
+            <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "지도에서 숨김" : "지도에 표시"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>
       </section>
