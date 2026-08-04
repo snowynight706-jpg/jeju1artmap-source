@@ -26,10 +26,12 @@ const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골�
 const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_초고해상도.png";
 const UPLOADED_MAP_API = "/api/base-map";
 const CALIBRATION_SETTINGS_API = "/api/calibration-settings";
+const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
 const CALIBRATION_SETTINGS_KEY = "jeju-wondosim-map-review:calibration-settings:v1";
+const LOCKED_COORDINATE_SETTINGS_KEY = "jeju-wondosim-map-review:locked-coordinate-settings:v1";
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
@@ -162,6 +164,17 @@ type LandmarkDefaultPosition = {
   confirmed?: boolean;
 };
 
+type LockedCoordinateSetting = {
+  key: string;
+  directoryId?: string;
+  name: string;
+  category: CategoryId;
+  anchorX: number;
+  anchorY: number;
+  x: number;
+  y: number;
+};
+
 type DocumentState = {
   elements: MapElement[];
   assets: MapAsset[];
@@ -217,22 +230,21 @@ const CALIBRATION_LANDMARK_NAMES = [
 ] as const;
 const PRIMARY_CALIBRATION_NAMES = new Set<string>(CALIBRATION_LANDMARK_NAMES);
 
-const calibrationSourceOverrides: Partial<Record<(typeof CALIBRATION_LANDMARK_NAMES)[number], { x: number; y: number }>> = {
-  // 기존 주소 검색은 중앙로 2의 남쪽 동명이점을 반환했습니다. 해변공연장은 탑동광장과 인접한 북쪽 해안 좌표를 기준으로 둡니다.
-  "탑동해변공연장": { x: 58.25, y: 11.6 },
+const persistedPrimaryCalibrationSeed: Record<(typeof CALIBRATION_LANDMARK_NAMES)[number], Omit<CalibrationPoint, "id" | "name" | "tier">> = {
+  "관덕정": { sourceX: 32.74695652176581, sourceY: 34.92339449542698, targetX: 35.74958737983302, targetY: 59.189847489691005 },
+  "제주아트플랫폼": { sourceX: 39.61521739129978, sourceY: 42.24770642203441, targetX: 41.70357577308721, targetY: 74.41225648694478 },
+  "탑동해변공연장": { sourceX: 58.25, sourceY: 11.6, targetX: 51.61534016007473, targetY: 19.675915250183785 },
+  "탑동광장": { sourceX: 57.098260869564854, sourceY: 12.513302752310512, targetX: 64.28211860238308, targetY: 15.970238020036858 },
+  "김만덕객주": { sourceX: 81.05260869565093, sourceY: 19.982110091755693, targetX: 96.15791294866513, targetY: 27.816749269686078 },
+  "김만덕기념관": { sourceX: 73.47217391303064, sourceY: 22.624770642198094, targetX: 89.3165328501865, targetY: 37.72972393275184 },
 };
 
 const initialCalibrationPoints: CalibrationPoint[] = CALIBRATION_LANDMARK_NAMES.map((name, index) => {
-  const location = landmarkLocations.find((item) => item.name === name)!;
-  const geocoded = geocodedPlaces[name];
-  const source = calibrationSourceOverrides[name] ?? { x: geocoded?.x ?? location.x, y: geocoded?.y ?? location.y };
+  const persisted = persistedPrimaryCalibrationSeed[name];
   return {
     id: `calibration-${index + 1}`,
     name,
-    sourceX: source.x,
-    sourceY: source.y,
-    targetX: location.x,
-    targetY: location.y,
+    ...persisted,
     tier: "primary" as const,
   };
 });
@@ -706,6 +718,82 @@ function sanitizeDocument(document: DocumentState): DocumentState {
   };
 }
 
+function lockedCoordinateKey(element: Pick<MapElement, "directoryId" | "category" | "name">) {
+  const directoryId = element.directoryId?.trim();
+  return directoryId
+    ? `directory:${directoryId}`
+    : `name:${element.category}:${normalizePlaceName(element.name)}`;
+}
+
+function lockedCoordinateSettingsFor(elements: MapElement[]): LockedCoordinateSetting[] {
+  return elements
+    .filter((element) => element.locked && !PRIMARY_CALIBRATION_NAMES.has(normalizePlaceName(element.name)))
+    .map((element) => ({
+      key: lockedCoordinateKey(element),
+      ...(element.directoryId ? { directoryId: element.directoryId } : {}),
+      name: normalizePlaceName(element.name),
+      category: element.category,
+      anchorX: clamp(element.anchorX, 0, 100),
+      anchorY: clamp(element.anchorY, 0, 100),
+      x: clamp(element.x, 0, 100),
+      y: clamp(element.y, 0, 100),
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function applyLockedCoordinateSettings(
+  elements: MapElement[],
+  settings: LockedCoordinateSetting[],
+  places: DirectoryPlace[],
+) {
+  const byKey = new Map(settings.map((setting) => [setting.key, setting]));
+  const existingKeys = new Set(elements.map(lockedCoordinateKey));
+  const restored = elements.map((element) => {
+    if (PRIMARY_CALIBRATION_NAMES.has(normalizePlaceName(element.name))) return element;
+    const setting = byKey.get(lockedCoordinateKey(element));
+    if (!setting) return { ...element, locked: false };
+    return {
+      ...element,
+      locked: true,
+      anchorX: clamp(setting.anchorX, 0, 100),
+      anchorY: clamp(setting.anchorY, 0, 100),
+      x: clamp(setting.x, 0, 100),
+      y: clamp(setting.y, 0, 100),
+    };
+  });
+  let z = restored.reduce((highest, element) => Math.max(highest, element.z), 0);
+  const placesById = new Map(places.map((place) => [place.id, place]));
+  const placesByName = new Map(places.map((place) => [normalizePlaceName(place.name), place]));
+  settings.forEach((setting) => {
+    if (existingKeys.has(setting.key)) return;
+    const place = (setting.directoryId ? placesById.get(setting.directoryId) : undefined) ?? placesByName.get(setting.name);
+    const category = place?.category ?? setting.category;
+    const assetId = defaultMarkerAssetId(category);
+    z += 1;
+    restored.push({
+      ...elementDefaults,
+      id: `synced-${setting.key.replace(/[^a-zA-Z0-9가-힣_-]+/g, "-").slice(0, 72)}`,
+      ...(setting.directoryId ? { directoryId: setting.directoryId } : {}),
+      name: place?.name ?? setting.name,
+      category,
+      anchorX: clamp(setting.anchorX, 0, 100),
+      anchorY: clamp(setting.anchorY, 0, 100),
+      x: clamp(setting.x, 0, 100),
+      y: clamp(setting.y, 0, 100),
+      size: category === "landmark" ? 6.2 : category === "culture" ? 2.5 : 1.65,
+      z,
+      locked: true,
+      labelVisible: category === "landmark" || category === "culture" || category === "parking",
+      assetId,
+      status: assetId ? "review" : "unchecked",
+      address: place?.address ?? "",
+      addressSourceUrl: place?.sourceUrl ?? "",
+      memo: "배포 사이트의 고정 좌표에서 동기화됨",
+    });
+  });
+  return ensureIndependentElementIdentity(restored);
+}
+
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
@@ -767,6 +855,7 @@ export default function Home() {
   const measuredAssetIdsRef = useRef(new Set<string>());
   const calibrationLiveApplyRef = useRef(false);
   const localCalibrationUpdatedAtRef = useRef(0);
+  const localLockedCoordinatesUpdatedAtRef = useRef(0);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -825,6 +914,8 @@ export default function Home() {
   const [resourceOutputDragMode, setResourceOutputDragMode] = useState(false);
   const [primaryCalibrationStorage, setPrimaryCalibrationStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [primaryCalibrationRemoteReady, setPrimaryCalibrationRemoteReady] = useState(false);
+  const [lockedCoordinateStorage, setLockedCoordinateStorage] = useState<"loading" | "persistent" | "local">("loading");
+  const [lockedCoordinatesRemoteReady, setLockedCoordinatesRemoteReady] = useState(false);
   const [interaction, setInteraction] = useState<
     | { type: "pan"; startX: number; startY: number; panX: number; panY: number }
     | { type: "resize"; id: string; startX: number; startSize: number }
@@ -1259,6 +1350,14 @@ export default function Home() {
           }
         })();
         localCalibrationUpdatedAtRef.current = Date.parse(persistentCalibration?.updatedAt ?? "") || 0;
+        const persistentLockedCoordinates = (() => {
+          try {
+            return JSON.parse(localStorage.getItem(LOCKED_COORDINATE_SETTINGS_KEY) ?? "null") as { settings?: LockedCoordinateSetting[]; updatedAt?: string } | null;
+          } catch {
+            return null;
+          }
+        })();
+        localLockedCoordinatesUpdatedAtRef.current = Date.parse(persistentLockedCoordinates?.updatedAt ?? "") || 0;
 
         const raw = localStorage.getItem(AUTOSAVE_KEY);
         if (raw) {
@@ -1294,6 +1393,14 @@ export default function Home() {
               ...builtInAssets,
               ...parsedAssets.filter((item) => !builtInAssets.some((builtIn) => builtIn.id === item.id)),
             ];
+            if (!persistentLockedCoordinates) {
+              const migratedSettings = lockedCoordinateSettingsFor(mergedElements);
+              if (migratedSettings.length) {
+                const updatedAt = new Date().toISOString();
+                localLockedCoordinatesUpdatedAtRef.current = Date.parse(updatedAt);
+                localStorage.setItem(LOCKED_COORDINATE_SETTINGS_KEY, JSON.stringify({ settings: migratedSettings, updatedAt }));
+              }
+            }
             setDocument({
               elements: mergedElements,
               assets: mergedAssets,
@@ -1426,6 +1533,57 @@ export default function Home() {
     }, 700);
     return () => window.clearTimeout(timer);
   }, [calibrationPoints, hydrated, primaryCalibrationRemoteReady]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    fetch(LOCKED_COORDINATE_SETTINGS_API, { cache: "no-store" })
+      .then(async (response) => response.ok ? await response.json() as { settings?: LockedCoordinateSetting[]; updatedAt?: string | null } : null)
+      .then((payload) => {
+        if (cancelled) return;
+        const remoteSettings = Array.isArray(payload?.settings) ? payload!.settings : [];
+        const remoteUpdatedAt = Date.parse(payload?.updatedAt ?? "") || 0;
+        const shouldRestoreRemote = remoteUpdatedAt > 0
+          && (localLockedCoordinatesUpdatedAtRef.current === 0 || remoteUpdatedAt >= localLockedCoordinatesUpdatedAtRef.current);
+        if (shouldRestoreRemote) {
+          replaceElements((current) => applyLockedCoordinateSettings(current, remoteSettings, placesRef.current));
+          localLockedCoordinatesUpdatedAtRef.current = remoteUpdatedAt;
+          try {
+            localStorage.setItem(LOCKED_COORDINATE_SETTINGS_KEY, JSON.stringify({ settings: remoteSettings, updatedAt: payload!.updatedAt }));
+          } catch {}
+        }
+        setLockedCoordinateStorage(payload ? "persistent" : "local");
+        setLockedCoordinatesRemoteReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLockedCoordinateStorage("local");
+        setLockedCoordinatesRemoteReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [hydrated, replaceElements]);
+
+  const lockedCoordinateSignature = useMemo(() => JSON.stringify(lockedCoordinateSettingsFor(elements)), [elements]);
+
+  useEffect(() => {
+    if (!hydrated || !lockedCoordinatesRemoteReady) return;
+    const timer = window.setTimeout(() => {
+      const settings = lockedCoordinateSettingsFor(elementsRef.current);
+      const updatedAt = new Date().toISOString();
+      localLockedCoordinatesUpdatedAtRef.current = Date.parse(updatedAt);
+      try {
+        localStorage.setItem(LOCKED_COORDINATE_SETTINGS_KEY, JSON.stringify({ settings, updatedAt }));
+      } catch {}
+      void fetch(LOCKED_COORDINATE_SETTINGS_API, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ settings }),
+      }).then((response) => {
+        setLockedCoordinateStorage(response.ok ? "persistent" : "local");
+      }).catch(() => setLockedCoordinateStorage("local"));
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, lockedCoordinateSignature, lockedCoordinatesRemoteReady]);
 
   useEffect(() => {
     if (!toast) return;
@@ -2699,7 +2857,7 @@ export default function Home() {
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 + 3차 ${tertiaryCalibrationPoints.length}점 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer>
+          <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 + 3차 ${tertiaryCalibrationPoints.length}점 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>고정좌표 {lockedCoordinateStorage === "persistent" ? "영구 동기화" : lockedCoordinateStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer>
         </section>
         {!rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
