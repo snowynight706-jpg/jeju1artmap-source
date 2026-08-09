@@ -1120,6 +1120,7 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
   const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [screenRecommendedOnly, setScreenRecommendedOnly] = useState(false);
   const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
   const [mergeDenseLabels, setMergeDenseLabels] = useState(true);
   const [printRecommendedOnly, setPrintRecommendedOnly] = useState(true);
@@ -1667,13 +1668,16 @@ export default function Home() {
   }, [directoryPriorityById, directoryPriorityByName, printLabels, printLandmarks, printMarkers, printRecommendedOnly, printSettingsByKey]);
 
   const recommendedPlaceCount = useMemo(() => elements.filter((element) => element.mapVisible && element.category !== "landmark" && printPolicyFor(element).recommended).length, [elements, printPolicyFor]);
+  const screenHiddenMarkerCount = useMemo(() => elements.filter((element) => element.mapVisible && element.category !== "landmark" && !printPolicyFor(element).recommended).length, [elements, printPolicyFor]);
 
   const visibleElements = useMemo(() => [...elements]
     .filter((element) => element.mapVisible)
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
+    .filter((element) => !screenRecommendedOnly || element.category === "landmark" || printPolicyFor(element).recommended)
     .filter((element) => viewMode !== "landmarks" || element.category === "landmark")
     .filter((element) => viewMode !== "markers" || element.category !== "landmark")
-    .sort((a, b) => a.z - b.z), [activeCategory, elements, viewMode]);
+    .sort((a, b) => a.z - b.z), [activeCategory, elements, printPolicyFor, screenRecommendedOnly, viewMode]);
+  const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
 
   const denseLabelClusters = useMemo(() => mergeDenseLabels
     ? buildDenseLabelClusters(
@@ -3416,11 +3420,12 @@ export default function Home() {
           {leftPanelMode === "assets" ? <>
           <div className="panel-search">아이콘·마커 보기 및 자산 <kbd>{assets.length}</kbd></div>
           <section className="view-control-panel" aria-label="지도 보기 설정">
-            <div className="view-control-head"><strong>지도 전체 조절</strong><span>화면 전용</span></div>
+            <div className="view-control-head"><strong>지도 전체 조절</strong><span>{screenRecommendedOnly ? `비추천 ${screenHiddenMarkerCount}곳 숨김` : "화면 전용"}</span></div>
             <div className="view-mode-grid" role="group" aria-label="표시 요소">
               {([ ["all", "전체"], ["landmarks", "랜드마크"], ["markers", "일반마커"], ["labels", "라벨만"] ] as const).map(([mode, label]) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{label}</button>)}
             </div>
             <div className="view-toggle-list">
+              <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
               <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
               <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>겹치는 일반 마커 라벨을 한 묶음으로 표시</small></span></label>
             </div>
@@ -3712,7 +3717,7 @@ export default function Home() {
                 {!!denseLabelClusters.length && <div className="dense-label-layer" aria-label="통합 라벨">
                   {denseLabelClusters.map((cluster) => <div key={cluster.id} className="dense-label" style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, maxWidth: "156px", transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }} title={cluster.names.join(" · ")}><span className="dense-label-count">{cluster.names.length}곳 통합</span><strong>{cluster.names.slice(0, 3).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 3 && <em>외 {cluster.names.length - 3}곳</em>}</strong></div>)}
                 </div>}
-                {selected?.mapVisible && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
+                {selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.72" className="active-anchor-halo" vectorEffect="non-scaling-stroke" />
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.42" fill="white" stroke={selected.connectorColor} strokeWidth="0.16" vectorEffect="non-scaling-stroke" />
