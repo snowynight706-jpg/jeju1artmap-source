@@ -352,6 +352,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .calibration-tertiary-line { stroke: rgb(189 128 50 / 55%); stroke-width: .11; stroke-dasharray: .2 .3; vector-effect: non-scaling-stroke; }
 .calibration-tertiary-dot { fill: #fff8eb; stroke: #bd8032; stroke-width: .15; vector-effect: non-scaling-stroke; }
 .connector-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
+.dense-label-connector line { stroke: rgb(47 117 107 / 48%); stroke-width: 1.1; stroke-dasharray: 3.5 2.5; }
+.dense-label-connector circle { fill: rgb(47 117 107 / 74%); stroke: white; stroke-width: .55; }
 .active-anchor-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 14; }
 .active-anchor-halo { fill: rgb(255 255 255 / 82%); stroke: rgb(35 139 128 / 74%); stroke-width: .12; stroke-dasharray: .28 .2; }
 .map-loading { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; z-index: 4; background: #f4f2ed; color: var(--muted); font-size: 11px; }

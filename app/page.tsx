@@ -1678,6 +1678,7 @@ export default function Home() {
     .filter((element) => viewMode !== "markers" || element.category !== "landmark")
     .sort((a, b) => a.z - b.z), [activeCategory, elements, printPolicyFor, screenRecommendedOnly, viewMode]);
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
+  const visibleElementsById = useMemo(() => new Map(visibleElements.map((element) => [element.id, element])), [visibleElements]);
 
   const denseLabelClusters = useMemo(() => mergeDenseLabels
     ? buildDenseLabelClusters(
@@ -2929,9 +2930,6 @@ export default function Home() {
     });
     const updates = new Map<string, Pick<MapElement, "labelPosition" | "labelOffsetX" | "labelOffsetY">>();
     const placedLabels: Array<{ id: string; category: CategoryId; rect: NormalizedRect }> = [];
-    const positionOrder: LabelPosition[] = ["bottom", "top", "right", "left"];
-    const lateralShifts = [0, -18, 18, -36, 36, -54, 54, -72, 72, -96, 96, -120, 120, -144, 144, -160, 160];
-    const outwardShifts = [0, 12, 24, 36, 48, 64, 84, 108, 136, 160];
     candidates.forEach((element) => {
       const asset = element.assetId ? assetById.get(element.assetId) : undefined;
       const bounds = asset ? assetVisualBounds[asset.id] : undefined;
@@ -2966,15 +2964,32 @@ export default function Home() {
         placedLabels.push({ id: element.id, category: element.category, rect: { left: centerX - labelWidth / 2, right: centerX + labelWidth / 2, top: centerY - labelHeight / 2, bottom: centerY + labelHeight / 2 } });
         return;
       }
-      const orderedPositions = [element.labelPosition, ...positionOrder.filter((position) => position !== element.labelPosition)];
+      const isLandmark = element.category === "landmark";
+      const oppositeVertical: LabelPosition = element.labelPosition === "top" ? "bottom" : "top";
+      const positionOrder: LabelPosition[] = isLandmark
+        ? (element.labelPosition === "top" || element.labelPosition === "bottom"
+            ? [element.labelPosition, oppositeVertical, "right", "left"]
+            : [element.labelPosition, "top", "bottom", element.labelPosition === "left" ? "right" : "left"])
+        : [element.labelPosition, ...(["bottom", "top", "right", "left"] as LabelPosition[]).filter((position) => position !== element.labelPosition)];
+      const lateralShifts = isLandmark
+        ? [0, -10, 10, -20, 20, -32, 32, -46, 46, -62, 62]
+        : [0, -12, 12, -24, 24, -38, 38, -54, 54, -72, 72, -92, 92];
+      const outwardShifts = isLandmark
+        ? [0, 10, 20, 32, 46, 62, 80]
+        : [0, 10, 20, 32, 46, 62, 82, 104];
+      const baseOffsetX = element.labelOffsetX;
+      const baseOffsetY = element.labelOffsetY;
       let best: { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number; collisions: number } | null = null;
-      orderedPositions.forEach((position, positionIndex) => lateralShifts.forEach((lateralShift) => outwardShifts.forEach((outwardShift) => {
-        const offsetX = position === "top" || position === "bottom"
+      positionOrder.forEach((position, positionIndex) => lateralShifts.forEach((lateralShift) => outwardShifts.forEach((outwardShift) => {
+        const sameSide = position === element.labelPosition;
+        const positionBaseX = sameSide ? baseOffsetX : (position === "top" || position === "bottom" ? baseOffsetX : 0);
+        const positionBaseY = sameSide ? baseOffsetY : (position === "left" || position === "right" ? baseOffsetY : 0);
+        const offsetX = positionBaseX + (position === "top" || position === "bottom"
           ? lateralShift
-          : position === "left" ? -outwardShift : outwardShift;
-        const offsetY = position === "left" || position === "right"
+          : position === "left" ? -outwardShift : outwardShift);
+        const offsetY = positionBaseY + (position === "left" || position === "right"
           ? lateralShift
-          : position === "top" ? -outwardShift : outwardShift;
+          : position === "top" ? -outwardShift : outwardShift);
         const normalizedOffsetX = offsetX / EXPORT_CANONICAL_WIDTH * 100;
         const normalizedOffsetY = offsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
         let centerX = visualCenterX + normalizedOffsetX;
@@ -2986,13 +3001,18 @@ export default function Home() {
         const rect = { left: centerX - labelWidth / 2, right: centerX + labelWidth / 2, top: centerY - labelHeight / 2, bottom: centerY + labelHeight / 2 };
         const labelOverlapCount = placedLabels.reduce((count, item) => count + (rectsOverlap(rect, item.rect, 0.22) ? 1 : 0), 0);
         const iconOverlapScore = iconRects.reduce((score, item) => {
-          if (item.id === element.id || !rectsOverlap(rect, item.rect, 0.14)) return score;
-          return score + (item.category === "landmark" ? 3 : 1);
+          if (!rectsOverlap(rect, item.rect, 0.14)) return score;
+          return score + (item.category === "landmark" ? 4 : item.id === element.id ? 3 : 1);
         }, 0);
         const overflow = Math.max(0, -rect.left) + Math.max(0, rect.right - 100) + Math.max(0, -rect.top) + Math.max(0, rect.bottom - 100);
         const collisions = labelOverlapCount + iconOverlapScore;
-        const distancePenalty = (Math.abs(lateralShift) + Math.abs(outwardShift) * 1.25) / 18;
-        const score = labelOverlapCount * 12000 + iconOverlapScore * 7000 + overflow * 4000 + positionIndex * 4 + distancePenalty;
+        const manualDistance = Math.abs(offsetX - baseOffsetX) + Math.abs(offsetY - baseOffsetY);
+        const relationDistance = Math.hypot(offsetX, offsetY);
+        const sameSidePenalty = sameSide ? 0 : (isLandmark ? 1900 + positionIndex * 900 : 160 + positionIndex * 90);
+        const horizontalLandmarkPenalty = isLandmark && (position === "left" || position === "right") ? 4200 : 0;
+        const distancePenalty = manualDistance * (isLandmark ? 1.6 : 0.7) + Math.max(0, relationDistance - (isLandmark ? 72 : 92)) * 40;
+        const score = labelOverlapCount * 16000 + iconOverlapScore * 10000 + overflow * 5000
+          + sameSidePenalty + horizontalLandmarkPenalty + distancePenalty;
         if (!best || score < best.score) best = { rect, position, offsetX, offsetY, score, collisions };
       })));
       const selectedBest = best as { rect: NormalizedRect; position: LabelPosition; offsetX: number; offsetY: number; score: number; collisions: number } | null;
@@ -3004,99 +3024,41 @@ export default function Home() {
     window.setTimeout(() => resolveRenderedLabelOverlaps(updates.size, notify), 0);
   };
 
-  function resolveRenderedLabelOverlaps(total: number, notify: boolean, pass = 0) {
+  function resolveRenderedLabelOverlaps(total: number, notify: boolean) {
     window.requestAnimationFrame(() => {
       const stage = stageRef.current;
       if (!stage) {
         setLabelsRefreshing(false);
         return;
       }
-      const priority = new Map([...elementsRef.current]
-        .filter((element) => element.labelVisible)
-        .sort((a, b) => Number(b.category === "landmark" || b.labelLocked) - Number(a.category === "landmark" || a.labelLocked) || b.z - a.z)
-        .map((element, index) => [element.id, index]));
       const nodes = [...stage.querySelectorAll<HTMLElement>("[data-label-id]")]
         .map((node) => {
           const id = node.dataset.labelId;
           const element = elementsRef.current.find((item) => item.id === id);
           return id && element ? { id, element, rect: node.getBoundingClientRect() } : null;
         })
-        .filter((item): item is { id: string; element: MapElement; rect: DOMRect } => Boolean(item?.rect.width && item.rect.height))
-        .sort((a, b) => (priority.get(a.id) ?? 9999) - (priority.get(b.id) ?? 9999));
+        .filter((item): item is { id: string; element: MapElement; rect: DOMRect } => Boolean(item?.rect.width && item.rect.height));
       const overlaps = (a: DOMRect | NormalizedRect, b: DOMRect | NormalizedRect, margin = 4) => (
         a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin
       );
-      const shiftRect = (rect: DOMRect | NormalizedRect, dx: number, dy: number): NormalizedRect => ({
-        left: rect.left + dx, right: rect.right + dx, top: rect.top + dy, bottom: rect.bottom + dy,
-      });
-      const stageRect = stage.getBoundingClientRect();
-      const fixed: Array<{ id: string; rect: NormalizedRect }> = [...stage.querySelectorAll<HTMLElement>(".map-element[data-element-id]")].map((node) => {
+      const iconObstacles: Array<{ id: string; rect: NormalizedRect }> = [...stage.querySelectorAll<HTMLElement>(".map-element[data-element-id]")].map((node) => {
         const rect = node.querySelector<HTMLElement>(".icon-visual")?.getBoundingClientRect() ?? node.getBoundingClientRect();
         return { id: node.dataset.elementId ?? "", rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } };
       });
-      const iconObstacleCount = fixed.length;
-      const adjustments = new Map<string, { x: number; y: number }>();
-
-      nodes.forEach((item) => {
-        let current: NormalizedRect = { left: item.rect.left, right: item.rect.right, top: item.rect.top, bottom: item.rect.bottom };
-        if (item.element.labelLocked) {
-          fixed.push({ id: item.id, rect: current });
-          return;
-        }
-        let deltaX = 0;
-        let deltaY = 0;
-        for (let attempt = 0; attempt < Math.max(4, fixed.length * 3); attempt += 1) {
-          const conflict = fixed.find((placed) => placed.id !== item.id && overlaps(current, placed.rect));
-          if (!conflict) break;
-          const margin = 5;
-          const moves = [
-            { x: conflict.rect.left - margin - current.right, y: 0 },
-            { x: conflict.rect.right + margin - current.left, y: 0 },
-            { x: 0, y: conflict.rect.top - margin - current.bottom },
-            { x: 0, y: conflict.rect.bottom + margin - current.top },
-          ];
-          const bestMove = moves.map((move) => {
-            const candidate = shiftRect(current, move.x, move.y);
-            const collisionCount = fixed.reduce((count, placed) => count + (placed.id !== item.id && overlaps(candidate, placed.rect) ? 1 : 0), 0);
-            const overflow = Math.max(0, stageRect.left - candidate.left) + Math.max(0, candidate.right - stageRect.right)
-              + Math.max(0, stageRect.top - candidate.top) + Math.max(0, candidate.bottom - stageRect.bottom);
-            return { ...move, candidate, score: collisionCount * 10000 + overflow * 120 + Math.abs(move.x) + Math.abs(move.y) };
-          }).sort((a, b) => a.score - b.score)[0];
-          current = bestMove.candidate;
-          deltaX += bestMove.x;
-          deltaY += bestMove.y;
-        }
-        fixed.push({ id: item.id, rect: current });
-        if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) adjustments.set(item.id, { x: deltaX, y: deltaY });
-      });
-
-      if (adjustments.size && pass < 5) {
-        const scale = Math.max(zoom, 0.22);
-        replaceElements((current) => current.map((element) => {
-          const adjustment = adjustments.get(element.id);
-          return adjustment ? {
-            ...element,
-            labelOffsetX: clamp(element.labelOffsetX + adjustment.x / scale, -240, 240),
-            labelOffsetY: clamp(element.labelOffsetY + adjustment.y / scale, -240, 240),
-          } : element;
-        }));
-        window.setTimeout(() => resolveRenderedLabelOverlaps(total, notify, pass + 1), 0);
-        return;
-      }
-
-      let remaining = 0;
+      let labelOverlaps = 0;
       for (let index = 0; index < nodes.length; index += 1) for (let other = index + 1; other < nodes.length; other += 1) {
-        if (overlaps(nodes[index].rect, nodes[other].rect, 0)) remaining += 1;
+        if (overlaps(nodes[index].rect, nodes[other].rect, 0)) labelOverlaps += 1;
       }
+      let iconOverlaps = 0;
       nodes.forEach((item) => {
-        const ownId = item.id;
-        fixed.slice(0, iconObstacleCount).forEach((obstacle) => {
-          if (obstacle.id !== ownId && overlaps(item.rect, obstacle.rect, 0)) remaining += 1;
+        iconObstacles.forEach((obstacle) => {
+          if (overlaps(item.rect, obstacle.rect, 0)) iconOverlaps += 1;
         });
       });
+      const remaining = labelOverlaps + iconOverlaps;
       if (notify) setToast(remaining
-        ? `라벨 위치 ${total}개를 새로고침했습니다. 밀집 구간 겹침 ${remaining}건은 개별 조정해 주세요.`
-        : `라벨 위치 ${total}개를 새로고침했습니다. 랜드마크·마커를 가리지 않도록 정리했습니다.`);
+        ? `기준 방향을 유지해 라벨 ${total}개를 정리했습니다. 남은 충돌 ${remaining}건은 통합 라벨 또는 직접 조정이 필요합니다.`
+        : `라벨 ${total}개를 마커 주변에서 정리했습니다. 랜드마크 기준 위치와 각 마커의 대응 관계를 유지했습니다.`);
       setLabelsRefreshing(false);
     });
   }
@@ -3254,6 +3216,30 @@ export default function Home() {
         context.drawImage(image, centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight);
         context.restore();
       });
+
+      if (exportClusters.length) {
+        context.save();
+        context.strokeStyle = "rgba(47,117,107,.45)";
+        context.fillStyle = "rgba(47,117,107,.72)";
+        context.lineWidth = Math.max(1, exportWidth / EXPORT_CANONICAL_WIDTH * 1.1);
+        context.setLineDash([exportWidth / EXPORT_CANONICAL_WIDTH * 3.5, exportWidth / EXPORT_CANONICAL_WIDTH * 2.5]);
+        exportClusters.forEach((cluster) => cluster.elementIds.forEach((elementId) => {
+          const element = placedElements.find((item) => item.id === elementId);
+          if (!element) return;
+          const fromX = exportWidth * element.x / 100;
+          const fromY = outputHeight * element.y / 100;
+          const toX = exportWidth * cluster.x / 100;
+          const toY = outputHeight * cluster.y / 100;
+          context.beginPath();
+          context.moveTo(fromX, fromY);
+          context.lineTo(toX, toY);
+          context.stroke();
+          context.beginPath();
+          context.arc(fromX, fromY, Math.max(1.2, exportWidth / EXPORT_CANONICAL_WIDTH * 1.5), 0, Math.PI * 2);
+          context.fill();
+        }));
+        context.restore();
+      }
 
       const drawLabels = (items: MapElement[]) => items.forEach((element) => {
         if (clusteredExportIds.has(element.id)) return;
@@ -3436,7 +3422,7 @@ export default function Home() {
           <section className="marker-visibility-panel placed-marker-panel" aria-label="배치된 마커 목록과 라벨 조절">
             <div className="placed-marker-heading">
               <div><strong>배치된 마커 목록</strong><span>라벨 {placedLabelCount}/{elements.filter((element) => element.mapVisible).length} ON</span></div>
-              <button type="button" onClick={() => void refreshLabelPositions()} disabled={labelsRefreshing} title="표시 중인 라벨을 겹치지 않게 다시 정리">{labelsRefreshing ? "정리 중" : "위치 정리"}</button>
+              <button type="button" onClick={() => void refreshLabelPositions()} disabled={labelsRefreshing} title="각 마커와의 대응 관계 및 랜드마크의 현재 위·아래 기준을 우선해 정리">{labelsRefreshing ? "정리 중" : "위치 정리"}</button>
             </div>
             <div className="placed-label-bulk" role="group" aria-label="배치 라벨 일괄 조절">
               <button type="button" onClick={() => setPlacedLabelsVisibility(true)}>전체 라벨 ON</button>
@@ -3701,7 +3687,10 @@ export default function Home() {
                   if (!showAnchor) return null;
                   const showLine = element.connectorVisible && (Math.abs(element.x - element.anchorX) > 0.05 || Math.abs(element.y - element.anchorY) > 0.05);
                   return <g key={`anchor-${element.id}`} opacity={element.opacity / 100}>{showLine && <line x1={element.anchorX} y1={element.anchorY} x2={element.x} y2={element.y} stroke={element.connectorColor} strokeWidth={element.connectorWidth / 10} vectorEffect="non-scaling-stroke" />}{selectedId !== element.id && <><circle cx={element.anchorX} cy={element.anchorY} r="0.42" fill="white" stroke={element.connectorColor} strokeWidth="0.13" vectorEffect="non-scaling-stroke" /><circle cx={element.anchorX} cy={element.anchorY} r="0.12" fill={element.connectorColor} /></>}</g>;
-                })}</svg>
+                })}{denseLabelClusters.flatMap((cluster) => cluster.elementIds.map((elementId) => {
+                  const element = visibleElementsById.get(elementId);
+                  return element ? <g key={`dense-connector-${cluster.id}-${elementId}`} className="dense-label-connector"><line x1={element.x} y1={element.y} x2={cluster.x} y2={cluster.y} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" vectorEffect="non-scaling-stroke" /></g> : null;
+                }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
                   const meta = categoryOf(element.category); const isSelected = selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
                   const isCalibrationReference = calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
@@ -3715,7 +3704,7 @@ export default function Home() {
                   </div>;
                 })}</div>
                 {!!denseLabelClusters.length && <div className="dense-label-layer" aria-label="통합 라벨">
-                  {denseLabelClusters.map((cluster) => <div key={cluster.id} className="dense-label" style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, maxWidth: "156px", transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }} title={cluster.names.join(" · ")}><span className="dense-label-count">{cluster.names.length}곳 통합</span><strong>{cluster.names.slice(0, 3).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 3 && <em>외 {cluster.names.length - 3}곳</em>}</strong></div>)}
+                  {denseLabelClusters.map((cluster) => <div key={cluster.id} className="dense-label" style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, maxWidth: "156px", transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }} title={cluster.names.join(" · ")}><span className="dense-label-count">{cluster.names.length}곳 통합 · 연결선 표시</span><strong>{cluster.names.slice(0, 4).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 4 && <em>외 {cluster.names.length - 4}곳</em>}</strong></div>)}
                 </div>}
                 {selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
@@ -3748,7 +3737,7 @@ export default function Home() {
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : selected.locked ? "좌표 고정됨" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 움직이지 않으며 가까운 미고정 장소의 대략적 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
-            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">라벨 고정 ON 요소만 현재 위치를 유지합니다. 나머지 랜드마크·마커 라벨은 모든 이미지 영역을 피해 자동 배치되고, 밀집 구간은 통합 라벨로 표시됩니다.</p></section>
+            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">현재 방향과 직접 조정한 지점을 기준으로 가까운 빈자리만 탐색합니다. 랜드마크는 위·아래 기준 위치를 최우선으로 유지하며, 모든 라벨은 다른 이미지·라벨을 피합니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>
