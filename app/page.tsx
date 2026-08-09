@@ -38,6 +38,7 @@ const LOCKED_COORDINATE_SETTINGS_KEY = "jeju-wondosim-map-review:locked-coordina
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
 const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
+const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 
 const categories = [
@@ -1144,6 +1145,17 @@ export default function Home() {
     park: false,
     utility: false,
   });
+  const [placedMarkerQuery, setPlacedMarkerQuery] = useState("");
+  const [expandedPlacedMarkerGroups, setExpandedPlacedMarkerGroups] = useState<Record<CategoryId, boolean>>({
+    landmark: true,
+    culture: true,
+    cafe: true,
+    food: true,
+    shop: true,
+    parking: true,
+    park: true,
+    utility: true,
+  });
   const [expandedCalibrationGroups, setExpandedCalibrationGroups] = useState<Record<CalibrationGroupId, boolean>>({
     primary: true,
     secondary: true,
@@ -1616,6 +1628,24 @@ export default function Home() {
     return counts;
   }, { landmark: 0, culture: 0, cafe: 0, food: 0, shop: 0, parking: 0, park: 0, utility: 0 }), [elements]);
 
+  const placedMarkerElements = useMemo(() => {
+    const query = placedMarkerQuery.trim().toLocaleLowerCase("ko-KR");
+    return [...elements]
+      .filter((element) => element.mapVisible)
+      .filter((element) => !query || `${element.name} ${element.address} ${categoryOf(element.category).name}`.toLocaleLowerCase("ko-KR").includes(query))
+      .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
+  }, [elements, placedMarkerQuery]);
+
+  const placedMarkerGroups = useMemo(() => categories.map((category) => ({
+    category,
+    elements: placedMarkerElements.filter((element) => element.category === category.id),
+  })).filter((group) => group.elements.length > 0), [placedMarkerElements]);
+
+  const placedLabelCount = useMemo(
+    () => elements.filter((element) => element.mapVisible && element.labelVisible).length,
+    [elements],
+  );
+
   const printSettingsByKey = useMemo(() => new Map(printSettings.map((setting) => [setting.key, setting])), [printSettings]);
   const directoryPriorityById = useMemo(() => new Map(directoryPlaces.map((place) => [place.id, place.priority ?? ""])), [directoryPlaces]);
   const directoryPriorityByName = useMemo(() => new Map(directoryPlaces.map((place) => [normalizePlaceName(place.name), place.priority ?? ""])), [directoryPlaces]);
@@ -1713,6 +1743,25 @@ export default function Home() {
               secondary: typeof savedCalibrationGroups.secondary === "boolean" ? savedCalibrationGroups.secondary : current.secondary,
               tertiary: typeof savedCalibrationGroups.tertiary === "boolean" ? savedCalibrationGroups.tertiary : current.tertiary,
             }));
+          }
+        } catch {}
+
+        try {
+          const savedMapView = JSON.parse(localStorage.getItem(MAP_VIEW_SETTINGS_KEY) ?? "null") as {
+            markerLabelsVisible?: boolean;
+            mergeDenseLabels?: boolean;
+            expandedPlacedMarkerGroups?: Partial<Record<CategoryId, boolean>>;
+          } | null;
+          if (savedMapView) {
+            if (typeof savedMapView.markerLabelsVisible === "boolean") setMarkerLabelsVisible(savedMapView.markerLabelsVisible);
+            if (typeof savedMapView.mergeDenseLabels === "boolean") setMergeDenseLabels(savedMapView.mergeDenseLabels);
+            if (savedMapView.expandedPlacedMarkerGroups) {
+              setExpandedPlacedMarkerGroups((current) => categories.reduce<Record<CategoryId, boolean>>((next, category) => {
+                const saved = savedMapView.expandedPlacedMarkerGroups?.[category.id];
+                next[category.id] = typeof saved === "boolean" ? saved : current[category.id];
+                return next;
+              }, { ...current }));
+            }
           }
         } catch {}
 
@@ -1832,6 +1881,17 @@ export default function Home() {
       localStorage.setItem(CALIBRATION_GROUPS_KEY, JSON.stringify(expandedCalibrationGroups));
     } catch {}
   }, [expandedCalibrationGroups, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(MAP_VIEW_SETTINGS_KEY, JSON.stringify({
+        markerLabelsVisible,
+        mergeDenseLabels,
+        expandedPlacedMarkerGroups,
+      }));
+    } catch {}
+  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels]);
 
   useEffect(() => {
     if (!hydrated || placeDirectoryLoadedRef.current) return;
@@ -2542,6 +2602,38 @@ export default function Home() {
   const toggleElementMapVisibility = (element: MapElement, visible: boolean) => {
     updateElement(element.id, { mapVisible: visible });
     setToast(`${element.name} 마커를 ${visible ? "배치" : "미배치"} 상태로 변경했습니다.`);
+  };
+
+  const setPlacedElementLabelVisibility = (element: MapElement, visible: boolean) => {
+    updateElement(element.id, { labelVisible: visible });
+    if (visible && element.category !== "landmark") setMarkerLabelsVisible(true);
+    setToast(`${element.name} 라벨을 ${visible ? "표시" : "숨김"}으로 변경했습니다.`);
+  };
+
+  const setPlacedLabelsVisibility = (visible: boolean, scope: "all" | "landmark" | "marker" = "all") => {
+    const targets = elementsRef.current.filter((element) => (
+      element.mapVisible
+      && (scope === "all" || (scope === "landmark" ? element.category === "landmark" : element.category !== "landmark"))
+    ));
+    if (!targets.length) {
+      setToast("조건에 맞는 배치 마커가 없습니다.");
+      return;
+    }
+    pushHistory();
+    const targetIds = new Set(targets.map((element) => element.id));
+    replaceElements((current) => current.map((element) => targetIds.has(element.id) ? { ...element, labelVisible: visible } : element));
+    if (visible && scope !== "landmark") setMarkerLabelsVisible(true);
+    const scopeLabel = scope === "landmark" ? "랜드마크" : scope === "marker" ? "일반 마커" : "전체 배치 마커";
+    setToast(`${scopeLabel} ${targets.length}곳의 라벨을 ${visible ? "표시" : "숨김"}으로 변경했습니다.`);
+  };
+
+  const selectPlacedElement = (element: MapElement) => {
+    setActiveCategory("all");
+    setViewMode("all");
+    setSelectedId(element.id);
+    setSelectedNoteId(null);
+    setRightOpen(true);
+    focusMapPosition(element.x, element.y, element.id);
   };
 
   const setUnifiedPlacePlacement = (row: UnifiedPlaceRow, placed: boolean) => {
@@ -3324,7 +3416,7 @@ export default function Home() {
           {leftPanelMode === "assets" ? <>
           <div className="panel-search">아이콘·마커 보기 및 자산 <kbd>{assets.length}</kbd></div>
           <section className="view-control-panel" aria-label="지도 보기 설정">
-            <div className="view-control-head"><strong>지도 보기</strong><span>화면 전용</span></div>
+            <div className="view-control-head"><strong>지도 전체 조절</strong><span>화면 전용</span></div>
             <div className="view-mode-grid" role="group" aria-label="표시 요소">
               {([ ["all", "전체"], ["landmarks", "랜드마크"], ["markers", "일반마커"], ["labels", "라벨만"] ] as const).map(([mode, label]) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{label}</button>)}
             </div>
@@ -3335,6 +3427,50 @@ export default function Home() {
             <label className="view-detail-select">검수·지도 효과<select value={(["anchors", "clearance", "collisions", "dim", "gray", "nomap"] as ViewMode[]).includes(viewMode) ? viewMode : "all"} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
               <option value="all">효과 없음</option><option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option><option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
             </select></label>
+          </section>
+          <section className="marker-visibility-panel placed-marker-panel" aria-label="배치된 마커 목록과 라벨 조절">
+            <div className="placed-marker-heading">
+              <div><strong>배치된 마커 목록</strong><span>라벨 {placedLabelCount}/{elements.filter((element) => element.mapVisible).length} ON</span></div>
+              <button type="button" onClick={() => void refreshLabelPositions()} disabled={labelsRefreshing} title="표시 중인 라벨을 겹치지 않게 다시 정리">{labelsRefreshing ? "정리 중" : "위치 정리"}</button>
+            </div>
+            <div className="placed-label-bulk" role="group" aria-label="배치 라벨 일괄 조절">
+              <button type="button" onClick={() => setPlacedLabelsVisibility(true)}>전체 라벨 ON</button>
+              <button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 라벨 OFF</button>
+              <button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button>
+              <button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button>
+            </div>
+            <div className="placed-marker-search">
+              <input value={placedMarkerQuery} onChange={(event) => setPlacedMarkerQuery(event.target.value)} placeholder="배치 마커 검색" aria-label="배치 마커 검색" />
+              {placedMarkerQuery && <button type="button" onClick={() => setPlacedMarkerQuery("")} aria-label="배치 마커 검색어 지우기">×</button>}
+            </div>
+            <div className="marker-visibility-list placed-marker-list" role="list" aria-label="현재 지도에 배치된 마커">
+              {placedMarkerGroups.map(({ category, elements: groupElements }) => {
+                const expanded = Boolean(placedMarkerQuery.trim()) || expandedPlacedMarkerGroups[category.id];
+                const labelCount = groupElements.filter((element) => element.labelVisible).length;
+                return <section key={category.id} className={`marker-visibility-group ${expanded ? "expanded" : "collapsed"}`}>
+                  <button type="button" className="marker-visibility-group-toggle" aria-expanded={expanded} aria-controls={`placed-marker-group-${category.id}`} onClick={() => setExpandedPlacedMarkerGroups((current) => ({ ...current, [category.id]: !current[category.id] }))}>
+                    <span className="marker-folder-icon" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                    <i style={{ background: category.color }} />
+                    <strong>{category.name}</strong>
+                    <span className="marker-group-count">라벨 {labelCount}/{groupElements.length}</span>
+                  </button>
+                  {expanded && <div id={`placed-marker-group-${category.id}`} className="marker-visibility-group-items">
+                    {groupElements.map((element) => <div key={element.id} className={`placed-marker-row ${selectedId === element.id ? "selected" : ""}`} role="listitem">
+                      <button type="button" className="placed-marker-focus" onClick={() => selectPlacedElement(element)} title={`${element.name} 지도 위치로 이동`}>
+                        <i style={{ background: category.color }} />
+                        <span><b>{element.name}</b><small>{element.locked ? "좌표 고정" : "좌표 미고정"}</small></span>
+                      </button>
+                      <label className={`placed-label-toggle ${element.labelVisible ? "active" : ""}`} title={`${element.name} 라벨 ${element.labelVisible ? "숨기기" : "표시"}`}>
+                        <input type="checkbox" checked={element.labelVisible} onChange={(event) => setPlacedElementLabelVisibility(element, event.target.checked)} />
+                        <span>{element.labelVisible ? "라벨 ON" : "라벨 OFF"}</span>
+                      </label>
+                    </div>)}
+                  </div>}
+                </section>;
+              })}
+              {!placedMarkerElements.length && <div className="place-empty">배치된 마커가 없거나 검색 결과가 없습니다.</div>}
+            </div>
+            <p>장소명을 누르면 지도 위치와 우측 편집창이 열립니다. 개별 라벨 설정은 자동 저장됩니다.</p>
           </section>
           <section className="print-output-panel" aria-label="고화질 출력 구성">
             <div className="view-control-head"><strong>담당자 제출용 고화질 출력</strong><span>추천 {recommendedPlaceCount}곳</span></div>
