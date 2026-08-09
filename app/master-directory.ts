@@ -16,13 +16,13 @@ export type MasterDirectoryRow = {
 };
 
 export const masterDirectorySource = {
-  "version": "v11-핵심랜드마크-분류고정",
-  "sourceFile": "문화예술_워케이션_제주시_원도심_결과물_v10_음파온차_음식점분류.xlsx",
-  "sourceSha256": "22389ad6753b28005a57d989c2e936a5e20049584b98ebbd5697f99e0e1c0733",
-  "backupSha256": "3e512ad9369915f742e50ac44727fe31f38f7572379ea4460cf6cba00769fb81",
-  "restoredAtUtc": "2026-08-04T08:26:09+00:00",
-  "workbookVersion": "v18",
-  "placeCount": 160
+  "version": "v11-추가매장반영-75a8506e",
+  "sourceFile": "문화예술_워케이션_제주시_원도심_결과물_v11_추가매장반영.xlsx",
+  "sourceSha256": "fd47cfa556429867dea213e15cb1e6a290d3097bd135b91bec0cdf50a3b9fd9c",
+  "backupSha256": "75a8506e322a6866cdc7364e7e1522151dc601ab636f0a23524bb3658bbada4f",
+  "restoredAtUtc": "2026-08-09T12:21:41+00:00",
+  "workbookVersion": "v11",
+  "placeCount": 186
 } as const;
 
 export const retiredMasterDirectoryIds = [
@@ -30,6 +30,22 @@ export const retiredMasterDirectoryIds = [
 ] as const;
 
 export const masterDirectoryRows: MasterDirectoryRow[] = [
+  {
+    "id": "master-v11-c0f294faaa66",
+    "name": "가치 제주본점",
+    "address": "제주특별자치도 제주시 동한두기길 17 1층",
+    "area": "삼도동·용담동 연결권",
+    "subtype": "음식점·이자카야",
+    "priority": "검토",
+    "description": "고등어봉초밥 등 제주 해산물을 활용한 안주와 식사를 내던 이자카야",
+    "operatingInfo": "운영시간: 17:00~24:00 기존 안내 · 휴무일: 공식 채널 확인",
+    "notes": "거리: 인접 · 이용·참고: 최근 동일 주소에 다른 상호 노출이 있어 현 상호·운영 여부 재확인 · 문화향유: 제주 해산물 식문화 · 운영 상태: 상호·운영 확인",
+    "sourceUrl": "https://kr.trip.com/moments/theme/poi-jeju-international-airport-13099771-korean-cuisine-992285/",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
   {
     "id": "master-v10-86003b659cd5",
     "name": "갈치음식점 궁서체 제주탑동본점",
@@ -77,6 +93,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "문화공간",
     "category": "culture"
+  },
+  {
+    "id": "master-v11-fcca49cc6ff3",
+    "name": "고미미",
+    "address": "제주특별자치도 제주시 북성로 67 1층",
+    "area": "삼도동·용담동 연결권",
+    "subtype": "카페·마카롱/디저트",
+    "priority": "참고",
+    "description": "돌하르방 모양과 제주 재료 풍미를 살린 마카롱·쿠키를 판매하는 디저트 매장",
+    "operatingInfo": "운영시간: 10:00~18:00 안내 · 휴무일: 월·화요일 안내",
+    "notes": "거리: 인접 · 이용·참고: 선물 포장·보냉 포장 가능 여부 확인 · 문화향유: 제주 모티프 디저트 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/jeju_gomimi/",
+    "sourceUrl": "https://www.diningcode.com/profile.php?rid=FGoqSoUbhEnA",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
   },
   {
     "id": "master-v10-00e541476232",
@@ -173,6 +205,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "역사·산책·관광",
     "category": "culture"
+  },
+  {
+    "id": "master-v11-5d30e03a560e",
+    "name": "귤메달 하우스",
+    "address": "제주특별자치도 제주시 탑동로 17 1층",
+    "area": "칠성로·탑동",
+    "subtype": "카페·시트러스 체험/소품",
+    "priority": "추천",
+    "description": "제주 감귤 품종과 가공 음료·제품을 맛보고 살펴볼 수 있는 시트러스 브랜드 공간",
+    "operatingInfo": "운영시간: 매일 11:00~19:00 안내 · 휴무일: 공식 채널 확인",
+    "notes": "거리: 주요 · 이용·참고: 시음·상품 구성은 시즌별 변동 · 문화향유: 제주 감귤 식문화 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/gyulmedal/",
+    "sourceUrl": "https://www.visitjeju.net/en/detail/view?contentsid=CNTS_300000000014458",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
   },
   {
     "id": "master-v10-9aae818213d9",
@@ -319,6 +367,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "cafe"
   },
   {
+    "id": "master-v11-15aa71215a23",
+    "name": "노타메노 스키야키 제주공항본점",
+    "address": "제주특별자치도 제주시 무근성7길 17 1층",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·스키야키",
+    "priority": "참고",
+    "description": "제주산 식재료를 관동·관서식 장점을 조합한 스키야키 코스로 선보이는 전문점",
+    "operatingInfo": "운영시간: 매일 16:30~22:00 / 라스트오더 20:30 안내 · 휴무일: 공식 예약 채널 확인",
+    "notes": "거리: 주요 · 이용·참고: 예약 권장·워크인 가능 여부 사전 확인 · 문화향유: 제주 식재료의 일식 해석 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/notameno_sukiyaki/",
+    "sourceUrl": "https://app.catchtable.co.kr/ct/shop/notameno_sukiyaki",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-c2e1a0687ebd",
     "name": "누아 제주",
     "address": "제주특별자치도 제주시 서사로 10-2 1층",
@@ -349,6 +413,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-08-04",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "cafe"
+  },
+  {
+    "id": "master-v11-27f9162db4bc",
+    "name": "늘소담",
+    "address": "제주특별자치도 제주시 탑동로 31-3",
+    "area": "칠성로·탑동",
+    "subtype": "음식점·고기국수/솥밥",
+    "priority": "참고",
+    "description": "고기국수·비빔국수와 제주 식재료 솥밥을 함께 내는 탑동의 한식당",
+    "operatingInfo": "운영시간: 09:00~21:00 / 브레이크 16:00~17:00 안내 · 휴무일: 월·화요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 단체 방문 시 혼잡 여부 확인 · 문화향유: 제주 향토음식 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/jeju_neulsodam/",
+    "sourceUrl": "https://www.diningcode.com/profile.php?rid=iWerGaYqRYQd",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
   },
   {
     "id": "master-v10-277609f2c4b8",
@@ -397,6 +477,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-08-04",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "food"
+  },
+  {
+    "id": "master-v11-19f942c3a964",
+    "name": "도바나 티룸",
+    "address": "제주특별자치도 제주시 서사로 29",
+    "area": "삼도동·용담동 연결권",
+    "subtype": "카페·티하우스",
+    "priority": "참고",
+    "description": "제주 차밭에서 만든 녹차·허브차를 중심으로 운영하는 서사로의 티룸",
+    "operatingInfo": "운영시간: 10:30~21:00 안내 · 휴무일: 공식 채널 확인",
+    "notes": "거리: 인접 · 이용·참고: 표선의 차밭·과거 카페 주소와 구분 · 문화향유: 제주 차 문화 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/dovana_official/",
+    "sourceUrl": "https://www.dovana.co.kr/about?mode=privacy",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
   },
   {
     "id": "master-v10-5710026d4c1d",
@@ -509,6 +605,38 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "cafe"
+  },
+  {
+    "id": "master-v11-65077a4e838c",
+    "name": "레이어스베이크하우스",
+    "address": "제주특별자치도 제주시 무근성7길 25 1층",
+    "area": "관덕로·목관아",
+    "subtype": "카페·베이커리",
+    "priority": "추천",
+    "description": "크루아상 등 층이 살아 있는 페이스트리와 발효빵을 굽는 무근성의 소규모 베이커리",
+    "operatingInfo": "운영시간: 수~일 11:00~18:00 안내 · 휴무일: 월·화요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 인기 제품 조기 소진 가능 · 문화향유: 로컬 베이커리 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/layers_bakehouse/",
+    "sourceUrl": "https://www.jejusori.net/news/articleView.html?idxno=336453",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
+  },
+  {
+    "id": "master-v11-e068d1afd21f",
+    "name": "뤼미에흐",
+    "address": "제주특별자치도 제주시 무근성길 38 1층",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·프렌치 코스",
+    "priority": "참고",
+    "description": "제주 제철 식재료를 프렌치 기법으로 풀어내는 예약 중심의 소규모 코스 레스토랑",
+    "operatingInfo": "운영시간: 런치 12:00 / 디너 예약 타임제 안내 · 휴무일: 수요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 캐치테이블·네이버 사전 예약 필수에 가까움 · 문화향유: 제주 식재료의 현대적 해석 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/freres.lumiere/",
+    "sourceUrl": "https://app.catchtable.co.kr/ct/shop/lumiere",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
   },
   {
     "id": "master-v10-ea1155a34dd4",
@@ -671,6 +799,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "food"
   },
   {
+    "id": "master-v11-d22b4ac56dd2",
+    "name": "무근성 양과점",
+    "address": "제주특별자치도 제주시 중앙로8길 33",
+    "area": "관덕로·목관아",
+    "subtype": "카페·구움과자",
+    "priority": "참고",
+    "description": "유기농 재료로 제주 말차·레몬 등 여러 맛의 마들렌을 굽는 원도심 양과점",
+    "operatingInfo": "운영시간: 월~금 10:00~19:00 / 토 10:00~16:00 안내 · 휴무일: 일요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 선물 세트·포장 중심, 재고 확인 권장 · 문화향유: 원도심 골목 베이커리 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/m.g.s_dessert/",
+    "sourceUrl": "https://www.tabling.co.kr/place/677cd6e266de5f069891c807",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
+  },
+  {
     "id": "master-v10-aa06aee16c4d",
     "name": "무무제주",
     "address": "제주특별자치도 제주시 관덕로8길 40",
@@ -735,6 +879,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "food"
   },
   {
+    "id": "master-v11-4a862816ee7a",
+    "name": "미세스묵",
+    "address": "제주특별자치도 제주시 동문로4길 7-1 동문시장 11번 게이트 인근",
+    "area": "산지천·탐라문화광장·서부두",
+    "subtype": "카페·묵푸딩/전통디저트",
+    "priority": "참고",
+    "description": "도토리묵과 청포묵을 푸딩으로 재해석한 디저트와 음료를 선보이는 동문시장 매장",
+    "operatingInfo": "운영시간: 월~토 11:00~19:00 안내 · 휴무일: 일요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 시장 내 위치·재고 소진 여부 확인 · 문화향유: 전통음식 현대화 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://www.diningcode.com/profile.php?rid=HxGCY3Tde3PY",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
+  },
+  {
     "id": "master-v10-1dabd4baa4aa",
     "name": "미풍정 식당",
     "address": "제주특별자치도 제주시 중앙로14길 11 1층",
@@ -779,6 +939,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "sourceUrl": "https://www.tripinfo.co.kr/info.html?content_id=1404293&content_type_id=39",
     "mapUrl": "",
     "checkedAt": "2026-08-04",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
+    "id": "master-v11-05fdabf81412",
+    "name": "바다잔치",
+    "address": "제주특별자치도 제주시 탑동로 79",
+    "area": "칠성로·탑동",
+    "subtype": "음식점·생선회/조림",
+    "priority": "참고",
+    "description": "모둠회·갈치조림·고등어조림·물회 등 제주 생선 요리를 폭넓게 내는 식당",
+    "operatingInfo": "운영시간: 09:00~22:00 안내 · 휴무일: 연중무휴 안내",
+    "notes": "거리: 주요 · 이용·참고: 단체 식사 시 예약 권장 · 문화향유: 제주 해산물 식문화 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://www.tripinfo.co.kr/info.html?content_id=1895793&content_type_id=39",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "food"
   },
@@ -1151,6 +1327,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "cafe"
   },
   {
+    "id": "master-v11-e614e66dc009",
+    "name": "송림반점",
+    "address": "제주특별자치도 제주시 관덕로 2-1",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·중식/노포",
+    "priority": "참고",
+    "description": "70년 이상 이어온 구도심 중식 노포로 간짜장·볶음밥·탕수육이 알려진 식당",
+    "operatingInfo": "운영시간: 11:30~15:00 / 라스트오더 14:30 안내 · 휴무일: 일요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 점심 운영 중심·대기 가능 · 문화향유: 원도심 노포 식문화 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://korean.visitkorea.or.kr/detail/ms_detail.do?cotid=ff23f866-307f-4042-84c3-b7809cf9d46e",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-a661a9a80078",
     "name": "순아커피",
     "address": "제주특별자치도 제주시 관덕로 32-1",
@@ -1295,6 +1487,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "cafe"
   },
   {
+    "id": "master-v11-7828ad919d94",
+    "name": "아살람 레스토랑",
+    "address": "제주특별자치도 제주시 중앙로2길 7 1층",
+    "area": "칠성로·탑동",
+    "subtype": "음식점·아랍/할랄",
+    "priority": "참고",
+    "description": "예멘 출신 셰프가 후무스·팔라펠·케밥 등 아랍 음식을 내는 할랄 레스토랑",
+    "operatingInfo": "운영시간: 12:00~22:30 / 라스트오더 21:40 안내 · 휴무일: 수요일 안내·변동 확인",
+    "notes": "거리: 주요 · 이용·참고: 주류 미판매·기도 공간 안내 · 문화향유: 해외 식문화 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/jejuhalalasalam/",
+    "sourceUrl": "https://m.visitjeju.net/kr/detail/view?contentsid=CNTS_200000000014649",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-87aca97956ec",
     "name": "아일랜드팩토리 풍류",
     "address": "제주특별자치도 제주시 관덕로8길 31",
@@ -1389,6 +1597,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "cafe"
+  },
+  {
+    "id": "master-v11-8ce05d8f8114",
+    "name": "엘리펀트힙",
+    "address": "제주특별자치도 제주시 탑동로 20 1층",
+    "area": "칠성로·탑동",
+    "subtype": "음식점·브런치",
+    "priority": "참고",
+    "description": "프렌치토스트·에그인더헬 등 브런치 메뉴를 내는 탑동의 소규모 레스토랑",
+    "operatingInfo": "운영시간: 10:30~13:30 / 라스트오더 12:30 안내 · 휴무일: 수·목요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 노키즈존·짧은 점심 운영시간 확인 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/elephant.hip/",
+    "sourceUrl": "https://www.diningcode.com/profile.php?rid=DLSuni64MGkV",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
   },
   {
     "id": "master-v10-f3ecdbece2c7",
@@ -1519,6 +1743,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "park"
   },
   {
+    "id": "master-v11-80d393c43a55",
+    "name": "우도근고기",
+    "address": "제주특별자치도 제주시 북성로 28",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·흑돼지구이",
+    "priority": "참고",
+    "description": "목살·오겹살 근고기를 중심으로 내는 원도심의 제주 흑돼지 구이 전문점",
+    "operatingInfo": "운영시간: 17:00~22:00 / 라스트오더 21:00 안내 · 휴무일: 일요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 최근 맞은편 신축 매장으로 이전했다는 안내 확인 · 문화향유: 제주 식문화 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://www.diningcode.com/profile.php?rid=1ip62djrNvmH",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-816b566e63fb",
     "name": "우디버디",
     "address": "제주특별자치도 제주시 북성로 31 1층",
@@ -1595,6 +1835,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "sourceUrl": "https://www.instagram.com/welcomeburger_jeju/",
     "mapUrl": "",
     "checkedAt": "2026-07-27",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
+    "id": "master-v11-6b2f6c87d3c8",
+    "name": "유빈",
+    "address": "제주특별자치도 제주시 탑동로 55",
+    "area": "칠성로·탑동",
+    "subtype": "음식점·전복요리",
+    "priority": "참고",
+    "description": "전복죽·전복회·전복구이·성게국 등 제주 향토 해산물 메뉴를 내는 오래된 식당",
+    "operatingInfo": "운영시간: 운영시간 방문 전 확인 · 휴무일: 연중무휴 안내",
+    "notes": "거리: 주요 · 이용·참고: 단체 방문 시 좌석·메뉴 사전 문의 · 문화향유: 제주 향토음식 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://www.korearank.com/tour/tour_detail.php?uid=21074",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "food"
   },
@@ -1679,6 +1935,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "food"
   },
   {
+    "id": "master-v11-abf2a5664cff",
+    "name": "임제 제주본점",
+    "address": "제주특별자치도 제주시 탑동로 126 2층",
+    "area": "삼도동·용담동 연결권",
+    "subtype": "음식점·흑돼지구이",
+    "priority": "참고",
+    "description": "제주 흑돼지를 우도 땅콩껍데기 연기로 훈연하고 직원이 구워 주는 프리미엄 고깃집",
+    "operatingInfo": "운영시간: 12:00~22:30 / 브레이크 15:00~17:00 / 라스트오더 21:30 안내 · 휴무일: 공식 채널 확인",
+    "notes": "거리: 인접 · 이용·참고: 예약·단체석·유아의자 안내 · 문화향유: 제주 식재료의 현대적 해석 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://www.visitjeju.net/kr/detail/view?contentsid=CNTS_300000000013226",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-5189f5102ba2",
     "name": "잉가이",
     "address": "제주특별자치도 제주시 무근성7길 1",
@@ -1725,6 +1997,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "food"
+  },
+  {
+    "id": "master-v11-25847b4730ab",
+    "name": "장인더 제주점",
+    "address": "제주특별자치도 제주시 탑동로 136",
+    "area": "삼도동·용담동 연결권",
+    "subtype": "카페·한과/베이커리",
+    "priority": "참고",
+    "description": "약과·소금빵과 음료를 함께 판매해 제주 여행 선물 구입에 활용하기 좋은 카페형 매장",
+    "operatingInfo": "운영시간: 매일 10:00~18:00 / 라스트오더 17:50 안내 · 휴무일: 별도 휴무 공지 확인",
+    "notes": "거리: 인접 · 이용·참고: 이전 구좌점 주소와 혼동 주의 · 문화향유: 전통간식 현대화 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/janginthe/",
+    "sourceUrl": "https://www.diningcode.com/profile.php?rid=te8APTu0suEw",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
   },
   {
     "id": "master-v10-f303f80e5499",
@@ -1807,6 +2095,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "food"
   },
   {
+    "id": "master-v11-8554908a4929",
+    "name": "제주맑음",
+    "address": "제주특별자치도 제주시 관덕로3길 1-1",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·피자/파스타/돈까스",
+    "priority": "참고",
+    "description": "화덕피자·파스타·흑돼지돈까스를 내는 관덕정 인근의 캐주얼 양식당",
+    "operatingInfo": "운영시간: 11:00~23:00 안내 · 휴무일: 화요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 골목 주차보다 인근 공영주차장 이용 권장 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://www.tabling.co.kr/place/677cc8a166de5f0698774d39",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-e57a222da65d",
     "name": "제주목 관아",
     "address": "제주특별자치도 제주시 관덕로 25",
@@ -1885,6 +2189,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "역사·산책·관광",
     "category": "culture"
+  },
+  {
+    "id": "master-v11-dacf7f4df821",
+    "name": "제주시새우리",
+    "address": "제주특별자치도 제주시 무근성7길 24",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·딱새우김밥",
+    "priority": "참고",
+    "description": "딱새우김밥·새우컵밥·해물라면 등 새우를 활용한 간편식을 내는 포장 친화적 음식점",
+    "operatingInfo": "운영시간: 매일 09:00~19:30 안내 · 휴무일: 공식 채널 확인",
+    "notes": "거리: 주요 · 이용·참고: 재료 소진 시 조기 마감 가능 · 문화향유: 제주 해산물 식문화 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/sewooori_jeju/",
+    "sourceUrl": "https://m.visitjeju.net/kr/detail/view?contentsid=CNTS_200000000012578",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
   },
   {
     "id": "master-v10-7d3c0f365248",
@@ -1981,6 +2301,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "역사·산책·관광",
     "category": "park"
+  },
+  {
+    "id": "master-v11-a3b068d52f6b",
+    "name": "제주칼치집 탑동본점",
+    "address": "제주특별자치도 제주시 무근성길 6 1층",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·갈치요리",
+    "priority": "참고",
+    "description": "제주 갈치조림·통갈치구이·갈치국 등을 한 상으로 구성하는 갈치 전문점",
+    "operatingInfo": "운영시간: 매일 10:00~21:00 안내 · 휴무일: 공식 채널 확인",
+    "notes": "거리: 주요 · 이용·참고: 세트 메뉴·단체 예약 가능 여부 확인 · 문화향유: 제주 해산물 식문화 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/jeju_kalchi.zip/",
+    "sourceUrl": "https://funjeju.com/food/595",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
   },
   {
     "id": "master-v10-6d4e97de5f72",
@@ -2095,6 +2431,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "food"
   },
   {
+    "id": "master-v11-07a94ec50804",
+    "name": "채채채",
+    "address": "제주특별자치도 제주시 중앙로2길 35 1층",
+    "area": "칠성로·탑동",
+    "subtype": "음식점·서양식",
+    "priority": "검토",
+    "description": "사업자 자료에서 과거 상호와 현재 노출 상호가 충돌하는 서양식 음식점으로 정확한 현 상호 확인이 필요",
+    "operatingInfo": "운영시간: 운영시간 확인 · 휴무일: 휴무일 확인",
+    "notes": "거리: 주요 · 이용·참고: 공개 사업자 자료 본문에는 ‘아피로’로 표시되어 방문 전 상호·운영 여부 확인 · 운영 상태: 상호·운영 확인",
+    "sourceUrl": "https://moneypin.biz/bizno/detail/5242301386/",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-e99c2baca755",
     "name": "첨목",
     "address": "제주특별자치도 제주시 산지로 25 1층",
@@ -2123,6 +2475,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "sourceUrl": "https://pf.kakao.com/_xkPsPC",
     "mapUrl": "",
     "checkedAt": "2026-07-27",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
+    "id": "master-v11-3eba83e93ffb",
+    "name": "카고크루즈",
+    "address": "제주특별자치도 제주시 탑동로 43 2층",
+    "area": "칠성로·탑동",
+    "subtype": "음식점·비건 옵션/파스타",
+    "priority": "참고",
+    "description": "제주 식재료를 활용한 파스타와 채소 요리를 내며 대부분 메뉴에 비건 선택지를 제공하는 식당",
+    "operatingInfo": "운영시간: 10:30~17:00 안내 · 휴무일: 일·월요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 비건 옵션은 주문 시 확인 · 문화향유: 로컬 식재료·비건 식문화 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/cargo.cruise_jeju/",
+    "sourceUrl": "https://www.visitjeju.net/en/detail/view?contentsid=CNTS_200000000014110",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "food"
   },
@@ -2447,6 +2815,22 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "cafe"
   },
   {
+    "id": "master-v11-336990b34ed5",
+    "name": "한두기칼국수",
+    "address": "제주특별자치도 제주시 탑동로 113 1층",
+    "area": "삼도동·용담동 연결권",
+    "subtype": "음식점·칼국수",
+    "priority": "참고",
+    "description": "보말전복칼국수·닭칼국수 등 자가제면 국수 메뉴를 이른 시간부터 내는 식당",
+    "operatingInfo": "운영시간: 08:00~18:00 안내 · 휴무일: 방문 전 확인",
+    "notes": "거리: 인접 · 이용·참고: 아침 식사 가능·최신 휴무 공지 확인 · 문화향유: 제주 해산물 식문화 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://pervsi.com/info/board.php?board=pejj&command=body&no=115038",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
     "id": "master-v10-d4648f9c2e1f",
     "name": "한라미담우동",
     "address": "제주특별자치도 제주시 관덕로11길 35 2층",
@@ -2541,6 +2925,38 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-08-04",
     "sourceSheet": "카페·음식점·소품샵",
     "category": "food"
+  },
+  {
+    "id": "master-v11-830241ab7621",
+    "name": "화진전복",
+    "address": "제주특별자치도 제주시 무근성길 2 1층",
+    "area": "관덕로·목관아",
+    "subtype": "음식점·전복요리",
+    "priority": "참고",
+    "description": "전복돌솥밥·전복죽·전복뚝배기 등 활전복 요리를 다양하게 내는 한식당",
+    "operatingInfo": "운영시간: 매일 08:00~22:00 안내 · 휴무일: 별도 정기휴무 없음 안내",
+    "notes": "거리: 주요 · 이용·참고: 아침 식사·단체 이용 가능 여부 문의 · 문화향유: 제주 향토음식 · 운영 상태: 운영 확인",
+    "sourceUrl": "https://www.diningcode.com/profile.php?rid=wEsrfhVAYrzC",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "food"
+  },
+  {
+    "id": "master-v11-f029b3338478",
+    "name": "ABC 에이팩토리베이커리카페",
+    "address": "제주특별자치도 제주시 관덕로7길 39 1층",
+    "area": "칠성로·탑동",
+    "subtype": "카페·베이커리",
+    "priority": "추천",
+    "description": "캄파뉴·바게트·크루아상·에그타르트 등을 굽는 탑동의 오래된 베이커리 카페",
+    "operatingInfo": "운영시간: 08:00~16:00 안내 · 휴무일: 화·수요일 안내",
+    "notes": "거리: 주요 · 이용·참고: 빵 종류별 출시 시간·조기 소진 확인 · 문화향유: 원도심 베이커리 · 운영 상태: 운영 확인 · SNS: https://www.instagram.com/bakery_abc/",
+    "sourceUrl": "https://korean.visitkorea.or.kr/detail/ms_detail.do?cotid=96ae880f-b293-4262-9dd7-bae2efe36a6c",
+    "mapUrl": "",
+    "checkedAt": "2026-08-09",
+    "sourceSheet": "카페·음식점·소품샵",
+    "category": "cafe"
   },
   {
     "id": "master-v10-59b9d578ce11",

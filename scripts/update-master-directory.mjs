@@ -21,8 +21,9 @@ for (const match of previousSource.matchAll(/\{\s*(?:"?id"?:\s*"([^"]+)",\s*)?"?
 
 const sourceBytes = fs.readFileSync(sourcePath);
 const backup = JSON.parse(sourceBytes.toString("utf8"));
-const sourceVersion = "v10-음파온차-음식점분류";
 const sourceHash = createHash("sha256").update(sourceBytes).digest("hex");
+const workbookVersion = String(backup.source_workbook_version_label || "unknown").trim();
+const sourceVersion = `${workbookVersion}-추가매장반영-${sourceHash.slice(0, 8)}`;
 const includedSheets = new Set(["문화공간", "카페·음식점·소품샵", "역사·산책·관광"]);
 const walkCategories = /^(도보코스|마을산책|상권·산책|수변산책|시장·산책|자연·산책|해안산책)$/;
 const shopCategories = /^(소품샵|제주 기념품|캐릭터|작가 협업)/;
@@ -48,7 +49,7 @@ function stableId(name) {
   const previous = previousIds.get(name);
   if (previous) return previous;
   const suffix = createHash("sha1").update(name).digest("hex").slice(0, 12);
-  return `master-v10-${suffix}`;
+  return `master-${workbookVersion.toLowerCase()}-${suffix}`;
 }
 
 const rows = backup.sheets
@@ -89,7 +90,10 @@ const rows = backup.sheets
 
 const duplicateNames = rows.filter((row, index) => rows.findIndex((candidate) => candidate.name === row.name) !== index);
 if (duplicateNames.length) throw new Error(`Duplicate place names: ${duplicateNames.map((row) => row.name).join(", ")}`);
-if (rows.length !== 160) throw new Error(`Expected 160 place rows, received ${rows.length}`);
+const expectedRows = backup.sheets
+  .filter((sheet) => includedSheets.has(sheet.sheet_name))
+  .reduce((total, sheet) => total + Number(sheet.record_count || sheet.records?.length || 0), 0);
+if (!rows.length || rows.length !== expectedRows) throw new Error(`Expected ${expectedRows} place rows, received ${rows.length}`);
 const currentNames = new Set(rows.map((row) => row.name));
 for (const [name, id] of previousIds) {
   if (!currentNames.has(name) && id.startsWith("master-place-")) retainedRetiredIds.add(id);

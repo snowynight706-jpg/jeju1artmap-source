@@ -58,3 +58,14 @@ export const placeDirectorySourceState = sqliteTable("place_directory_source_sta
   sourceVersion: text("source_version").notNull(),
   importedAt: text("imported_at").notNull(),
 });
+
+export const placePrintSettings = sqliteTable("place_print_settings", {
+  placeKey: text("place_key").primaryKey(),
+  directoryId: text("directory_id"),
+  name: text("name").notNull(),
+  recommended: integer("recommended", { mode: "boolean" }).notNull(),
+  markerMode: text("marker_mode").notNull(),
+  labelMode: text("label_mode").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+});

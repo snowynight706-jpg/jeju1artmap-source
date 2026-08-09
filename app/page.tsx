@@ -29,6 +29,7 @@ const UPLOADED_MAP_API = "/api/base-map";
 const CALIBRATION_SETTINGS_API = "/api/calibration-settings";
 const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
 const PLACE_DIRECTORY_API = "/api/place-directory";
+const PRINT_SETTINGS_API = "/api/print-settings";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -58,6 +59,7 @@ type ViewMode = "all" | "landmarks" | "markers" | "labels" | "anchors" | "cleara
 type BaseMapMode = "svg" | "png" | "uploaded";
 type CoordinateLockFilter = "all" | "unlocked" | "locked";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
+type PrintMode = "auto" | "include" | "exclude";
 
 type UploadedBaseMap = {
   available: boolean;
@@ -199,6 +201,25 @@ type LockedCoordinateSetting = {
   anchorY: number;
   x: number;
   y: number;
+};
+
+type PrintPlaceSetting = {
+  key: string;
+  directoryId?: string;
+  name: string;
+  recommended: boolean;
+  markerMode: PrintMode;
+  labelMode: PrintMode;
+};
+
+type DenseLabelCluster = {
+  id: string;
+  elementIds: string[];
+  names: string[];
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 type DocumentState = {
@@ -740,6 +761,107 @@ function rectsOverlap(a: NormalizedRect, b: NormalizedRect, margin = 0.18) {
   return a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin;
 }
 
+function printSettingKey(target: Pick<MapElement, "directoryId" | "category" | "name">) {
+  return target.directoryId?.trim()
+    ? `directory:${target.directoryId.trim()}`
+    : `name:${target.category}:${normalizePlaceName(target.name)}`;
+}
+
+function buildDenseLabelClusters(labelElements: MapElement[], iconElements: MapElement[]): DenseLabelCluster[] {
+  const candidates = labelElements.filter((element) => element.category !== "landmark" && !element.labelLocked);
+  if (candidates.length < 2) return [];
+  const parent = candidates.map((_, index) => index);
+  const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
+  const unite = (a: number, b: number) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[rootB] = rootA;
+  };
+  for (let index = 0; index < candidates.length; index += 1) {
+    for (let other = index + 1; other < candidates.length; other += 1) {
+      const dx = candidates[index].x - candidates[other].x;
+      const dy = (candidates[index].y - candidates[other].y) / MAP_ASPECT;
+      const labelReach = Math.min(6.2, 2.4 + (candidates[index].name.length + candidates[other].name.length) * 0.11);
+      if (Math.hypot(dx, dy) <= labelReach) unite(index, other);
+    }
+  }
+  const groups = new Map<number, MapElement[]>();
+  candidates.forEach((element, index) => {
+    const root = find(index);
+    groups.set(root, [...(groups.get(root) ?? []), element]);
+  });
+  const iconRects = iconElements.map((element) => {
+    const height = element.size * MAP_ASPECT / 1.12;
+    return {
+      category: element.category,
+      rect: {
+        left: element.x - element.size * 0.48,
+        right: element.x + element.size * 0.48,
+        top: element.y - height * 0.48,
+        bottom: element.y + height * 0.48,
+      },
+    };
+  });
+  const labelRects = labelElements.map((element) => {
+    const width = clamp(element.name.length * 0.72 + 2.4, 3.6, 20);
+    const height = 2.1;
+    const elementHeight = element.size * MAP_ASPECT / 1.12;
+    const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
+    const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+    const gapX = 0.6 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
+    const gapY = 0.6 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+    let x = element.x + offsetX;
+    let y = element.y + offsetY;
+    if (element.labelPosition === "top") y -= elementHeight / 2 + gapY + height / 2;
+    if (element.labelPosition === "bottom") y += elementHeight / 2 + gapY + height / 2;
+    if (element.labelPosition === "left") x -= element.size / 2 + gapX + width / 2;
+    if (element.labelPosition === "right") x += element.size / 2 + gapX + width / 2;
+    return { id: element.id, rect: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 } };
+  });
+  const placed: NormalizedRect[] = [];
+  return [...groups.values()].filter((group) => group.length >= 2).sort((a, b) => b.length - a.length).map((group, groupIndex) => {
+    const names = group.map((element) => element.name);
+    const groupIds = new Set(group.map((element) => element.id));
+    const minX = Math.min(...group.map((element) => element.x - element.size / 2));
+    const maxX = Math.max(...group.map((element) => element.x + element.size / 2));
+    const minY = Math.min(...group.map((element) => element.y - element.size * MAP_ASPECT / 2.24));
+    const maxY = Math.max(...group.map((element) => element.y + element.size * MAP_ASPECT / 2.24));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const width = clamp(Math.max(...names.map((name) => name.length)) * 0.72 + 4.8, 10.5, 22);
+    const height = clamp(2.8 + Math.min(4, names.length) * 2.2, 7.2, 11.2);
+    const distance = Math.max(2.2, height / 2 + 1.2);
+    const options = [1, 1.65, 2.4, 3.2, 4.5, 6].flatMap((ring) => [
+      { x: centerX, y: minY - distance * ring },
+      { x: centerX, y: maxY + distance * ring },
+      { x: minX - width / 2 - 1.2 * ring, y: centerY },
+      { x: maxX + width / 2 + 1.2 * ring, y: centerY },
+      { x: minX - width / 2 - ring, y: minY - distance * ring },
+      { x: maxX + width / 2 + ring, y: minY - distance * ring },
+      { x: minX - width / 2 - ring, y: maxY + distance * ring },
+      { x: maxX + width / 2 + ring, y: maxY + distance * ring },
+    ]);
+    const best = options.map((option, optionIndex) => {
+      const rect = { left: option.x - width / 2, right: option.x + width / 2, top: option.y - height / 2, bottom: option.y + height / 2 };
+      const iconPenalty = iconRects.reduce((score, icon) => score + (rectsOverlap(rect, icon.rect, 0.65) ? (icon.category === "landmark" ? 50000 : 18000) : 0), 0);
+      const individualLabelPenalty = labelRects.reduce((score, label) => score + (!groupIds.has(label.id) && rectsOverlap(rect, label.rect, 0.45) ? 16000 : 0), 0);
+      const labelPenalty = placed.reduce((score, item) => score + (rectsOverlap(rect, item, 0.45) ? 22000 : 0), 0);
+      const overflow = Math.max(0, -rect.left) + Math.max(0, rect.right - 100) + Math.max(0, -rect.top) + Math.max(0, rect.bottom - 100);
+      return { ...option, rect, score: iconPenalty + individualLabelPenalty + labelPenalty + overflow * 12000 + optionIndex * 8 };
+    }).sort((a, b) => a.score - b.score)[0];
+    placed.push(best.rect);
+    return {
+      id: `dense-label-${groupIndex}-${group.map((element) => element.id).join("-")}`,
+      elementIds: group.map((element) => element.id),
+      names,
+      x: clamp(best.x, width / 2, 100 - width / 2),
+      y: clamp(best.y, height / 2, 100 - height / 2),
+      width,
+      height,
+    };
+  });
+}
+
 function cloneDocument(document: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(document)) as DocumentState;
 }
@@ -971,6 +1093,7 @@ export default function Home() {
   const localCalibrationUpdatedAtRef = useRef(0);
   const localLockedCoordinatesUpdatedAtRef = useRef(0);
   const placeDirectoryLoadedRef = useRef(false);
+  const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -996,6 +1119,15 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
   const [viewMode, setViewMode] = useState<ViewMode>("all");
+  const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
+  const [mergeDenseLabels, setMergeDenseLabels] = useState(true);
+  const [printRecommendedOnly, setPrintRecommendedOnly] = useState(true);
+  const [printLandmarks, setPrintLandmarks] = useState(true);
+  const [printMarkers, setPrintMarkers] = useState(true);
+  const [printLabels, setPrintLabels] = useState(true);
+  const [printSettings, setPrintSettings] = useState<PrintPlaceSetting[]>([]);
+  const [printSettingsCanEdit, setPrintSettingsCanEdit] = useState(false);
+  const [printSettingsStorage, setPrintSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
@@ -1484,12 +1616,42 @@ export default function Home() {
     return counts;
   }, { landmark: 0, culture: 0, cafe: 0, food: 0, shop: 0, parking: 0, park: 0, utility: 0 }), [elements]);
 
+  const printSettingsByKey = useMemo(() => new Map(printSettings.map((setting) => [setting.key, setting])), [printSettings]);
+  const directoryPriorityById = useMemo(() => new Map(directoryPlaces.map((place) => [place.id, place.priority ?? ""])), [directoryPlaces]);
+  const directoryPriorityByName = useMemo(() => new Map(directoryPlaces.map((place) => [normalizePlaceName(place.name), place.priority ?? ""])), [directoryPlaces]);
+  const printPolicyFor = useCallback((element: MapElement) => {
+    const setting = printSettingsByKey.get(printSettingKey(element));
+    const priority = (element.directoryId ? directoryPriorityById.get(element.directoryId) : undefined)
+      ?? directoryPriorityByName.get(normalizePlaceName(element.name))
+      ?? "";
+    const recommended = element.category === "landmark" || setting?.recommended === true || (!setting && /추천|우선/.test(priority));
+    const markerAllowed = element.category === "landmark" ? printLandmarks : printMarkers;
+    const automaticMarker = markerAllowed && (element.category === "landmark" || !printRecommendedOnly || recommended);
+    const automaticLabel = printLabels && element.labelVisible && (element.category === "landmark" ? printLandmarks : !printRecommendedOnly || recommended);
+    return {
+      recommended,
+      marker: markerAllowed && (setting?.markerMode === "include" ? true : setting?.markerMode === "exclude" ? false : automaticMarker),
+      label: printLabels && (setting?.labelMode === "include" ? true : setting?.labelMode === "exclude" ? false : automaticLabel),
+      setting,
+    };
+  }, [directoryPriorityById, directoryPriorityByName, printLabels, printLandmarks, printMarkers, printRecommendedOnly, printSettingsByKey]);
+
+  const recommendedPlaceCount = useMemo(() => elements.filter((element) => element.mapVisible && element.category !== "landmark" && printPolicyFor(element).recommended).length, [elements, printPolicyFor]);
+
   const visibleElements = useMemo(() => [...elements]
     .filter((element) => element.mapVisible)
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
     .filter((element) => viewMode !== "landmarks" || element.category === "landmark")
     .filter((element) => viewMode !== "markers" || element.category !== "landmark")
     .sort((a, b) => a.z - b.z), [activeCategory, elements, viewMode]);
+
+  const denseLabelClusters = useMemo(() => mergeDenseLabels
+    ? buildDenseLabelClusters(
+        visibleElements.filter((element) => element.labelVisible && markerLabelsVisible && element.category !== "landmark"),
+        visibleElements,
+      )
+    : [], [markerLabelsVisible, mergeDenseLabels, visibleElements]);
+  const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
 
   const collisions = useMemo(() => {
     const hard = new Set<string>();
@@ -1675,6 +1837,11 @@ export default function Home() {
     if (!hydrated || placeDirectoryLoadedRef.current) return;
     placeDirectoryLoadedRef.current = true;
     let cancelled = false;
+    const applyBundledDirectory = () => {
+      const bundledRecords = defaultDirectoryPlaces.map(directoryRecordFromPlace);
+      replaceDirectoryPlaces((current) => mergeDirectoryRecords(bundledRecords, current));
+      setPlaceDirectoryStorage("bundled");
+    };
     fetch(PLACE_DIRECTORY_API, { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null) as {
@@ -1692,7 +1859,7 @@ export default function Home() {
         setPlaceDirectoryUpdatedAt(payload?.updatedAt ?? null);
         const rows = Array.isArray(payload?.rows) ? payload.rows : [];
         if (!payload?.persistent || !rows.length) {
-          setPlaceDirectoryStorage("bundled");
+          applyBundledDirectory();
           return;
         }
         const merged = mergeDirectoryRecords(rows, placesRef.current);
@@ -1716,10 +1883,72 @@ export default function Home() {
         setPlaceDirectoryStorage("persistent");
       })
       .catch(() => {
-        if (!cancelled) setPlaceDirectoryStorage("bundled");
+        if (!cancelled) applyBundledDirectory();
       });
     return () => { cancelled = true; };
   }, [hydrated, replaceDirectoryPlaces, replaceElements]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    fetch(PRINT_SETTINGS_API, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as {
+          settings?: PrintPlaceSetting[];
+          persistent?: boolean;
+          canEdit?: boolean;
+        } | null;
+        if (!response.ok && response.status !== 503) throw new Error("print settings load failed");
+        return payload;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const settings = Array.isArray(payload?.settings) ? payload!.settings : [];
+        printSettingsRef.current = settings;
+        setPrintSettings(settings);
+        setPrintSettingsCanEdit(Boolean(payload?.canEdit));
+        setPrintSettingsStorage(payload?.persistent ? "persistent" : "local");
+      })
+      .catch(() => {
+        if (!cancelled) setPrintSettingsStorage("local");
+      });
+    return () => { cancelled = true; };
+  }, [hydrated]);
+
+  const savePrintSetting = useCallback(async (target: Pick<MapElement, "directoryId" | "category" | "name">, patch: Partial<Pick<PrintPlaceSetting, "recommended" | "markerMode" | "labelMode">>) => {
+    if (!printSettingsCanEdit) {
+      setToast("출력 추천 설정은 소유자 로그인 후 영구 저장할 수 있습니다.");
+      return;
+    }
+    const key = printSettingKey(target);
+    const existing = printSettingsRef.current.find((setting) => setting.key === key);
+    const next: PrintPlaceSetting = {
+      key,
+      ...(target.directoryId ? { directoryId: target.directoryId } : {}),
+      name: normalizePlaceName(target.name),
+      recommended: existing?.recommended ?? false,
+      markerMode: existing?.markerMode ?? "auto",
+      labelMode: existing?.labelMode ?? "auto",
+      ...patch,
+    };
+    const previous = printSettingsRef.current;
+    const updated = [...previous.filter((setting) => setting.key !== key), next];
+    printSettingsRef.current = updated;
+    setPrintSettings(updated);
+    try {
+      const response = await fetch(PRINT_SETTINGS_API, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ setting: next }),
+      });
+      if (!response.ok) throw new Error("print setting save failed");
+      setPrintSettingsStorage("persistent");
+    } catch {
+      printSettingsRef.current = previous;
+      setPrintSettings(previous);
+      setToast("출력 추천 설정을 저장하지 못했습니다. 로그인 상태를 확인해 주세요.");
+    }
+  }, [printSettingsCanEdit]);
 
   useEffect(() => {
     if (!hydrated || !primaryCalibrationRemoteReady) return;
@@ -2629,7 +2858,7 @@ export default function Home() {
       const visualCenterY = (visualRect.top + visualRect.bottom) / 2;
       const gapX = 0.42 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
       const gapY = 0.42 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
-      if (element.category === "landmark" || element.labelLocked) {
+      if (element.labelLocked) {
         const normalizedOffsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
         const normalizedOffsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
         let centerX = visualCenterX + normalizedOffsetX;
@@ -2705,19 +2934,23 @@ export default function Home() {
         left: rect.left + dx, right: rect.right + dx, top: rect.top + dy, bottom: rect.bottom + dy,
       });
       const stageRect = stage.getBoundingClientRect();
-      const fixed: Array<{ id: string; rect: NormalizedRect }> = [];
+      const fixed: Array<{ id: string; rect: NormalizedRect }> = [...stage.querySelectorAll<HTMLElement>(".map-element[data-element-id]")].map((node) => {
+        const rect = node.querySelector<HTMLElement>(".icon-visual")?.getBoundingClientRect() ?? node.getBoundingClientRect();
+        return { id: node.dataset.elementId ?? "", rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } };
+      });
+      const iconObstacleCount = fixed.length;
       const adjustments = new Map<string, { x: number; y: number }>();
 
       nodes.forEach((item) => {
         let current: NormalizedRect = { left: item.rect.left, right: item.rect.right, top: item.rect.top, bottom: item.rect.bottom };
-        if (item.element.category === "landmark" || item.element.labelLocked) {
+        if (item.element.labelLocked) {
           fixed.push({ id: item.id, rect: current });
           return;
         }
         let deltaX = 0;
         let deltaY = 0;
         for (let attempt = 0; attempt < Math.max(4, fixed.length * 3); attempt += 1) {
-          const conflict = fixed.find((placed) => overlaps(current, placed.rect));
+          const conflict = fixed.find((placed) => placed.id !== item.id && overlaps(current, placed.rect));
           if (!conflict) break;
           const margin = 5;
           const moves = [
@@ -2728,7 +2961,7 @@ export default function Home() {
           ];
           const bestMove = moves.map((move) => {
             const candidate = shiftRect(current, move.x, move.y);
-            const collisionCount = fixed.reduce((count, placed) => count + (overlaps(candidate, placed.rect) ? 1 : 0), 0);
+            const collisionCount = fixed.reduce((count, placed) => count + (placed.id !== item.id && overlaps(candidate, placed.rect) ? 1 : 0), 0);
             const overflow = Math.max(0, stageRect.left - candidate.left) + Math.max(0, candidate.right - stageRect.right)
               + Math.max(0, stageRect.top - candidate.top) + Math.max(0, candidate.bottom - stageRect.bottom);
             return { ...move, candidate, score: collisionCount * 10000 + overflow * 120 + Math.abs(move.x) + Math.abs(move.y) };
@@ -2759,9 +2992,15 @@ export default function Home() {
       for (let index = 0; index < nodes.length; index += 1) for (let other = index + 1; other < nodes.length; other += 1) {
         if (overlaps(nodes[index].rect, nodes[other].rect, 0)) remaining += 1;
       }
+      nodes.forEach((item) => {
+        const ownId = item.id;
+        fixed.slice(0, iconObstacleCount).forEach((obstacle) => {
+          if (obstacle.id !== ownId && overlaps(item.rect, obstacle.rect, 0)) remaining += 1;
+        });
+      });
       if (notify) setToast(remaining
         ? `라벨 위치 ${total}개를 새로고침했습니다. 밀집 구간 겹침 ${remaining}건은 개별 조정해 주세요.`
-        : `라벨 위치 ${total}개를 새로고침했습니다. 랜드마크와 고정 라벨 주위로 겹침 없이 정리했습니다.`);
+        : `라벨 위치 ${total}개를 새로고침했습니다. 랜드마크·마커를 가리지 않도록 정리했습니다.`);
       setLabelsRefreshing(false);
     });
   }
@@ -2886,13 +3125,20 @@ export default function Home() {
       const baseImage = await loadImage(mapSrc);
       context.drawImage(baseImage, 0, 0, exportWidth, outputHeight);
 
-      const exportElements = elementsRef.current.filter((element) => element.mapVisible);
-      const assetSources = [...new Set(exportElements.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
+      const placedElements = elementsRef.current.filter((element) => element.mapVisible);
+      const exportMarkerElements = placedElements.filter((element) => printPolicyFor(element).marker);
+      const exportLabelElements = placedElements.filter((element) => printPolicyFor(element).label);
+      if (!exportMarkerElements.length && !exportLabelElements.length) throw new Error("empty print composition");
+      const labelOnlyCount = exportLabelElements.filter((element) => !exportMarkerElements.some((marker) => marker.id === element.id)).length;
+      if (labelOnlyCount) setToast(`마커 없이 라벨만 출력되는 장소가 ${labelOnlyCount}곳 있습니다. 고화질 사본을 계속 합성합니다.`);
+      const exportClusters = mergeDenseLabels ? buildDenseLabelClusters(exportLabelElements, exportMarkerElements) : [];
+      const clusteredExportIds = new Set(exportClusters.flatMap((cluster) => cluster.elementIds));
+      const assetSources = [...new Set(exportMarkerElements.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
       const loadedAssets = new Map<string, HTMLImageElement>();
       await Promise.all(assetSources.map(async (src) => {
         try { loadedAssets.set(src, await loadImage(src)); } catch { /* 개별 자산 실패는 나머지 합성을 막지 않습니다. */ }
       }));
-      const ordered = [...exportElements].sort((a, b) => a.z - b.z);
+      const ordered = [...exportMarkerElements].sort((a, b) => a.z - b.z);
       ordered.forEach((element) => {
         const asset = assetsRef.current.find((item) => item.id === element.assetId);
         const image = asset ? loadedAssets.get(asset.src) : undefined;
@@ -2914,7 +3160,7 @@ export default function Home() {
       });
 
       const drawLabels = (items: MapElement[]) => items.forEach((element) => {
-        if (!element.labelVisible) return;
+        if (clusteredExportIds.has(element.id)) return;
         const fontSize = exportWidth / EXPORT_CANONICAL_WIDTH * 10;
         const paddingX = exportWidth / EXPORT_CANONICAL_WIDTH * 4;
         const paddingY = exportWidth / EXPORT_CANONICAL_WIDTH * 2.5;
@@ -2950,12 +3196,51 @@ export default function Home() {
         context.fillText(element.name, x, y + fontSize * 0.02);
         context.restore();
       });
-      drawLabels(ordered.filter((element) => element.category !== "landmark"));
-      drawLabels(ordered.filter((element) => element.category === "landmark"));
+      drawLabels(exportLabelElements.filter((element) => element.category !== "landmark"));
+      drawLabels(exportLabelElements.filter((element) => element.category === "landmark"));
+
+      exportClusters.forEach((cluster) => {
+        const scale = exportWidth / EXPORT_CANONICAL_WIDTH;
+        const fontSize = scale * 9.5;
+        const smallSize = scale * 7;
+        const paddingX = scale * 7;
+        const paddingY = scale * 5;
+        const maxCharacters = 24;
+        const lines: string[] = [];
+        cluster.names.forEach((name) => {
+          const last = lines.at(-1);
+          if (last && `${last} · ${name}`.length <= maxCharacters) lines[lines.length - 1] = `${last} · ${name}`;
+          else lines.push(name);
+        });
+        const displayLines = lines.slice(0, 4);
+        if (lines.length > 4) displayLines[3] = `외 ${Math.max(1, cluster.names.length - 3)}곳`;
+        context.save();
+        context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
+        const labelWidth = Math.max(...displayLines.map((line) => context.measureText(line).width), scale * 58) + paddingX * 2;
+        const labelHeight = paddingY * 2 + smallSize * 1.2 + displayLines.length * fontSize * 1.28;
+        const x = exportWidth * cluster.x / 100;
+        const y = outputHeight * cluster.y / 100;
+        context.fillStyle = "rgba(248,253,251,.97)";
+        context.strokeStyle = "rgba(47,124,113,.42)";
+        context.lineWidth = Math.max(1, scale * 1.2);
+        context.beginPath();
+        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, scale * 5);
+        context.fill();
+        context.stroke();
+        context.fillStyle = "#2d756b";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.font = `800 ${smallSize}px Arial, "Noto Sans KR", sans-serif`;
+        context.fillText(`${cluster.names.length}곳 통합`, x, y - labelHeight / 2 + paddingY + smallSize / 2);
+        context.fillStyle = "#26332f";
+        context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
+        displayLines.forEach((line, index) => context.fillText(line, x, y - labelHeight / 2 + paddingY + smallSize * 1.4 + fontSize * (index + 0.68) * 1.28));
+        context.restore();
+      });
 
       const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("png encoding failed")), "image/png"));
       const sizeMb = blob.size / 1024 / 1024;
-      downloadBlob(`제주원도심_전체배치_고화질_${exportWidth}px.png`, blob);
+      downloadBlob(`제주원도심_${printRecommendedOnly ? "추천장소" : "전체배치"}_고화질_${exportWidth}px.png`, blob);
       setToast(`고화질 PNG 사본을 만들었습니다 · ${exportWidth.toLocaleString()}×${outputHeight.toLocaleString()}px · ${sizeMb.toFixed(1)}MB`);
     } catch {
       setToast("고화질 사본 생성에 실패했습니다. 8,944px로 낮추거나 업로드 지도 상태를 확인해 주세요.");
@@ -3024,11 +3309,6 @@ export default function Home() {
           <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
           <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(0.72); setPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
-        <label className="select-control"><span>보기</span><select value={viewMode} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
-          <option value="all">전체 배치</option><option value="landmarks">랜드마크만</option><option value="markers">일반 마커만</option><option value="labels">라벨만</option>
-          <option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option>
-          <option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
-        </select></label>
         <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
         <div className="toolbar-group muted-actions"><button onClick={exportJson}>JSON ↓</button><button onClick={() => jsonInputRef.current?.click()}>JSON ↑</button><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
       </header>
@@ -3042,7 +3322,31 @@ export default function Home() {
             <button className={leftPanelMode === "calibration" ? "active" : ""} onClick={() => switchLeftPanel("calibration")} role="tab" aria-selected={leftPanelMode === "calibration"}>좌표 보정 <span>6</span></button>
           </div>
           {leftPanelMode === "assets" ? <>
-          <div className="panel-search">자산 목록 <kbd>{assets.length}</kbd></div>
+          <div className="panel-search">아이콘·마커 보기 및 자산 <kbd>{assets.length}</kbd></div>
+          <section className="view-control-panel" aria-label="지도 보기 설정">
+            <div className="view-control-head"><strong>지도 보기</strong><span>화면 전용</span></div>
+            <div className="view-mode-grid" role="group" aria-label="표시 요소">
+              {([ ["all", "전체"], ["landmarks", "랜드마크"], ["markers", "일반마커"], ["labels", "라벨만"] ] as const).map(([mode, label]) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{label}</button>)}
+            </div>
+            <div className="view-toggle-list">
+              <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
+              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>겹치는 일반 마커 라벨을 한 묶음으로 표시</small></span></label>
+            </div>
+            <label className="view-detail-select">검수·지도 효과<select value={(["anchors", "clearance", "collisions", "dim", "gray", "nomap"] as ViewMode[]).includes(viewMode) ? viewMode : "all"} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
+              <option value="all">효과 없음</option><option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option><option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
+            </select></label>
+          </section>
+          <section className="print-output-panel" aria-label="고화질 출력 구성">
+            <div className="view-control-head"><strong>담당자 제출용 고화질 출력</strong><span>추천 {recommendedPlaceCount}곳</span></div>
+            <label className="print-recommended-toggle"><input type="checkbox" checked={printRecommendedOnly} onChange={(event) => setPrintRecommendedOnly(event.target.checked)} /><span><b>추천 장소 중심 출력</b><small>랜드마크는 기본 포함, 일반 마커는 추천 장소만</small></span></label>
+            <div className="print-layer-grid">
+              <label><input type="checkbox" checked={printLandmarks} onChange={(event) => setPrintLandmarks(event.target.checked)} />랜드마크</label>
+              <label><input type="checkbox" checked={printMarkers} onChange={(event) => setPrintMarkers(event.target.checked)} />마커</label>
+              <label><input type="checkbox" checked={printLabels} onChange={(event) => setPrintLabels(event.target.checked)} />라벨</label>
+            </div>
+            <p>장소 탐색 목록의 별표로 추천을 지정하고, 우측 속성에서 마커·라벨을 개별 포함/제외할 수 있습니다. 통합 라벨도 출력 이미지에 그대로 반영됩니다.</p>
+            <div className="print-storage-status">{printSettingsStorage === "persistent" ? "추천 설정 영구 저장" : printSettingsStorage === "loading" ? "추천 설정 확인 중" : "추천 설정 기기 저장"}{!printSettingsCanEdit && <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}</div>
+          </section>
           <div className="category-filter">
             <button className={activeCategory === "all" ? "active" : ""} onClick={() => setActiveCategory("all")}><span className="category-dot all-dot" /> 전체 자산 <em>{elements.length}</em></button>
             {categories.map((category) => <button key={category.id} className={activeCategory === category.id ? "active" : ""} onClick={() => setActiveCategory(category.id)}><span className="category-dot" style={{ background: category.color }} /> {category.name}<em>{elements.filter((item) => item.category === category.id).length}</em></button>)}
@@ -3141,12 +3445,16 @@ export default function Home() {
                       {rows.map((row) => {
                         const placed = Boolean(row.element?.mapVisible);
                         const hasCoordinateState = Boolean(row.element);
+                        const printTarget = row.element ?? { directoryId: row.place?.id ?? row.id, category: row.category, name: row.name };
+                        const explicitPrintSetting = printSettingsByKey.get(printSettingKey(printTarget));
+                        const recommended = row.category === "landmark" || explicitPrintSetting?.recommended === true || (!explicitPrintSetting && /추천|우선/.test(row.place?.priority ?? ""));
                         return <div key={row.id} className={`marker-visibility-row unified-place-row ${placed ? "visible" : "hidden"} ${hasCoordinateState && !row.element?.locked ? "coordinate-unlocked" : ""}`} role="listitem">
                           <label title={`${row.name} ${placed ? "미배치" : "배치"}로 변경`}>
                             <input type="checkbox" checked={placed} onChange={(event) => setUnifiedPlacePlacement(row, event.target.checked)} />
                             <i style={{ background: category.color }} />
                             <span><b>{row.name}</b><small>{placed ? "배치" : "미배치"}{hasCoordinateState && <em className={row.element?.locked ? "locked" : "unlocked"}>{row.element?.locked ? "좌표 고정" : "좌표 미고정"}</em>}</small></span>
                           </label>
+                          <button className={`recommend-toggle ${recommended ? "active" : ""}`} disabled={row.category === "landmark" || !printSettingsCanEdit} onClick={() => void savePrintSetting(printTarget, { recommended: !recommended })} aria-label={`${row.name} ${recommended ? "추천 해제" : "출력 추천"}`} title={row.category === "landmark" ? "랜드마크는 출력 기본 포함" : recommended ? "출력 추천 해제" : "고화질 출력 추천 장소로 지정"}>{recommended ? "★" : "☆"}</button>
                           <button onClick={() => selectUnifiedPlace(row)} aria-label={`${row.name} ${placed ? "선택" : "배치"}`}>{placed ? "선택" : "배치"}</button>
                         </div>;
                       })}
@@ -3257,14 +3565,17 @@ export default function Home() {
                   const meta = categoryOf(element.category); const isSelected = selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
                   const isCalibrationReference = calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  return <div key={element.id} className={`map-element ${isSelected ? "selected" : ""} ${focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${viewMode === "collisions" ? collisionClass : ""} ${viewMode === "labels" ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={(event) => startDrag(event, element)}>
+                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${viewMode === "collisions" ? collisionClass : ""} ${viewMode === "labels" ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={(event) => startDrag(event, element)}>
                     {(viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>
                     {element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {element.labelVisible && <div className={`label ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
+                    {element.labelVisible && (element.category === "landmark" || markerLabelsVisible) && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
+                {!!denseLabelClusters.length && <div className="dense-label-layer" aria-label="통합 라벨">
+                  {denseLabelClusters.map((cluster) => <div key={cluster.id} className="dense-label" style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, maxWidth: "156px", transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }} title={cluster.names.join(" · ")}><span className="dense-label-count">{cluster.names.length}곳 통합</span><strong>{cluster.names.slice(0, 3).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 3 && <em>외 {cluster.names.length - 3}곳</em>}</strong></div>)}
+                </div>}
                 {selected?.mapVisible && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.72" className="active-anchor-halo" vectorEffect="non-scaling-stroke" />
@@ -3291,11 +3602,12 @@ export default function Home() {
             <section><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></section>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
             <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리{isCoreLandmarkName(selected.name) ? " · 핵심 랜드마크 고정" : ""}<select value={selected.category} disabled={isCoreLandmarkName(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
+            <section className="print-property-section"><div className="section-title"><strong>고화질 출력</strong><span>{printPolicyFor(selected).recommended ? "추천 장소" : "일반 장소"}</span></div><label className="print-recommended-toggle"><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span><b>{selected.category === "landmark" ? "랜드마크 기본 포함" : "출력 추천 장소"}</b><small>추천 중심 출력에서 사용할 장소를 지정합니다.</small></span></label><div className="field-row"><label>마커 출력<select value={printPolicyFor(selected).setting?.markerMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { markerMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label><label>라벨 출력<select value={printPolicyFor(selected).setting?.labelMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { labelMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label></div><p className="field-help">자동은 랜드마크와 추천 상태를 따릅니다. 수동 포함·제외는 추천 상태가 바뀌어도 유지됩니다.</p></section>
             <section><div className="section-title"><strong>리소스 출력 오프셋</strong><label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 변경 ON" : "출력위치 변경 OFF"}</span></label></div>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>리소스→앵커</button><button className="anchor-to-resource" disabled={selected.locked || (Math.abs(selectedDisplayOffset.x) < 0.001 && Math.abs(selectedDisplayOffset.y) < 0.001)} onClick={() => moveAnchorToResource(selected)} title="화면의 리소스는 그대로 두고 실제 위치 앵커를 리소스 중심으로 이동합니다.">앵커를 현재 리소스 위치로 이동</button></div></>}<p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 리소스 출력 위치가 유지됩니다." : resourceOutputDragMode ? "출력위치 변경 ON: 드래그와 방향키는 앵커를 고정한 채 이미지 리소스만 이동합니다." : "기본 상태: 드래그와 방향키는 실제 위치 앵커를 이동하며 현재 ΔX·ΔY는 유지됩니다."}</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : selected.locked ? "좌표 고정됨" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 움직이지 않으며 가까운 미고정 장소의 대략적 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
-            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">랜드마크와 라벨 고정 ON 요소는 현재 위치를 유지합니다. 나머지 라벨은 고정 라벨과 아이콘을 피해 상·하·좌·우로 배치되며 결과는 자동 저장됩니다.</p></section>
+            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">라벨 고정 ON 요소만 현재 위치를 유지합니다. 나머지 랜드마크·마커 라벨은 모든 이미지 영역을 피해 자동 배치되고, 밀집 구간은 통합 라벨로 표시됩니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>
