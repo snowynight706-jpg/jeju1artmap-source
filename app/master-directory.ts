@@ -16,7 +16,7 @@ export type MasterDirectoryRow = {
 };
 
 export const masterDirectorySource = {
-  "version": "v10-음파온차-음식점분류",
+  "version": "v11-핵심랜드마크-분류고정",
   "sourceFile": "문화예술_워케이션_제주시_원도심_결과물_v10_음파온차_음식점분류.xlsx",
   "sourceSha256": "22389ad6753b28005a57d989c2e936a5e20049584b98ebbd5697f99e0e1c0733",
   "backupSha256": "3e512ad9369915f742e50ac44727fe31f38f7572379ea4460cf6cba00769fb81",

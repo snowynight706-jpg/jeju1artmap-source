@@ -1,4 +1,5 @@
 import { masterDirectoryRows, masterDirectorySource, retiredMasterDirectoryIds } from "../../master-directory";
+import { categoryForPlace, normalizePlaceName } from "../../core-landmarks";
 
 export const runtime = "edge";
 
@@ -48,10 +49,11 @@ function cleanText(value: unknown, max: number) {
 function normalizeRow(value: unknown): PlaceDirectoryInput | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<PlaceDirectoryInput>;
+  const name = normalizePlaceName(cleanText(row.name, 160));
   const normalized = {
     id: cleanText(row.id, 180),
-    name: cleanText(row.name, 160),
-    category: cleanText(row.category, 32),
+    name,
+    category: categoryForPlace(name, cleanText(row.category, 32)),
     area: cleanText(row.area, 160),
     address: cleanText(row.address, 260),
     subtype: cleanText(row.subtype, 160),
@@ -72,28 +74,25 @@ function ownerAccess(request: Request, runtime: RuntimeEnv) {
   return { canEdit: Boolean(ownerEmail && currentEmail === ownerEmail), currentEmail };
 }
 
-function normalizePlaceName(name: string) {
-  if (name === "제주해변공연장") return "탑동해변공연장";
-  if (name === "제주특별자치도 소통협력센터") return "제주시소통협력센터";
-  return name.trim();
-}
-
 function bundledRows(): PlaceDirectoryInput[] {
-  return masterDirectoryRows.map((row) => ({
-    id: row.id,
-    name: normalizePlaceName(row.name),
-    category: row.category,
-    area: row.area,
-    address: row.address,
-    subtype: row.subtype,
-    priority: row.priority,
-    description: row.description,
-    operatingInfo: row.operatingInfo,
-    notes: row.notes,
-    sourceUrl: row.sourceUrl,
-    mapUrl: row.mapUrl,
-    checkedAt: row.checkedAt,
-  }));
+  return masterDirectoryRows.map((row) => {
+    const name = normalizePlaceName(row.name);
+    return {
+      id: row.id,
+      name,
+      category: categoryForPlace(name, row.category),
+      area: row.area,
+      address: row.address,
+      subtype: row.subtype,
+      priority: row.priority,
+      description: row.description,
+      operatingInfo: row.operatingInfo,
+      notes: row.notes,
+      sourceUrl: row.sourceUrl,
+      mapUrl: row.mapUrl,
+      checkedAt: row.checkedAt,
+    };
+  });
 }
 
 function insertDirectoryStatement(db: D1Database, row: PlaceDirectoryInput, updatedAt: string, updatedBy: string) {
@@ -168,7 +167,12 @@ export async function GET(request: Request) {
     runtime.DB.prepare("SELECT updated_at AS updatedAt FROM place_directory_revision WHERE id = 1")
       .first<{ updatedAt: string }>(),
   ]);
-  return json({ rows: rowsResult.results, persistent: true, canEdit, updatedAt: revision?.updatedAt ?? null });
+  const rows = rowsResult.results.map((row) => ({
+    ...row,
+    name: normalizePlaceName(row.name),
+    category: categoryForPlace(row.name, row.category),
+  }));
+  return json({ rows, persistent: true, canEdit, updatedAt: revision?.updatedAt ?? null });
 }
 
 export async function PUT(request: Request) {
