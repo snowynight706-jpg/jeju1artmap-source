@@ -31,6 +31,7 @@ const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
 const PLACE_DIRECTORY_API = "/api/place-directory";
 const PRINT_SETTINGS_API = "/api/print-settings";
 const DENSE_LABEL_SETTINGS_API = "/api/dense-label-settings";
+const PLACEMENT_SETTINGS_API = "/api/placement-settings";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -41,6 +42,7 @@ const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
 const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
 const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
 const DENSE_LABEL_SETTINGS_KEY = "jeju-wondosim-map-review:dense-label-settings:v1";
+const PLACEMENT_SETTINGS_KEY = "jeju-wondosim-map-review:placement-settings:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 
 const categories = [
@@ -63,6 +65,7 @@ type BaseMapMode = "svg" | "png" | "uploaded";
 type CoordinateLockFilter = "all" | "unlocked" | "locked";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PrintMode = "auto" | "include" | "exclude";
+type PlacementState = "unplaced" | "deleted";
 
 type UploadedBaseMap = {
   available: boolean;
@@ -222,6 +225,13 @@ type DenseLabelPosition = {
   y: number;
 };
 
+type PlacementOverride = {
+  key: string;
+  directoryId?: string;
+  name: string;
+  state: PlacementState;
+};
+
 type DenseLabelRow = {
   elementId: string;
   name: string;
@@ -279,6 +289,7 @@ type DocumentState = {
   landmarkDefaultPositions?: LandmarkDefaultPosition[];
   denseLabelPositions?: DenseLabelPosition[];
   denseLabelExcludedIds?: string[];
+  placementOverrides?: PlacementOverride[];
 };
 
 const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" | "anchorX" | "anchorY" | "size" | "z"> = {
@@ -1266,7 +1277,40 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         y: clamp(position.y, 0, 100),
       }])).values()].filter((position) => position.elementIds.length >= 2),
     denseLabelExcludedIds: [...new Set((document.denseLabelExcludedIds ?? []).filter((id) => typeof id === "string" && id.length > 0))],
+    placementOverrides: sanitizePlacementOverrides(document.placementOverrides),
   };
+}
+
+function placementKey(target: MapElement | DirectoryPlace) {
+  const directoryId = "coordinateStatus" in target ? target.id?.trim() : target.directoryId?.trim();
+  return directoryId
+    ? `directory:${directoryId}`
+    : `name:${target.category}:${normalizePlaceName(target.name)}`;
+}
+
+function sanitizePlacementOverrides(value: unknown): PlacementOverride[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value.flatMap((item): PlacementOverride[] => {
+    if (!item || typeof item !== "object") return [];
+    const candidate = item as Partial<PlacementOverride>;
+    const key = typeof candidate.key === "string" ? candidate.key.trim().slice(0, 220) : "";
+    const name = typeof candidate.name === "string" ? normalizePlaceName(candidate.name).slice(0, 160) : "";
+    if (!key || !name || (candidate.state !== "unplaced" && candidate.state !== "deleted")) return [];
+    const directoryId = typeof candidate.directoryId === "string" && candidate.directoryId.trim()
+      ? candidate.directoryId.trim().slice(0, 180)
+      : undefined;
+    return [{ key, ...(directoryId ? { directoryId } : {}), name, state: candidate.state }];
+  });
+  return [...new Map(normalized.map((item) => [item.key, item])).values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function applyPlacementOverrides(elements: MapElement[], overrides: PlacementOverride[], authoritative = false) {
+  const byKey = new Map(overrides.map((setting) => [setting.key, setting.state]));
+  return elements.flatMap((element): MapElement[] => {
+    const state = byKey.get(placementKey(element));
+    if (state === "deleted") return [];
+    return [{ ...element, ...(state === "unplaced" ? { mapVisible: false } : authoritative ? { mapVisible: true } : {}) }];
+  });
 }
 
 function lockedCoordinateKey(element: Pick<MapElement, "directoryId" | "category" | "name">) {
@@ -1296,7 +1340,9 @@ function applyLockedCoordinateSettings(
   elements: MapElement[],
   settings: LockedCoordinateSetting[],
   places: DirectoryPlace[],
+  placementOverrides: PlacementOverride[] = [],
 ) {
+  const deletedKeys = new Set(placementOverrides.filter((item) => item.state === "deleted").map((item) => item.key));
   const byKey = new Map(settings.map((setting) => [setting.key, setting]));
   const byName = new Map(settings.map((setting) => [normalizePlaceName(setting.name), setting]));
   const consumedSettingKeys = new Set<string>();
@@ -1319,6 +1365,10 @@ function applyLockedCoordinateSettings(
   const placesByName = new Map(places.map((place) => [normalizePlaceName(place.name), place]));
   settings.forEach((setting) => {
     if (consumedSettingKeys.has(setting.key)) return;
+    const settingPlacementKey = setting.directoryId
+      ? `directory:${setting.directoryId}`
+      : `name:${setting.category}:${normalizePlaceName(setting.name)}`;
+    if (deletedKeys.has(settingPlacementKey)) return;
     const place = (setting.directoryId ? placesById.get(setting.directoryId) : undefined) ?? placesByName.get(setting.name);
     const category = place?.category ?? setting.category;
     const assetId = defaultMarkerAssetId(category);
@@ -1417,10 +1467,12 @@ export default function Home() {
   const localCalibrationUpdatedAtRef = useRef(0);
   const localLockedCoordinatesUpdatedAtRef = useRef(0);
   const localDenseLabelsUpdatedAtRef = useRef(0);
+  const localPlacementUpdatedAtRef = useRef(0);
   const placeDirectoryLoadedRef = useRef(false);
   const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
   const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
   const denseLabelExcludedIdsRef = useRef<string[]>([]);
+  const placementOverridesRef = useRef<PlacementOverride[]>([]);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -1464,10 +1516,12 @@ export default function Home() {
   const [printSettingsStorage, setPrintSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [denseLabelPositions, setDenseLabelPositions] = useState<DenseLabelPosition[]>([]);
   const [denseLabelExcludedIds, setDenseLabelExcludedIds] = useState<string[]>([]);
+  const [placementOverrides, setPlacementOverrides] = useState<PlacementOverride[]>([]);
   const [selectedDenseLabelId, setSelectedDenseLabelId] = useState<string | null>(null);
   const [denseLabelSettingsCanEdit, setDenseLabelSettingsCanEdit] = useState(false);
   const [denseLabelSettingsStorage, setDenseLabelSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [denseLabelSettingsRemoteReady, setDenseLabelSettingsRemoteReady] = useState(false);
+  const [placementSettingsRemoteReady, setPlacementSettingsRemoteReady] = useState(false);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
@@ -1547,6 +1601,7 @@ export default function Home() {
     landmarkDefaultPositions: landmarkDefaultsRef.current,
     denseLabelPositions: denseLabelPositionsRef.current,
     denseLabelExcludedIds: denseLabelExcludedIdsRef.current,
+    placementOverrides: placementOverridesRef.current,
   }), []);
 
   const setDocument = useCallback((document: DocumentState) => {
@@ -1577,7 +1632,7 @@ export default function Home() {
       return mapped ? { ...place, ...mapped } : place;
     });
     const migratedPlacesByName = new Map(mergedPlaces.map((place) => [normalizePlaceName(place.name), place]));
-    const migratedElements = hadCalibration ? clean.elements : clean.elements.map((element) => {
+    const migratedElementsBeforePlacement = hadCalibration ? clean.elements : clean.elements.map((element) => {
       const reference = restoredEffectivePoints.find((point) => point.name === normalizePlaceName(element.name));
       const place = migratedPlacesByName.get(normalizePlaceName(element.name));
       const mapped = reference ? { x: reference.targetX, y: reference.targetY } : place ? { x: place.x, y: place.y } : null;
@@ -1586,6 +1641,8 @@ export default function Home() {
       const isDefaultPlacement = /^(default-landmark|starter-marker)-/.test(element.id) || /초기 구성용|초기 배치/.test(element.memo ?? "");
       return { ...element, anchorX: mapped.x, anchorY: mapped.y, ...((reference || followsAnchor || isDefaultPlacement) ? { x: mapped.x, y: mapped.y } : {}) };
     });
+    const restoredPlacementOverrides = sanitizePlacementOverrides(clean.placementOverrides);
+    const migratedElements = applyPlacementOverrides(migratedElementsBeforePlacement, restoredPlacementOverrides);
     elementsRef.current = migratedElements;
     assetsRef.current = clean.assets;
     notesRef.current = clean.reviewNotes;
@@ -1596,6 +1653,7 @@ export default function Home() {
     const restoredDenseLabelExcludedIds = clean.denseLabelExcludedIds ?? [];
     denseLabelPositionsRef.current = restoredDenseLabelPositions;
     denseLabelExcludedIdsRef.current = restoredDenseLabelExcludedIds;
+    placementOverridesRef.current = restoredPlacementOverrides;
     setElements(migratedElements);
     setAssets(clean.assets);
     setReviewNotes(clean.reviewNotes);
@@ -1604,6 +1662,7 @@ export default function Home() {
     setLandmarkDefaultPositions(restoredLandmarkDefaults);
     setDenseLabelPositions(restoredDenseLabelPositions);
     setDenseLabelExcludedIds(restoredDenseLabelExcludedIds);
+    setPlacementOverrides(restoredPlacementOverrides);
     setCalibrationDirty(false);
     setSelectedId(null);
     setSelectedNoteId(null);
@@ -1671,6 +1730,28 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  const replacePlacementOverrides = useCallback((updater: (current: PlacementOverride[]) => PlacementOverride[]) => {
+    setPlacementOverrides((current) => {
+      const next = sanitizePlacementOverrides(updater(current));
+      placementOverridesRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const setPlacementOverride = useCallback((target: MapElement | DirectoryPlace, state: PlacementState | null) => {
+    const key = placementKey(target);
+    const directoryId = "anchorX" in target ? target.directoryId : target.id;
+    replacePlacementOverrides((current) => {
+      const remaining = current.filter((item) => item.key !== key);
+      return state ? [...remaining, {
+        key,
+        ...(directoryId ? { directoryId } : {}),
+        name: normalizePlaceName(target.name),
+        state,
+      }] : remaining;
+    });
+  }, [replacePlacementOverrides]);
 
   const updateDenseLabelPosition = useCallback((key: string, elementIds: string[], x: number, y: number) => {
     replaceDenseLabelPositions((current) => {
@@ -2216,6 +2297,14 @@ export default function Home() {
           }
         })();
         localDenseLabelsUpdatedAtRef.current = Date.parse(persistentDenseLabels?.updatedAt ?? "") || 0;
+        const persistentPlacement = (() => {
+          try {
+            return JSON.parse(localStorage.getItem(PLACEMENT_SETTINGS_KEY) ?? "null") as { settings?: PlacementOverride[]; updatedAt?: string } | null;
+          } catch {
+            return null;
+          }
+        })();
+        localPlacementUpdatedAtRef.current = Date.parse(persistentPlacement?.updatedAt ?? "") || 0;
 
         const raw = localStorage.getItem(AUTOSAVE_KEY);
         if (raw) {
@@ -2242,9 +2331,37 @@ export default function Home() {
               }
               return restored;
             });
+            const hasExplicitPlacementState = Array.isArray(persistentPlacement?.settings) || Array.isArray(parsed.placementOverrides);
+            const migratedPlacementOverrides = hasExplicitPlacementState
+              ? sanitizePlacementOverrides(persistentPlacement?.settings ?? parsed.placementOverrides)
+              : sanitizePlacementOverrides([
+                  ...parsedElements
+                    .filter((item) => item.mapVisible === false)
+                    .map((item) => ({ key: placementKey(item), ...(item.directoryId ? { directoryId: item.directoryId } : {}), name: item.name, state: "unplaced" as const })),
+                  ...initialElements
+                    .filter((defaultItem) => !parsedElements.some((item) => placementKey(item) === placementKey(defaultItem)))
+                    .map((item) => ({ key: placementKey(item), ...(item.directoryId ? { directoryId: item.directoryId } : {}), name: item.name, state: "deleted" as const })),
+                  ...(persistentLockedCoordinates?.settings ?? [])
+                    .filter((setting) => !parsedElements.some((item) => lockedCoordinateKey(item) === setting.key))
+                    .map((setting) => ({
+                      key: setting.directoryId ? `directory:${setting.directoryId}` : `name:${setting.category}:${normalizePlaceName(setting.name)}`,
+                      ...(setting.directoryId ? { directoryId: setting.directoryId } : {}),
+                      name: setting.name,
+                      state: "deleted" as const,
+                    })),
+                ]);
+            if (!hasExplicitPlacementState && migratedPlacementOverrides.length) {
+              const updatedAt = new Date().toISOString();
+              localPlacementUpdatedAtRef.current = Date.parse(updatedAt);
+              localStorage.setItem(PLACEMENT_SETTINGS_KEY, JSON.stringify({ settings: migratedPlacementOverrides, updatedAt }));
+            }
+            const deletedPlacementKeys = new Set(migratedPlacementOverrides.filter((item) => item.state === "deleted").map((item) => item.key));
             const mergedElements = [
               ...parsedElements,
-              ...initialElements.filter((defaultItem) => !parsedElements.some((item) => item.name === defaultItem.name)),
+              ...initialElements.filter((defaultItem) => (
+                !deletedPlacementKeys.has(placementKey(defaultItem))
+                && !parsedElements.some((item) => placementKey(item) === placementKey(defaultItem))
+              )),
             ];
             const parsedAssets = Array.isArray(parsed.assets) ? parsed.assets : [];
             const mergedAssets = [
@@ -2268,10 +2385,11 @@ export default function Home() {
               landmarkDefaultPositions: persistentCalibration?.landmarkDefaultPositions ?? parsed.landmarkDefaultPositions,
               denseLabelPositions: persistentDenseLabels?.positions ?? parsed.denseLabelPositions,
               denseLabelExcludedIds: persistentDenseLabels?.excludedElementIds ?? parsed.denseLabelExcludedIds,
+              placementOverrides: migratedPlacementOverrides,
             });
             setSaveState("최근 상태 복구됨");
           }
-        } else if (persistentCalibration?.calibrationPoints?.length || persistentDenseLabels) {
+        } else if (persistentCalibration?.calibrationPoints?.length || persistentDenseLabels || persistentPlacement?.settings?.length) {
           setDocument({
             elements: initialElements,
             assets: builtInAssets,
@@ -2281,6 +2399,7 @@ export default function Home() {
             landmarkDefaultPositions: persistentCalibration?.landmarkDefaultPositions,
             denseLabelPositions: persistentDenseLabels?.positions,
             denseLabelExcludedIds: persistentDenseLabels?.excludedElementIds,
+            placementOverrides: persistentPlacement?.settings,
           });
           setSaveState("저장된 기준좌표 복구됨");
         }
@@ -2305,7 +2424,7 @@ export default function Home() {
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [assets, calibrationPoints, currentDocument, denseLabelExcludedIds, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, reviewNotes]);
+  }, [assets, calibrationPoints, currentDocument, denseLabelExcludedIds, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, placementOverrides, reviewNotes]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2615,7 +2734,7 @@ export default function Home() {
         const shouldRestoreRemote = remoteUpdatedAt > 0
           && (localLockedCoordinatesUpdatedAtRef.current === 0 || remoteUpdatedAt >= localLockedCoordinatesUpdatedAtRef.current);
         if (shouldRestoreRemote) {
-          replaceElements((current) => applyLockedCoordinateSettings(current, remoteSettings, placesRef.current));
+          replaceElements((current) => applyLockedCoordinateSettings(current, remoteSettings, placesRef.current, placementOverridesRef.current));
           localLockedCoordinatesUpdatedAtRef.current = remoteUpdatedAt;
           try {
             localStorage.setItem(LOCKED_COORDINATE_SETTINGS_KEY, JSON.stringify({ settings: remoteSettings, updatedAt: payload!.updatedAt }));
@@ -2653,6 +2772,54 @@ export default function Home() {
     }, 700);
     return () => window.clearTimeout(timer);
   }, [hydrated, lockedCoordinateSignature, lockedCoordinatesRemoteReady]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    fetch(PLACEMENT_SETTINGS_API, { cache: "no-store" })
+      .then(async (response) => response.ok ? await response.json() as { settings?: PlacementOverride[]; updatedAt?: string | null } : null)
+      .then((payload) => {
+        if (cancelled) return;
+        const remoteSettings = sanitizePlacementOverrides(payload?.settings);
+        const remoteUpdatedAt = Date.parse(payload?.updatedAt ?? "") || 0;
+        const shouldRestoreRemote = remoteUpdatedAt > 0
+          && (localPlacementUpdatedAtRef.current === 0 || remoteUpdatedAt >= localPlacementUpdatedAtRef.current);
+        if (shouldRestoreRemote) {
+          placementOverridesRef.current = remoteSettings;
+          setPlacementOverrides(remoteSettings);
+          replaceElements((current) => applyPlacementOverrides(current, remoteSettings, true));
+          localPlacementUpdatedAtRef.current = remoteUpdatedAt;
+          try {
+            localStorage.setItem(PLACEMENT_SETTINGS_KEY, JSON.stringify({ settings: remoteSettings, updatedAt: payload!.updatedAt }));
+          } catch {}
+        }
+        setPlacementSettingsRemoteReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setPlacementSettingsRemoteReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [hydrated, replaceElements]);
+
+  const placementSignature = useMemo(() => JSON.stringify(placementOverrides), [placementOverrides]);
+
+  useEffect(() => {
+    if (!hydrated || !placementSettingsRemoteReady) return;
+    const timer = window.setTimeout(() => {
+      const settings = placementOverridesRef.current;
+      const updatedAt = new Date().toISOString();
+      localPlacementUpdatedAtRef.current = Date.parse(updatedAt);
+      try {
+        localStorage.setItem(PLACEMENT_SETTINGS_KEY, JSON.stringify({ settings, updatedAt }));
+      } catch {}
+      void fetch(PLACEMENT_SETTINGS_API, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ settings }),
+      }).catch(() => undefined);
+    }, 550);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, placementSettingsRemoteReady, placementSignature]);
 
   useEffect(() => {
     if (!toast) return;
@@ -3130,6 +3297,7 @@ export default function Home() {
     setSelectedNoteId(null);
     const existing = elementsRef.current.find((item) => item.directoryId === place.id || item.name === place.name);
     if (existing) {
+      setPlacementOverride(existing, null);
       if (!existing.mapVisible) updateElement(existing.id, { mapVisible: true });
       setSelectedId(existing.id);
       focusMapPosition(existing.x, existing.y, existing.id);
@@ -3137,6 +3305,7 @@ export default function Home() {
       return;
     }
     pushHistory();
+    setPlacementOverride(place, null);
     const preferredLandmarkAssetId = landmarkLocationByName.get(normalizePlaceName(place.name))?.assetId;
     const placeAssetId = place.category === "landmark" ? preferredLandmarkAssetId ?? null : defaultMarkerAssetId(place.category);
     const next: MapElement = {
@@ -3165,6 +3334,7 @@ export default function Home() {
   };
 
   const toggleElementMapVisibility = (element: MapElement, visible: boolean) => {
+    setPlacementOverride(element, visible ? null : "unplaced");
     updateElement(element.id, { mapVisible: visible });
     setToast(`${element.name} 마커를 ${visible ? "배치" : "미배치"} 상태로 변경했습니다.`);
   };
@@ -3678,7 +3848,10 @@ export default function Home() {
 
   const deleteSelected = () => {
     if (!selected || selected.locked) return;
-    pushHistory(); replaceElements((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null);
+    pushHistory();
+    setPlacementOverride(selected, "deleted");
+    replaceElements((current) => current.filter((item) => item.id !== selected.id));
+    setSelectedId(null);
   };
 
   const deleteSelectedNote = () => {
@@ -3932,6 +4105,7 @@ export default function Home() {
           landmarkDefaultPositions: Array.isArray(parsed.landmarkDefaultPositions) ? parsed.landmarkDefaultPositions : factoryLandmarkDefaultPositions,
           denseLabelPositions: Array.isArray(parsed.denseLabelPositions) ? parsed.denseLabelPositions : [],
           denseLabelExcludedIds: Array.isArray(parsed.denseLabelExcludedIds) ? parsed.denseLabelExcludedIds : [],
+          placementOverrides: Array.isArray(parsed.placementOverrides) ? parsed.placementOverrides : [],
         });
         setLayoutName(file.name.replace(/\.json$/i, "")); setToast("JSON 배치안을 불러왔습니다. 삭제 대상 장소는 자동 제외됩니다.");
       } catch { setToast("지원하지 않거나 손상된 JSON 파일입니다."); }
