@@ -213,6 +213,13 @@ type PrintPlaceSetting = {
   labelMode: PrintMode;
 };
 
+type DenseLabelPosition = {
+  key: string;
+  elementIds: string[];
+  x: number;
+  y: number;
+};
+
 type DenseLabelCluster = {
   id: string;
   elementIds: string[];
@@ -221,6 +228,8 @@ type DenseLabelCluster = {
   y: number;
   width: number;
   height: number;
+  manuallyPositioned: boolean;
+  hasCollision: boolean;
 };
 
 type DocumentState = {
@@ -230,6 +239,7 @@ type DocumentState = {
   directoryPlaces?: DirectoryPlace[];
   calibrationPoints?: CalibrationPoint[];
   landmarkDefaultPositions?: LandmarkDefaultPosition[];
+  denseLabelPositions?: DenseLabelPosition[];
 };
 
 const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" | "anchorX" | "anchorY" | "size" | "z"> = {
@@ -768,7 +778,15 @@ function printSettingKey(target: Pick<MapElement, "directoryId" | "category" | "
     : `name:${target.category}:${normalizePlaceName(target.name)}`;
 }
 
-function buildDenseLabelClusters(labelElements: MapElement[], iconElements: MapElement[]): DenseLabelCluster[] {
+function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
+  return elements.map((element) => element.id).sort().join("|");
+}
+
+function buildDenseLabelClusters(
+  labelElements: MapElement[],
+  iconElements: MapElement[],
+  positionOverrides: DenseLabelPosition[] = [],
+): DenseLabelCluster[] {
   // A fixed label still belongs to its ordinary marker and can be represented by a
   // dense-label cluster. The lock protects the saved direction/gap/offset; it must
   // not opt the label out of the temporary screen/print presentation layer.
@@ -822,8 +840,13 @@ function buildDenseLabelClusters(labelElements: MapElement[], iconElements: MapE
     if (element.labelPosition === "right") x += element.size / 2 + gapX + width / 2;
     return { id: element.id, rect: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 } };
   });
+  const overrideByKey = new Map(positionOverrides.map((position) => [position.key, position]));
   const placed: NormalizedRect[] = [];
-  return [...groups.values()].filter((group) => group.length >= 2).sort((a, b) => b.length - a.length).map((group, groupIndex) => {
+  return [...groups.values()]
+    .filter((group) => group.length >= 2)
+    .map((group) => ({ group, key: denseLabelKey(group), override: overrideByKey.get(denseLabelKey(group)) }))
+    .sort((a, b) => Number(Boolean(b.override)) - Number(Boolean(a.override)) || b.group.length - a.group.length)
+    .map(({ group, key, override }) => {
     const names = group.map((element) => element.name);
     const groupIds = new Set(group.map((element) => element.id));
     const minX = Math.min(...group.map((element) => element.x - element.size / 2));
@@ -845,23 +868,36 @@ function buildDenseLabelClusters(labelElements: MapElement[], iconElements: MapE
       { x: minX - width / 2 - ring, y: maxY + distance * ring },
       { x: maxX + width / 2 + ring, y: maxY + distance * ring },
     ]);
-    const best = options.map((option, optionIndex) => {
+    const scoreOption = (option: { x: number; y: number }, optionIndex = 0) => {
       const rect = { left: option.x - width / 2, right: option.x + width / 2, top: option.y - height / 2, bottom: option.y + height / 2 };
       const iconPenalty = iconRects.reduce((score, icon) => score + (rectsOverlap(rect, icon.rect, 0.65) ? (icon.category === "landmark" ? 50000 : 18000) : 0), 0);
       const individualLabelPenalty = labelRects.reduce((score, label) => score + (!groupIds.has(label.id) && rectsOverlap(rect, label.rect, 0.45) ? 16000 : 0), 0);
       const labelPenalty = placed.reduce((score, item) => score + (rectsOverlap(rect, item, 0.45) ? 22000 : 0), 0);
       const overflow = Math.max(0, -rect.left) + Math.max(0, rect.right - 100) + Math.max(0, -rect.top) + Math.max(0, rect.bottom - 100);
-      return { ...option, rect, score: iconPenalty + individualLabelPenalty + labelPenalty + overflow * 12000 + optionIndex * 8 };
-    }).sort((a, b) => a.score - b.score)[0];
+      return {
+        ...option,
+        rect,
+        hasCollision: iconPenalty > 0 || individualLabelPenalty > 0 || labelPenalty > 0 || overflow > 0,
+        score: iconPenalty + individualLabelPenalty + labelPenalty + overflow * 12000 + optionIndex * 8,
+      };
+    };
+    const best = override
+      ? scoreOption({
+          x: clamp(override.x, width / 2, 100 - width / 2),
+          y: clamp(override.y, height / 2, 100 - height / 2),
+        })
+      : options.map(scoreOption).sort((a, b) => a.score - b.score)[0];
     placed.push(best.rect);
     return {
-      id: `dense-label-${groupIndex}-${group.map((element) => element.id).join("-")}`,
+      id: key,
       elementIds: group.map((element) => element.id),
       names,
       x: clamp(best.x, width / 2, 100 - width / 2),
       y: clamp(best.y, height / 2, 100 - height / 2),
       width,
       height,
+      manuallyPositioned: Boolean(override),
+      hasCollision: best.hasCollision,
     };
   });
 }
@@ -953,6 +989,14 @@ function sanitizeDocument(document: DocumentState): DocumentState {
           ...(isCoreLandmarkName(name) ? { coordinateStatus: "landmark" as const } : {}),
         };
       }),
+    denseLabelPositions: [...new Map((document.denseLabelPositions ?? [])
+      .filter((position) => position && typeof position.key === "string" && position.key.length > 0 && Array.isArray(position.elementIds) && position.elementIds.length >= 2)
+      .map((position) => [position.key, {
+        key: position.key,
+        elementIds: [...new Set(position.elementIds.filter((id) => typeof id === "string" && id.length > 0))].sort(),
+        x: clamp(position.x, 0, 100),
+        y: clamp(position.y, 0, 100),
+      }])).values()].filter((position) => position.elementIds.length >= 2),
   };
 }
 
@@ -1098,6 +1142,7 @@ export default function Home() {
   const localLockedCoordinatesUpdatedAtRef = useRef(0);
   const placeDirectoryLoadedRef = useRef(false);
   const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
+  const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -1133,6 +1178,8 @@ export default function Home() {
   const [printSettings, setPrintSettings] = useState<PrintPlaceSetting[]>([]);
   const [printSettingsCanEdit, setPrintSettingsCanEdit] = useState(false);
   const [printSettingsStorage, setPrintSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
+  const [denseLabelPositions, setDenseLabelPositions] = useState<DenseLabelPosition[]>([]);
+  const [selectedDenseLabelId, setSelectedDenseLabelId] = useState<string | null>(null);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
@@ -1199,6 +1246,7 @@ export default function Home() {
     | { type: "resize"; id: string; startX: number; startSize: number }
     | { type: "drag"; id: string; startX: number; startY: number; elementX: number; elementY: number; anchorX: number; anchorY: number; mode: "anchor" | "output"; calibrationPointId?: string }
     | { type: "label"; id: string; startX: number; startY: number; offsetX: number; offsetY: number }
+    | { type: "dense-label"; key: string; elementIds: string[]; startX: number; startY: number; x: number; y: number; halfWidth: number; halfHeight: number }
     | null
   >(null);
 
@@ -1209,6 +1257,7 @@ export default function Home() {
     directoryPlaces: placesRef.current,
     calibrationPoints: calibrationPointsRef.current,
     landmarkDefaultPositions: landmarkDefaultsRef.current,
+    denseLabelPositions: denseLabelPositionsRef.current,
   }), []);
 
   const setDocument = useCallback((document: DocumentState) => {
@@ -1254,15 +1303,19 @@ export default function Home() {
     placesRef.current = mergedPlaces;
     calibrationPointsRef.current = restoredCalibrationPoints;
     landmarkDefaultsRef.current = restoredLandmarkDefaults;
+    const restoredDenseLabelPositions = clean.denseLabelPositions ?? [];
+    denseLabelPositionsRef.current = restoredDenseLabelPositions;
     setElements(migratedElements);
     setAssets(clean.assets);
     setReviewNotes(clean.reviewNotes);
     setDirectoryPlaces(placesRef.current);
     setCalibrationPoints(restoredCalibrationPoints);
     setLandmarkDefaultPositions(restoredLandmarkDefaults);
+    setDenseLabelPositions(restoredDenseLabelPositions);
     setCalibrationDirty(false);
     setSelectedId(null);
     setSelectedNoteId(null);
+    setSelectedDenseLabelId(null);
   }, []);
 
   const pushHistory = useCallback(() => {
@@ -1310,6 +1363,32 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  const replaceDenseLabelPositions = useCallback((updater: (current: DenseLabelPosition[]) => DenseLabelPosition[]) => {
+    setDenseLabelPositions((current) => {
+      const next = updater(current);
+      denseLabelPositionsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const updateDenseLabelPosition = useCallback((key: string, elementIds: string[], x: number, y: number) => {
+    replaceDenseLabelPositions((current) => {
+      const position: DenseLabelPosition = {
+        key,
+        elementIds: [...elementIds].sort(),
+        x: clamp(x, 0, 100),
+        y: clamp(y, 0, 100),
+      };
+      const existingIndex = current.findIndex((item) => item.key === key);
+      if (existingIndex < 0) return [...current, position];
+      return current.map((item, index) => index === existingIndex ? position : item);
+    });
+  }, [replaceDenseLabelPositions]);
+
+  const resetDenseLabelPosition = useCallback((key: string) => {
+    replaceDenseLabelPositions((current) => current.filter((position) => position.key !== key));
+  }, [replaceDenseLabelPositions]);
 
   const applyCalibrationPoints = useCallback((nextPoints: CalibrationPoint[], _moveAllVisual = false, record = true) => {
     void _moveAllVisual;
@@ -1687,9 +1766,15 @@ export default function Home() {
     ? buildDenseLabelClusters(
         visibleElements.filter((element) => element.labelVisible && markerLabelsVisible && element.category !== "landmark"),
         visibleElements,
+        denseLabelPositions,
       )
-    : [], [markerLabelsVisible, mergeDenseLabels, visibleElements]);
+    : [], [denseLabelPositions, markerLabelsVisible, mergeDenseLabels, visibleElements]);
   const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
+  const selectedDenseLabel = useMemo(
+    () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
+    [denseLabelClusters, selectedDenseLabelId],
+  );
+  const denseLabelCollisionCount = useMemo(() => denseLabelClusters.filter((cluster) => cluster.hasCollision).length, [denseLabelClusters]);
 
   const collisions = useMemo(() => {
     const hard = new Set<string>();
@@ -1839,6 +1924,7 @@ export default function Home() {
               directoryPlaces: parsed.directoryPlaces,
               calibrationPoints: persistentCalibration?.calibrationPoints ?? parsed.calibrationPoints,
               landmarkDefaultPositions: persistentCalibration?.landmarkDefaultPositions ?? parsed.landmarkDefaultPositions,
+              denseLabelPositions: parsed.denseLabelPositions,
             });
             setSaveState("최근 상태 복구됨");
           }
@@ -1874,7 +1960,7 @@ export default function Home() {
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [assets, calibrationPoints, currentDocument, directoryPlaces, elements, hydrated, landmarkDefaultPositions, reviewNotes]);
+  }, [assets, calibrationPoints, currentDocument, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, reviewNotes]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2196,11 +2282,20 @@ export default function Home() {
       const rect = stageRef.current?.getBoundingClientRect();
       if (!rect) return;
       const deltaX = ((event.clientX - interaction.startX) / rect.width) * 100;
+      const deltaY = ((event.clientY - interaction.startY) / rect.height) * 100;
+      if (interaction.type === "dense-label") {
+        updateDenseLabelPosition(
+          interaction.key,
+          interaction.elementIds,
+          clamp(interaction.x + deltaX, interaction.halfWidth, 100 - interaction.halfWidth),
+          clamp(interaction.y + deltaY, interaction.halfHeight, 100 - interaction.halfHeight),
+        );
+        return;
+      }
       if (interaction.type === "resize") {
         updateElement(interaction.id, { size: clamp(interaction.startSize + deltaX * 2, 0.8, 15) }, false);
         return;
       }
-      const deltaY = ((event.clientY - interaction.startY) / rect.height) * 100;
       if (interaction.mode === "anchor" && interaction.calibrationPointId) {
         updateCalibrationPoint(interaction.calibrationPointId, {
           targetX: clamp(interaction.anchorX + deltaX, 0, 100),
@@ -2231,7 +2326,7 @@ export default function Home() {
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleUp);
     };
-  }, [interaction, updateCalibrationPoint, updateElement, zoom]);
+  }, [interaction, updateCalibrationPoint, updateDenseLabelPosition, updateElement, zoom]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -2294,7 +2389,7 @@ export default function Home() {
 
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || event.target !== event.currentTarget || memoMode) return;
-    setSelectedId(null); setSelectedNoteId(null);
+    setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y });
   };
 
@@ -2313,7 +2408,7 @@ export default function Home() {
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>, element: MapElement) => {
     event.stopPropagation();
-    setSelectedId(element.id); setSelectedNoteId(null);
+    setSelectedId(element.id); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     setRightOpen(true);
     if (event.button !== 0 || memoMode || element.locked) return;
     const primaryPoint = !resourceOutputDragMode
@@ -2339,6 +2434,7 @@ export default function Home() {
     event.stopPropagation();
     setSelectedId(element.id);
     setSelectedNoteId(null);
+    setSelectedDenseLabelId(null);
     setRightOpen(true);
     pushHistory();
     setInteraction({
@@ -2348,6 +2444,26 @@ export default function Home() {
       startY: event.clientY,
       offsetX: element.labelOffsetX,
       offsetY: element.labelOffsetY,
+    });
+  };
+
+  const startDenseLabelDrag = (event: ReactPointerEvent<HTMLDivElement>, cluster: DenseLabelCluster) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    setSelectedId(null);
+    setSelectedNoteId(null);
+    setSelectedDenseLabelId(cluster.id);
+    pushHistory();
+    setInteraction({
+      type: "dense-label",
+      key: cluster.id,
+      elementIds: cluster.elementIds,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: cluster.x,
+      y: cluster.y,
+      halfWidth: cluster.width / 2,
+      halfHeight: cluster.height / 2,
     });
   };
 
@@ -3192,7 +3308,7 @@ export default function Home() {
       if (!exportMarkerElements.length && !exportLabelElements.length) throw new Error("empty print composition");
       const labelOnlyCount = exportLabelElements.filter((element) => !exportMarkerElements.some((marker) => marker.id === element.id)).length;
       if (labelOnlyCount) setToast(`마커 없이 라벨만 출력되는 장소가 ${labelOnlyCount}곳 있습니다. 고화질 사본을 계속 합성합니다.`);
-      const exportClusters = mergeDenseLabels ? buildDenseLabelClusters(exportLabelElements, exportMarkerElements) : [];
+      const exportClusters = mergeDenseLabels ? buildDenseLabelClusters(exportLabelElements, exportMarkerElements, denseLabelPositionsRef.current) : [];
       const clusteredExportIds = new Set(exportClusters.flatMap((cluster) => cluster.elementIds));
       const assetSources = [...new Set(exportMarkerElements.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
       const loadedAssets = new Map<string, HTMLImageElement>();
@@ -3316,7 +3432,7 @@ export default function Home() {
         context.textAlign = "center";
         context.textBaseline = "middle";
         context.font = `800 ${smallSize}px Arial, "Noto Sans KR", sans-serif`;
-        context.fillText(`${cluster.names.length}곳 통합`, x, y - labelHeight / 2 + paddingY + smallSize / 2);
+        context.fillText(`${cluster.names.length}곳`, x, y - labelHeight / 2 + paddingY + smallSize / 2);
         context.fillStyle = "#26332f";
         context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
         displayLines.forEach((line, index) => context.fillText(line, x, y - labelHeight / 2 + paddingY + smallSize * 1.4 + fontSize * (index + 0.68) * 1.28));
@@ -3336,7 +3452,7 @@ export default function Home() {
 
   const exportJson = () => {
     const payload = {
-      schemaVersion: 5, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted", landmarkDefaults: "user-editable" },
+      schemaVersion: 6, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted", landmarkDefaults: "user-editable", denseLabelPositions: "user-editable" },
       ...cloneDocument(currentDocument()),
     };
     download(`제주원도심_배치안_${layoutName.replaceAll(" ", "_")}.json`, JSON.stringify(payload, null, 2), "application/json");
@@ -3362,6 +3478,7 @@ export default function Home() {
           directoryPlaces: Array.isArray(parsed.directoryPlaces) ? parsed.directoryPlaces : defaultDirectoryPlaces,
           calibrationPoints: Array.isArray(parsed.calibrationPoints) ? parsed.calibrationPoints : initialCalibrationPoints,
           landmarkDefaultPositions: Array.isArray(parsed.landmarkDefaultPositions) ? parsed.landmarkDefaultPositions : factoryLandmarkDefaultPositions,
+          denseLabelPositions: Array.isArray(parsed.denseLabelPositions) ? parsed.denseLabelPositions : [],
         });
         setLayoutName(file.name.replace(/\.json$/i, "")); setToast("JSON 배치안을 불러왔습니다. 삭제 대상 장소는 자동 제외됩니다.");
       } catch { setToast("지원하지 않거나 손상된 JSON 파일입니다."); }
@@ -3416,8 +3533,13 @@ export default function Home() {
             <div className="view-toggle-list">
               <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
               <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
-              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>고정 위치를 포함한 일반 마커 라벨을 한 묶음으로 표시</small></span></label>
+              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>고정 라벨도 묶어 표시 · 지도에서 통합 라벨을 직접 드래그</small></span></label>
             </div>
+            {selectedDenseLabel && <div className={`dense-label-control ${selectedDenseLabel.hasCollision ? "collision" : ""}`}>
+              <span><b>선택 라벨 · {selectedDenseLabel.names.length}곳</b><small>{selectedDenseLabel.manuallyPositioned ? "직접 지정한 위치를 화면·출력에 적용" : "겹침을 피한 자동 위치"}{selectedDenseLabel.hasCollision ? " · 겹침 확인 필요" : ""}</small></span>
+              <button type="button" disabled={!selectedDenseLabel.manuallyPositioned} onClick={() => { pushHistory(); resetDenseLabelPosition(selectedDenseLabel.id); setToast("통합 라벨을 자동 위치로 되돌렸습니다."); }}>자동 위치</button>
+            </div>}
+            {denseLabelCollisionCount > 0 && <p className="dense-label-warning">통합 라벨 {denseLabelCollisionCount}개가 이미지 또는 다른 라벨과 겹칩니다. 지도에서 직접 옮긴 뒤 출력해 주세요.</p>}
             <label className="view-detail-select">검수·지도 효과<select value={(["anchors", "clearance", "collisions", "dim", "gray", "nomap"] as ViewMode[]).includes(viewMode) ? viewMode : "all"} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
               <option value="all">효과 없음</option><option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option><option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
             </select></label>
@@ -3692,7 +3814,7 @@ export default function Home() {
                   return <g key={`anchor-${element.id}`} opacity={element.opacity / 100}>{showLine && <line x1={element.anchorX} y1={element.anchorY} x2={element.x} y2={element.y} stroke={element.connectorColor} strokeWidth={element.connectorWidth / 10} vectorEffect="non-scaling-stroke" />}{selectedId !== element.id && <><circle cx={element.anchorX} cy={element.anchorY} r="0.42" fill="white" stroke={element.connectorColor} strokeWidth="0.13" vectorEffect="non-scaling-stroke" /><circle cx={element.anchorX} cy={element.anchorY} r="0.12" fill={element.connectorColor} /></>}</g>;
                 })}{denseLabelClusters.flatMap((cluster) => cluster.elementIds.map((elementId) => {
                   const element = visibleElementsById.get(elementId);
-                  return element ? <g key={`dense-connector-${cluster.id}-${elementId}`} className="dense-label-connector"><line x1={element.x} y1={element.y} x2={cluster.x} y2={cluster.y} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" vectorEffect="non-scaling-stroke" /></g> : null;
+                  return element ? <g key={`dense-connector-${cluster.id}-${elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}><line x1={element.x} y1={element.y} x2={cluster.x} y2={cluster.y} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" vectorEffect="non-scaling-stroke" /></g> : null;
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
                   const meta = categoryOf(element.category); const isSelected = selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
@@ -3707,7 +3829,15 @@ export default function Home() {
                   </div>;
                 })}</div>
                 {!!denseLabelClusters.length && <div className="dense-label-layer" aria-label="통합 라벨">
-                  {denseLabelClusters.map((cluster) => <div key={cluster.id} className="dense-label" style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, maxWidth: "156px", transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }} title={cluster.names.join(" · ")}><span className="dense-label-count">{cluster.names.length}곳 통합 · 연결선 표시</span><strong>{cluster.names.slice(0, 4).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 4 && <em>외 {cluster.names.length - 4}곳</em>}</strong></div>)}
+                  {denseLabelClusters.map((cluster) => <div
+                    key={cluster.id}
+                    className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
+                    style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, maxWidth: "156px", transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }}
+                    onPointerDown={(event) => startDenseLabelDrag(event, cluster)}
+                    title={`${cluster.names.join(" · ")} · 드래그하여 위치 조절`}
+                    role="button"
+                    aria-label={`${cluster.names.length}곳 통합 라벨. 드래그하여 위치 조절`}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong>{cluster.names.slice(0, 4).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 4 && <em>외 {cluster.names.length - 4}곳</em>}</strong></div>)}
                 </div>}
                 {selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>

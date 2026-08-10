@@ -89,6 +89,14 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .view-toggle-list b, .view-toggle-list small, .print-recommended-toggle b, .print-recommended-toggle small { display: block; }
 .view-toggle-list b, .print-recommended-toggle b { color: #53655f; font-size: 8px; }
 .view-toggle-list small, .print-recommended-toggle small { margin-top: 2px; color: #87938f; font-size: 7px; line-height: 1.35; }
+.dense-label-control { min-height: 38px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; margin-top: 7px; padding: 6px; border: 1px solid #a9ccc5; border-radius: 7px; background: #edf7f4; }
+.dense-label-control span, .dense-label-control b, .dense-label-control small { min-width: 0; display: block; }
+.dense-label-control b { color: #315f57; font-size: 8px; }
+.dense-label-control small { margin-top: 2px; color: #6f837d; font-size: 7px; line-height: 1.35; }
+.dense-label-control button { height: 27px; padding: 0 7px; border: 1px solid #8fbbb3; border-radius: 6px; background: white; color: #2f7168; cursor: pointer; font-size: 7px; font-weight: 700; }
+.dense-label-control button:disabled { cursor: default; opacity: .42; }
+.dense-label-control.collision { border-color: #d9a474; background: #fff7ed; }
+.dense-label-warning { margin: 7px 1px 0; padding: 6px 7px; border-radius: 6px; background: #fff4e6; color: #96612f; font-size: 7px; line-height: 1.45; }
 .view-detail-select { display: grid; grid-template-columns: 1fr 1.35fr; align-items: center; gap: 6px; margin-top: 7px; color: #75827d; font-size: 7px; }
 .view-detail-select select { width: 100%; height: 28px; border: 1px solid #d7e1de; border-radius: 6px; background: white; color: #52645e; font-size: 7px; }
 .print-layer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
@@ -354,6 +362,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .connector-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
 .dense-label-connector line { stroke: rgb(47 117 107 / 48%); stroke-width: 1.1; stroke-dasharray: 3.5 2.5; }
 .dense-label-connector circle { fill: rgb(47 117 107 / 74%); stroke: white; stroke-width: .55; }
+.dense-label-connector.selected line { stroke: rgb(35 124 112 / 78%); stroke-width: 1.55; }
 .active-anchor-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 14; }
 .active-anchor-halo { fill: rgb(255 255 255 / 82%); stroke: rgb(35 139 128 / 74%); stroke-width: .12; stroke-dasharray: .28 .2; }
 .map-loading { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; z-index: 4; background: #f4f2ed; color: var(--muted); font-size: 11px; }
@@ -389,7 +398,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .review-flag { position: absolute; top: -13px; right: -5px; padding: 2px 4px; border-radius: 4px; background: #f0aa4b; color: white; font-size: clamp(4px, .55vw, 7px); font-weight: 700; white-space: nowrap; }
 .label { position: absolute; color: #26332f; background: rgb(255 255 255 / 94%); border: 1px solid rgb(91 106 101 / 20%); border-radius: 3px; padding: 2px 4px; box-shadow: 0 1px 2px rgb(27 36 33 / 8%); font-size: clamp(8px, .75vw, 10px); font-weight: 700; line-height: 1.25; text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; transform-origin: center; white-space: nowrap; }
 .dense-label-layer { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
-.dense-label { position: absolute; transform-origin: center; display: grid; gap: 3px; padding: 5px 7px; border: 1px solid rgb(55 128 116 / 46%); border-radius: 7px; background: rgb(248 253 251 / 97%); box-shadow: 0 2px 7px rgb(31 62 54 / 14%); color: #2b3b36; text-align: center; line-height: 1.35; }
+.dense-label { position: absolute; transform-origin: center; display: grid; gap: 3px; padding: 5px 7px; border: 1px solid rgb(55 128 116 / 46%); border-radius: 7px; background: rgb(248 253 251 / 97%); box-shadow: 0 2px 7px rgb(31 62 54 / 14%); color: #2b3b36; text-align: center; line-height: 1.35; pointer-events: auto; cursor: move; touch-action: none; user-select: none; }
+.dense-label:hover, .dense-label.selected { border-color: #287f73; box-shadow: 0 0 0 2px rgb(47 139 126 / 18%), 0 3px 9px rgb(31 62 54 / 17%); }
+.dense-label:active { cursor: grabbing; }
+.dense-label.manual::after { content: "직접 배치"; position: absolute; right: 4px; top: -11px; padding: 1px 4px; border-radius: 5px; background: #397e74; color: white; font-size: 6px; font-weight: 700; }
+.dense-label.collision { border-color: #c87842; box-shadow: 0 0 0 2px rgb(200 120 66 / 18%), 0 3px 9px rgb(91 49 24 / 14%); }
 .dense-label strong { display: grid; gap: 1px; overflow: hidden; font-size: 8px; }
 .dense-label strong span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dense-label strong em { color: #66817a; font-size: 7px; font-style: normal; }
