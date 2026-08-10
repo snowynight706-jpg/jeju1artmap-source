@@ -1686,7 +1686,7 @@ export default function Home() {
   const [databaseEditorSelectedId, setDatabaseEditorSelectedId] = useState<string | null>(null);
   const [databaseDraftPlaces, setDatabaseDraftPlaces] = useState<DirectoryPlace[]>([]);
   const [interaction, setInteraction] = useState<
-    | { type: "pan"; startX: number; startY: number; panX: number; panY: number }
+    | { type: "pan"; startX: number; startY: number; panX: number; panY: number; pendingPublicPlaceId?: string }
     | { type: "resize"; id: string; startX: number; startSize: number }
     | { type: "drag"; id: string; startX: number; startY: number; elementX: number; elementY: number; anchorX: number; anchorY: number; mode: "anchor" | "output"; calibrationPointId?: string }
     | { type: "label"; id: string; startX: number; startY: number; offsetX: number; offsetY: number }
@@ -3140,14 +3140,25 @@ export default function Home() {
         }, false);
       }
     };
-    const handleUp = () => setInteraction(null);
+    const handleUp = (event: PointerEvent) => {
+      if (interaction?.type === "pan" && interaction.pendingPublicPlaceId) {
+        const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
+        if (moved <= 6) {
+          setSelectedId(interaction.pendingPublicPlaceId);
+          setSelectedNoteId(null);
+          setSelectedDenseLabelId(null);
+        }
+      }
+      setInteraction(null);
+    };
+    const handleCancel = () => setInteraction(null);
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
-    window.addEventListener("pointercancel", handleUp);
+    window.addEventListener("pointercancel", handleCancel);
     return () => {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
-      window.removeEventListener("pointercancel", handleUp);
+      window.removeEventListener("pointercancel", handleCancel);
     };
   }, [interaction, updateCalibrationPoint, updateDenseLabelPosition, updateElement, zoom]);
 
@@ -3210,10 +3221,14 @@ export default function Home() {
     setZoom(nextZoom);
   };
 
-  const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || event.target !== event.currentTarget || memoMode) return;
-    setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
-    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y });
+  const startPan = (event: ReactPointerEvent<HTMLElement>, pendingPublicPlaceId?: string) => {
+    if (event.button !== 0 || memoMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!pendingPublicPlaceId) {
+      setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
+    }
+    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, pendingPublicPlaceId });
   };
 
   const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -4827,7 +4842,7 @@ export default function Home() {
           <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
-              <div className={`map-stage ${stageMapClass} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : undefined}>
+              <div className={`map-stage ${stageMapClass} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} onLoad={() => setMapLoaded(true)} />
                 {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
@@ -4854,7 +4869,7 @@ export default function Home() {
                   const showLabel = stageLabelIds.has(element.id);
                   const isCalibrationReference = editingEnabled && calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => { event.stopPropagation(); setSelectedId(element.id); setSelectedDenseLabelId(null); } : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} aria-label={publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(element.id); setSelectedDenseLabelId(null); } } : undefined}>
+                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, element.id) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} aria-label={publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(element.id); setSelectedDenseLabelId(null); } } : undefined}>
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
@@ -4871,7 +4886,7 @@ export default function Home() {
                     title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
                     role={editingEnabled ? "button" : undefined}
                     aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => { event.stopPropagation(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, row.elementId) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
                 </div>}
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
