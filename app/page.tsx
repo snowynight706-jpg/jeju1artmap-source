@@ -1004,11 +1004,13 @@ function labelStyle(
   adaptive = true,
 ) {
   const safeZoom = Math.max(zoom, 0.22);
-  const crispScale = `scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})`;
   const safeFitZoom = Math.max(fitZoom, 0.22);
   const detailRatio = safeZoom / safeFitZoom;
   const detailProgress = adaptive ? smoothstep(1.35, 2.65, detailRatio) : 0;
-  const screenDistanceScale = adaptive ? safeFitZoom / safeZoom : 1;
+  // The stage is enlarged through layout dimensions instead of a composited
+  // transform. Keep screen-space label gaps equivalent to the previous zoom
+  // model without inverse-scaling the text into a blurry texture.
+  const screenDistanceScale = adaptive ? safeFitZoom : safeZoom;
   const start = labelAnchor(position, bounds);
   const endPosition = detailedLabelPosition(position, offsetY);
   const end = labelAnchor(endPosition, bounds);
@@ -1026,7 +1028,7 @@ function labelStyle(
   return {
     left: `calc(${anchorX.toFixed(4)}% + ${pixelX.toFixed(3)}px)`,
     top: `calc(${anchorY.toFixed(4)}% + ${pixelY.toFixed(3)}px)`,
-    transform: `translate(${translateX.toFixed(3)}%, ${translateY.toFixed(3)}%) ${crispScale}`,
+    transform: `translate(${translateX.toFixed(3)}%, ${translateY.toFixed(3)}%)`,
   };
 }
 
@@ -1692,6 +1694,7 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
 
 export default function Home() {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const stageWrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLElement>(null);
   const baseMapImgRef = useRef<HTMLImageElement>(null);
@@ -3494,12 +3497,16 @@ export default function Home() {
   }, [baseMap]);
 
   useEffect(() => {
+    const stageWrap = stageWrapRef.current;
     const stage = stageRef.current;
     const viewport = viewportRef.current;
-    if (!stage || !viewport) return;
+    if (!stageWrap || !stage || !viewport) return;
     const measure = () => {
-      const width = stage.offsetWidth;
-      const height = stage.offsetHeight;
+      // The wrapper retains the canonical on-screen base size while the stage
+      // itself grows with zoom. Measuring the wrapper prevents zoom from
+      // feeding back into fit calculations and coordinate conversion.
+      const width = stageWrap.offsetWidth;
+      const height = width / MAP_ASPECT;
       const viewportWidth = viewport.clientWidth;
       const viewportHeight = viewport.clientHeight;
       if (width > 0 && height > 0) {
@@ -3519,7 +3526,7 @@ export default function Home() {
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(stage);
+    observer.observe(stageWrap);
     observer.observe(viewport);
     window.addEventListener("resize", measure);
     return () => {
@@ -5951,8 +5958,8 @@ export default function Home() {
         <section className="canvas-column">
           <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
-            <div className="map-stage-wrap" style={{ transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0) scale(${zoom})` }}>
-              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
+            <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))` }}>
+              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
                 {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
@@ -6003,7 +6010,7 @@ export default function Home() {
                   {denseLabelClusters.map((cluster) => <div
                     key={cluster.id}
                     className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
-                    style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }}
+                    style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: "translate(-50%, -50%)" }}
                     onPointerDown={editingEnabled ? (event) => startDenseLabelDrag(event, cluster) : undefined}
                     title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
                     role={editingEnabled ? "button" : undefined}

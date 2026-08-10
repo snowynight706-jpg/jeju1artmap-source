@@ -371,8 +371,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-viewport { position: relative; min-height: 0; overflow: hidden; cursor: grab; background-color: #e5e9e7; background-image: radial-gradient(#ccd4d0 1px, transparent 1px); background-size: 18px 18px; touch-action: none; }
 .map-viewport.is-panning { cursor: grabbing; }
 .map-viewport.memo-cursor { cursor: crosshair; }
-.map-stage-wrap { position: absolute; left: 50%; top: 50%; width: min(1180px, 84vw); transform-origin: center; will-change: transform; }
-.map-stage { position: relative; width: 100%; overflow: visible; background: #f4f2ed; box-shadow: 0 15px 45px rgb(40 54 50 / 18%); user-select: none; }
+.map-stage-wrap { position: absolute; left: 50%; top: 50%; width: min(1180px, 84vw); transform-origin: center; will-change: auto; }
+.map-stage { position: relative; left: 50%; overflow: visible; transform: translateX(-50%); background: #f4f2ed; box-shadow: 0 15px 45px rgb(40 54 50 / 18%); user-select: none; }
 .base-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
 .map-stage.map-dim .base-map { filter: brightness(.63); }
 .map-stage.map-gray .base-map { filter: grayscale(1) contrast(.9) brightness(.94); }
