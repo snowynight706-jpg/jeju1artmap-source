@@ -69,3 +69,11 @@ export const placePrintSettings = sqliteTable("place_print_settings", {
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by").notNull(),
 });
+
+export const denseLabelSettings = sqliteTable("dense_label_settings", {
+  id: integer("id").primaryKey(),
+  positionsJson: text("positions_json").notNull(),
+  excludedElementIdsJson: text("excluded_element_ids_json").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+});

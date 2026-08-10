@@ -30,6 +30,7 @@ const CALIBRATION_SETTINGS_API = "/api/calibration-settings";
 const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
 const PLACE_DIRECTORY_API = "/api/place-directory";
 const PRINT_SETTINGS_API = "/api/print-settings";
+const DENSE_LABEL_SETTINGS_API = "/api/dense-label-settings";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -39,6 +40,7 @@ const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
 const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
 const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
+const DENSE_LABEL_SETTINGS_KEY = "jeju-wondosim-map-review:dense-label-settings:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 
 const categories = [
@@ -220,6 +222,14 @@ type DenseLabelPosition = {
   y: number;
 };
 
+type DenseLabelRow = {
+  elementId: string;
+  name: string;
+  category: CategoryId;
+  targetX: number;
+  targetY: number;
+};
+
 type DenseLabelCluster = {
   id: string;
   elementIds: string[];
@@ -230,6 +240,23 @@ type DenseLabelCluster = {
   height: number;
   manuallyPositioned: boolean;
   hasCollision: boolean;
+  rows: DenseLabelRow[];
+};
+
+type PrintAuditIssue = {
+  id: string;
+  kind: "clipping" | "overlap" | "crossing" | "text";
+  label: string;
+  elementId?: string;
+  clusterId?: string;
+};
+
+type PrintAuditReport = {
+  issues: PrintAuditIssue[];
+  clippingCount: number;
+  overlapCount: number;
+  crossingCount: number;
+  minimumTextPixels: number;
 };
 
 type DocumentState = {
@@ -240,6 +267,7 @@ type DocumentState = {
   calibrationPoints?: CalibrationPoint[];
   landmarkDefaultPositions?: LandmarkDefaultPosition[];
   denseLabelPositions?: DenseLabelPosition[];
+  denseLabelExcludedIds?: string[];
 };
 
 const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" | "anchorX" | "anchorY" | "size" | "z"> = {
@@ -782,15 +810,44 @@ function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
   return elements.map((element) => element.id).sort().join("|");
 }
 
+function splitDenseGroup(group: MapElement[]) {
+  const remaining = [...group].sort((a, b) => a.y - b.y || a.x - b.x || a.name.localeCompare(b.name, "ko"));
+  const chunks: MapElement[][] = [];
+  while (remaining.length > 4) {
+    const targetSize = remaining.length === 5 ? 3 : 4;
+    const chunk = [remaining.shift()!];
+    while (chunk.length < targetSize) {
+      const centerX = chunk.reduce((sum, element) => sum + element.x, 0) / chunk.length;
+      const centerY = chunk.reduce((sum, element) => sum + element.y, 0) / chunk.length;
+      let nearestIndex = 0;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      remaining.forEach((element, index) => {
+        const distance = Math.hypot(element.x - centerX, (element.y - centerY) / MAP_ASPECT);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestIndex = index;
+        }
+      });
+      chunk.push(remaining.splice(nearestIndex, 1)[0]);
+    }
+    chunks.push(chunk.sort((a, b) => a.y - b.y || a.x - b.x));
+  }
+  if (remaining.length >= 2) chunks.push(remaining.sort((a, b) => a.y - b.y || a.x - b.x));
+  return chunks;
+}
+
 function buildDenseLabelClusters(
   labelElements: MapElement[],
   iconElements: MapElement[],
   positionOverrides: DenseLabelPosition[] = [],
+  excludedElementIds: Iterable<string> = [],
 ): DenseLabelCluster[] {
   // A fixed label still belongs to its ordinary marker and can be represented by a
   // dense-label cluster. The lock protects the saved direction/gap/offset; it must
   // not opt the label out of the temporary screen/print presentation layer.
-  const candidates = labelElements.filter((element) => element.category !== "landmark");
+  const excludedIds = new Set(excludedElementIds);
+  const iconElementIds = new Set(iconElements.map((element) => element.id));
+  const candidates = labelElements.filter((element) => element.category !== "landmark" && iconElementIds.has(element.id) && !excludedIds.has(element.id));
   if (candidates.length < 2) return [];
   const parent = candidates.map((_, index) => index);
   const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
@@ -812,7 +869,7 @@ function buildDenseLabelClusters(
     const root = find(index);
     groups.set(root, [...(groups.get(root) ?? []), element]);
   });
-  const clusterGroups = [...groups.values()].filter((group) => group.length >= 2);
+  const clusterGroups = [...groups.values()].filter((group) => group.length >= 2).flatMap(splitDenseGroup);
   const clusteredCandidateIds = new Set(clusterGroups.flatMap((group) => group.map((element) => element.id)));
   const iconRects = iconElements.map((element) => {
     const height = element.size * MAP_ASPECT / 1.12;
@@ -848,16 +905,17 @@ function buildDenseLabelClusters(
     .map((group) => ({ group, key: denseLabelKey(group), override: overrideByKey.get(denseLabelKey(group)) }))
     .sort((a, b) => Number(Boolean(b.override)) - Number(Boolean(a.override)) || b.group.length - a.group.length)
     .map(({ group, key, override }) => {
-    const names = group.map((element) => element.name);
+    const orderedGroup = [...group].sort((a, b) => a.y - b.y || a.x - b.x || a.name.localeCompare(b.name, "ko"));
+    const names = orderedGroup.map((element) => element.name);
     const groupIds = new Set(group.map((element) => element.id));
-    const minX = Math.min(...group.map((element) => element.x - element.size / 2));
-    const maxX = Math.max(...group.map((element) => element.x + element.size / 2));
-    const minY = Math.min(...group.map((element) => element.y - element.size * MAP_ASPECT / 2.24));
-    const maxY = Math.max(...group.map((element) => element.y + element.size * MAP_ASPECT / 2.24));
+    const minX = Math.min(...orderedGroup.map((element) => element.x - element.size / 2));
+    const maxX = Math.max(...orderedGroup.map((element) => element.x + element.size / 2));
+    const minY = Math.min(...orderedGroup.map((element) => element.y - element.size * MAP_ASPECT / 2.24));
+    const maxY = Math.max(...orderedGroup.map((element) => element.y + element.size * MAP_ASPECT / 2.24));
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    const width = clamp(Math.max(...names.map((name) => name.length)) * 0.72 + 4.8, 10.5, 22);
-    const height = clamp(2.8 + Math.min(4, names.length) * 2.2, 7.2, 11.2);
+    const width = clamp(Math.max(...names.map((name) => name.length)) * 0.82 + 4.8, 11.5, 24);
+    const height = clamp(2.8 + names.length * 2.2, 7.2, 11.6);
     const distance = Math.max(2.2, height / 2 + 1.2);
     const options = [1, 1.65, 2.4, 3.2, 4.5, 6].flatMap((ring) => [
       { x: centerX, y: minY - distance * ring },
@@ -889,25 +947,142 @@ function buildDenseLabelClusters(
         })
       : options.map(scoreOption).sort((a, b) => a.score - b.score)[0];
     placed.push(best.rect);
+    const x = clamp(best.x, width / 2, 100 - width / 2);
+    const y = clamp(best.y, height / 2, 100 - height / 2);
+    const rowTop = y - height / 2 + 2.45;
+    const rowHeight = (height - 2.7) / names.length;
+    const rows = orderedGroup.map((element, index): DenseLabelRow => ({
+      elementId: element.id,
+      name: element.name,
+      category: element.category,
+      targetX: element.x <= x ? x - width / 2 : x + width / 2,
+      targetY: rowTop + rowHeight * (index + 0.5),
+    }));
     return {
       id: key,
-      elementIds: group.map((element) => element.id),
+      elementIds: orderedGroup.map((element) => element.id),
       names,
-      x: clamp(best.x, width / 2, 100 - width / 2),
-      y: clamp(best.y, height / 2, 100 - height / 2),
+      x,
+      y,
       width,
       height,
       manuallyPositioned: Boolean(override),
       hasCollision: best.hasCollision,
+      rows,
     };
   });
+}
+
+function normalizedIconRect(element: MapElement): NormalizedRect {
+  const height = element.size * MAP_ASPECT / 1.12;
+  return {
+    left: element.x - element.size * 0.48,
+    right: element.x + element.size * 0.48,
+    top: element.y - height * 0.48,
+    bottom: element.y + height * 0.48,
+  };
+}
+
+function normalizedLabelRect(element: MapElement): NormalizedRect {
+  const width = clamp(element.name.length * 0.72 + 2.4, 3.6, 20);
+  const height = 2.1;
+  const elementHeight = element.size * MAP_ASPECT / 1.12;
+  const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
+  const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+  const gapX = 0.6 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
+  const gapY = 0.6 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
+  let x = element.x + offsetX;
+  let y = element.y + offsetY;
+  if (element.labelPosition === "top") y -= elementHeight / 2 + gapY + height / 2;
+  if (element.labelPosition === "bottom") y += elementHeight / 2 + gapY + height / 2;
+  if (element.labelPosition === "left") x -= element.size / 2 + gapX + width / 2;
+  if (element.labelPosition === "right") x += element.size / 2 + gapX + width / 2;
+  return { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 };
+}
+
+function rectOutsideMap(rect: NormalizedRect) {
+  return rect.left < 0 || rect.top < 0 || rect.right > 100 || rect.bottom > 100;
+}
+
+type Segment = { fromX: number; fromY: number; toX: number; toY: number; id: string };
+
+function segmentsCross(a: Segment, b: Segment) {
+  const orientation = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => (
+    (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+  );
+  const a1 = orientation(a.fromX, a.fromY, a.toX, a.toY, b.fromX, b.fromY);
+  const a2 = orientation(a.fromX, a.fromY, a.toX, a.toY, b.toX, b.toY);
+  const b1 = orientation(b.fromX, b.fromY, b.toX, b.toY, a.fromX, a.fromY);
+  const b2 = orientation(b.fromX, b.fromY, b.toX, b.toY, a.toX, a.toY);
+  return a1 * a2 < -0.0001 && b1 * b2 < -0.0001;
+}
+
+function buildPrintAudit(
+  markerElements: MapElement[],
+  labelElements: MapElement[],
+  clusters: DenseLabelCluster[],
+  exportWidth: number,
+): PrintAuditReport {
+  const issues: PrintAuditIssue[] = [];
+  const clusteredIds = new Set(clusters.flatMap((cluster) => cluster.elementIds));
+  const individualLabels = labelElements.filter((element) => !clusteredIds.has(element.id));
+  const iconRects = markerElements.map((element) => ({ element, rect: normalizedIconRect(element) }));
+  const labelRects = individualLabels.map((element) => ({ element, rect: normalizedLabelRect(element) }));
+
+  iconRects.forEach(({ element, rect }) => {
+    if (rectOutsideMap(rect)) issues.push({ id: `clip-icon-${element.id}`, kind: "clipping", label: `${element.name} 마커가 지도 밖으로 잘립니다.`, elementId: element.id });
+  });
+  labelRects.forEach(({ element, rect }) => {
+    if (rectOutsideMap(rect)) issues.push({ id: `clip-label-${element.id}`, kind: "clipping", label: `${element.name} 라벨이 지도 밖으로 잘립니다.`, elementId: element.id });
+    if (iconRects.some((icon) => rectsOverlap(rect, icon.rect, 0.18))) {
+      issues.push({ id: `overlap-marker-${element.id}`, kind: "overlap", label: `${element.name} 라벨이 마커·랜드마크 이미지를 가립니다.`, elementId: element.id });
+    }
+  });
+  for (let index = 0; index < labelRects.length; index += 1) {
+    for (let other = index + 1; other < labelRects.length; other += 1) {
+      if (!rectsOverlap(labelRects[index].rect, labelRects[other].rect, 0.12)) continue;
+      issues.push({
+        id: `overlap-label-${labelRects[index].element.id}-${labelRects[other].element.id}`,
+        kind: "overlap",
+        label: `${labelRects[index].element.name}·${labelRects[other].element.name} 라벨이 겹칩니다.`,
+        elementId: labelRects[index].element.id,
+      });
+    }
+  }
+  clusters.forEach((cluster) => {
+    const rect = { left: cluster.x - cluster.width / 2, right: cluster.x + cluster.width / 2, top: cluster.y - cluster.height / 2, bottom: cluster.y + cluster.height / 2 };
+    if (rectOutsideMap(rect)) issues.push({ id: `clip-cluster-${cluster.id}`, kind: "clipping", label: `${cluster.names.join("·")} 통합 라벨이 지도 밖으로 잘립니다.`, clusterId: cluster.id });
+    if (cluster.hasCollision) issues.push({ id: `overlap-cluster-${cluster.id}`, kind: "overlap", label: `${cluster.names.join("·")} 통합 라벨 위치에 겹침이 있습니다.`, clusterId: cluster.id });
+  });
+
+  const byId = new Map(markerElements.map((element) => [element.id, element]));
+  const segments: Segment[] = clusters.flatMap((cluster) => cluster.rows.flatMap((row) => {
+    const element = byId.get(row.elementId);
+    return element ? [{ fromX: element.x, fromY: element.y, toX: row.targetX, toY: row.targetY, id: `${cluster.id}:${row.elementId}` }] : [];
+  }));
+  for (let index = 0; index < segments.length; index += 1) {
+    for (let other = index + 1; other < segments.length; other += 1) {
+      if (!segmentsCross(segments[index], segments[other])) continue;
+      issues.push({ id: `cross-${segments[index].id}-${segments[other].id}`, kind: "crossing", label: "통합 라벨 연결선이 서로 교차합니다." });
+    }
+  }
+
+  const minimumTextPixels = exportWidth / EXPORT_CANONICAL_WIDTH * 7;
+  if (minimumTextPixels < 28) issues.push({ id: "small-text", kind: "text", label: `가장 작은 글자가 ${minimumTextPixels.toFixed(0)}px로 출력 기준보다 작습니다.` });
+  return {
+    issues,
+    clippingCount: issues.filter((issue) => issue.kind === "clipping").length,
+    overlapCount: issues.filter((issue) => issue.kind === "overlap").length,
+    crossingCount: issues.filter((issue) => issue.kind === "crossing").length,
+    minimumTextPixels,
+  };
 }
 
 function cloneDocument(document: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(document)) as DocumentState;
 }
 
-function uniqueRuntimeId(prefix: "element" | "asset" | "review", existingIds: Iterable<string>) {
+function uniqueRuntimeId(prefix: "element" | "asset" | "review" | "db-place", existingIds: Iterable<string>) {
   const used = new Set(existingIds);
   let candidate = "";
   do {
@@ -991,13 +1166,14 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         };
       }),
     denseLabelPositions: [...new Map((document.denseLabelPositions ?? [])
-      .filter((position) => position && typeof position.key === "string" && position.key.length > 0 && Array.isArray(position.elementIds) && position.elementIds.length >= 2)
+      .filter((position) => position && typeof position.key === "string" && position.key.length > 0 && Array.isArray(position.elementIds) && position.elementIds.length >= 2 && position.elementIds.length <= 4)
       .map((position) => [position.key, {
         key: position.key,
         elementIds: [...new Set(position.elementIds.filter((id) => typeof id === "string" && id.length > 0))].sort(),
         x: clamp(position.x, 0, 100),
         y: clamp(position.y, 0, 100),
       }])).values()].filter((position) => position.elementIds.length >= 2),
+    denseLabelExcludedIds: [...new Set((document.denseLabelExcludedIds ?? []).filter((id) => typeof id === "string" && id.length > 0))],
   };
 }
 
@@ -1097,7 +1273,7 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
   const readSection = (section: "culture" | "food") => {
     const values = root[section];
     if (!Array.isArray(values)) return;
-    values.forEach((raw) => {
+    values.forEach((raw, index) => {
       if (!Array.isArray(raw) || raw.length < 4) return;
       const name = normalizePlaceName(String(raw[1] ?? ""));
       const address = String(raw[2] ?? "");
@@ -1105,12 +1281,19 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
       if (!name || !address || closed.has(name) || DELETED_PLACE_NAMES.has(name)) return;
       const isShop = section === "food" && /소품샵|편집숍|기념품|굿즈숍|상업공간/.test(subtype) && !/식음|카페|커피|음식/.test(subtype);
       rows.push({
+        id: `import-${section}-${index + 1}`,
         name,
         address,
         area: String(raw[0] ?? "기타"),
         subtype,
         priority: String(raw[6] ?? ""),
+        description: String(raw[4] ?? ""),
+        operatingInfo: String(raw[5] ?? ""),
+        notes: String(raw[7] ?? ""),
         sourceUrl: String(raw[section === "culture" ? 11 : 10] ?? ""),
+        mapUrl: "",
+        checkedAt: "",
+        sourceSheet: section === "culture" ? "문화공간" : "카페·음식점·소품샵",
         category: section === "culture" ? "culture" : isShop ? "shop" : /카페|커피|로스터|티하우스|북카페|디저트/.test(subtype) ? "cafe" : "food",
       });
     });
@@ -1141,9 +1324,11 @@ export default function Home() {
   const calibrationLiveApplyRef = useRef(false);
   const localCalibrationUpdatedAtRef = useRef(0);
   const localLockedCoordinatesUpdatedAtRef = useRef(0);
+  const localDenseLabelsUpdatedAtRef = useRef(0);
   const placeDirectoryLoadedRef = useRef(false);
   const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
   const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
+  const denseLabelExcludedIdsRef = useRef<string[]>([]);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -1176,11 +1361,17 @@ export default function Home() {
   const [printLandmarks, setPrintLandmarks] = useState(true);
   const [printMarkers, setPrintMarkers] = useState(true);
   const [printLabels, setPrintLabels] = useState(true);
+  const [printPreviewMode, setPrintPreviewMode] = useState(false);
+  const [printAuditOpen, setPrintAuditOpen] = useState(false);
   const [printSettings, setPrintSettings] = useState<PrintPlaceSetting[]>([]);
   const [printSettingsCanEdit, setPrintSettingsCanEdit] = useState(false);
   const [printSettingsStorage, setPrintSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [denseLabelPositions, setDenseLabelPositions] = useState<DenseLabelPosition[]>([]);
+  const [denseLabelExcludedIds, setDenseLabelExcludedIds] = useState<string[]>([]);
   const [selectedDenseLabelId, setSelectedDenseLabelId] = useState<string | null>(null);
+  const [denseLabelSettingsCanEdit, setDenseLabelSettingsCanEdit] = useState(false);
+  const [denseLabelSettingsStorage, setDenseLabelSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
+  const [denseLabelSettingsRemoteReady, setDenseLabelSettingsRemoteReady] = useState(false);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
@@ -1259,6 +1450,7 @@ export default function Home() {
     calibrationPoints: calibrationPointsRef.current,
     landmarkDefaultPositions: landmarkDefaultsRef.current,
     denseLabelPositions: denseLabelPositionsRef.current,
+    denseLabelExcludedIds: denseLabelExcludedIdsRef.current,
   }), []);
 
   const setDocument = useCallback((document: DocumentState) => {
@@ -1305,7 +1497,9 @@ export default function Home() {
     calibrationPointsRef.current = restoredCalibrationPoints;
     landmarkDefaultsRef.current = restoredLandmarkDefaults;
     const restoredDenseLabelPositions = clean.denseLabelPositions ?? [];
+    const restoredDenseLabelExcludedIds = clean.denseLabelExcludedIds ?? [];
     denseLabelPositionsRef.current = restoredDenseLabelPositions;
+    denseLabelExcludedIdsRef.current = restoredDenseLabelExcludedIds;
     setElements(migratedElements);
     setAssets(clean.assets);
     setReviewNotes(clean.reviewNotes);
@@ -1313,6 +1507,7 @@ export default function Home() {
     setCalibrationPoints(restoredCalibrationPoints);
     setLandmarkDefaultPositions(restoredLandmarkDefaults);
     setDenseLabelPositions(restoredDenseLabelPositions);
+    setDenseLabelExcludedIds(restoredDenseLabelExcludedIds);
     setCalibrationDirty(false);
     setSelectedId(null);
     setSelectedNoteId(null);
@@ -1373,6 +1568,14 @@ export default function Home() {
     });
   }, []);
 
+  const replaceDenseLabelExcludedIds = useCallback((updater: (current: string[]) => string[]) => {
+    setDenseLabelExcludedIds((current) => {
+      const next = [...new Set(updater(current))];
+      denseLabelExcludedIdsRef.current = next;
+      return next;
+    });
+  }, []);
+
   const updateDenseLabelPosition = useCallback((key: string, elementIds: string[], x: number, y: number) => {
     replaceDenseLabelPositions((current) => {
       const position: DenseLabelPosition = {
@@ -1390,6 +1593,17 @@ export default function Home() {
   const resetDenseLabelPosition = useCallback((key: string) => {
     replaceDenseLabelPositions((current) => current.filter((position) => position.key !== key));
   }, [replaceDenseLabelPositions]);
+
+  const setDenseLabelEligibility = useCallback((elementId: string, eligible: boolean, clusterKey?: string) => {
+    pushHistory();
+    replaceDenseLabelExcludedIds((current) => eligible
+      ? current.filter((id) => id !== elementId)
+      : [...current, elementId]);
+    if (!eligible && clusterKey) resetDenseLabelPosition(clusterKey);
+    setSelectedDenseLabelId(null);
+    const element = elementsRef.current.find((item) => item.id === elementId);
+    setToast(eligible ? `${element?.name ?? "장소"}을(를) 자동 통합 대상으로 되돌렸습니다.` : `${element?.name ?? "장소"}을(를) 개별 라벨로 분리했습니다.`);
+  }, [pushHistory, replaceDenseLabelExcludedIds, resetDenseLabelPosition]);
 
   const applyCalibrationPoints = useCallback((nextPoints: CalibrationPoint[], _moveAllVisual = false, record = true) => {
     void _moveAllVisual;
@@ -1753,37 +1967,59 @@ export default function Home() {
   const recommendedPlaceCount = useMemo(() => elements.filter((element) => element.mapVisible && element.category !== "landmark" && printPolicyFor(element).recommended).length, [elements, printPolicyFor]);
   const screenHiddenMarkerCount = useMemo(() => elements.filter((element) => element.mapVisible && element.category !== "landmark" && !printPolicyFor(element).recommended).length, [elements, printPolicyFor]);
 
-  const visibleElements = useMemo(() => [...elements]
+  const editorVisibleElements = useMemo(() => [...elements]
     .filter((element) => element.mapVisible)
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
     .filter((element) => !screenRecommendedOnly || element.category === "landmark" || printPolicyFor(element).recommended)
     .filter((element) => viewMode !== "landmarks" || element.category === "landmark")
     .filter((element) => viewMode !== "markers" || element.category !== "landmark")
     .sort((a, b) => a.z - b.z), [activeCategory, elements, printPolicyFor, screenRecommendedOnly, viewMode]);
+  const printMarkerElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).marker).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
+  const printLabelElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).label).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
+  const editorLabelElements = useMemo(() => editorVisibleElements.filter((element) => element.labelVisible && (element.category === "landmark" || markerLabelsVisible)), [editorVisibleElements, markerLabelsVisible]);
+  const visibleElements = useMemo(() => {
+    if (!printPreviewMode) return editorVisibleElements;
+    const byId = new Map([...printMarkerElements, ...printLabelElements].map((element) => [element.id, element]));
+    return [...byId.values()].sort((a, b) => a.z - b.z);
+  }, [editorVisibleElements, printLabelElements, printMarkerElements, printPreviewMode]);
+  const stageMarkerElements = printPreviewMode ? printMarkerElements : editorVisibleElements;
+  const stageLabelElements = printPreviewMode ? printLabelElements : editorLabelElements;
+  const stageMarkerIds = useMemo(() => new Set(stageMarkerElements.map((element) => element.id)), [stageMarkerElements]);
+  const stageLabelIds = useMemo(() => new Set(stageLabelElements.map((element) => element.id)), [stageLabelElements]);
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
   const visibleElementsById = useMemo(() => new Map(visibleElements.map((element) => [element.id, element])), [visibleElements]);
 
   const denseLabelClusters = useMemo(() => mergeDenseLabels
     ? buildDenseLabelClusters(
-        visibleElements.filter((element) => element.labelVisible && (element.category === "landmark" || markerLabelsVisible)),
-        visibleElements,
+        stageLabelElements,
+        stageMarkerElements,
         denseLabelPositions,
+        denseLabelExcludedIds,
       )
-    : [], [denseLabelPositions, markerLabelsVisible, mergeDenseLabels, visibleElements]);
+    : [], [denseLabelExcludedIds, denseLabelPositions, mergeDenseLabels, stageLabelElements, stageMarkerElements]);
   const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
   const selectedDenseLabel = useMemo(
     () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
     [denseLabelClusters, selectedDenseLabelId],
   );
   const denseLabelCollisionCount = useMemo(() => denseLabelClusters.filter((cluster) => cluster.hasCollision).length, [denseLabelClusters]);
+  const detachedDenseLabelElements = useMemo(() => denseLabelExcludedIds.flatMap((id) => {
+    const element = elements.find((item) => item.id === id);
+    return element && element.category !== "landmark" ? [element] : [];
+  }).sort((a, b) => a.name.localeCompare(b.name, "ko")), [denseLabelExcludedIds, elements]);
+
+  const printDenseLabelClusters = useMemo(() => mergeDenseLabels
+    ? buildDenseLabelClusters(printLabelElements, printMarkerElements, denseLabelPositions, denseLabelExcludedIds)
+    : [], [denseLabelExcludedIds, denseLabelPositions, mergeDenseLabels, printLabelElements, printMarkerElements]);
+  const printAudit = useMemo(() => buildPrintAudit(printMarkerElements, printLabelElements, printDenseLabelClusters, exportWidth), [exportWidth, printDenseLabelClusters, printLabelElements, printMarkerElements]);
 
   const collisions = useMemo(() => {
     const hard = new Set<string>();
     const clearance = new Set<string>();
-    for (let index = 0; index < visibleElements.length; index += 1) {
-      for (let other = index + 1; other < visibleElements.length; other += 1) {
-        const a = visibleElements[index];
-        const b = visibleElements[other];
+    for (let index = 0; index < stageMarkerElements.length; index += 1) {
+      for (let other = index + 1; other < stageMarkerElements.length; other += 1) {
+        const a = stageMarkerElements[index];
+        const b = stageMarkerElements[other];
         const dx = Math.abs(a.x - b.x);
         const dyAsWidth = Math.abs(a.y - b.y) / MAP_ASPECT;
         const halfWidth = (a.size + b.size) / 2;
@@ -1796,7 +2032,7 @@ export default function Home() {
       }
     }
     return { hard, clearance };
-  }, [visibleElements]);
+  }, [stageMarkerElements]);
 
   const clientToMap = useCallback((clientX: number, clientY: number) => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -1875,6 +2111,14 @@ export default function Home() {
           }
         })();
         localLockedCoordinatesUpdatedAtRef.current = Date.parse(persistentLockedCoordinates?.updatedAt ?? "") || 0;
+        const persistentDenseLabels = (() => {
+          try {
+            return JSON.parse(localStorage.getItem(DENSE_LABEL_SETTINGS_KEY) ?? "null") as { positions?: DenseLabelPosition[]; excludedElementIds?: string[]; updatedAt?: string } | null;
+          } catch {
+            return null;
+          }
+        })();
+        localDenseLabelsUpdatedAtRef.current = Date.parse(persistentDenseLabels?.updatedAt ?? "") || 0;
 
         const raw = localStorage.getItem(AUTOSAVE_KEY);
         if (raw) {
@@ -1925,18 +2169,21 @@ export default function Home() {
               directoryPlaces: parsed.directoryPlaces,
               calibrationPoints: persistentCalibration?.calibrationPoints ?? parsed.calibrationPoints,
               landmarkDefaultPositions: persistentCalibration?.landmarkDefaultPositions ?? parsed.landmarkDefaultPositions,
-              denseLabelPositions: parsed.denseLabelPositions,
+              denseLabelPositions: persistentDenseLabels?.positions ?? parsed.denseLabelPositions,
+              denseLabelExcludedIds: persistentDenseLabels?.excludedElementIds ?? parsed.denseLabelExcludedIds,
             });
             setSaveState("최근 상태 복구됨");
           }
-        } else if (persistentCalibration?.calibrationPoints?.length) {
+        } else if (persistentCalibration?.calibrationPoints?.length || persistentDenseLabels) {
           setDocument({
             elements: initialElements,
             assets: builtInAssets,
             reviewNotes: [],
             directoryPlaces: defaultDirectoryPlaces,
-            calibrationPoints: persistentCalibration.calibrationPoints,
-            landmarkDefaultPositions: persistentCalibration.landmarkDefaultPositions,
+            calibrationPoints: persistentCalibration?.calibrationPoints,
+            landmarkDefaultPositions: persistentCalibration?.landmarkDefaultPositions,
+            denseLabelPositions: persistentDenseLabels?.positions,
+            denseLabelExcludedIds: persistentDenseLabels?.excludedElementIds,
           });
           setSaveState("저장된 기준좌표 복구됨");
         }
@@ -1961,7 +2208,7 @@ export default function Home() {
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [assets, calibrationPoints, currentDocument, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, reviewNotes]);
+  }, [assets, calibrationPoints, currentDocument, denseLabelExcludedIds, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, reviewNotes]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2104,6 +2351,78 @@ export default function Home() {
       setToast("출력 추천 설정을 저장하지 못했습니다. 로그인 상태를 확인해 주세요.");
     }
   }, [printSettingsCanEdit]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    fetch(DENSE_LABEL_SETTINGS_API, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as {
+          positions?: DenseLabelPosition[];
+          excludedElementIds?: string[];
+          persistent?: boolean;
+          canEdit?: boolean;
+          updatedAt?: string | null;
+        } | null;
+        if (!response.ok && response.status !== 503) throw new Error("dense label settings load failed");
+        return payload;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const remoteUpdatedAt = Date.parse(payload?.updatedAt ?? "") || 0;
+        const shouldRestoreRemote = remoteUpdatedAt > 0
+          && (localDenseLabelsUpdatedAtRef.current === 0 || remoteUpdatedAt >= localDenseLabelsUpdatedAtRef.current);
+        if (shouldRestoreRemote) {
+          const positions = Array.isArray(payload?.positions) ? payload!.positions : [];
+          const excludedElementIds = Array.isArray(payload?.excludedElementIds) ? payload!.excludedElementIds : [];
+          denseLabelPositionsRef.current = positions;
+          denseLabelExcludedIdsRef.current = excludedElementIds;
+          setDenseLabelPositions(positions);
+          setDenseLabelExcludedIds(excludedElementIds);
+          localDenseLabelsUpdatedAtRef.current = remoteUpdatedAt;
+        }
+        setDenseLabelSettingsCanEdit(Boolean(payload?.canEdit));
+        setDenseLabelSettingsStorage(payload?.persistent ? "persistent" : "local");
+        setDenseLabelSettingsRemoteReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDenseLabelSettingsStorage("local");
+        setDenseLabelSettingsRemoteReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [hydrated]);
+
+  const denseLabelSettingsSignature = useMemo(() => JSON.stringify({
+    positions: denseLabelPositions,
+    excludedElementIds: denseLabelExcludedIds,
+  }), [denseLabelExcludedIds, denseLabelPositions]);
+
+  useEffect(() => {
+    if (!hydrated || !denseLabelSettingsRemoteReady) return;
+    const updatedAt = new Date().toISOString();
+    localDenseLabelsUpdatedAtRef.current = Date.parse(updatedAt);
+    try {
+      localStorage.setItem(DENSE_LABEL_SETTINGS_KEY, JSON.stringify({
+        positions: denseLabelPositionsRef.current,
+        excludedElementIds: denseLabelExcludedIdsRef.current,
+        updatedAt,
+      }));
+    } catch {}
+    if (!denseLabelSettingsCanEdit) return;
+    const timer = window.setTimeout(() => {
+      void fetch(DENSE_LABEL_SETTINGS_API, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          positions: denseLabelPositionsRef.current,
+          excludedElementIds: denseLabelExcludedIdsRef.current,
+        }),
+      }).then((response) => setDenseLabelSettingsStorage(response.ok ? "persistent" : "local"))
+        .catch(() => setDenseLabelSettingsStorage("local"));
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [denseLabelSettingsCanEdit, denseLabelSettingsRemoteReady, denseLabelSettingsSignature, hydrated]);
 
   useEffect(() => {
     if (!hydrated || !primaryCalibrationRemoteReady) return;
@@ -2283,6 +2602,10 @@ export default function Home() {
       const rect = stageRef.current?.getBoundingClientRect();
       if (!rect) return;
       const deltaX = ((event.clientX - interaction.startX) / rect.width) * 100;
+      if (interaction.type === "resize") {
+        updateElement(interaction.id, { size: clamp(interaction.startSize + deltaX * 2, 0.8, 15) }, false);
+        return;
+      }
       const deltaY = ((event.clientY - interaction.startY) / rect.height) * 100;
       if (interaction.type === "dense-label") {
         updateDenseLabelPosition(
@@ -2291,10 +2614,6 @@ export default function Home() {
           clamp(interaction.x + deltaX, interaction.halfWidth, 100 - interaction.halfWidth),
           clamp(interaction.y + deltaY, interaction.halfHeight, 100 - interaction.halfHeight),
         );
-        return;
-      }
-      if (interaction.type === "resize") {
-        updateElement(interaction.id, { size: clamp(interaction.startSize + deltaX * 2, 0.8, 15) }, false);
         return;
       }
       if (interaction.mode === "anchor" && interaction.calibrationPointId) {
@@ -3285,6 +3604,12 @@ export default function Home() {
 
   const exportHighResolutionPng = async () => {
     if (exporting) return;
+    setPrintAuditOpen(true);
+    if (printAudit.issues.length > 0 && !window.confirm(`인쇄 전 자동 점검에서 ${printAudit.issues.length}건을 확인했습니다. 현재 상태로도 PNG를 만들까요?`)) {
+      setPrintPreviewMode(true);
+      setToast("점검 항목을 확인한 뒤 다시 출력해 주세요.");
+      return;
+    }
     setExporting(true);
     setToast(`${exportWidth.toLocaleString()}px 고화질 사본을 합성하고 있습니다.`);
     try {
@@ -3309,7 +3634,7 @@ export default function Home() {
       if (!exportMarkerElements.length && !exportLabelElements.length) throw new Error("empty print composition");
       const labelOnlyCount = exportLabelElements.filter((element) => !exportMarkerElements.some((marker) => marker.id === element.id)).length;
       if (labelOnlyCount) setToast(`마커 없이 라벨만 출력되는 장소가 ${labelOnlyCount}곳 있습니다. 고화질 사본을 계속 합성합니다.`);
-      const exportClusters = mergeDenseLabels ? buildDenseLabelClusters(exportLabelElements, exportMarkerElements, denseLabelPositionsRef.current) : [];
+      const exportClusters = mergeDenseLabels ? buildDenseLabelClusters(exportLabelElements, exportMarkerElements, denseLabelPositionsRef.current, denseLabelExcludedIdsRef.current) : [];
       const clusteredExportIds = new Set(exportClusters.flatMap((cluster) => cluster.elementIds));
       const assetSources = [...new Set(exportMarkerElements.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
       const loadedAssets = new Map<string, HTMLImageElement>();
@@ -3339,17 +3664,18 @@ export default function Home() {
 
       if (exportClusters.length) {
         context.save();
-        context.strokeStyle = "rgba(47,117,107,.45)";
-        context.fillStyle = "rgba(47,117,107,.72)";
         context.lineWidth = Math.max(1, exportWidth / EXPORT_CANONICAL_WIDTH * 1.1);
         context.setLineDash([exportWidth / EXPORT_CANONICAL_WIDTH * 3.5, exportWidth / EXPORT_CANONICAL_WIDTH * 2.5]);
-        exportClusters.forEach((cluster) => cluster.elementIds.forEach((elementId) => {
-          const element = placedElements.find((item) => item.id === elementId);
+        exportClusters.forEach((cluster) => cluster.rows.forEach((row) => {
+          const element = placedElements.find((item) => item.id === row.elementId);
           if (!element) return;
           const fromX = exportWidth * element.x / 100;
           const fromY = outputHeight * element.y / 100;
-          const toX = exportWidth * cluster.x / 100;
-          const toY = outputHeight * cluster.y / 100;
+          const toX = exportWidth * row.targetX / 100;
+          const toY = outputHeight * row.targetY / 100;
+          context.strokeStyle = categoryOf(row.category).color;
+          context.fillStyle = categoryOf(row.category).color;
+          context.globalAlpha = 0.58;
           context.beginPath();
           context.moveTo(fromX, fromY);
           context.lineTo(toX, toY);
@@ -3358,6 +3684,7 @@ export default function Home() {
           context.arc(fromX, fromY, Math.max(1.2, exportWidth / EXPORT_CANONICAL_WIDTH * 1.5), 0, Math.PI * 2);
           context.fill();
         }));
+        context.globalAlpha = 1;
         context.restore();
       }
 
@@ -3405,21 +3732,9 @@ export default function Home() {
         const scale = exportWidth / EXPORT_CANONICAL_WIDTH;
         const fontSize = scale * 9.5;
         const smallSize = scale * 7;
-        const paddingX = scale * 7;
-        const paddingY = scale * 5;
-        const maxCharacters = 24;
-        const lines: string[] = [];
-        cluster.names.forEach((name) => {
-          const last = lines.at(-1);
-          if (last && `${last} · ${name}`.length <= maxCharacters) lines[lines.length - 1] = `${last} · ${name}`;
-          else lines.push(name);
-        });
-        const displayLines = lines.slice(0, 4);
-        if (lines.length > 4) displayLines[3] = `외 ${Math.max(1, cluster.names.length - 3)}곳`;
         context.save();
-        context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
-        const labelWidth = Math.max(...displayLines.map((line) => context.measureText(line).width), scale * 58) + paddingX * 2;
-        const labelHeight = paddingY * 2 + smallSize * 1.2 + displayLines.length * fontSize * 1.28;
+        const labelWidth = exportWidth * cluster.width / 100;
+        const labelHeight = outputHeight * cluster.height / 100;
         const x = exportWidth * cluster.x / 100;
         const y = outputHeight * cluster.y / 100;
         context.fillStyle = "rgba(248,253,251,.97)";
@@ -3433,10 +3748,19 @@ export default function Home() {
         context.textAlign = "center";
         context.textBaseline = "middle";
         context.font = `800 ${smallSize}px Arial, "Noto Sans KR", sans-serif`;
-        context.fillText(`${cluster.names.length}곳`, x, y - labelHeight / 2 + paddingY + smallSize / 2);
+        context.fillText(`${cluster.names.length}곳`, x, y - labelHeight / 2 + scale * 8);
         context.fillStyle = "#26332f";
         context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
-        displayLines.forEach((line, index) => context.fillText(line, x, y - labelHeight / 2 + paddingY + smallSize * 1.4 + fontSize * (index + 0.68) * 1.28));
+        cluster.rows.forEach((row) => {
+          const rowY = outputHeight * row.targetY / 100;
+          const dotX = x - labelWidth / 2 + scale * 9;
+          context.fillStyle = categoryOf(row.category).color;
+          context.beginPath();
+          context.arc(dotX, rowY, Math.max(scale * 2.1, 1.5), 0, Math.PI * 2);
+          context.fill();
+          context.fillStyle = "#26332f";
+          context.fillText(row.name, x, rowY);
+        });
         context.restore();
       });
 
@@ -3453,7 +3777,7 @@ export default function Home() {
 
   const exportJson = () => {
     const payload = {
-      schemaVersion: 6, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted", landmarkDefaults: "user-editable", denseLabelPositions: "user-editable" },
+      schemaVersion: 7, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted", landmarkDefaults: "user-editable", denseLabelPositions: "server-synced-user-editable", denseLabelGrouping: "max-four-manual-exclusion" },
       ...cloneDocument(currentDocument()),
     };
     download(`제주원도심_배치안_${layoutName.replaceAll(" ", "_")}.json`, JSON.stringify(payload, null, 2), "application/json");
@@ -3480,6 +3804,7 @@ export default function Home() {
           calibrationPoints: Array.isArray(parsed.calibrationPoints) ? parsed.calibrationPoints : initialCalibrationPoints,
           landmarkDefaultPositions: Array.isArray(parsed.landmarkDefaultPositions) ? parsed.landmarkDefaultPositions : factoryLandmarkDefaultPositions,
           denseLabelPositions: Array.isArray(parsed.denseLabelPositions) ? parsed.denseLabelPositions : [],
+          denseLabelExcludedIds: Array.isArray(parsed.denseLabelExcludedIds) ? parsed.denseLabelExcludedIds : [],
         });
         setLayoutName(file.name.replace(/\.json$/i, "")); setToast("JSON 배치안을 불러왔습니다. 삭제 대상 장소는 자동 제외됩니다.");
       } catch { setToast("지원하지 않거나 손상된 JSON 파일입니다."); }
@@ -3493,7 +3818,7 @@ export default function Home() {
     download("제주원도심_골목검토메모.csv", `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`, "text/csv;charset=utf-8");
   };
 
-  const stageMapClass = viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
+  const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
   const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
 
@@ -3512,7 +3837,7 @@ export default function Home() {
           <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
           <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(0.72); setPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
-        <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
+        <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={() => { const next = !printPreviewMode; setPrintPreviewMode(next); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); if (next) { setViewMode("all"); setZoom(0.72); setPan({ x: 0, y: 0 }); } }}>{printPreviewMode ? "편집 화면" : "출력 미리보기"}</button><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
         <div className="toolbar-group muted-actions"><button onClick={exportJson}>JSON ↓</button><button onClick={() => jsonInputRef.current?.click()}>JSON ↑</button><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
       </header>
 
@@ -3534,12 +3859,14 @@ export default function Home() {
             <div className="view-toggle-list">
               <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
               <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
-              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>고정 라벨도 묶어 표시 · 지도에서 통합 라벨을 직접 드래그</small></span></label>
+              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>한 묶음 최대 4곳 · 장소명 행마다 자기 마커와 연결</small></span></label>
             </div>
             {selectedDenseLabel && <div className={`dense-label-control ${selectedDenseLabel.hasCollision ? "collision" : ""}`}>
               <span><b>선택 라벨 · {selectedDenseLabel.names.length}곳</b><small>{selectedDenseLabel.manuallyPositioned ? "직접 지정한 위치를 화면·출력에 적용" : "겹침을 피한 자동 위치"}{selectedDenseLabel.hasCollision ? " · 겹침 확인 필요" : ""}</small></span>
               <button type="button" disabled={!selectedDenseLabel.manuallyPositioned} onClick={() => { pushHistory(); resetDenseLabelPosition(selectedDenseLabel.id); setToast("통합 라벨을 자동 위치로 되돌렸습니다."); }}>자동 위치</button>
+              <div className="dense-label-member-list">{selectedDenseLabel.rows.map((row) => <div key={row.elementId}><i style={{ background: categoryOf(row.category).color }} /><b>{row.name}</b><button type="button" onClick={() => setDenseLabelEligibility(row.elementId, false, selectedDenseLabel.id)}>개별 분리</button></div>)}</div>
             </div>}
+            {!!detachedDenseLabelElements.length && <div className="dense-label-detached-list"><div><strong>개별 표시 중</strong><span>{detachedDenseLabelElements.length}곳</span></div>{detachedDenseLabelElements.map((element) => <div key={element.id}><b>{element.name}</b><button type="button" onClick={() => setDenseLabelEligibility(element.id, true)}>자동 재통합</button></div>)}</div>}
             {denseLabelCollisionCount > 0 && <p className="dense-label-warning">통합 라벨 {denseLabelCollisionCount}개가 이미지 또는 다른 라벨과 겹칩니다. 지도에서 직접 옮긴 뒤 출력해 주세요.</p>}
             <label className="view-detail-select">검수·지도 효과<select value={(["anchors", "clearance", "collisions", "dim", "gray", "nomap"] as ViewMode[]).includes(viewMode) ? viewMode : "all"} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
               <option value="all">효과 없음</option><option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option><option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
@@ -3597,8 +3924,10 @@ export default function Home() {
               <label><input type="checkbox" checked={printMarkers} onChange={(event) => setPrintMarkers(event.target.checked)} />마커</label>
               <label><input type="checkbox" checked={printLabels} onChange={(event) => setPrintLabels(event.target.checked)} />라벨</label>
             </div>
-            <p>장소 탐색 목록의 별표로 추천을 지정하고, 우측 속성에서 마커·라벨을 개별 포함/제외할 수 있습니다. 통합 라벨도 출력 이미지에 그대로 반영됩니다.</p>
-            <div className="print-storage-status">{printSettingsStorage === "persistent" ? "추천 설정 영구 저장" : printSettingsStorage === "loading" ? "추천 설정 확인 중" : "추천 설정 기기 저장"}{!printSettingsCanEdit && <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}</div>
+            <div className="print-preview-actions"><button type="button" className={printPreviewMode ? "active" : ""} onClick={() => { setPrintPreviewMode((current) => !current); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); }}>◉ {printPreviewMode ? "편집 화면으로" : "실제 PNG 구성 미리보기"}</button><button type="button" className={printAudit.issues.length ? "warning" : "pass"} onClick={() => setPrintAuditOpen((current) => !current)}>{printAudit.issues.length ? `출력 점검 ${printAudit.issues.length}건` : "출력 점검 통과"}</button></div>
+            {printAuditOpen && <div className={`print-audit ${printAudit.issues.length ? "warning" : "pass"}`}><div className="print-audit-summary"><strong>{printAudit.issues.length ? "수정 권장 항목" : "출력 준비 완료"}</strong><span>잘림 {printAudit.clippingCount} · 겹침 {printAudit.overlapCount} · 선 교차 {printAudit.crossingCount}</span><small>최소 글자 {printAudit.minimumTextPixels.toFixed(0)}px · {exportWidth.toLocaleString()}px 출력 기준</small></div>{printAudit.issues.length > 0 && <div className="print-audit-list">{printAudit.issues.slice(0, 12).map((issue) => <button type="button" key={issue.id} onClick={() => { setPrintPreviewMode(true); if (issue.elementId) { const element = elementsRef.current.find((item) => item.id === issue.elementId); if (element) { setSelectedId(element.id); focusMapPosition(element.x, element.y, element.id); } } else if (issue.clusterId) setSelectedDenseLabelId(issue.clusterId); }}>{issue.label}</button>)}{printAudit.issues.length > 12 && <p>외 {printAudit.issues.length - 12}건은 위치를 조정하면 함께 다시 계산됩니다.</p>}</div>}</div>}
+            <p>미리보기는 추천·수동 포함/제외·통합 라벨·연결선을 실제 PNG와 같은 규칙으로 표시합니다.</p>
+            <div className="print-storage-status"><span>{printSettingsStorage === "persistent" ? "추천 설정 영구 저장" : printSettingsStorage === "loading" ? "추천 설정 확인 중" : "추천 설정 기기 저장"}<br />통합 라벨 {denseLabelSettingsStorage === "persistent" ? "서버 동기화" : denseLabelSettingsStorage === "loading" ? "동기화 확인 중" : "기기 저장"}</span>{(!printSettingsCanEdit || !denseLabelSettingsCanEdit) && <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}</div>
           </section>
           <div className="category-filter">
             <button className={activeCategory === "all" ? "active" : ""} onClick={() => setActiveCategory("all")}><span className="category-dot all-dot" /> 전체 자산 <em>{elements.length}</em></button>
@@ -3799,33 +4128,36 @@ export default function Home() {
           <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
-              <div className={`map-stage ${stageMapClass} ${calibrationMode ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={handleStagePointerDown}>
+              <div className={`map-stage ${stageMapClass} ${calibrationMode && !printPreviewMode ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={printPreviewMode ? undefined : handleStagePointerDown}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} onLoad={() => setMapLoaded(true)} />
-                {calibrationMode && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
+                {calibrationMode && !printPreviewMode && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
                   {([ [0, 1], [1, 2], [2, 3], [2, 4], [4, 5], [5, 1], [0, 3] ] as Array<[number, number]>).map(([from, to]) => <line key={`${from}-${to}`} x1={calibrationPoints[from].targetX} y1={calibrationPoints[from].targetY} x2={calibrationPoints[to].targetX} y2={calibrationPoints[to].targetY} className="calibration-mesh-line" />)}
                   {showCalibrationSource && calibrationPoints.map((point) => <g key={`source-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-offset-line" /><circle cx={point.sourceX} cy={point.sourceY} r="0.34" className="calibration-source-dot" /></g>)}
                   {secondaryCalibrationPoints.map((point) => <g key={`secondary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-secondary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.45" className="calibration-secondary-dot" /></g>)}
                   {tertiaryCalibrationPoints.map((point) => <g key={`tertiary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-tertiary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.4" className="calibration-tertiary-dot" /></g>)}
                 </svg>}
-                <svg className="connector-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{visibleElements.map((element) => {
+                <svg className="connector-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{!printPreviewMode && visibleElements.map((element) => {
                   const showAnchor = viewMode === "anchors" || element.connectorVisible || selectedId === element.id;
                   if (!showAnchor) return null;
                   const showLine = element.connectorVisible && (Math.abs(element.x - element.anchorX) > 0.05 || Math.abs(element.y - element.anchorY) > 0.05);
                   return <g key={`anchor-${element.id}`} opacity={element.opacity / 100}>{showLine && <line x1={element.anchorX} y1={element.anchorY} x2={element.x} y2={element.y} stroke={element.connectorColor} strokeWidth={element.connectorWidth / 10} vectorEffect="non-scaling-stroke" />}{selectedId !== element.id && <><circle cx={element.anchorX} cy={element.anchorY} r="0.42" fill="white" stroke={element.connectorColor} strokeWidth="0.13" vectorEffect="non-scaling-stroke" /><circle cx={element.anchorX} cy={element.anchorY} r="0.12" fill={element.connectorColor} /></>}</g>;
-                })}{denseLabelClusters.flatMap((cluster) => cluster.elementIds.map((elementId) => {
-                  const element = visibleElementsById.get(elementId);
-                  return element ? <g key={`dense-connector-${cluster.id}-${elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}><line x1={element.x} y1={element.y} x2={cluster.x} y2={cluster.y} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" vectorEffect="non-scaling-stroke" /></g> : null;
+                })}{denseLabelClusters.flatMap((cluster) => cluster.rows.map((row) => {
+                  const element = visibleElementsById.get(row.elementId);
+                  const color = categoryOf(row.category).color;
+                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={row.targetX} y2={row.targetY} stroke="currentColor" vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
-                  const meta = categoryOf(element.category); const isSelected = selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
-                  const isCalibrationReference = calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
+                  const meta = categoryOf(element.category); const isSelected = !printPreviewMode && selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
+                  const showMarker = stageMarkerIds.has(element.id);
+                  const showLabel = stageLabelIds.has(element.id);
+                  const isCalibrationReference = !printPreviewMode && calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${viewMode === "collisions" ? collisionClass : ""} ${viewMode === "labels" ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={(event) => startDrag(event, element)}>
-                    {(viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
-                    <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>
-                    {element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {element.labelVisible && (element.category === "landmark" || markerLabelsVisible) && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
+                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${!printPreviewMode && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${!printPreviewMode && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (!printPreviewMode && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={printPreviewMode ? undefined : (event) => startDrag(event, element)}>
+                    {!printPreviewMode && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
+                    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
+                    {!printPreviewMode && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
+                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -3833,24 +4165,25 @@ export default function Home() {
                   {denseLabelClusters.map((cluster) => <div
                     key={cluster.id}
                     className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
-                    style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, maxWidth: "156px", transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }}
+                    style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }}
                     onPointerDown={(event) => startDenseLabelDrag(event, cluster)}
                     title={`${cluster.names.join(" · ")} · 드래그하여 위치 조절`}
                     role="button"
                     aria-label={`${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong>{cluster.names.slice(0, 4).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 4 && <em>외 {cluster.names.length - 4}곳</em>}</strong></div>)}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong>{cluster.rows.map((row) => <span key={row.elementId}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
                 </div>}
-                {selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
+                {!printPreviewMode && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.72" className="active-anchor-halo" vectorEffect="non-scaling-stroke" />
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.42" fill="white" stroke={selected.connectorColor} strokeWidth="0.16" vectorEffect="non-scaling-stroke" />
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.14" fill={selected.connectorColor} />
                   </g>
                 </svg>}
-                {calibrationMode && <div className="calibration-badge-layer">{calibrationPoints.map((point, index) => <span key={`badge-${point.id}`} className="calibration-map-badge" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>{index + 1}</span>)}{secondaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge secondary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>S</span>)}{tertiaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge tertiary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>3</span>)}</div>}
-                <div className="review-pin-layer">{reviewNotes.map((note, index) => <button key={note.id} className={`review-pin ${note.status} ${selectedNoteId === note.id ? "selected" : ""}`} style={{ left: `${note.x}%`, top: `${note.y}%` }} onPointerDown={(event) => { event.stopPropagation(); setSelectedNoteId(note.id); setSelectedId(null); setRightOpen(true); }} title={`${reviewStatusText[note.status]}: ${note.text || "내용 없음"}`}><span>{index + 1}</span></button>)}</div>
+                {calibrationMode && !printPreviewMode && <div className="calibration-badge-layer">{calibrationPoints.map((point, index) => <span key={`badge-${point.id}`} className="calibration-map-badge" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>{index + 1}</span>)}{secondaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge secondary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>S</span>)}{tertiaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge tertiary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>3</span>)}</div>}
+                {!printPreviewMode && <div className="review-pin-layer">{reviewNotes.map((note, index) => <button key={note.id} className={`review-pin ${note.status} ${selectedNoteId === note.id ? "selected" : ""}`} style={{ left: `${note.x}%`, top: `${note.y}%` }} onPointerDown={(event) => { event.stopPropagation(); setSelectedNoteId(note.id); setSelectedId(null); setRightOpen(true); }} title={`${reviewStatusText[note.status]}: ${note.text || "내용 없음"}`}><span>{index + 1}</span></button>)}</div>}
               </div>
             </div>
+            {printPreviewMode && <div className={`print-preview-badge ${printAudit.issues.length ? "warning" : "pass"}`}><strong>PNG 출력 미리보기</strong><span>{printAudit.issues.length ? `점검 ${printAudit.issues.length}건` : "점검 통과"}</span></div>}
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
@@ -3871,7 +4204,7 @@ export default function Home() {
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : selected.locked ? "좌표 고정됨" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 움직이지 않으며 가까운 미고정 장소의 대략적 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
-            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div><div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">현재 방향과 직접 조정한 지점을 기준으로 가까운 빈자리만 탐색합니다. 랜드마크는 위·아래 기준 위치를 최우선으로 유지하며, 모든 라벨은 다른 이미지·라벨을 피합니다.</p></section>
+            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div>{selected.category !== "landmark" && <label className="dense-label-eligibility"><input type="checkbox" checked={!denseLabelExcludedIds.includes(selected.id)} onChange={(event) => setDenseLabelEligibility(selected.id, event.target.checked)} /><span><b>밀집 시 통합 라벨 사용</b><small>끄면 이 장소명은 항상 자기 마커 옆에 개별 표시됩니다.</small></span></label>}<div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">현재 방향과 직접 조정한 지점을 기준으로 가까운 빈자리만 탐색합니다. 랜드마크는 위·아래 기준 위치를 최우선으로 유지하며, 모든 라벨은 다른 이미지·라벨을 피합니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>

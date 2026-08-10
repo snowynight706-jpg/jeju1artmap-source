@@ -67,7 +67,7 @@ export async function GET() {
         anchor_x AS anchorX, anchor_y AS anchorY, output_x AS x, output_y AS y
        FROM locked_coordinate_settings ORDER BY name`,
     ).all() as Promise<{ results: LockedCoordinateInput[] }>,
-    runtime.DB.prepare("SELECT updated_at AS updatedAt FROM locked_coordinate_revision WHERE id = 1").first<{ updatedAt: string }>(),
+    runtime.DB.prepare("SELECT updated_at AS updatedAt FROM locked_coordinate_revision WHERE id = 1").first() as Promise<{ updatedAt: string } | null>,
   ]);
   return json({
     settings: settingsResult.results.filter(validSetting),

@@ -112,7 +112,7 @@ async function syncBundledDirectory(db: D1Database) {
   await db.prepare(SOURCE_STATE_TABLE_SQL).run();
   const sourceState = await db.prepare(
     "SELECT source_version AS sourceVersion FROM place_directory_source_state WHERE id = 1",
-  ).first<{ sourceVersion: string }>();
+  ).first() as { sourceVersion: string } | null;
   if (sourceState?.sourceVersion === masterDirectorySource.version) return;
 
   const existingResult = await db.prepare(
@@ -165,7 +165,7 @@ export async function GET(request: Request) {
        FROM place_directory ORDER BY name COLLATE NOCASE`,
     ).all() as Promise<{ results: PlaceDirectoryInput[] }>,
     runtime.DB.prepare("SELECT updated_at AS updatedAt FROM place_directory_revision WHERE id = 1")
-      .first<{ updatedAt: string }>(),
+      .first() as Promise<{ updatedAt: string } | null>,
   ]);
   const rows = rowsResult.results.map((row) => ({
     ...row,
@@ -198,7 +198,7 @@ export async function PUT(request: Request) {
   if (names.size !== validRows.length) return json({ error: "duplicate place name" }, 400);
 
   const revision = await runtime.DB.prepare("SELECT updated_at AS updatedAt FROM place_directory_revision WHERE id = 1")
-    .first<{ updatedAt: string }>();
+    .first() as { updatedAt: string } | null;
   const baseUpdatedAt = cleanText((payload as { baseUpdatedAt?: unknown })?.baseUpdatedAt, 80);
   if (revision?.updatedAt && baseUpdatedAt !== revision.updatedAt) {
     return json({ error: "directory changed", updatedAt: revision.updatedAt }, 409);
