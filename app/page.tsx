@@ -249,6 +249,11 @@ type DenseLabelCluster = {
   positionKeys: string[];
 };
 
+type StageDimensions = {
+  width: number;
+  height: number;
+};
+
 type PrintAuditIssue = {
   id: string;
   kind: "clipping" | "overlap" | "crossing" | "text";
@@ -818,6 +823,27 @@ function printSettingKey(target: Pick<MapElement, "directoryId" | "category" | "
 
 function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
   return elements.map((element) => element.id).sort().join("|");
+}
+
+function denseLabelRenderScale(zoom: number, stageDimensions: StageDimensions) {
+  const inverseZoom = 1 / Math.max(zoom, 0.22);
+  return {
+    x: EXPORT_CANONICAL_WIDTH / Math.max(stageDimensions.width, 1) * inverseZoom,
+    y: (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) / Math.max(stageDimensions.height, 1) * inverseZoom,
+  };
+}
+
+function denseLabelScreenTarget(
+  cluster: Pick<DenseLabelCluster, "x" | "y">,
+  row: Pick<DenseLabelRow, "targetX" | "targetY">,
+  zoom: number,
+  stageDimensions: StageDimensions,
+) {
+  const scale = denseLabelRenderScale(zoom, stageDimensions);
+  return {
+    x: cluster.x + (row.targetX - cluster.x) * scale.x,
+    y: cluster.y + (row.targetY - cluster.y) * scale.y,
+  };
 }
 
 function partitionDenseGroup(group: MapElement[], maximumItems = 18) {
@@ -1411,6 +1437,10 @@ export default function Home() {
   const [layoutName, setLayoutName] = useState("최근 자동복구");
   const [toast, setToast] = useState("");
   const [zoom, setZoom] = useState(0.72);
+  const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
+    width: EXPORT_CANONICAL_WIDTH,
+    height: EXPORT_CANONICAL_WIDTH / MAP_ASPECT,
+  });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [baseMap, setBaseMap] = useState<BaseMapMode>("svg");
   const [uploadedBaseMap, setUploadedBaseMap] = useState<UploadedBaseMap | null>(null);
@@ -2636,6 +2666,29 @@ export default function Home() {
   }, [baseMap]);
 
   useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const measure = () => {
+      const width = stage.offsetWidth;
+      const height = stage.offsetHeight;
+      if (width <= 0 || height <= 0) return;
+      setStageDimensions((current) => (
+        Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5
+          ? current
+          : { width, height }
+      ));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
+  useEffect(() => {
     calibrationLiveApplyRef.current = calibrationLiveApply;
   }, [calibrationLiveApply]);
 
@@ -2841,6 +2894,7 @@ export default function Home() {
     setSelectedNoteId(null);
     setSelectedDenseLabelId(cluster.id);
     pushHistory();
+    const renderScale = denseLabelRenderScale(zoom, stageDimensions);
     setInteraction({
       type: "dense-label",
       key: cluster.id,
@@ -2849,8 +2903,8 @@ export default function Home() {
       startY: event.clientY,
       x: cluster.x,
       y: cluster.y,
-      halfWidth: cluster.width / 2,
-      halfHeight: cluster.height / 2,
+      halfWidth: cluster.width / 2 * renderScale.x,
+      halfHeight: cluster.height / 2 * renderScale.y,
     });
   };
 
@@ -4218,7 +4272,8 @@ export default function Home() {
                 })}{denseLabelClusters.flatMap((cluster) => cluster.rows.map((row) => {
                   const element = visibleElementsById.get(row.elementId);
                   const color = categoryOf(row.category).color;
-                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={row.targetX} y2={row.targetY} stroke="currentColor" vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
+                  const target = denseLabelScreenTarget(cluster, row, zoom, stageDimensions);
+                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
                   const meta = categoryOf(element.category); const isSelected = !printPreviewMode && selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
