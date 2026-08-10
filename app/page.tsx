@@ -875,14 +875,60 @@ function persistentVisitorId() {
 
 type VisualBounds = { left: number; top: number; right: number; bottom: number };
 
-function labelStyle(position: LabelPosition, gap: number, offsetX: number, offsetY: number, zoom: number, bounds: VisualBounds = { left: 0, top: 0, right: 1, bottom: 1 }) {
+function smoothstep(edge0: number, edge1: number, value: number) {
+  const progress = clamp((value - edge0) / Math.max(edge1 - edge0, 0.0001), 0, 1);
+  return progress * progress * (3 - 2 * progress);
+}
+
+function labelAnchor(position: LabelPosition, bounds: VisualBounds) {
   const centerX = ((bounds.left + bounds.right) / 2) * 100;
   const centerY = ((bounds.top + bounds.bottom) / 2) * 100;
+  if (position === "top") return { x: centerX, y: bounds.top * 100, translateX: -50, translateY: -100 };
+  if (position === "bottom") return { x: centerX, y: bounds.bottom * 100, translateX: -50, translateY: 0 };
+  if (position === "left") return { x: bounds.left * 100, y: centerY, translateX: -100, translateY: -50 };
+  return { x: bounds.right * 100, y: centerY, translateX: 0, translateY: -50 };
+}
+
+function detailedLabelPosition(position: LabelPosition, offsetY: number): LabelPosition {
+  if (position === "top" || position === "bottom") return position;
+  return offsetY < -10 ? "top" : "bottom";
+}
+
+function labelStyle(
+  position: LabelPosition,
+  gap: number,
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+  fitZoom: number,
+  bounds: VisualBounds = { left: 0, top: 0, right: 1, bottom: 1 },
+  adaptive = true,
+) {
+  const safeZoom = Math.max(zoom, 0.22);
   const crispScale = `scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})`;
-  if (position === "top") return { left: `calc(${centerX}% + ${offsetX}px)`, bottom: `calc(${(1 - bounds.top) * 100}% + ${gap - offsetY}px)`, transform: `translateX(-50%) ${crispScale}` };
-  if (position === "bottom") return { left: `calc(${centerX}% + ${offsetX}px)`, top: `calc(${bounds.bottom * 100}% + ${gap + offsetY}px)`, transform: `translateX(-50%) ${crispScale}` };
-  if (position === "left") return { right: `calc(${(1 - bounds.left) * 100}% + ${gap - offsetX}px)`, top: `calc(${centerY}% + ${offsetY}px)`, transform: `translateY(-50%) ${crispScale}` };
-  return { left: `calc(${bounds.right * 100}% + ${gap + offsetX}px)`, top: `calc(${centerY}% + ${offsetY}px)`, transform: `translateY(-50%) ${crispScale}` };
+  const safeFitZoom = Math.max(fitZoom, 0.22);
+  const detailRatio = safeZoom / safeFitZoom;
+  const detailProgress = adaptive ? smoothstep(1.35, 2.65, detailRatio) : 0;
+  const screenDistanceScale = adaptive ? safeFitZoom / safeZoom : 1;
+  const start = labelAnchor(position, bounds);
+  const endPosition = detailedLabelPosition(position, offsetY);
+  const end = labelAnchor(endPosition, bounds);
+  const startGapX = position === "left" ? -gap : position === "right" ? gap : 0;
+  const startGapY = position === "top" ? -gap : position === "bottom" ? gap : 0;
+  const endGap = clamp(gap, 2, 10);
+  const endGapY = endPosition === "top" ? -endGap : endGap;
+  const mix = (from: number, to: number) => from + (to - from) * detailProgress;
+  const anchorX = mix(start.x, end.x);
+  const anchorY = mix(start.y, end.y);
+  const pixelX = mix(offsetX + startGapX, 0) * screenDistanceScale;
+  const pixelY = mix(offsetY + startGapY, endGapY) * screenDistanceScale;
+  const translateX = mix(start.translateX, end.translateX);
+  const translateY = mix(start.translateY, end.translateY);
+  return {
+    left: `calc(${anchorX.toFixed(4)}% + ${pixelX.toFixed(3)}px)`,
+    top: `calc(${anchorY.toFixed(4)}% + ${pixelY.toFixed(3)}px)`,
+    transform: `translate(${translateX.toFixed(3)}%, ${translateY.toFixed(3)}%) ${crispScale}`,
+  };
 }
 
 function loadImage(src: string) {
@@ -1569,6 +1615,8 @@ export default function Home() {
   const localLockedCoordinatesUpdatedAtRef = useRef(0);
   const localDenseLabelsUpdatedAtRef = useRef(0);
   const localPlacementUpdatedAtRef = useRef(0);
+  const fitZoomRef = useRef(0.72);
+  const fitZoomAppliedRef = useRef(false);
   const placeDirectoryLoadedRef = useRef(false);
   const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
   const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
@@ -1596,6 +1644,7 @@ export default function Home() {
     width: EXPORT_CANONICAL_WIDTH,
     height: EXPORT_CANONICAL_WIDTH / MAP_ASPECT,
   });
+  const [viewportDimensions, setViewportDimensions] = useState<StageDimensions>({ width: 0, height: 0 });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [baseMap, setBaseMap] = useState<BaseMapMode>("svg");
   const [uploadedBaseMap, setUploadedBaseMap] = useState<UploadedBaseMap | null>(null);
@@ -1624,6 +1673,7 @@ export default function Home() {
   const [denseLabelSettingsCanEdit, setDenseLabelSettingsCanEdit] = useState(false);
   const [denseLabelSettingsStorage, setDenseLabelSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [denseLabelSettingsRemoteReady, setDenseLabelSettingsRemoteReady] = useState(false);
+  const [forceIndividualLabels, setForceIndividualLabels] = useState(false);
   const [placementSettingsRemoteReady, setPlacementSettingsRemoteReady] = useState(false);
   const [publicLayoutAccess, setPublicLayoutAccess] = useState<PublicLayoutAccess>("loading");
   const [publicLayoutPublishedAt, setPublicLayoutPublishedAt] = useState<string | null>(null);
@@ -2253,6 +2303,17 @@ export default function Home() {
     () => elements.filter((element) => element.mapVisible && element.labelVisible).length,
     [elements],
   );
+  const fitZoom = useMemo(() => {
+    if (viewportDimensions.width <= 0 || viewportDimensions.height <= 0) return 0.72;
+    const compactViewport = viewportDimensions.width <= 760;
+    const horizontalPadding = compactViewport ? 18 : 34;
+    const verticalPadding = compactViewport ? 24 : 34;
+    return clamp(Math.min(
+      (viewportDimensions.width - horizontalPadding) / Math.max(stageDimensions.width, 1),
+      (viewportDimensions.height - verticalPadding) / Math.max(stageDimensions.height, 1),
+    ), 0.22, 1.12);
+  }, [stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
+  const labelDetailRatio = zoom / Math.max(fitZoom, 0.22);
 
   const printSettingsByKey = useMemo(() => new Map(printSettings.map((setting) => [setting.key, setting])), [printSettings]);
   const directoryPriorityById = useMemo(() => new Map(directoryPlaces.map((place) => [place.id, place.priority ?? ""])), [directoryPlaces]);
@@ -2299,15 +2360,15 @@ export default function Home() {
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
   const visibleElementsById = useMemo(() => new Map(visibleElements.map((element) => [element.id, element])), [visibleElements]);
 
-  const denseLabelClusters = useMemo(() => mergeDenseLabels
+  const denseLabelClusters = useMemo(() => mergeDenseLabels && (printPreviewMode || !forceIndividualLabels)
     ? buildDenseLabelClusters(
         stageLabelElements,
         stageMarkerElements,
         denseLabelPositions,
         denseLabelExcludedIds,
-        printPreviewMode ? 1 : 1 / Math.max(zoom, 0.22),
+        printPreviewMode ? 1 : fitZoom / Math.max(zoom, 0.22),
       )
-    : [], [denseLabelExcludedIds, denseLabelPositions, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements, zoom]);
+    : [], [denseLabelExcludedIds, denseLabelPositions, fitZoom, forceIndividualLabels, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements, zoom]);
   const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
   const selectedDenseLabel = useMemo(
     () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
@@ -3111,26 +3172,58 @@ export default function Home() {
 
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage) return;
+    const viewport = viewportRef.current;
+    if (!stage || !viewport) return;
     const measure = () => {
       const width = stage.offsetWidth;
       const height = stage.offsetHeight;
-      if (width <= 0 || height <= 0) return;
-      setStageDimensions((current) => (
-        Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5
-          ? current
-          : { width, height }
-      ));
+      const viewportWidth = viewport.clientWidth;
+      const viewportHeight = viewport.clientHeight;
+      if (width > 0 && height > 0) {
+        setStageDimensions((current) => (
+          Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5
+            ? current
+            : { width, height }
+        ));
+      }
+      if (viewportWidth > 0 && viewportHeight > 0) {
+        setViewportDimensions((current) => (
+          Math.abs(current.width - viewportWidth) < 0.5 && Math.abs(current.height - viewportHeight) < 0.5
+            ? current
+            : { width: viewportWidth, height: viewportHeight }
+        ));
+      }
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(stage);
+    observer.observe(viewport);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, []);
+  }, [publicLayoutAccess]);
+
+  useEffect(() => {
+    if (viewportDimensions.width <= 0 || viewportDimensions.height <= 0) return;
+    const previousFitZoom = fitZoomRef.current;
+    const wasAtFit = Math.abs(zoom - previousFitZoom) <= 0.018;
+    fitZoomRef.current = fitZoom;
+    if (!fitZoomAppliedRef.current || wasAtFit) {
+      fitZoomAppliedRef.current = true;
+      setZoom(fitZoom);
+      setPan({ x: 0, y: 0 });
+    }
+  }, [fitZoom, viewportDimensions.height, viewportDimensions.width, zoom]);
+
+  useEffect(() => {
+    if (printPreviewMode) return;
+    const timer = window.setTimeout(() => {
+      setForceIndividualLabels((current) => current ? labelDetailRatio >= 2.45 : labelDetailRatio >= 2.7);
+    }, 90);
+    return () => window.clearTimeout(timer);
+  }, [labelDetailRatio, printPreviewMode]);
 
   useEffect(() => {
     calibrationLiveApplyRef.current = calibrationLiveApply;
@@ -3158,8 +3251,8 @@ export default function Home() {
       }
       if (interaction.type === "label") {
         updateElement(interaction.id, {
-          labelOffsetX: clamp(interaction.offsetX + (event.clientX - interaction.startX) / zoom, -240, 240),
-          labelOffsetY: clamp(interaction.offsetY + (event.clientY - interaction.startY) / zoom, -240, 240),
+          labelOffsetX: clamp(interaction.offsetX + (event.clientX - interaction.startX) / Math.max(fitZoom, 0.22), -240, 240),
+          labelOffsetY: clamp(interaction.offsetY + (event.clientY - interaction.startY) / Math.max(fitZoom, 0.22), -240, 240),
         }, false);
         return;
       }
@@ -3221,7 +3314,7 @@ export default function Home() {
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleCancel);
     };
-  }, [interaction, updateCalibrationPoint, updateDenseLabelPosition, updateElement, zoom]);
+  }, [fitZoom, interaction, updateCalibrationPoint, updateDenseLabelPosition, updateElement, zoom]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -4652,14 +4745,14 @@ export default function Home() {
         </div>
         <div className="toolbar-group zoom-tools">
           <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
-          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(0.72); setPan({ x: 0, y: 0 }); }}>맞춤</button>
+          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
-        <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={() => { const next = !printPreviewMode; setPrintPreviewMode(next); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); if (next) { setViewMode("all"); setZoom(0.72); setPan({ x: 0, y: 0 }); } }}>{printPreviewMode ? "편집 화면" : "출력 미리보기"}</button><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
+        <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={() => { const next = !printPreviewMode; setPrintPreviewMode(next); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); if (next) { setViewMode("all"); setZoom(fitZoom); setPan({ x: 0, y: 0 }); } }}>{printPreviewMode ? "편집 화면" : "출력 미리보기"}</button><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button><button disabled={!publicLayoutPublishedAt || publicLayoutPublishing} onClick={loadPublishedLayoutIntoDraft}>공개본 불러오기</button><button disabled={!publicLayoutHasPrevious || publicLayoutPublishing} onClick={() => void restorePreviousPublicLayout()}>이전 공개본</button></div>
         <div className="toolbar-group muted-actions"><button onClick={exportJson}>JSON ↓</button><button onClick={() => jsonInputRef.current?.click()}>JSON ↑</button><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
-        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(0.72); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
+        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <a className="owner-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>
       </header>}
@@ -4951,7 +5044,7 @@ export default function Home() {
           <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
-              <div className={`map-stage ${stageMapClass} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
+              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} onLoad={() => setMapLoaded(true)} />
                 {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
@@ -4982,7 +5075,7 @@ export default function Home() {
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}>{element.name}</div>}
+                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -5060,7 +5153,7 @@ export default function Home() {
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : selected.locked ? "좌표 고정됨" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 움직이지 않으며 가까운 미고정 장소의 대략적 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
-            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div>{selected.category !== "landmark" && <label className="dense-label-eligibility"><input type="checkbox" checked={!denseLabelExcludedIds.includes(selected.id)} onChange={(event) => setDenseLabelEligibility(selected.id, event.target.checked)} /><span><b>밀집 시 통합 라벨 사용</b><small>끄면 이 장소명은 항상 자기 마커 옆에 개별 표시됩니다.</small></span></label>}<div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">현재 방향과 직접 조정한 지점을 기준으로 가까운 빈자리만 탐색합니다. 랜드마크는 위·아래 기준 위치를 최우선으로 유지하며, 모든 라벨은 다른 이미지·라벨을 피합니다.</p></section>
+            <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div>{selected.category !== "landmark" && <label className="dense-label-eligibility"><input type="checkbox" checked={!denseLabelExcludedIds.includes(selected.id)} onChange={(event) => setDenseLabelEligibility(selected.id, event.target.checked)} /><span><b>밀집 시 통합 라벨 사용</b><small>끄면 이 장소명은 항상 자기 마커 옆에 개별 표시됩니다.</small></span></label>}<div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">맞춤 화면에서 정한 위치를 기준으로 하며, 확대할수록 화면상 간격을 유지하면서 마커의 중앙 하단 또는 상단으로 자동 정렬됩니다. 전체 라벨 새로고침은 저장 기준 위치만 정리합니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>}
