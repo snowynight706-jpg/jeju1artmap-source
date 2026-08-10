@@ -2,6 +2,7 @@ export const runtime = "edge";
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const MAX_STORIES_PER_PLACE = 80;
+const GLOBAL_PAGE_SIZE = 10;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_COUNT = 3;
 
@@ -60,6 +61,7 @@ async function ensureStorage(db: D1Database) {
     db.prepare(TABLE_SQL),
     db.prepare("CREATE INDEX IF NOT EXISTS place_stories_place_status_created_idx ON place_stories (place_key, status, created_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS place_stories_actor_created_idx ON place_stories (actor_hash, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS place_stories_status_created_idx ON place_stories (status, created_at)"),
   ]);
 }
 
@@ -125,9 +127,37 @@ export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canModerate } = ownerAccess(request, runtime);
   if (!runtime.DB) return json({ stories: [], canModerate, persistent: false }, 503);
-  const placeKey = new URL(request.url).searchParams.get("placeKey")?.trim() ?? "";
-  if (!validPlaceKey(placeKey)) return json({ error: "valid place key required" }, 400);
+  const searchParams = new URL(request.url).searchParams;
+  const scope = searchParams.get("scope")?.trim();
+  const placeKey = searchParams.get("placeKey")?.trim() ?? "";
   await ensureStorage(runtime.DB);
+  if (scope === "all") {
+    const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
+    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const countRow = await runtime.DB.prepare(
+      "SELECT COUNT(*) AS count FROM place_stories WHERE status = 'published'",
+    ).first() as { count?: number } | null;
+    const total = Number(countRow?.count ?? 0);
+    const pageCount = Math.ceil(total / GLOBAL_PAGE_SIZE);
+    const normalizedPage = pageCount > 0 ? Math.min(page, pageCount) : 1;
+    const result = await runtime.DB.prepare(
+      `SELECT id, place_key AS placeKey, place_name AS placeName, author_name AS authorName,
+        review_text AS reviewText, photo_key AS photoKey, photo_content_type AS photoContentType,
+        status, created_at AS createdAt, updated_at AS updatedAt
+       FROM place_stories WHERE status = 'published'
+       ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+    ).bind(GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all() as { results?: StoryRow[] };
+    return json({
+      stories: (result.results ?? []).map(publicStory),
+      canModerate,
+      persistent: true,
+      page: normalizedPage,
+      pageSize: GLOBAL_PAGE_SIZE,
+      pageCount,
+      total,
+    });
+  }
+  if (!validPlaceKey(placeKey)) return json({ error: "valid place key required" }, 400);
   const query = canModerate
     ? `SELECT id, place_key AS placeKey, place_name AS placeName, author_name AS authorName,
         review_text AS reviewText, photo_key AS photoKey, photo_content_type AS photoContentType,

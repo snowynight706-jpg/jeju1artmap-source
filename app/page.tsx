@@ -332,6 +332,10 @@ type PlaceStoriesPayload = {
   story?: PlaceStory;
   canModerate?: boolean;
   persistent?: boolean;
+  page?: number;
+  pageSize?: number;
+  pageCount?: number;
+  total?: number;
   error?: string;
 };
 
@@ -848,6 +852,17 @@ function placeContentKey(element: Pick<MapElement, "id" | "directoryId">) {
 function storyDateLabel(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "날짜 미상" : date.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function storyDateTimeLabel(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "날짜 미상" : date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function persistentVisitorId() {
@@ -1618,6 +1633,14 @@ export default function Home() {
   const [placeStories, setPlaceStories] = useState<PlaceStory[]>([]);
   const [placeStoriesLoading, setPlaceStoriesLoading] = useState(false);
   const [placeStoriesCanModerate, setPlaceStoriesCanModerate] = useState(false);
+  const [globalStoriesOpen, setGlobalStoriesOpen] = useState(false);
+  const [globalStories, setGlobalStories] = useState<PlaceStory[]>([]);
+  const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
+  const [globalStoriesPageCount, setGlobalStoriesPageCount] = useState(0);
+  const [globalStoriesTotal, setGlobalStoriesTotal] = useState(0);
+  const [globalStoriesLoading, setGlobalStoriesLoading] = useState(false);
+  const [globalStoriesError, setGlobalStoriesError] = useState(false);
+  const [globalStoriesRefreshKey, setGlobalStoriesRefreshKey] = useState(0);
   const [placeStoryFormOpen, setPlaceStoryFormOpen] = useState(false);
   const [placeStoryAuthor, setPlaceStoryAuthor] = useState("");
   const [placeStoryText, setPlaceStoryText] = useState("");
@@ -2371,6 +2394,40 @@ export default function Home() {
         });
     });
   }, [publicLayoutAccess, selectedStoryKey, updatePlaceStoryPhoto]);
+
+  useEffect(() => {
+    if (publicLayoutAccess !== "viewer" || !globalStoriesOpen) return;
+    const controller = new AbortController();
+    void Promise.resolve().then(() => {
+      if (controller.signal.aborted) return null;
+      setGlobalStoriesLoading(true);
+      setGlobalStoriesError(false);
+      return fetch(`${PLACE_STORIES_API}?scope=all&page=${globalStoriesPage}`, { cache: "no-store", signal: controller.signal });
+    })
+      .then(async (response) => {
+        if (!response) return null;
+        const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
+        if (!response.ok) throw new Error(payload?.error ?? "global story load failed");
+        return payload;
+      })
+      .then((payload) => {
+        if (controller.signal.aborted || !payload) return;
+        setGlobalStories(Array.isArray(payload?.stories) ? payload.stories : []);
+        setGlobalStoriesTotal(Math.max(0, Number(payload?.total ?? 0)));
+        setGlobalStoriesPageCount(Math.max(0, Number(payload?.pageCount ?? 0)));
+        const normalizedPage = Math.max(1, Number(payload?.page ?? globalStoriesPage));
+        if (normalizedPage !== globalStoriesPage) setGlobalStoriesPage(normalizedPage);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+        setGlobalStories([]);
+        setGlobalStoriesError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setGlobalStoriesLoading(false);
+      });
+    return () => controller.abort();
+  }, [globalStoriesOpen, globalStoriesPage, globalStoriesRefreshKey, publicLayoutAccess]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4479,6 +4536,8 @@ export default function Home() {
         throw new Error(payload?.error ?? "story-submit-failed");
       }
       setPlaceStories((current) => [payload.story!, ...current]);
+      setGlobalStoriesPage(1);
+      setGlobalStoriesRefreshKey((current) => current + 1);
       setPlaceStoryText("");
       updatePlaceStoryPhoto(null);
       setPlaceStoryFormOpen(false);
@@ -4507,6 +4566,7 @@ export default function Home() {
       return;
     }
     setPlaceStories((current) => current.map((item) => item.id === story.id ? { ...item, status } : item));
+    setGlobalStoriesRefreshKey((current) => current + 1);
     setToast(status === "hidden" ? "후기를 공개 목록에서 숨겼습니다." : "후기를 다시 공개했습니다.");
   };
 
@@ -4518,7 +4578,34 @@ export default function Home() {
       return;
     }
     setPlaceStories((current) => current.filter((item) => item.id !== story.id));
+    setGlobalStoriesRefreshKey((current) => current + 1);
     setToast("사진과 후기를 삭제했습니다.");
+  };
+
+  const toggleGlobalStories = () => {
+    const next = !globalStoriesOpen;
+    if (next) {
+      setGlobalStoriesPage(1);
+      setSelectedId(null);
+      setSelectedDenseLabelId(null);
+    }
+    setGlobalStoriesOpen(next);
+  };
+
+  const openGlobalStoryPlace = (story: PlaceStory) => {
+    const element = elements.find((item) => (
+      placeContentKey(item) === story.placeKey
+      || normalizePlaceName(item.name) === normalizePlaceName(story.placeName)
+    ));
+    if (!element) {
+      setToast("현재 공개 지도에서 이 장소의 마커를 찾지 못했습니다.");
+      return;
+    }
+    setGlobalStoriesOpen(false);
+    setSelectedId(element.id);
+    setSelectedNoteId(null);
+    setSelectedDenseLabelId(null);
+    focusMapPosition(element.x, element.y, element.id);
   };
 
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
@@ -4956,6 +5043,43 @@ export default function Home() {
           </div>}
         </aside>}
       </section>
+      {publicLayoutAccess === "viewer" && <>
+        <button
+          type="button"
+          className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`}
+          onClick={toggleGlobalStories}
+          aria-expanded={globalStoriesOpen}
+          aria-controls="global-story-panel"
+        >
+          <span aria-hidden="true">☰</span>
+          <strong>{globalStoriesOpen ? "리뷰 닫기" : "최신 리뷰"}</strong>
+          {globalStoriesTotal > 0 && <em>{globalStoriesTotal}</em>}
+        </button>
+        {globalStoriesOpen && <aside id="global-story-panel" className="global-story-panel" aria-label="전체 장소 최신 리뷰">
+          <header className="global-story-panel-head">
+            <div><strong>원도심 최신 리뷰</strong><span>전체 장소 · 최신순 · {globalStoriesTotal}개</span></div>
+            <button type="button" onClick={() => setGlobalStoriesOpen(false)} aria-label="최신 리뷰 닫기">×</button>
+          </header>
+          <div className="global-story-panel-scroll" aria-live="polite">
+            {globalStoriesLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>최신 리뷰를 불러오는 중입니다.</strong></div>
+              : globalStoriesError ? <div className="global-story-state error"><strong>리뷰를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalStoriesRefreshKey((current) => current + 1)}>다시 시도</button></div>
+                : globalStories.length ? <div className="global-story-list">{globalStories.map((story) => <article className={`global-story-card ${story.photoUrl ? "has-photo" : ""}`} key={story.id}>
+                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.placeName}에 등록된 사진`} loading="lazy" />}
+                  <div>
+                    <button type="button" className="global-story-place-link" onClick={() => openGlobalStoryPlace(story)}>{story.placeName}<span>지도에서 보기</span></button>
+                    <div className="global-story-meta"><strong>{story.authorName}</strong><time dateTime={story.createdAt}>{storyDateTimeLabel(story.createdAt)}</time></div>
+                    <p>{story.reviewText}</p>
+                  </div>
+                </article>)}</div>
+                  : <div className="global-story-state"><strong>아직 공개된 리뷰가 없습니다.</strong><span>장소 마커를 눌러 첫 기록을 남겨보세요.</span></div>}
+          </div>
+          {globalStoriesPageCount > 1 && <footer className="global-story-pagination" aria-label="최신 리뷰 페이지 이동">
+            <button type="button" disabled={globalStoriesPage <= 1 || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.max(1, page - 1))}>이전</button>
+            <span><b>{globalStoriesPage}</b> / {globalStoriesPageCount}</span>
+            <button type="button" disabled={globalStoriesPage >= globalStoriesPageCount || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.min(globalStoriesPageCount, page + 1))}>다음</button>
+          </footer>}
+        </aside>}
+      </>}
       {databaseEditorOpen && <div className="database-editor-backdrop" role="presentation">
         <section className="database-editor" role="dialog" aria-modal="true" aria-labelledby="database-editor-title">
           <header className="database-editor-header">

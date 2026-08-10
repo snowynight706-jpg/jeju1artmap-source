@@ -1,0 +1,1 @@
+CREATE INDEX `place_stories_status_created_idx` ON `place_stories` (`status`,`created_at`);

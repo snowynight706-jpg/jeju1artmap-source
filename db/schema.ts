@@ -121,4 +121,5 @@ export const placeStories = sqliteTable("place_stories", {
 }, (table) => [
   index("place_stories_place_status_created_idx").on(table.placeKey, table.status, table.createdAt),
   index("place_stories_actor_created_idx").on(table.actorHash, table.createdAt),
+  index("place_stories_status_created_idx").on(table.status, table.createdAt),
 ]);
