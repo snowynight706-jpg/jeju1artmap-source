@@ -58,6 +58,8 @@ const EVENT_PLACES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_event_places (
   PRIMARY KEY (event_id, place_key)
 )`;
 
+let storageReady: Promise<void> | null = null;
+
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
   return workers.env as unknown as RuntimeEnv;
@@ -73,15 +75,21 @@ function ownerAccess(request: Request, runtime: RuntimeEnv) {
 }
 
 async function ensureStorage(db: D1Database) {
-  await db.batch([
-    db.prepare(EVENTS_TABLE_SQL),
-    db.prepare(EVENT_PLACES_TABLE_SQL),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_events_place_status_visibility_idx ON place_events (place_key, status, visible_from, visible_until)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_events_status_visibility_created_idx ON place_events (status, visible_from, visible_until, created_at)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_event_places_place_event_idx ON place_event_places (place_key, event_id)"),
-    db.prepare(`INSERT OR IGNORE INTO place_event_places (event_id, place_key, place_name, position)
-      SELECT id, place_key, place_name, 0 FROM place_events`),
-  ]);
+  if (!storageReady) {
+    storageReady = db.batch([
+      db.prepare(EVENTS_TABLE_SQL),
+      db.prepare(EVENT_PLACES_TABLE_SQL),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_events_place_status_visibility_idx ON place_events (place_key, status, visible_from, visible_until)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_events_status_visibility_created_idx ON place_events (status, visible_from, visible_until, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_event_places_place_event_idx ON place_event_places (place_key, event_id)"),
+      db.prepare(`INSERT OR IGNORE INTO place_event_places (event_id, place_key, place_name, position)
+        SELECT id, place_key, place_name, 0 FROM place_events`),
+    ]).then(() => undefined).catch((error) => {
+      storageReady = null;
+      throw error;
+    });
+  }
+  await storageReady;
 }
 
 function cleanText(value: FormDataEntryValue | null, maximum: number) {

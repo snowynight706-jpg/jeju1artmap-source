@@ -42,6 +42,8 @@ const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_stories (
   moderated_by TEXT
 )`;
 
+let storageReady: Promise<void> | null = null;
+
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
   return workers.env as unknown as RuntimeEnv;
@@ -57,12 +59,18 @@ function ownerAccess(request: Request, runtime: RuntimeEnv) {
 }
 
 async function ensureStorage(db: D1Database) {
-  await db.batch([
-    db.prepare(TABLE_SQL),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_stories_place_status_created_idx ON place_stories (place_key, status, created_at)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_stories_actor_created_idx ON place_stories (actor_hash, created_at)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_stories_status_created_idx ON place_stories (status, created_at)"),
-  ]);
+  if (!storageReady) {
+    storageReady = db.batch([
+      db.prepare(TABLE_SQL),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_stories_place_status_created_idx ON place_stories (place_key, status, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_stories_actor_created_idx ON place_stories (actor_hash, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_stories_status_created_idx ON place_stories (status, created_at)"),
+    ]).then(() => undefined).catch((error) => {
+      storageReady = null;
+      throw error;
+    });
+  }
+  await storageReady;
 }
 
 function cleanText(value: FormDataEntryValue | null, maximum: number) {

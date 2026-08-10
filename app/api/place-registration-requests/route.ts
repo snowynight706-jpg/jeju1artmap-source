@@ -65,6 +65,8 @@ const REQUEST_SELECT = `SELECT id,
   reviewed_at AS reviewedAt
  FROM place_registration_requests`;
 
+let storageReady: Promise<void> | null = null;
+
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
   return workers.env as unknown as RuntimeEnv;
@@ -80,11 +82,17 @@ function ownerAccess(request: Request, runtime: RuntimeEnv) {
 }
 
 async function ensureStorage(db: D1Database) {
-  await db.batch([
-    db.prepare(TABLE_SQL),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_registration_requests_status_created_idx ON place_registration_requests (status, created_at)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS place_registration_requests_actor_created_idx ON place_registration_requests (actor_hash, created_at)"),
-  ]);
+  if (!storageReady) {
+    storageReady = db.batch([
+      db.prepare(TABLE_SQL),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_registration_requests_status_created_idx ON place_registration_requests (status, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_registration_requests_actor_created_idx ON place_registration_requests (actor_hash, created_at)"),
+    ]).then(() => undefined).catch((error) => {
+      storageReady = null;
+      throw error;
+    });
+  }
+  await storageReady;
 }
 
 function cleanText(value: unknown, maximum: number) {

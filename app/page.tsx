@@ -19,7 +19,7 @@ import {
   type BundledMarkerCategory,
   type BundledMarkerStyle,
 } from "./marker-assets";
-import { masterDirectoryRows, type MasterDirectoryRow } from "./master-directory";
+import type { MasterDirectoryRow } from "./master-directory";
 import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places";
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
 
@@ -710,7 +710,9 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
   ];
 }
 
-const defaultDirectoryPlaces = buildDirectoryPlaces(masterDirectoryRows).map((place) => {
+// Keep the public viewer's initial bundle lean. The full master directory is
+// loaded only when an editor needs the bundled database fallback.
+const defaultDirectoryPlaces = buildDirectoryPlaces([]).map((place) => {
   const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, initialCalibrationPoints);
   return mapped ? { ...place, ...mapped } : place;
 });
@@ -742,6 +744,8 @@ function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: Directo
   return records.map((record) => {
     const name = normalizePlaceName(record.name);
     const category = categoryForPlace(name, record.category) as CategoryId;
+    const geocoded = geocodedPlaces[name];
+    const calibrated = calibratedPlaceCoordinates(name, geocoded?.latitude, geocoded?.longitude, initialCalibrationPoints);
     const base = currentById.get(record.id)
       ?? currentByName.get(name)
       ?? defaultById.get(record.id)
@@ -749,9 +753,11 @@ function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: Directo
     const addressChanged = Boolean(base && base.address.trim() !== record.address.trim());
     return {
       ...(base ?? {
-        x: 50,
-        y: 50,
-        coordinateStatus: "unresolved" as const,
+        x: calibrated?.x ?? geocoded?.x ?? 50,
+        y: calibrated?.y ?? geocoded?.y ?? 50,
+        coordinateStatus: geocoded ? "geocoded" as const : "unresolved" as const,
+        latitude: geocoded?.latitude,
+        longitude: geocoded?.longitude,
         sourceLabel: "내부 DB",
       }),
       ...record,
@@ -1713,6 +1719,10 @@ export default function Home() {
   const localPlacementUpdatedAtRef = useRef(0);
   const fitZoomRef = useRef(0.72);
   const fitZoomAppliedRef = useRef(false);
+  const zoomRef = useRef(0.72);
+  const panRef = useRef({ x: 0, y: 0 });
+  const wheelFrameRef = useRef<number | null>(null);
+  const pendingWheelRef = useRef<{ deltaY: number; cursorX: number; cursorY: number } | null>(null);
   const placeDirectoryLoadedRef = useRef(false);
   const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
   const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
@@ -2331,6 +2341,7 @@ export default function Home() {
   const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces), [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions]);
   const secondaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"), [effectiveCalibrationPoints]);
   const tertiaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"), [effectiveCalibrationPoints]);
+  const calibrationReferenceNames = useMemo(() => new Set(effectiveCalibrationPoints.map((point) => point.name)), [effectiveCalibrationPoints]);
   const selectedPrimaryCalibrationPoint = selected ? calibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
   const selectedSecondaryCalibrationPoint = selected ? secondaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
   const selectedTertiaryCalibrationPoint = selected ? tertiaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
@@ -2356,6 +2367,8 @@ export default function Home() {
   }, [assets]);
   const generalMarkerAssets = useMemo(() => assets.filter((asset) => asset.category !== "landmark"), [assets]);
   const customLandmarkAssets = useMemo(() => assets.filter((asset) => asset.category === "landmark" && !asset.placeName), [assets]);
+  const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+  const publishedPlaceStories = useMemo(() => placeStories.filter((story) => story.status === "published"), [placeStories]);
 
   const allUnifiedPlaceRows = useMemo<UnifiedPlaceRow[]>(() => {
     const elementsByDirectoryId = new Map(elements.filter((element) => element.directoryId).map((element) => [element.directoryId!, element]));
@@ -2590,6 +2603,7 @@ export default function Home() {
 
   useEffect(() => {
     const run = ++storyRequestRunRef.current;
+    const controller = new AbortController();
     void Promise.resolve().then(() => {
       if (!selectedStoryKey || publicLayoutAccess === "loading") {
         setPlaceStories([]);
@@ -2601,7 +2615,7 @@ export default function Home() {
       setPlaceStoryFormOpen(false);
       setPlaceStoryText("");
       updatePlaceStoryPhoto(null);
-      return fetch(`${PLACE_STORIES_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store" })
+      return fetch(`${PLACE_STORIES_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store", signal: controller.signal })
         .then(async (response) => {
           const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
           if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "story load failed");
@@ -2612,19 +2626,21 @@ export default function Home() {
           setPlaceStories(Array.isArray(payload?.stories) ? payload.stories : []);
           setPlaceStoriesCanModerate(Boolean(payload?.canModerate));
         })
-        .catch(() => {
-          if (storyRequestRunRef.current !== run) return;
+        .catch((error) => {
+          if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError") || storyRequestRunRef.current !== run) return;
           setPlaceStories([]);
           setPlaceStoriesCanModerate(false);
         })
         .finally(() => {
-          if (storyRequestRunRef.current === run) setPlaceStoriesLoading(false);
+          if (!controller.signal.aborted && storyRequestRunRef.current === run) setPlaceStoriesLoading(false);
         });
     });
+    return () => controller.abort();
   }, [publicLayoutAccess, selectedStoryKey, updatePlaceStoryPhoto]);
 
   useEffect(() => {
     const run = ++eventRequestRunRef.current;
+    const controller = new AbortController();
     void Promise.resolve().then(() => {
       if (!selectedStoryKey || publicLayoutAccess === "loading") {
         setPlaceEvents([]);
@@ -2641,7 +2657,7 @@ export default function Home() {
       setPlaceEventInfo("");
       setPlaceEventExistingPhotoUrl(null);
       updatePlaceEventPhoto(null);
-      return fetch(`${PLACE_EVENTS_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store" })
+      return fetch(`${PLACE_EVENTS_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store", signal: controller.signal })
         .then(async (response) => {
           const payload = await response.json().catch(() => null) as PlaceEventsPayload | null;
           if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "event load failed");
@@ -2652,15 +2668,16 @@ export default function Home() {
           setPlaceEvents(Array.isArray(payload?.events) ? payload.events : []);
           setPlaceEventsCanManage(Boolean(payload?.canManage));
         })
-        .catch(() => {
-          if (eventRequestRunRef.current !== run) return;
+        .catch((error) => {
+          if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError") || eventRequestRunRef.current !== run) return;
           setPlaceEvents([]);
           setPlaceEventsCanManage(false);
         })
         .finally(() => {
-          if (eventRequestRunRef.current === run) setPlaceEventsLoading(false);
+          if (!controller.signal.aborted && eventRequestRunRef.current === run) setPlaceEventsLoading(false);
         });
     });
+    return () => controller.abort();
   }, [placeEventsRefreshKey, publicLayoutAccess, selectedStoryKey, updatePlaceEventPhoto]);
 
   useEffect(() => {
@@ -3003,6 +3020,16 @@ export default function Home() {
             });
             setSaveState("최근 상태 복구됨");
           }
+        } else if (publishedLayoutDocumentRef.current) {
+          setDocument(cloneDocument(publishedLayoutDocumentRef.current));
+          const publishedView = publishedLayoutViewRef.current;
+          if (publishedView) {
+            setBaseMap(publishedView.baseMap);
+            setMarkerLabelsVisible(publishedView.markerLabelsVisible);
+            setMergeDenseLabels(publishedView.mergeDenseLabels);
+            setScreenRecommendedOnly(publishedView.screenRecommendedOnly);
+          }
+          setSaveState("공개 배치본에서 편집 시작");
         } else if (persistentCalibration?.calibrationPoints?.length || persistentDenseLabels || persistentPlacement?.settings?.length) {
           setDocument({
             elements: initialElements,
@@ -3027,7 +3054,7 @@ export default function Home() {
   }, [publicLayoutAccess, setDocument]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     const timer = window.setTimeout(() => {
       try {
         localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(currentDocument()));
@@ -3069,8 +3096,17 @@ export default function Home() {
     if (!hydrated || publicLayoutAccess !== "editor" || placeDirectoryLoadedRef.current) return;
     placeDirectoryLoadedRef.current = true;
     let cancelled = false;
-    const applyBundledDirectory = () => {
-      const bundledRecords = defaultDirectoryPlaces.map(directoryRecordFromPlace);
+    const applyBundledDirectory = async () => {
+      let bundledPlaces = defaultDirectoryPlaces;
+      try {
+        const { masterDirectoryRows } = await import("./master-directory");
+        bundledPlaces = buildDirectoryPlaces(masterDirectoryRows).map((place) => {
+          const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, initialCalibrationPoints);
+          return mapped ? { ...place, ...mapped } : place;
+        });
+      } catch {}
+      if (cancelled) return;
+      const bundledRecords = bundledPlaces.map(directoryRecordFromPlace);
       replaceDirectoryPlaces((current) => mergeDirectoryRecords(bundledRecords, current));
       setPlaceDirectoryStorage("bundled");
     };
@@ -3091,7 +3127,7 @@ export default function Home() {
         setPlaceDirectoryUpdatedAt(payload?.updatedAt ?? null);
         const rows = Array.isArray(payload?.rows) ? payload.rows : [];
         if (!payload?.persistent || !rows.length) {
-          applyBundledDirectory();
+          void applyBundledDirectory();
           return;
         }
         const merged = mergeDirectoryRecords(rows, placesRef.current);
@@ -3115,13 +3151,13 @@ export default function Home() {
         setPlaceDirectoryStorage("persistent");
       })
       .catch(() => {
-        if (!cancelled) applyBundledDirectory();
+        if (!cancelled) void applyBundledDirectory();
       });
     return () => { cancelled = true; };
   }, [hydrated, publicLayoutAccess, replaceDirectoryPlaces, replaceElements]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || (publicLayoutAccess === "viewer" && !screenRecommendedOnly)) return;
     let cancelled = false;
     fetch(PRINT_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => {
@@ -3145,7 +3181,7 @@ export default function Home() {
         if (!cancelled) setPrintSettingsStorage("local");
       });
     return () => { cancelled = true; };
-  }, [hydrated]);
+  }, [hydrated, publicLayoutAccess, screenRecommendedOnly]);
 
   const savePrintSetting = useCallback(async (target: Pick<MapElement, "directoryId" | "category" | "name">, patch: Partial<Pick<PrintPlaceSetting, "recommended" | "markerMode" | "labelMode">>) => {
     if (!printSettingsCanEdit) {
@@ -3506,6 +3542,16 @@ export default function Home() {
   }, [calibrationLiveApply]);
 
   useEffect(() => {
+    zoomRef.current = zoom;
+    panRef.current = pan;
+  }, [pan, zoom]);
+
+  useEffect(() => () => {
+    if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (publicLayoutAccess === "loading" || (publicLayoutAccess === "viewer" && baseMap !== "uploaded")) return;
     let cancelled = false;
     fetch(`${UPLOADED_MAP_API}?meta=1`, { cache: "no-store" })
       .then(async (response) => response.ok ? await response.json() as UploadedBaseMap : null)
@@ -3516,30 +3562,32 @@ export default function Home() {
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, []);
+  }, [baseMap, publicLayoutAccess]);
 
   useEffect(() => {
-    const handleMove = (event: PointerEvent) => {
+    let moveFrame: number | null = null;
+    let pendingMove: { clientX: number; clientY: number } | null = null;
+    const applyMove = ({ clientX, clientY }: { clientX: number; clientY: number }) => {
       if (!interaction) return;
       if (interaction.type === "pan") {
-        setPan({ x: interaction.panX + event.clientX - interaction.startX, y: interaction.panY + event.clientY - interaction.startY });
+        setPan({ x: interaction.panX + clientX - interaction.startX, y: interaction.panY + clientY - interaction.startY });
         return;
       }
       if (interaction.type === "label") {
         updateElement(interaction.id, {
-          labelOffsetX: clamp(interaction.offsetX + (event.clientX - interaction.startX) / Math.max(fitZoom, 0.22), -240, 240),
-          labelOffsetY: clamp(interaction.offsetY + (event.clientY - interaction.startY) / Math.max(fitZoom, 0.22), -240, 240),
+          labelOffsetX: clamp(interaction.offsetX + (clientX - interaction.startX) / Math.max(fitZoom, 0.22), -240, 240),
+          labelOffsetY: clamp(interaction.offsetY + (clientY - interaction.startY) / Math.max(fitZoom, 0.22), -240, 240),
         }, false);
         return;
       }
       const rect = stageRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const deltaX = ((event.clientX - interaction.startX) / rect.width) * 100;
+      const deltaX = ((clientX - interaction.startX) / rect.width) * 100;
       if (interaction.type === "resize") {
         updateElement(interaction.id, { size: clamp(interaction.startSize + deltaX * 2, 0.8, 15) }, false);
         return;
       }
-      const deltaY = ((event.clientY - interaction.startY) / rect.height) * 100;
+      const deltaY = ((clientY - interaction.startY) / rect.height) * 100;
       if (interaction.type === "dense-label") {
         updateDenseLabelPosition(
           interaction.key,
@@ -3570,7 +3618,28 @@ export default function Home() {
         }, false);
       }
     };
+    const flushMove = () => {
+      if (moveFrame !== null) {
+        window.cancelAnimationFrame(moveFrame);
+        moveFrame = null;
+      }
+      const next = pendingMove;
+      pendingMove = null;
+      if (next) applyMove(next);
+    };
+    const handleMove = (event: PointerEvent) => {
+      if (!interaction) return;
+      pendingMove = { clientX: event.clientX, clientY: event.clientY };
+      if (moveFrame !== null) return;
+      moveFrame = window.requestAnimationFrame(() => {
+        moveFrame = null;
+        const next = pendingMove;
+        pendingMove = null;
+        if (next) applyMove(next);
+      });
+    };
     const handleUp = (event: PointerEvent) => {
+      flushMove();
       if (interaction?.type === "pan" && interaction.pendingPublicPlaceId) {
         const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
         if (moved <= 6) {
@@ -3585,7 +3654,12 @@ export default function Home() {
       }
       setInteraction(null);
     };
-    const handleCancel = () => setInteraction(null);
+    const handleCancel = () => {
+      pendingMove = null;
+      if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
+      moveFrame = null;
+      setInteraction(null);
+    };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
     window.addEventListener("pointercancel", handleCancel);
@@ -3593,8 +3667,9 @@ export default function Home() {
       window.removeEventListener("pointermove", handleMove);
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleCancel);
+      if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
     };
-  }, [fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement, zoom]);
+  }, [fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -3649,10 +3724,31 @@ export default function Home() {
     if (!viewport) return;
     const cursorX = event.clientX - viewport.left - viewport.width / 2;
     const cursorY = event.clientY - viewport.top - viewport.height / 2;
-    const nextZoom = clamp(zoom * Math.exp(-event.deltaY * 0.0012), 0.22, 4);
-    const ratio = nextZoom / zoom;
-    setPan({ x: cursorX - (cursorX - pan.x) * ratio, y: cursorY - (cursorY - pan.y) * ratio });
-    setZoom(nextZoom);
+    const pending = pendingWheelRef.current;
+    pendingWheelRef.current = {
+      deltaY: (pending?.deltaY ?? 0) + event.deltaY,
+      cursorX,
+      cursorY,
+    };
+    if (wheelFrameRef.current !== null) return;
+    wheelFrameRef.current = window.requestAnimationFrame(() => {
+      wheelFrameRef.current = null;
+      const next = pendingWheelRef.current;
+      pendingWheelRef.current = null;
+      if (!next) return;
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const nextZoom = clamp(currentZoom * Math.exp(-next.deltaY * 0.0012), 0.22, 4);
+      const ratio = nextZoom / currentZoom;
+      const nextPan = {
+        x: next.cursorX - (next.cursorX - currentPan.x) * ratio,
+        y: next.cursorY - (next.cursorY - currentPan.y) * ratio,
+      };
+      zoomRef.current = nextZoom;
+      panRef.current = nextPan;
+      setPan(nextPan);
+      setZoom(nextZoom);
+    });
   };
 
   const startPan = (event: ReactPointerEvent<HTMLElement>, pendingPublicPlaceId?: string) => {
@@ -5409,7 +5505,7 @@ export default function Home() {
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
   const editingEnabled = publicLayoutAccess === "editor" && !printPreviewMode;
   const eventPlaceSelectionMode = editingEnabled && placeEventFormOpen && placeEventMultiPlace;
-  const eventPlaceKeySet = new Set(placeEventPlaces.map((place) => place.placeKey));
+  const eventPlaceKeySet = useMemo(() => new Set(placeEventPlaces.map((place) => place.placeKey)), [placeEventPlaces]);
   const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
 
@@ -5533,7 +5629,7 @@ export default function Home() {
           </section>
           <div className="category-filter">
             <button className={activeCategory === "all" ? "active" : ""} onClick={() => setActiveCategory("all")}><span className="category-dot all-dot" /> 전체 자산 <em>{elements.length}</em></button>
-            {categories.map((category) => <button key={category.id} className={activeCategory === category.id ? "active" : ""} onClick={() => setActiveCategory(category.id)}><span className="category-dot" style={{ background: category.color }} /> {category.name}<em>{elements.filter((item) => item.category === category.id).length}</em></button>)}
+            {categories.map((category) => <button key={category.id} className={activeCategory === category.id ? "active" : ""} onClick={() => setActiveCategory(category.id)}><span className="category-dot" style={{ background: category.color }} /> {category.name}<em>{placedCategoryCounts[category.id]}</em></button>)}
           </div>
           <div className="asset-upload"><div className="asset-upload-row">
             <select aria-label="업로드 자산 카테고리" value={assetCategory} onChange={(event) => setAssetCategory(event.target.value as CategoryId)}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
@@ -5546,12 +5642,12 @@ export default function Home() {
               const activeAssetId = elements.find((element) => normalizePlaceName(element.name) === normalizePlaceName(placeName))?.assetId;
               return <article className="landmark-resource-group" key={placeName}>
                 <div><strong>{placeName}</strong><small>{candidates.length}개 후보 · 1024px</small></div>
-                <div className="landmark-candidate-row">{candidates.map((asset) => <button key={asset.id} className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>
+                <div className="landmark-candidate-row">{candidates.map((asset) => <button key={asset.id} className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.src} alt="" loading="lazy" decoding="async" /><span>{asset.name}</span></button>)}</div>
               </article>;
             })}
-            {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
+            {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
             <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·소품샵·주차장·편의시설</strong><small>모든 범용 마커를 SVG로 구성해 확대·출력 시 선명합니다.</small></div>
-            {generalMarkerAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
+            {generalMarkerAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
           </div>
           <div className="group-size-panel">
             <div className="marker-style-panel">
@@ -5729,10 +5825,10 @@ export default function Home() {
         <section className="canvas-column">
           <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
-            <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
+            <div className="map-stage-wrap" style={{ transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0) scale(${zoom})` }}>
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
-                <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} onLoad={() => setMapLoaded(true)} />
+                <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
                 {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
                   {([ [0, 1], [1, 2], [2, 3], [2, 4], [4, 5], [5, 1], [0, 3] ] as Array<[number, number]>).map(([from, to]) => <line key={`${from}-${to}`} x1={calibrationPoints[from].targetX} y1={calibrationPoints[from].targetY} x2={calibrationPoints[to].targetX} y2={calibrationPoints[to].targetY} className="calibration-mesh-line" />)}
                   {showCalibrationSource && calibrationPoints.map((point) => <g key={`source-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-offset-line" /><circle cx={point.sourceX} cy={point.sourceY} r="0.34" className="calibration-source-dot" /></g>)}
@@ -5751,11 +5847,11 @@ export default function Home() {
                   return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
-                  const meta = categoryOf(element.category); const isSelected = editingEnabled && selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
+                  const meta = categoryOf(element.category); const isSelected = editingEnabled && selectedId === element.id; const asset = element.assetId ? assetsById.get(element.assetId) : undefined;
                   const isPublicSelected = publicLayoutAccess === "viewer" && selectedId === element.id;
                   const showMarker = stageMarkerIds.has(element.id);
                   const showLabel = stageLabelIds.has(element.id);
-                  const isCalibrationReference = editingEnabled && calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
+                  const isCalibrationReference = editingEnabled && calibrationMode && calibrationReferenceNames.has(normalizePlaceName(element.name));
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
                   const eventPlacePicked = eventPlaceSelectionMode && eventPlaceKeySet.has(placeContentKey(element));
                   const keyboardSelectable = publicLayoutAccess === "viewer" || eventPlaceSelectionMode;
@@ -5771,7 +5867,7 @@ export default function Home() {
                     onKeyDown={keyboardSelectable ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (eventPlaceSelectionMode) togglePlaceEventMapSelection(element.id); else { setSelectedId(element.id); setSelectedDenseLabelId(null); } } } : undefined}
                   >
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
-                    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
+                    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
                     {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
@@ -5822,12 +5918,12 @@ export default function Home() {
               {placeEvents.length > 0 && <section className="public-place-events" aria-label={`${selected.name} 행사`}>
                 <div className="public-place-events-title"><strong>지금 볼 수 있는 행사</strong><span>{placeEvents.length}개</span></div>
                 <div className="place-event-list">{placeEvents.map((event) => <article className="place-event-card" key={event.id}>
-                  <img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" />
+                  <img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" decoding="async" />
                   <div><strong>{event.eventName}</strong><p>{event.eventInfo}</p><span>{storyDateTimeLabel(event.visibleUntil)}까지 안내</span></div>
                 </article>)}</div>
               </section>}
               <section className="public-place-archive">
-                <div className="public-place-archive-title"><div><strong>함께 만든 장소 기록</strong><span>사진과 짧은 후기 {placeStories.filter((story) => story.status === "published").length}개</span></div><button type="button" onClick={togglePlaceStoryForm}>{placeStoryFormOpen ? "작성 닫기" : "＋ 기록 남기기"}</button></div>
+                <div className="public-place-archive-title"><div><strong>함께 만든 장소 기록</strong><span>사진과 짧은 후기 {publishedPlaceStories.length}개</span></div><button type="button" onClick={togglePlaceStoryForm}>{placeStoryFormOpen ? "작성 닫기" : "＋ 기록 남기기"}</button></div>
                 {placeStoryFormOpen && <div className="place-story-form">
                   <label>닉네임<input value={placeStoryAuthor} maxLength={20} onChange={(event) => setPlaceStoryAuthor(event.target.value)} placeholder="20자 이내" /></label>
                   <label>짧은 후기<textarea value={placeStoryText} maxLength={220} onChange={(event) => setPlaceStoryText(event.target.value)} placeholder="이 장소에서 기억하고 싶은 순간을 남겨주세요." /><small>{placeStoryText.length}/220</small></label>
@@ -5836,8 +5932,8 @@ export default function Home() {
                   <p>직접 촬영했거나 게시 권한이 있는 사진만 등록해 주세요. 등록한 내용은 다른 방문자에게 바로 공개됩니다.</p>
                   <button type="button" className="place-story-submit" disabled={placeStorySubmitting || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : "사진·후기 공개하기"}</button>
                 </div>}
-                {placeStoriesLoading ? <div className="place-story-empty">장소 기록을 불러오는 중입니다.</div> : placeStories.filter((story) => story.status === "published").length ? <div className="place-story-list">{placeStories.filter((story) => story.status === "published").map((story) => <article className="place-story-card" key={story.id}>
-                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.authorName}님이 남긴 ${selected.name} 사진`} loading="lazy" />}
+                {placeStoriesLoading ? <div className="place-story-empty">장소 기록을 불러오는 중입니다.</div> : publishedPlaceStories.length ? <div className="place-story-list">{publishedPlaceStories.map((story) => <article className="place-story-card" key={story.id}>
+                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.authorName}님이 남긴 ${selected.name} 사진`} loading="lazy" decoding="async" />}
                   <div><header><strong>{story.authorName}</strong><time dateTime={story.createdAt}>{storyDateLabel(story.createdAt)}</time></header><p>{story.reviewText}</p></div>
                 </article>)}</div> : <div className="place-story-empty"><strong>아직 남겨진 기록이 없습니다.</strong><span>이 장소의 첫 사진이나 짧은 후기를 남겨보세요.</span></div>}
               </section>
@@ -5860,11 +5956,11 @@ export default function Home() {
               {placeEventsCanManage && <button type="button" className="wide-secondary" onClick={togglePlaceEventForm}>＋ 행사 등록</button>}
               {placeEventsLoading ? <p className="field-help">행사를 불러오는 중입니다.</p> : placeEvents.length ? <div className="editor-place-event-list">{placeEvents.map((event) => {
                 const visibility = eventVisibilityState(event);
-                return <article key={event.id} className={!event.isVisible ? "inactive" : ""}><img src={event.photoUrl} alt="" loading="lazy" /><div><header><b>{event.eventName}</b><span>{visibility}</span></header><p>{event.eventInfo}</p><small>{storyDateTimeLabel(event.visibleFrom)}–{storyDateTimeLabel(event.visibleUntil)} · 장소 {eventPlaceList(event).length}곳</small><footer><button type="button" disabled={placeEventActionId !== null} onClick={() => editPlaceEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>삭제</button></footer></div></article>;
+                return <article key={event.id} className={!event.isVisible ? "inactive" : ""}><img src={event.photoUrl} alt="" loading="lazy" decoding="async" /><div><header><b>{event.eventName}</b><span>{visibility}</span></header><p>{event.eventInfo}</p><small>{storyDateTimeLabel(event.visibleFrom)}–{storyDateTimeLabel(event.visibleUntil)} · 장소 {eventPlaceList(event).length}곳</small><footer><button type="button" disabled={placeEventActionId !== null} onClick={() => editPlaceEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>삭제</button></footer></div></article>;
               })}</div> : <p className="field-help">등록된 행사가 없습니다.</p>}
               {!placeEventsCanManage && <p className="field-help">소유자 권한을 확인하면 행사를 등록하고 관리할 수 있습니다.</p>}
             </section>
-            <section className="editor-place-stories"><div className="section-title"><strong>공개 사진·후기</strong><span>{placeStories.length}개</span></div>{placeStoriesLoading ? <p className="field-help">장소 기록을 불러오는 중입니다.</p> : placeStories.length ? <div className="editor-place-story-list">{placeStories.map((story) => <article key={story.id} className={story.status === "hidden" ? "hidden" : ""}>{story.photoUrl && <img src={story.photoUrl} alt="" loading="lazy" />}<div><header><b>{story.authorName}</b><span>{story.status === "hidden" ? "숨김" : storyDateLabel(story.createdAt)}</span></header><p>{story.reviewText}</p>{placeStoriesCanModerate && <footer><button type="button" disabled={placeStoryActionId !== null} onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{placeStoryActionId === story.id ? "처리 중…" : story.status === "hidden" ? "다시 공개" : "숨기기"}</button><button type="button" className="danger" disabled={placeStoryActionId !== null} onClick={() => void deletePlaceStory(story)}>삭제</button></footer>}</div></article>)}</div> : <p className="field-help">아직 등록된 사진이나 후기가 없습니다.</p>}{!placeStoriesCanModerate && <p className="field-help">소유자 권한을 확인하면 공개 상태와 삭제를 관리할 수 있습니다.</p>}</section>
+            <section className="editor-place-stories"><div className="section-title"><strong>공개 사진·후기</strong><span>{placeStories.length}개</span></div>{placeStoriesLoading ? <p className="field-help">장소 기록을 불러오는 중입니다.</p> : placeStories.length ? <div className="editor-place-story-list">{placeStories.map((story) => <article key={story.id} className={story.status === "hidden" ? "hidden" : ""}>{story.photoUrl && <img src={story.photoUrl} alt="" loading="lazy" decoding="async" />}<div><header><b>{story.authorName}</b><span>{story.status === "hidden" ? "숨김" : storyDateLabel(story.createdAt)}</span></header><p>{story.reviewText}</p>{placeStoriesCanModerate && <footer><button type="button" disabled={placeStoryActionId !== null} onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{placeStoryActionId === story.id ? "처리 중…" : story.status === "hidden" ? "다시 공개" : "숨기기"}</button><button type="button" className="danger" disabled={placeStoryActionId !== null} onClick={() => void deletePlaceStory(story)}>삭제</button></footer>}</div></article>)}</div> : <p className="field-help">아직 등록된 사진이나 후기가 없습니다.</p>}{!placeStoriesCanModerate && <p className="field-help">소유자 권한을 확인하면 공개 상태와 삭제를 관리할 수 있습니다.</p>}</section>
             <section className="print-property-section"><div className="section-title"><strong>고화질 출력</strong><span>{printPolicyFor(selected).recommended ? "추천 장소" : "일반 장소"}</span></div><label className="print-recommended-toggle"><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span><b>{selected.category === "landmark" ? "랜드마크 기본 포함" : "출력 추천 장소"}</b><small>추천 중심 출력에서 사용할 장소를 지정합니다.</small></span></label><div className="field-row"><label>마커 출력<select value={printPolicyFor(selected).setting?.markerMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { markerMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label><label>라벨 출력<select value={printPolicyFor(selected).setting?.labelMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { labelMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label></div><p className="field-help">자동은 랜드마크와 추천 상태를 따릅니다. 수동 포함·제외는 추천 상태가 바뀌어도 유지됩니다.</p></section>
             <section><div className="section-title"><strong>리소스 출력 오프셋</strong><label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 변경 ON" : "출력위치 변경 OFF"}</span></label></div>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>리소스→앵커</button><button className="anchor-to-resource" disabled={selected.locked || (Math.abs(selectedDisplayOffset.x) < 0.001 && Math.abs(selectedDisplayOffset.y) < 0.001)} onClick={() => moveAnchorToResource(selected)} title="화면의 리소스는 그대로 두고 실제 위치 앵커를 리소스 중심으로 이동합니다.">앵커를 현재 리소스 위치로 이동</button></div></>}<p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 리소스 출력 위치가 유지됩니다." : resourceOutputDragMode ? "출력위치 변경 ON: 드래그와 방향키는 앵커를 고정한 채 이미지 리소스만 이동합니다." : "기본 상태: 드래그와 방향키는 실제 위치 앵커를 이동하며 현재 ΔX·ΔY는 유지됩니다."}</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
@@ -5896,14 +5992,14 @@ export default function Home() {
             {globalContentTab === "reviews" ? (globalStoriesLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>최신 리뷰를 불러오는 중입니다.</strong></div>
               : globalStoriesError ? <div className="global-story-state error"><strong>리뷰를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalStoriesRefreshKey((current) => current + 1)}>다시 시도</button></div>
                 : globalStories.length ? <div className="global-story-list">{globalStories.map((story) => <article className={`global-story-card ${story.photoUrl ? "has-photo" : ""} ${story.status === "hidden" ? "hidden" : ""}`} key={story.id}>
-                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.placeName}에 등록된 사진`} loading="lazy" />}
+                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.placeName}에 등록된 사진`} loading="lazy" decoding="async" />}
                   <div><button type="button" className="global-story-place-link" onClick={() => openGlobalStoryPlace(story)}>{story.placeName}<span>지도에서 보기</span></button><div className="global-story-meta"><strong>{story.authorName}{story.status === "hidden" && <em>숨김</em>}</strong><time dateTime={story.createdAt}>{storyDateTimeLabel(story.createdAt)}</time></div><p>{story.reviewText}</p>{globalStoriesCanModerate && <footer className="global-story-admin-actions"><button type="button" disabled={placeStoryActionId !== null} onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{placeStoryActionId === story.id ? "처리 중…" : story.status === "hidden" ? "다시 공개" : "숨기기"}</button><button type="button" className="danger" disabled={placeStoryActionId !== null} onClick={() => void deletePlaceStory(story)}>영구 삭제</button></footer>}</div>
                 </article>)}</div> : <div className="global-story-state"><strong>{publicLayoutAccess === "editor" ? "아직 등록된 리뷰가 없습니다." : "아직 공개된 리뷰가 없습니다."}</strong><span>{publicLayoutAccess === "editor" ? "새 리뷰가 등록되면 이곳에서 바로 관리할 수 있습니다." : "장소 마커를 눌러 첫 기록을 남겨보세요."}</span></div>)
               : globalContentTab === "events" ? (globalEventsLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>행사를 불러오는 중입니다.</strong></div>
                 : globalEventsError ? <div className="global-story-state error"><strong>행사를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalEventsRefreshKey((current) => current + 1)}>다시 시도</button></div>
                   : globalEvents.length ? <div className="global-story-list">{globalEvents.map((event) => {
                     const visibility = eventVisibilityState(event);
-                    return <article className={`global-story-card event-card has-photo ${!event.isVisible ? "hidden" : ""}`} key={event.id}><img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" /><div><div className="global-event-place-links" aria-label="행사 장소">{eventPlaceList(event).map((place) => <button type="button" key={place.placeKey} onClick={() => openGlobalEventPlace(place)}>{place.placeName}<span>지도 보기</span></button>)}</div><div className="global-story-meta"><strong>{event.eventName}<em className={`event-visibility ${event.isVisible ? "visible" : ""}`}>{visibility}</em></strong><time dateTime={event.visibleUntil}>{storyDateTimeLabel(event.visibleUntil)}까지</time></div><p>{event.eventInfo}</p>{globalEventsCanManage && <footer className="global-story-admin-actions"><button type="button" disabled={placeEventActionId !== null} onClick={() => editPlaceEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>영구 삭제</button></footer>}</div></article>;
+                    return <article className={`global-story-card event-card has-photo ${!event.isVisible ? "hidden" : ""}`} key={event.id}><img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" decoding="async" /><div><div className="global-event-place-links" aria-label="행사 장소">{eventPlaceList(event).map((place) => <button type="button" key={place.placeKey} onClick={() => openGlobalEventPlace(place)}>{place.placeName}<span>지도 보기</span></button>)}</div><div className="global-story-meta"><strong>{event.eventName}<em className={`event-visibility ${event.isVisible ? "visible" : ""}`}>{visibility}</em></strong><time dateTime={event.visibleUntil}>{storyDateTimeLabel(event.visibleUntil)}까지</time></div><p>{event.eventInfo}</p>{globalEventsCanManage && <footer className="global-story-admin-actions"><button type="button" disabled={placeEventActionId !== null} onClick={() => editPlaceEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>영구 삭제</button></footer>}</div></article>;
                   })}</div> : <div className="global-story-state"><strong>{publicLayoutAccess === "editor" ? "아직 등록된 행사가 없습니다." : "현재 노출 중인 행사가 없습니다."}</strong><span>{publicLayoutAccess === "editor" ? "장소를 선택해 행사와 노출 기간을 등록할 수 있습니다." : "새 행사가 등록되면 이곳에 표시됩니다."}</span></div>)
                 : (placeRequestsLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>장소 등록 요청을 불러오는 중입니다.</strong></div>
                   : placeRequestsError ? <div className="global-story-state error"><strong>장소 등록 요청을 불러오지 못했습니다.</strong><button type="button" onClick={() => setPlaceRequestsRefreshKey((current) => current + 1)}>다시 시도</button></div>
