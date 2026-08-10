@@ -1702,6 +1702,17 @@ export default function Home() {
   const storyPhotoInputRef = useRef<HTMLInputElement>(null);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
   const eventDialogDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
+  const activeTouchPointersRef = useRef(new Map<number, { clientX: number; clientY: number }>());
+  const pinchGestureRef = useRef<{
+    pointerIds: [number, number];
+    startDistance: number;
+    startCenterX: number;
+    startCenterY: number;
+    startZoom: number;
+    startPanX: number;
+    startPanY: number;
+  } | null>(null);
+  const mobileInitialViewAppliedRef = useRef(false);
   const geocodeRunRef = useRef(0);
   const storyRequestRunRef = useRef(0);
   const eventRequestRunRef = useRef(0);
@@ -3530,6 +3541,46 @@ export default function Home() {
   }, [fitZoom, viewportDimensions.height, viewportDimensions.width, zoom]);
 
   useEffect(() => {
+    if (
+      mobileInitialViewAppliedRef.current
+      || !hydrated
+      || publicLayoutAccess !== "viewer"
+      || viewportDimensions.width <= 0
+      || viewportDimensions.height <= 0
+      || viewportDimensions.width > 760
+    ) return;
+    const primaryHub = elements.find((element) => isPrimaryHubLabel(element.name) && element.mapVisible);
+    if (!primaryHub || stageDimensions.width <= 0 || stageDimensions.height <= 0) return;
+
+    const viewportFillZoom = Math.max(
+      viewportDimensions.width / stageDimensions.width,
+      viewportDimensions.height / stageDimensions.height,
+    );
+    const targetZoom = clamp(Math.max(fitZoom * 1.7, viewportFillZoom * 1.04), fitZoom, 1.08);
+    const desiredScreenY = viewportDimensions.height * 0.18;
+    const rawPan = {
+      x: -((primaryHub.x - 50) / 100) * stageDimensions.width * targetZoom,
+      y: desiredScreenY - ((primaryHub.y - 50) / 100) * stageDimensions.height * targetZoom,
+    };
+    const horizontalTravel = Math.max(0, (stageDimensions.width * targetZoom - viewportDimensions.width) / 2) + viewportDimensions.width * 0.05;
+    const verticalTravel = Math.max(0, (stageDimensions.height * targetZoom - viewportDimensions.height) / 2) + viewportDimensions.height * 0.05;
+    const targetPan = {
+      x: clamp(rawPan.x, -horizontalTravel, horizontalTravel),
+      y: clamp(rawPan.y, -verticalTravel, verticalTravel),
+    };
+
+    const frame = window.requestAnimationFrame(() => {
+      if (mobileInitialViewAppliedRef.current) return;
+      mobileInitialViewAppliedRef.current = true;
+      zoomRef.current = targetZoom;
+      panRef.current = targetPan;
+      setZoom(targetZoom);
+      setPan(targetPan);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [elements, fitZoom, hydrated, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
+
+  useEffect(() => {
     if (printPreviewMode) return;
     const timer = window.setTimeout(() => {
       setForceIndividualLabels((current) => current ? labelDetailRatio >= 2.45 : labelDetailRatio >= 2.7);
@@ -3548,6 +3599,28 @@ export default function Home() {
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
+    activeTouchPointersRef.current.clear();
+    pinchGestureRef.current = null;
+  }, []);
+
+  const beginPinchGesture = useCallback(() => {
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    const pointers = [...activeTouchPointersRef.current.entries()];
+    if (!viewport || pointers.length < 2) return false;
+    const [[firstId, first], [secondId, second]] = pointers;
+    const centerClientX = (first.clientX + second.clientX) / 2;
+    const centerClientY = (first.clientY + second.clientY) / 2;
+    pinchGestureRef.current = {
+      pointerIds: [firstId, secondId],
+      startDistance: Math.max(12, Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)),
+      startCenterX: centerClientX - viewport.left - viewport.width / 2,
+      startCenterY: centerClientY - viewport.top - viewport.height / 2,
+      startZoom: zoomRef.current,
+      startPanX: panRef.current.x,
+      startPanY: panRef.current.y,
+    };
+    setInteraction(null);
+    return true;
   }, []);
 
   useEffect(() => {
@@ -3628,6 +3701,32 @@ export default function Home() {
       if (next) applyMove(next);
     };
     const handleMove = (event: PointerEvent) => {
+      if (event.pointerType === "touch" && activeTouchPointersRef.current.has(event.pointerId)) {
+        activeTouchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+        const pinch = pinchGestureRef.current;
+        if (pinch) {
+          const first = activeTouchPointersRef.current.get(pinch.pointerIds[0]);
+          const second = activeTouchPointersRef.current.get(pinch.pointerIds[1]);
+          const viewport = viewportRef.current?.getBoundingClientRect();
+          if (first && second && viewport) {
+            event.preventDefault();
+            const distance = Math.max(12, Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY));
+            const centerX = (first.clientX + second.clientX) / 2 - viewport.left - viewport.width / 2;
+            const centerY = (first.clientY + second.clientY) / 2 - viewport.top - viewport.height / 2;
+            const nextZoom = clamp(pinch.startZoom * distance / pinch.startDistance, 0.22, 4);
+            const ratio = nextZoom / Math.max(pinch.startZoom, 0.01);
+            const nextPan = {
+              x: centerX - (pinch.startCenterX - pinch.startPanX) * ratio,
+              y: centerY - (pinch.startCenterY - pinch.startPanY) * ratio,
+            };
+            zoomRef.current = nextZoom;
+            panRef.current = nextPan;
+            setZoom(nextZoom);
+            setPan(nextPan);
+          }
+          return;
+        }
+      }
       if (!interaction) return;
       pendingMove = { clientX: event.clientX, clientY: event.clientY };
       if (moveFrame !== null) return;
@@ -3639,6 +3738,26 @@ export default function Home() {
       });
     };
     const handleUp = (event: PointerEvent) => {
+      const trackedTouch = event.pointerType === "touch" && activeTouchPointersRef.current.has(event.pointerId);
+      const pinch = pinchGestureRef.current;
+      if (trackedTouch) activeTouchPointersRef.current.delete(event.pointerId);
+      if (pinch && pinch.pointerIds.includes(event.pointerId)) {
+        pinchGestureRef.current = null;
+        const remaining = activeTouchPointersRef.current.values().next().value as { clientX: number; clientY: number } | undefined;
+        if (remaining) {
+          setInteraction({
+            type: "pan",
+            startX: remaining.clientX,
+            startY: remaining.clientY,
+            panX: panRef.current.x,
+            panY: panRef.current.y,
+          });
+        } else {
+          setInteraction(null);
+        }
+        return;
+      }
+      if (trackedTouch && pinch) return;
       flushMove();
       if (interaction?.type === "pan" && interaction.pendingPublicPlaceId) {
         const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
@@ -3654,7 +3773,9 @@ export default function Home() {
       }
       setInteraction(null);
     };
-    const handleCancel = () => {
+    const handleCancel = (event: PointerEvent) => {
+      if (event.pointerType === "touch") activeTouchPointersRef.current.delete(event.pointerId);
+      if (pinchGestureRef.current?.pointerIds.includes(event.pointerId)) pinchGestureRef.current = null;
       pendingMove = null;
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
       moveFrame = null;
@@ -3755,10 +3876,15 @@ export default function Home() {
     if (event.button !== 0 || memoMode) return;
     event.preventDefault();
     event.stopPropagation();
+    if (event.pointerType === "touch") {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      activeTouchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+      if (activeTouchPointersRef.current.size >= 2 && beginPinchGesture()) return;
+    }
     if (!pendingPublicPlaceId) {
       setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     }
-    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: pan.x, panY: pan.y, pendingPublicPlaceId });
+    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId });
   };
 
   const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
