@@ -6041,7 +6041,7 @@ export default function Home() {
             </div>
             {printPreviewMode && <div className={`print-preview-badge ${printAudit.issues.length ? "warning" : "pass"}`}><strong>PNG 출력 미리보기</strong><span>{printAudit.issues.length ? `점검 ${printAudit.issues.length}건` : "점검 통과"}</span></div>}
             {eventPlaceSelectionMode && <div className="event-place-selection-hint"><strong>행사 장소 선택 중</strong><span>지도 마커를 눌러 추가·해제 · 현재 {placeEventPlaces.length}곳</span></div>}
-            <div className="map-scale"><span /> 정규화 좌표 0–100%</div>
+            {publicLayoutAccess === "editor" && <div className="map-scale"><span /> 정규화 좌표 0–100%</div>}
             {publicLayoutAccess === "editor" && <button type="button" className={`global-story-toggle editor-map ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel"><span aria-hidden="true">✓</span><strong>{globalStoriesOpen ? "관리 닫기" : "리뷰·행사·장소 관리"}</strong>{globalContentTab === "reviews" ? globalStoriesTotal > 0 && <em>{globalStoriesTotal}</em> : globalContentTab === "events" ? globalEventsTotal > 0 && <em>{globalEventsTotal}</em> : placeRequestsTotal > 0 && <em>{placeRequestsTotal}</em>}</button>}
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
