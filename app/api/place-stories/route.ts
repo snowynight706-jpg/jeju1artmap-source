@@ -132,10 +132,11 @@ export async function GET(request: Request) {
   const placeKey = searchParams.get("placeKey")?.trim() ?? "";
   await ensureStorage(runtime.DB);
   if (scope === "all") {
+    const visibleStatuses = canModerate ? "status IN ('published', 'hidden')" : "status = 'published'";
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
     const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const countRow = await runtime.DB.prepare(
-      "SELECT COUNT(*) AS count FROM place_stories WHERE status = 'published'",
+      `SELECT COUNT(*) AS count FROM place_stories WHERE ${visibleStatuses}`,
     ).first() as { count?: number } | null;
     const total = Number(countRow?.count ?? 0);
     const pageCount = Math.ceil(total / GLOBAL_PAGE_SIZE);
@@ -144,7 +145,7 @@ export async function GET(request: Request) {
       `SELECT id, place_key AS placeKey, place_name AS placeName, author_name AS authorName,
         review_text AS reviewText, photo_key AS photoKey, photo_content_type AS photoContentType,
         status, created_at AS createdAt, updated_at AS updatedAt
-       FROM place_stories WHERE status = 'published'
+       FROM place_stories WHERE ${visibleStatuses}
        ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
     ).bind(GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all() as { results?: StoryRow[] };
     return json({
@@ -255,14 +256,22 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const runtime = await runtimeEnv();
   if (!runtime.DB || !runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
-  const { canModerate } = ownerAccess(request, runtime);
-  if (!canModerate) return json({ error: "owner authentication required" }, 403);
+  const { canModerate, currentEmail } = ownerAccess(request, runtime);
+  if (!canModerate || !currentEmail) return json({ error: "owner authentication required" }, 403);
   const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
   if (!id) return json({ error: "story id required" }, 400);
   await ensureStorage(runtime.DB);
   const row = await runtime.DB.prepare("SELECT photo_key AS photoKey FROM place_stories WHERE id = ?").bind(id).first() as { photoKey: string | null } | null;
   if (!row) return json({ error: "story not found" }, 404);
-  await runtime.DB.prepare("DELETE FROM place_stories WHERE id = ?").bind(id).run();
-  if (row.photoKey) await runtime.BUCKET.delete(row.photoKey);
+  const moderatedAt = new Date().toISOString();
+  await runtime.DB.prepare(
+    "UPDATE place_stories SET status = 'hidden', updated_at = ?, moderated_by = ? WHERE id = ?",
+  ).bind(moderatedAt, currentEmail, id).run();
+  try {
+    if (row.photoKey) await runtime.BUCKET.delete(row.photoKey);
+    await runtime.DB.prepare("DELETE FROM place_stories WHERE id = ?").bind(id).run();
+  } catch {
+    return json({ error: "story cleanup failed", hidden: true, id }, 500);
+  }
   return json({ deleted: true, id });
 }

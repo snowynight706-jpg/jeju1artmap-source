@@ -1638,9 +1638,11 @@ export default function Home() {
   const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
   const [globalStoriesPageCount, setGlobalStoriesPageCount] = useState(0);
   const [globalStoriesTotal, setGlobalStoriesTotal] = useState(0);
+  const [globalStoriesCanModerate, setGlobalStoriesCanModerate] = useState(false);
   const [globalStoriesLoading, setGlobalStoriesLoading] = useState(false);
   const [globalStoriesError, setGlobalStoriesError] = useState(false);
   const [globalStoriesRefreshKey, setGlobalStoriesRefreshKey] = useState(0);
+  const [placeStoryActionId, setPlaceStoryActionId] = useState<string | null>(null);
   const [placeStoryFormOpen, setPlaceStoryFormOpen] = useState(false);
   const [placeStoryAuthor, setPlaceStoryAuthor] = useState("");
   const [placeStoryText, setPlaceStoryText] = useState("");
@@ -2396,7 +2398,7 @@ export default function Home() {
   }, [publicLayoutAccess, selectedStoryKey, updatePlaceStoryPhoto]);
 
   useEffect(() => {
-    if (publicLayoutAccess !== "viewer" || !globalStoriesOpen) return;
+    if (publicLayoutAccess === "loading" || !globalStoriesOpen) return;
     const controller = new AbortController();
     void Promise.resolve().then(() => {
       if (controller.signal.aborted) return null;
@@ -2415,12 +2417,14 @@ export default function Home() {
         setGlobalStories(Array.isArray(payload?.stories) ? payload.stories : []);
         setGlobalStoriesTotal(Math.max(0, Number(payload?.total ?? 0)));
         setGlobalStoriesPageCount(Math.max(0, Number(payload?.pageCount ?? 0)));
+        setGlobalStoriesCanModerate(Boolean(payload?.canModerate));
         const normalizedPage = Math.max(1, Number(payload?.page ?? globalStoriesPage));
         if (normalizedPage !== globalStoriesPage) setGlobalStoriesPage(normalizedPage);
       })
       .catch((error) => {
         if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
         setGlobalStories([]);
+        setGlobalStoriesCanModerate(false);
         setGlobalStoriesError(true);
       })
       .finally(() => {
@@ -4556,30 +4560,48 @@ export default function Home() {
   };
 
   const moderatePlaceStory = async (story: PlaceStory, status: "published" | "hidden") => {
-    const response = await fetch(PLACE_STORIES_API, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: story.id, status }),
-    });
-    if (!response.ok) {
+    if (placeStoryActionId) return;
+    setPlaceStoryActionId(story.id);
+    try {
+      const response = await fetch(PLACE_STORIES_API, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: story.id, status }),
+      });
+      if (!response.ok) {
+        setToast("후기 공개 상태를 변경하지 못했습니다.");
+        return;
+      }
+      setPlaceStories((current) => current.map((item) => item.id === story.id ? { ...item, status } : item));
+      setGlobalStories((current) => current.map((item) => item.id === story.id ? { ...item, status } : item));
+      setGlobalStoriesRefreshKey((current) => current + 1);
+      setToast(status === "hidden" ? "후기를 공개 목록에서 숨겼습니다." : "후기를 다시 공개했습니다.");
+    } catch {
       setToast("후기 공개 상태를 변경하지 못했습니다.");
-      return;
+    } finally {
+      setPlaceStoryActionId(null);
     }
-    setPlaceStories((current) => current.map((item) => item.id === story.id ? { ...item, status } : item));
-    setGlobalStoriesRefreshKey((current) => current + 1);
-    setToast(status === "hidden" ? "후기를 공개 목록에서 숨겼습니다." : "후기를 다시 공개했습니다.");
   };
 
   const deletePlaceStory = async (story: PlaceStory) => {
-    if (!window.confirm("이 사진과 후기를 서버에서 완전히 삭제할까요?")) return;
-    const response = await fetch(`${PLACE_STORIES_API}?id=${encodeURIComponent(story.id)}`, { method: "DELETE" });
-    if (!response.ok) {
-      setToast("후기를 삭제하지 못했습니다.");
-      return;
+    if (placeStoryActionId || !window.confirm(`‘${story.placeName}’의 ${story.authorName} 후기${story.photoUrl ? "와 사진" : ""}을 서버에서 완전히 삭제할까요?`)) return;
+    setPlaceStoryActionId(story.id);
+    try {
+      const response = await fetch(`${PLACE_STORIES_API}?id=${encodeURIComponent(story.id)}`, { method: "DELETE" });
+      if (!response.ok) {
+        setToast("후기를 삭제하지 못했습니다. 다시 시도해 주세요.");
+        return;
+      }
+      setPlaceStories((current) => current.filter((item) => item.id !== story.id));
+      setGlobalStories((current) => current.filter((item) => item.id !== story.id));
+      setGlobalStoriesTotal((current) => Math.max(0, current - 1));
+      setGlobalStoriesRefreshKey((current) => current + 1);
+      setToast("사진과 후기를 서버에서 완전히 삭제했습니다.");
+    } catch {
+      setToast("후기를 삭제하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setPlaceStoryActionId(null);
     }
-    setPlaceStories((current) => current.filter((item) => item.id !== story.id));
-    setGlobalStoriesRefreshKey((current) => current + 1);
-    setToast("사진과 후기를 삭제했습니다.");
   };
 
   const toggleGlobalStories = () => {
@@ -5032,7 +5054,7 @@ export default function Home() {
             <section><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></section>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
             <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리{isCoreLandmarkName(selected.name) ? " · 핵심 랜드마크 고정" : ""}<select value={selected.category} disabled={isCoreLandmarkName(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
-            <section className="editor-place-stories"><div className="section-title"><strong>공개 사진·후기</strong><span>{placeStories.length}개</span></div>{placeStoriesLoading ? <p className="field-help">장소 기록을 불러오는 중입니다.</p> : placeStories.length ? <div className="editor-place-story-list">{placeStories.map((story) => <article key={story.id} className={story.status === "hidden" ? "hidden" : ""}>{story.photoUrl && <img src={story.photoUrl} alt="" loading="lazy" />}<div><header><b>{story.authorName}</b><span>{story.status === "hidden" ? "숨김" : storyDateLabel(story.createdAt)}</span></header><p>{story.reviewText}</p>{placeStoriesCanModerate && <footer><button type="button" onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{story.status === "hidden" ? "다시 공개" : "숨기기"}</button><button type="button" className="danger" onClick={() => void deletePlaceStory(story)}>삭제</button></footer>}</div></article>)}</div> : <p className="field-help">아직 등록된 사진이나 후기가 없습니다.</p>}{!placeStoriesCanModerate && <p className="field-help">소유자 권한을 확인하면 공개 상태와 삭제를 관리할 수 있습니다.</p>}</section>
+            <section className="editor-place-stories"><div className="section-title"><strong>공개 사진·후기</strong><span>{placeStories.length}개</span></div>{placeStoriesLoading ? <p className="field-help">장소 기록을 불러오는 중입니다.</p> : placeStories.length ? <div className="editor-place-story-list">{placeStories.map((story) => <article key={story.id} className={story.status === "hidden" ? "hidden" : ""}>{story.photoUrl && <img src={story.photoUrl} alt="" loading="lazy" />}<div><header><b>{story.authorName}</b><span>{story.status === "hidden" ? "숨김" : storyDateLabel(story.createdAt)}</span></header><p>{story.reviewText}</p>{placeStoriesCanModerate && <footer><button type="button" disabled={placeStoryActionId !== null} onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{placeStoryActionId === story.id ? "처리 중…" : story.status === "hidden" ? "다시 공개" : "숨기기"}</button><button type="button" className="danger" disabled={placeStoryActionId !== null} onClick={() => void deletePlaceStory(story)}>삭제</button></footer>}</div></article>)}</div> : <p className="field-help">아직 등록된 사진이나 후기가 없습니다.</p>}{!placeStoriesCanModerate && <p className="field-help">소유자 권한을 확인하면 공개 상태와 삭제를 관리할 수 있습니다.</p>}</section>
             <section className="print-property-section"><div className="section-title"><strong>고화질 출력</strong><span>{printPolicyFor(selected).recommended ? "추천 장소" : "일반 장소"}</span></div><label className="print-recommended-toggle"><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span><b>{selected.category === "landmark" ? "랜드마크 기본 포함" : "출력 추천 장소"}</b><small>추천 중심 출력에서 사용할 장소를 지정합니다.</small></span></label><div className="field-row"><label>마커 출력<select value={printPolicyFor(selected).setting?.markerMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { markerMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label><label>라벨 출력<select value={printPolicyFor(selected).setting?.labelMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { labelMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label></div><p className="field-help">자동은 랜드마크와 추천 상태를 따릅니다. 수동 포함·제외는 추천 상태가 바뀌어도 유지됩니다.</p></section>
             <section><div className="section-title"><strong>리소스 출력 오프셋</strong><label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 변경 ON" : "출력위치 변경 OFF"}</span></label></div>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>리소스→앵커</button><button className="anchor-to-resource" disabled={selected.locked || (Math.abs(selectedDisplayOffset.x) < 0.001 && Math.abs(selectedDisplayOffset.y) < 0.001)} onClick={() => moveAnchorToResource(selected)} title="화면의 리소스는 그대로 두고 실제 위치 앵커를 리소스 중심으로 이동합니다.">앵커를 현재 리소스 위치로 이동</button></div></>}<p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 리소스 출력 위치가 유지됩니다." : resourceOutputDragMode ? "출력위치 변경 ON: 드래그와 방향키는 앵커를 고정한 채 이미지 리소스만 이동합니다." : "기본 상태: 드래그와 방향키는 실제 위치 앵커를 이동하며 현재 ΔX·ΔY는 유지됩니다."}</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}
@@ -5043,7 +5065,7 @@ export default function Home() {
           </div>}
         </aside>}
       </section>
-      {publicLayoutAccess === "viewer" && <>
+      {publicLayoutAccess !== "loading" && <>
         <button
           type="button"
           className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`}
@@ -5051,27 +5073,31 @@ export default function Home() {
           aria-expanded={globalStoriesOpen}
           aria-controls="global-story-panel"
         >
-          <span aria-hidden="true">☰</span>
-          <strong>{globalStoriesOpen ? "리뷰 닫기" : "최신 리뷰"}</strong>
+          <span aria-hidden="true">{publicLayoutAccess === "editor" ? "✓" : "☰"}</span>
+          <strong>{globalStoriesOpen ? (publicLayoutAccess === "editor" ? "관리 닫기" : "리뷰 닫기") : (publicLayoutAccess === "editor" ? "리뷰 관리" : "최신 리뷰")}</strong>
           {globalStoriesTotal > 0 && <em>{globalStoriesTotal}</em>}
         </button>
-        {globalStoriesOpen && <aside id="global-story-panel" className="global-story-panel" aria-label="전체 장소 최신 리뷰">
+        {globalStoriesOpen && <aside id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : ""}`} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰 관리" : "전체 장소 최신 리뷰"}>
           <header className="global-story-panel-head">
-            <div><strong>원도심 최신 리뷰</strong><span>전체 장소 · 최신순 · {globalStoriesTotal}개</span></div>
+            <div><strong>{publicLayoutAccess === "editor" ? "전체 리뷰 관리" : "원도심 최신 리뷰"}</strong><span>전체 장소 · 최신순 · {globalStoriesTotal}개{globalStoriesCanModerate ? " · 숨김 포함" : ""}</span></div>
             <button type="button" onClick={() => setGlobalStoriesOpen(false)} aria-label="최신 리뷰 닫기">×</button>
           </header>
           <div className="global-story-panel-scroll" aria-live="polite">
             {globalStoriesLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>최신 리뷰를 불러오는 중입니다.</strong></div>
               : globalStoriesError ? <div className="global-story-state error"><strong>리뷰를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalStoriesRefreshKey((current) => current + 1)}>다시 시도</button></div>
-                : globalStories.length ? <div className="global-story-list">{globalStories.map((story) => <article className={`global-story-card ${story.photoUrl ? "has-photo" : ""}`} key={story.id}>
+                : globalStories.length ? <div className="global-story-list">{globalStories.map((story) => <article className={`global-story-card ${story.photoUrl ? "has-photo" : ""} ${story.status === "hidden" ? "hidden" : ""}`} key={story.id}>
                   {story.photoUrl && <img src={story.photoUrl} alt={`${story.placeName}에 등록된 사진`} loading="lazy" />}
                   <div>
                     <button type="button" className="global-story-place-link" onClick={() => openGlobalStoryPlace(story)}>{story.placeName}<span>지도에서 보기</span></button>
-                    <div className="global-story-meta"><strong>{story.authorName}</strong><time dateTime={story.createdAt}>{storyDateTimeLabel(story.createdAt)}</time></div>
+                    <div className="global-story-meta"><strong>{story.authorName}{story.status === "hidden" && <em>숨김</em>}</strong><time dateTime={story.createdAt}>{storyDateTimeLabel(story.createdAt)}</time></div>
                     <p>{story.reviewText}</p>
+                    {globalStoriesCanModerate && <footer className="global-story-admin-actions">
+                      <button type="button" disabled={placeStoryActionId !== null} onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{placeStoryActionId === story.id ? "처리 중…" : story.status === "hidden" ? "다시 공개" : "숨기기"}</button>
+                      <button type="button" className="danger" disabled={placeStoryActionId !== null} onClick={() => void deletePlaceStory(story)}>영구 삭제</button>
+                    </footer>}
                   </div>
                 </article>)}</div>
-                  : <div className="global-story-state"><strong>아직 공개된 리뷰가 없습니다.</strong><span>장소 마커를 눌러 첫 기록을 남겨보세요.</span></div>}
+                  : <div className="global-story-state"><strong>{publicLayoutAccess === "editor" ? "아직 등록된 리뷰가 없습니다." : "아직 공개된 리뷰가 없습니다."}</strong><span>{publicLayoutAccess === "editor" ? "새 리뷰가 등록되면 이곳에서 바로 관리할 수 있습니다." : "장소 마커를 눌러 첫 기록을 남겨보세요."}</span></div>}
           </div>
           {globalStoriesPageCount > 1 && <footer className="global-story-pagination" aria-label="최신 리뷰 페이지 이동">
             <button type="button" disabled={globalStoriesPage <= 1 || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.max(1, page - 1))}>이전</button>
