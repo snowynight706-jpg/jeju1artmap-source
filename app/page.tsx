@@ -38,6 +38,8 @@ const PLACE_STORIES_API = "/api/place-stories";
 const PLACE_EVENTS_API = "/api/place-events";
 const PLACE_REGISTRATION_REQUESTS_API = "/api/place-registration-requests";
 const ADMIN_SESSION_API = "/api/admin-session";
+const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v04";
+const SUPERSEDED_SANJICHEON_ASSET_IDS = new Set(["sanjicheon-01", "sanjicheon-02", "sanjicheon-03"]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -437,7 +439,7 @@ const landmarkLocations = [
   { name: "예술공간 이아", address: "제주특별자치도 제주시 중앙로14길 21", addressSourceUrl: "https://www.jfac.kr/operatingSpace/artSpaceIAa/iAaGuide", assetId: "artspace-ia-01", x: 34, y: 57 },
   { name: "아라리오뮤지엄 탑동시네마", address: "제주특별자치도 제주시 탑동로 14", addressSourceUrl: "https://www.arariomuseum.org/", assetId: "arario-01", x: 18, y: 24 },
   { name: "김만덕객주", address: "제주특별자치도 제주시 임항로 68", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CNTS_000000000019652", assetId: "guesthouse-01", x: 75, y: 25 },
-  { name: "산지천갤러리", address: "제주특별자치도 제주시 중앙로3길 36", addressSourceUrl: "https://www.jfac.kr/operatingSpace/sjcGallery/sjcGuide", assetId: "sanjicheon-01", x: 64, y: 40 },
+  { name: "산지천갤러리", address: "제주특별자치도 제주시 중앙로3길 36", addressSourceUrl: "https://www.jfac.kr/operatingSpace/sjcGallery/sjcGuide", assetId: LATEST_SANJICHEON_ASSET_ID, x: 64, y: 40 },
   { name: "제주목 관아", address: "제주특별자치도 제주시 관덕로 25", addressSourceUrl: "https://www.jeju.go.kr/mokkwana/", assetId: "mokgwana-01", x: 39, y: 60 },
   { name: "관덕정", address: "제주특별자치도 제주시 관덕로 19", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500057", assetId: "gwandeokjeong-01", x: 37, y: 58 },
   { name: "칠성로", address: "제주특별자치도 제주시 관덕로13길 12 일대", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750", assetId: "chilsungro", x: 58, y: 50 },
@@ -800,6 +802,7 @@ const builtInMarkerAssets: MapAsset[] = bundledMarkerAssets.map((asset) => ({
 }));
 
 const builtInAssets: MapAsset[] = [...builtInLandmarkAssets, ...builtInMarkerAssets];
+const builtInAssetIds = new Set(builtInAssets.map((asset) => asset.id));
 const canonicalMarkerAssetIds = new Set(builtInMarkerAssets.map((asset) => asset.id));
 
 function isBundledMarkerCategory(category: CategoryId): category is BundledMarkerCategory {
@@ -1488,9 +1491,13 @@ function sanitizeDocument(document: DocumentState): DocumentState {
       const name = normalizePlaceName(normalized.name);
       const category = categoryForPlace(name, normalized.category) as CategoryId;
       const landmarkAssetId = landmarkLocationByName.get(name)?.assetId;
-      const assetId = category === "landmark" && (!normalized.assetId || canonicalMarkerAssetIds.has(normalized.assetId))
-        ? landmarkAssetId ?? normalized.assetId
+      const preferredAssetId = category === "landmark" && name === "산지천갤러리"
+        && (!normalized.assetId || SUPERSEDED_SANJICHEON_ASSET_IDS.has(normalized.assetId))
+        ? LATEST_SANJICHEON_ASSET_ID
         : normalized.assetId;
+      const assetId = category === "landmark" && (!preferredAssetId || canonicalMarkerAssetIds.has(preferredAssetId))
+        ? landmarkAssetId ?? normalized.assetId
+        : preferredAssetId;
       const canonical = { ...normalized, name, category, assetId };
       const defaultAssetId = defaultMarkerAssetId(category);
       const needsCanonicalMarker = category !== "landmark"
@@ -1502,7 +1509,11 @@ function sanitizeDocument(document: DocumentState): DocumentState {
   return {
     ...document,
     elements: ensureIndependentElementIdentity(sanitizedElements),
-    assets: document.assets.filter((asset) => asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id) || asset.builtIn === false),
+    assets: [
+      ...builtInAssets,
+      ...document.assets.filter((asset) => !builtInAssetIds.has(asset.id)
+        && (asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id) || asset.builtIn === false)),
+    ],
     directoryPlaces: document.directoryPlaces
       ?.filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim()))
       .map((place) => {

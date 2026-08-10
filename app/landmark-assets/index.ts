@@ -41,6 +41,7 @@ export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
   asset("guesthouse-01", "01", "김만덕객주", "1LOkmVUKR3eG-_2Q1q-y8ChpQjNn-60Pl"),
   asset("guesthouse-02", "02", "김만덕객주", "1___MBqcwArzn1wyNMMGQUDx8-05B4aiZ"),
   asset("guesthouse-03", "03", "김만덕객주", "10ChBGh8STmYBtTyn5m56ef-Du-YXL6eH"),
+  asset("sanjicheon-v04", "v04 하천 건너편 · 최신", "산지천갤러리", "1T3VlMGI44afFae5Kya8GM4PNUZgGQ9L5", "approved"),
   asset("sanjicheon-01", "01", "산지천갤러리", "1XUarDISkYCHVdQsP8piqnNCvNaOIaeFj"),
   asset("sanjicheon-02", "02", "산지천갤러리", "1Q7gI2PWrEBwaEdqobg3klkr8BIrJJ6b8"),
   asset("sanjicheon-03", "03", "산지천갤러리", "1EFoaiKmmta7p4Qe9ePxJ57t_tYEv2jer"),
