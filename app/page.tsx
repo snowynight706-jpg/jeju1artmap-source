@@ -812,6 +812,8 @@ function buildDenseLabelClusters(
     const root = find(index);
     groups.set(root, [...(groups.get(root) ?? []), element]);
   });
+  const clusterGroups = [...groups.values()].filter((group) => group.length >= 2);
+  const clusteredCandidateIds = new Set(clusterGroups.flatMap((group) => group.map((element) => element.id)));
   const iconRects = iconElements.map((element) => {
     const height = element.size * MAP_ASPECT / 1.12;
     return {
@@ -824,7 +826,7 @@ function buildDenseLabelClusters(
       },
     };
   });
-  const labelRects = labelElements.map((element) => {
+  const labelRects = labelElements.filter((element) => !clusteredCandidateIds.has(element.id)).map((element) => {
     const width = clamp(element.name.length * 0.72 + 2.4, 3.6, 20);
     const height = 2.1;
     const elementHeight = element.size * MAP_ASPECT / 1.12;
@@ -842,8 +844,7 @@ function buildDenseLabelClusters(
   });
   const overrideByKey = new Map(positionOverrides.map((position) => [position.key, position]));
   const placed: NormalizedRect[] = [];
-  return [...groups.values()]
-    .filter((group) => group.length >= 2)
+  return clusterGroups
     .map((group) => ({ group, key: denseLabelKey(group), override: overrideByKey.get(denseLabelKey(group)) }))
     .sort((a, b) => Number(Boolean(b.override)) - Number(Boolean(a.override)) || b.group.length - a.group.length)
     .map(({ group, key, override }) => {
@@ -1764,7 +1765,7 @@ export default function Home() {
 
   const denseLabelClusters = useMemo(() => mergeDenseLabels
     ? buildDenseLabelClusters(
-        visibleElements.filter((element) => element.labelVisible && markerLabelsVisible && element.category !== "landmark"),
+        visibleElements.filter((element) => element.labelVisible && (element.category === "landmark" || markerLabelsVisible)),
         visibleElements,
         denseLabelPositions,
       )
@@ -3836,7 +3837,7 @@ export default function Home() {
                     onPointerDown={(event) => startDenseLabelDrag(event, cluster)}
                     title={`${cluster.names.join(" · ")} · 드래그하여 위치 조절`}
                     role="button"
-                    aria-label={`${cluster.names.length}곳 통합 라벨. 드래그하여 위치 조절`}
+                    aria-label={`${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절`}
                   ><span className="dense-label-count">{cluster.names.length}곳</span><strong>{cluster.names.slice(0, 4).map((name) => <span key={name}>{name}</span>)}{cluster.names.length > 4 && <em>외 {cluster.names.length - 4}곳</em>}</strong></div>)}
                 </div>}
                 {selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
