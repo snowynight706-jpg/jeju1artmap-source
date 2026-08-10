@@ -123,3 +123,48 @@ export const placeStories = sqliteTable("place_stories", {
   index("place_stories_actor_created_idx").on(table.actorHash, table.createdAt),
   index("place_stories_status_created_idx").on(table.status, table.createdAt),
 ]);
+
+export const placeEvents = sqliteTable("place_events", {
+  id: text("id").primaryKey(),
+  placeKey: text("place_key").notNull(),
+  placeName: text("place_name").notNull(),
+  eventName: text("event_name").notNull(),
+  eventInfo: text("event_info").notNull(),
+  photoKey: text("photo_key").notNull(),
+  photoContentType: text("photo_content_type").notNull(),
+  photoSize: integer("photo_size").notNull(),
+  visibleFrom: text("visible_from").notNull(),
+  visibleUntil: text("visible_until").notNull(),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+}, (table) => [
+  index("place_events_place_status_visibility_idx").on(table.placeKey, table.status, table.visibleFrom, table.visibleUntil),
+  index("place_events_status_visibility_created_idx").on(table.status, table.visibleFrom, table.visibleUntil, table.createdAt),
+]);
+
+export const placeRegistrationRequests = sqliteTable("place_registration_requests", {
+  id: text("id").primaryKey(),
+  submittedName: text("submitted_name").notNull(),
+  submittedAddress: text("submitted_address").notNull(),
+  submittedDescription: text("submitted_description").notNull(),
+  submittedCategory: text("submitted_category").notNull(),
+  submittedMarkerStyle: text("submitted_marker_style").notNull(),
+  name: text("name").notNull(),
+  address: text("address").notNull(),
+  description: text("description").notNull(),
+  category: text("category").notNull(),
+  markerStyle: text("marker_style").notNull(),
+  status: text("status").notNull(),
+  actorHash: text("actor_hash").notNull(),
+  directoryId: text("directory_id"),
+  rejectionNote: text("rejection_note").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  reviewedAt: text("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
+}, (table) => [
+  index("place_registration_requests_status_created_idx").on(table.status, table.createdAt),
+  index("place_registration_requests_actor_created_idx").on(table.actorHash, table.createdAt),
+]);
