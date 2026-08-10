@@ -228,6 +228,8 @@ type DenseLabelRow = {
   category: CategoryId;
   targetX: number;
   targetY: number;
+  column: number;
+  rowIndex: number;
 };
 
 type DenseLabelCluster = {
@@ -241,6 +243,10 @@ type DenseLabelCluster = {
   manuallyPositioned: boolean;
   hasCollision: boolean;
   rows: DenseLabelRow[];
+  columnCount: number;
+  rowCount: number;
+  columnWidths: number[];
+  positionKeys: string[];
 };
 
 type PrintAuditIssue = {
@@ -772,6 +778,10 @@ function categoryOf(id: CategoryId) {
   return categories.find((category) => category.id === id) ?? categories[categories.length - 1];
 }
 
+function isPrimaryHubLabel(name: string) {
+  return normalizePlaceName(name) === "제주아트플랫폼";
+}
+
 type VisualBounds = { left: number; top: number; right: number; bottom: number };
 
 function labelStyle(position: LabelPosition, gap: number, offsetX: number, offsetY: number, zoom: number, bounds: VisualBounds = { left: 0, top: 0, right: 1, bottom: 1 }) {
@@ -810,13 +820,16 @@ function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
   return elements.map((element) => element.id).sort().join("|");
 }
 
-function splitDenseGroup(group: MapElement[]) {
+function partitionDenseGroup(group: MapElement[], maximumItems = 18) {
+  if (group.length <= maximumItems) return [group];
   const remaining = [...group].sort((a, b) => a.y - b.y || a.x - b.x || a.name.localeCompare(b.name, "ko"));
   const chunks: MapElement[][] = [];
-  while (remaining.length > 4) {
-    const targetSize = remaining.length === 5 ? 3 : 4;
+  const chunkCount = Math.ceil(remaining.length / maximumItems);
+  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    const chunksLeft = chunkCount - chunkIndex;
+    const targetSize = Math.ceil(remaining.length / chunksLeft);
     const chunk = [remaining.shift()!];
-    while (chunk.length < targetSize) {
+    while (chunk.length < targetSize && remaining.length) {
       const centerX = chunk.reduce((sum, element) => sum + element.x, 0) / chunk.length;
       const centerY = chunk.reduce((sum, element) => sum + element.y, 0) / chunk.length;
       let nearestIndex = 0;
@@ -830,10 +843,50 @@ function splitDenseGroup(group: MapElement[]) {
       });
       chunk.push(remaining.splice(nearestIndex, 1)[0]);
     }
-    chunks.push(chunk.sort((a, b) => a.y - b.y || a.x - b.x));
+    chunks.push(chunk);
   }
-  if (remaining.length >= 2) chunks.push(remaining.sort((a, b) => a.y - b.y || a.x - b.x));
   return chunks;
+}
+
+function compactDenseLabelLayout(group: MapElement[]) {
+  const columnCount = group.length <= 6 ? 1 : group.length <= 14 ? 2 : 3;
+  const byHorizontalPosition = [...group].sort((a, b) => a.x - b.x || a.y - b.y || a.name.localeCompare(b.name, "ko"));
+  const perColumn = Math.ceil(byHorizontalPosition.length / columnCount);
+  const columns = Array.from({ length: columnCount }, (_, columnIndex) => (
+    byHorizontalPosition
+      .slice(columnIndex * perColumn, Math.min((columnIndex + 1) * perColumn, byHorizontalPosition.length))
+      .sort((a, b) => a.y - b.y || a.x - b.x || a.name.localeCompare(b.name, "ko"))
+  )).filter((column) => column.length > 0);
+  const columnWidths = columns.map((column) => {
+    const longestName = Math.max(...column.map((element) => Array.from(element.name).length));
+    return Math.max(5.2, longestName * 0.72 + 0.8);
+  });
+  const rowCount = Math.max(...columns.map((column) => column.length));
+  const width = Math.max(7.2, columnWidths.reduce((sum, value) => sum + value, 0) + Math.max(0, columns.length - 1) * 0.34 + 0.68);
+  const height = Math.max(3.2, 1.48 + rowCount * 0.9);
+  return { columns, columnCount: columns.length, rowCount, columnWidths, width, height };
+}
+
+function denseLabelPositionOverride(group: MapElement[], positionOverrides: DenseLabelPosition[]) {
+  const key = denseLabelKey(group);
+  const exact = positionOverrides.find((position) => position.key === key);
+  if (exact) return { position: exact, keys: [exact.key] };
+  const ids = new Set(group.map((element) => element.id));
+  const related = positionOverrides.flatMap((position) => {
+    const overlap = position.elementIds.reduce((count, id) => count + Number(ids.has(id)), 0);
+    return overlap >= 2 && overlap / Math.max(position.elementIds.length, 1) >= 0.5 ? [{ position, overlap }] : [];
+  });
+  if (!related.length) return { position: undefined, keys: [] as string[] };
+  const weight = related.reduce((sum, item) => sum + item.overlap, 0);
+  return {
+    position: {
+      key,
+      elementIds: group.map((element) => element.id).sort(),
+      x: related.reduce((sum, item) => sum + item.position.x * item.overlap, 0) / weight,
+      y: related.reduce((sum, item) => sum + item.position.y * item.overlap, 0) / weight,
+    },
+    keys: related.map((item) => item.position.key),
+  };
 }
 
 function buildDenseLabelClusters(
@@ -869,7 +922,7 @@ function buildDenseLabelClusters(
     const root = find(index);
     groups.set(root, [...(groups.get(root) ?? []), element]);
   });
-  const clusterGroups = [...groups.values()].filter((group) => group.length >= 2).flatMap(splitDenseGroup);
+  const clusterGroups = [...groups.values()].filter((group) => group.length >= 2).flatMap((group) => partitionDenseGroup(group));
   const clusteredCandidateIds = new Set(clusterGroups.flatMap((group) => group.map((element) => element.id)));
   const iconRects = iconElements.map((element) => {
     const height = element.size * MAP_ASPECT / 1.12;
@@ -884,8 +937,8 @@ function buildDenseLabelClusters(
     };
   });
   const labelRects = labelElements.filter((element) => !clusteredCandidateIds.has(element.id)).map((element) => {
-    const width = clamp(element.name.length * 0.72 + 2.4, 3.6, 20);
-    const height = 2.1;
+    const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24);
+    const height = 1.34;
     const elementHeight = element.size * MAP_ASPECT / 1.12;
     const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
     const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
@@ -899,13 +952,17 @@ function buildDenseLabelClusters(
     if (element.labelPosition === "right") x += element.size / 2 + gapX + width / 2;
     return { id: element.id, rect: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 } };
   });
-  const overrideByKey = new Map(positionOverrides.map((position) => [position.key, position]));
   const placed: NormalizedRect[] = [];
   return clusterGroups
-    .map((group) => ({ group, key: denseLabelKey(group), override: overrideByKey.get(denseLabelKey(group)) }))
+    .map((group) => {
+      const key = denseLabelKey(group);
+      const overrideMatch = denseLabelPositionOverride(group, positionOverrides);
+      return { group, key, override: overrideMatch.position, positionKeys: overrideMatch.keys };
+    })
     .sort((a, b) => Number(Boolean(b.override)) - Number(Boolean(a.override)) || b.group.length - a.group.length)
-    .map(({ group, key, override }) => {
-    const orderedGroup = [...group].sort((a, b) => a.y - b.y || a.x - b.x || a.name.localeCompare(b.name, "ko"));
+    .map(({ group, key, override, positionKeys }) => {
+    const layout = compactDenseLabelLayout(group);
+    const orderedGroup = layout.columns.flat();
     const names = orderedGroup.map((element) => element.name);
     const groupIds = new Set(group.map((element) => element.id));
     const minX = Math.min(...orderedGroup.map((element) => element.x - element.size / 2));
@@ -914,8 +971,7 @@ function buildDenseLabelClusters(
     const maxY = Math.max(...orderedGroup.map((element) => element.y + element.size * MAP_ASPECT / 2.24));
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    const width = clamp(Math.max(...names.map((name) => name.length)) * 0.82 + 4.8, 11.5, 24);
-    const height = clamp(2.8 + names.length * 2.2, 7.2, 11.6);
+    const { width, height } = layout;
     const distance = Math.max(2.2, height / 2 + 1.2);
     const options = [1, 1.65, 2.4, 3.2, 4.5, 6].flatMap((ring) => [
       { x: centerX, y: minY - distance * ring },
@@ -949,14 +1005,20 @@ function buildDenseLabelClusters(
     placed.push(best.rect);
     const x = clamp(best.x, width / 2, 100 - width / 2);
     const y = clamp(best.y, height / 2, 100 - height / 2);
-    const rowTop = y - height / 2 + 2.45;
-    const rowHeight = (height - 2.7) / names.length;
-    const rows = orderedGroup.map((element, index): DenseLabelRow => ({
-      elementId: element.id,
-      name: element.name,
-      category: element.category,
-      targetX: element.x <= x ? x - width / 2 : x + width / 2,
-      targetY: rowTop + rowHeight * (index + 0.5),
+    const rowTop = y - height / 2 + 1.17;
+    const rowHeight = 0.9;
+    const rows = layout.columns.flatMap((columnElements, columnIndex) => columnElements.map((element, rowIndex): DenseLabelRow => {
+      const midpoint = (layout.columnCount - 1) / 2;
+      const targetX = columnIndex < midpoint ? x - width / 2 : columnIndex > midpoint ? x + width / 2 : element.x <= x ? x - width / 2 : x + width / 2;
+      return {
+        elementId: element.id,
+        name: element.name,
+        category: element.category,
+        targetX,
+        targetY: rowTop + rowHeight * (rowIndex + 0.5),
+        column: columnIndex,
+        rowIndex,
+      };
     }));
     return {
       id: key,
@@ -969,6 +1031,10 @@ function buildDenseLabelClusters(
       manuallyPositioned: Boolean(override),
       hasCollision: best.hasCollision,
       rows,
+      columnCount: layout.columnCount,
+      rowCount: layout.rowCount,
+      columnWidths: layout.columnWidths,
+      positionKeys: positionKeys.length ? positionKeys : (override ? [key] : []),
     };
   });
 }
@@ -984,8 +1050,8 @@ function normalizedIconRect(element: MapElement): NormalizedRect {
 }
 
 function normalizedLabelRect(element: MapElement): NormalizedRect {
-  const width = clamp(element.name.length * 0.72 + 2.4, 3.6, 20);
-  const height = 2.1;
+  const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24);
+  const height = 1.34;
   const elementHeight = element.size * MAP_ASPECT / 1.12;
   const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
   const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
@@ -1578,28 +1644,29 @@ export default function Home() {
 
   const updateDenseLabelPosition = useCallback((key: string, elementIds: string[], x: number, y: number) => {
     replaceDenseLabelPositions((current) => {
+      const targetIds = new Set(elementIds);
       const position: DenseLabelPosition = {
         key,
         elementIds: [...elementIds].sort(),
         x: clamp(x, 0, 100),
         y: clamp(y, 0, 100),
       };
-      const existingIndex = current.findIndex((item) => item.key === key);
-      if (existingIndex < 0) return [...current, position];
-      return current.map((item, index) => index === existingIndex ? position : item);
+      const unrelated = current.filter((item) => item.key !== key && !item.elementIds.some((id) => targetIds.has(id)));
+      return [...unrelated, position];
     });
   }, [replaceDenseLabelPositions]);
 
-  const resetDenseLabelPosition = useCallback((key: string) => {
-    replaceDenseLabelPositions((current) => current.filter((position) => position.key !== key));
+  const resetDenseLabelPosition = useCallback((keyOrKeys: string | string[]) => {
+    const keys = new Set(Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys]);
+    replaceDenseLabelPositions((current) => current.filter((position) => !keys.has(position.key)));
   }, [replaceDenseLabelPositions]);
 
-  const setDenseLabelEligibility = useCallback((elementId: string, eligible: boolean, clusterKey?: string) => {
+  const setDenseLabelEligibility = useCallback((elementId: string, eligible: boolean, clusterKeys?: string | string[]) => {
     pushHistory();
     replaceDenseLabelExcludedIds((current) => eligible
       ? current.filter((id) => id !== elementId)
       : [...current, elementId]);
-    if (!eligible && clusterKey) resetDenseLabelPosition(clusterKey);
+    if (!eligible && clusterKeys) resetDenseLabelPosition(clusterKeys);
     setSelectedDenseLabelId(null);
     const element = elementsRef.current.find((item) => item.id === elementId);
     setToast(eligible ? `${element?.name ?? "장소"}을(를) 자동 통합 대상으로 되돌렸습니다.` : `${element?.name ?? "장소"}을(를) 개별 라벨로 분리했습니다.`);
@@ -3378,8 +3445,8 @@ export default function Home() {
       const bottomFactor = bounds?.bottom ?? 0.95;
       const characterCount = Array.from(element.name).length;
       const measuredLabel = measuredLabelSizes.get(element.id);
-      const labelWidth = measuredLabel?.width ?? clamp((characterCount * 0.8 + 1.05) / Math.max(zoom, 0.22), 2.8, 28);
-      const labelHeight = measuredLabel?.height ?? 1.72 / Math.max(zoom, 0.22);
+      const labelWidth = measuredLabel?.width ?? clamp((characterCount * 0.66 + 0.55) / Math.max(zoom, 0.22), 2, 26);
+      const labelHeight = measuredLabel?.height ?? 1.3 / Math.max(zoom, 0.22);
       const elementHeight = element.size * MAP_ASPECT / 1.12;
       const visualRect = {
         left: element.x + (leftFactor - 0.5) * element.size,
@@ -3690,9 +3757,9 @@ export default function Home() {
 
       const drawLabels = (items: MapElement[]) => items.forEach((element) => {
         if (clusteredExportIds.has(element.id)) return;
-        const fontSize = exportWidth / EXPORT_CANONICAL_WIDTH * 10;
-        const paddingX = exportWidth / EXPORT_CANONICAL_WIDTH * 4;
-        const paddingY = exportWidth / EXPORT_CANONICAL_WIDTH * 2.5;
+        const fontSize = exportWidth / EXPORT_CANONICAL_WIDTH * 9.4;
+        const paddingX = exportWidth / EXPORT_CANONICAL_WIDTH * 3;
+        const paddingY = exportWidth / EXPORT_CANONICAL_WIDTH * 1.25;
         const gap = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelGap;
         const offsetX = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelOffsetX;
         const offsetY = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelOffsetY;
@@ -3706,21 +3773,22 @@ export default function Home() {
         context.textBaseline = "middle";
         const metrics = context.measureText(element.name);
         const labelWidth = metrics.width + paddingX * 2;
-        const labelHeight = fontSize * 1.25 + paddingY * 2;
+        const labelHeight = fontSize * 1.1 + paddingY * 2;
         let x = centerX + offsetX;
         let y = centerY + offsetY;
         if (element.labelPosition === "top") y -= boxHeight / 2 + gap + labelHeight / 2;
         if (element.labelPosition === "bottom") y += boxHeight / 2 + gap + labelHeight / 2;
         if (element.labelPosition === "left") x -= boxWidth / 2 + gap + labelWidth / 2;
         if (element.labelPosition === "right") x += boxWidth / 2 + gap + labelWidth / 2;
-        context.fillStyle = "rgba(255,255,255,.95)";
-        context.strokeStyle = "rgba(91,106,101,.24)";
+        const primaryHub = isPrimaryHubLabel(element.name);
+        context.fillStyle = primaryHub ? "rgba(255,226,92,.98)" : "rgba(255,255,255,.95)";
+        context.strokeStyle = primaryHub ? "rgba(158,116,9,.52)" : "rgba(91,106,101,.24)";
         context.lineWidth = Math.max(1, exportWidth / EXPORT_CANONICAL_WIDTH);
         context.beginPath();
-        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, exportWidth / EXPORT_CANONICAL_WIDTH * 3);
+        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, exportWidth / EXPORT_CANONICAL_WIDTH * 2);
         context.fill();
         context.stroke();
-        context.fillStyle = "#26332f";
+        context.fillStyle = primaryHub ? "#493807" : "#26332f";
         context.textAlign = "center";
         context.fillText(element.name, x, y + fontSize * 0.02);
         context.restore();
@@ -3730,36 +3798,41 @@ export default function Home() {
 
       exportClusters.forEach((cluster) => {
         const scale = exportWidth / EXPORT_CANONICAL_WIDTH;
-        const fontSize = scale * 9.5;
-        const smallSize = scale * 7;
+        const fontSize = scale * 8.5;
+        const smallSize = scale * 6.8;
         context.save();
         const labelWidth = exportWidth * cluster.width / 100;
         const labelHeight = outputHeight * cluster.height / 100;
         const x = exportWidth * cluster.x / 100;
         const y = outputHeight * cluster.y / 100;
-        context.fillStyle = "rgba(248,253,251,.97)";
-        context.strokeStyle = "rgba(47,124,113,.42)";
-        context.lineWidth = Math.max(1, scale * 1.2);
+        context.fillStyle = "rgba(255,255,255,.95)";
+        context.strokeStyle = "rgba(91,106,101,.24)";
+        context.lineWidth = Math.max(1, scale);
         context.beginPath();
-        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, scale * 5);
+        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, scale * 2);
         context.fill();
         context.stroke();
-        context.fillStyle = "#2d756b";
-        context.textAlign = "center";
+        const labelLeft = x - labelWidth / 2;
+        const labelTop = y - labelHeight / 2;
+        context.fillStyle = "#61706b";
+        context.textAlign = "left";
         context.textBaseline = "middle";
         context.font = `800 ${smallSize}px Arial, "Noto Sans KR", sans-serif`;
-        context.fillText(`${cluster.names.length}곳`, x, y - labelHeight / 2 + scale * 8);
+        context.fillText(`${cluster.names.length}곳`, labelLeft + scale * 4, labelTop + scale * 6.5);
         context.fillStyle = "#26332f";
         context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
         cluster.rows.forEach((row) => {
           const rowY = outputHeight * row.targetY / 100;
-          const dotX = x - labelWidth / 2 + scale * 9;
+          const precedingWidth = cluster.columnWidths.slice(0, row.column).reduce((sum, width) => sum + exportWidth * width / 100, 0);
+          const columnX = labelLeft + scale * 4 + precedingWidth + row.column * scale * 4;
+          const dotX = columnX + scale * 2.5;
           context.fillStyle = categoryOf(row.category).color;
           context.beginPath();
-          context.arc(dotX, rowY, Math.max(scale * 2.1, 1.5), 0, Math.PI * 2);
+          context.arc(dotX, rowY, Math.max(scale * 1.8, 1.4), 0, Math.PI * 2);
           context.fill();
           context.fillStyle = "#26332f";
-          context.fillText(row.name, x, rowY);
+          context.textAlign = "left";
+          context.fillText(row.name, columnX + scale * 7, rowY);
         });
         context.restore();
       });
@@ -3777,7 +3850,7 @@ export default function Home() {
 
   const exportJson = () => {
     const payload = {
-      schemaVersion: 7, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted", landmarkDefaults: "user-editable", denseLabelPositions: "server-synced-user-editable", denseLabelGrouping: "max-four-manual-exclusion" },
+      schemaVersion: 8, exportedAt: new Date().toISOString(), map: { baseMap, aspect: MAP_ASPECT, coordinateSystem: "normalized-percent", calibration: "six-point-distance-weighted", landmarkDefaults: "user-editable", denseLabelPositions: "server-synced-user-editable", denseLabelGrouping: "all-names-compact-columns-manual-exclusion" },
       ...cloneDocument(currentDocument()),
     };
     download(`제주원도심_배치안_${layoutName.replaceAll(" ", "_")}.json`, JSON.stringify(payload, null, 2), "application/json");
@@ -3859,12 +3932,12 @@ export default function Home() {
             <div className="view-toggle-list">
               <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
               <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
-              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>한 묶음 최대 4곳 · 장소명 행마다 자기 마커와 연결</small></span></label>
+              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>모든 장소명 표시 · 많은 항목은 여러 열·묶음으로 압축</small></span></label>
             </div>
             {selectedDenseLabel && <div className={`dense-label-control ${selectedDenseLabel.hasCollision ? "collision" : ""}`}>
               <span><b>선택 라벨 · {selectedDenseLabel.names.length}곳</b><small>{selectedDenseLabel.manuallyPositioned ? "직접 지정한 위치를 화면·출력에 적용" : "겹침을 피한 자동 위치"}{selectedDenseLabel.hasCollision ? " · 겹침 확인 필요" : ""}</small></span>
-              <button type="button" disabled={!selectedDenseLabel.manuallyPositioned} onClick={() => { pushHistory(); resetDenseLabelPosition(selectedDenseLabel.id); setToast("통합 라벨을 자동 위치로 되돌렸습니다."); }}>자동 위치</button>
-              <div className="dense-label-member-list">{selectedDenseLabel.rows.map((row) => <div key={row.elementId}><i style={{ background: categoryOf(row.category).color }} /><b>{row.name}</b><button type="button" onClick={() => setDenseLabelEligibility(row.elementId, false, selectedDenseLabel.id)}>개별 분리</button></div>)}</div>
+              <button type="button" disabled={!selectedDenseLabel.manuallyPositioned} onClick={() => { pushHistory(); resetDenseLabelPosition(selectedDenseLabel.positionKeys); setToast("통합 라벨을 자동 위치로 되돌렸습니다."); }}>자동 위치</button>
+              <div className="dense-label-member-list">{selectedDenseLabel.rows.map((row) => <div key={row.elementId}><i style={{ background: categoryOf(row.category).color }} /><b>{row.name}</b><button type="button" onClick={() => setDenseLabelEligibility(row.elementId, false, selectedDenseLabel.positionKeys)}>개별 분리</button></div>)}</div>
             </div>}
             {!!detachedDenseLabelElements.length && <div className="dense-label-detached-list"><div><strong>개별 표시 중</strong><span>{detachedDenseLabelElements.length}곳</span></div>{detachedDenseLabelElements.map((element) => <div key={element.id}><b>{element.name}</b><button type="button" onClick={() => setDenseLabelEligibility(element.id, true)}>자동 재통합</button></div>)}</div>}
             {denseLabelCollisionCount > 0 && <p className="dense-label-warning">통합 라벨 {denseLabelCollisionCount}개가 이미지 또는 다른 라벨과 겹칩니다. 지도에서 직접 옮긴 뒤 출력해 주세요.</p>}
@@ -4157,7 +4230,7 @@ export default function Home() {
                     {!printPreviewMode && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {!printPreviewMode && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
+                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -4170,7 +4243,7 @@ export default function Home() {
                     title={`${cluster.names.join(" · ")} · 드래그하여 위치 조절`}
                     role="button"
                     aria-label={`${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong>{cluster.rows.map((row) => <span key={row.elementId}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
                 </div>}
                 {!printPreviewMode && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
