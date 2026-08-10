@@ -92,3 +92,14 @@ export const placementRevision = sqliteTable("placement_revision", {
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by").notNull(),
 });
+
+export const publicMapLayout = sqliteTable("public_map_layout", {
+  id: integer("id").primaryKey(),
+  documentJson: text("document_json").notNull(),
+  viewSettingsJson: text("view_settings_json").notNull(),
+  previousDocumentJson: text("previous_document_json"),
+  previousViewSettingsJson: text("previous_view_settings_json"),
+  publishedAt: text("published_at").notNull(),
+  publishedBy: text("published_by").notNull(),
+  revision: integer("revision").notNull(),
+});

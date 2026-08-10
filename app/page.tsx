@@ -32,6 +32,7 @@ const PLACE_DIRECTORY_API = "/api/place-directory";
 const PRINT_SETTINGS_API = "/api/print-settings";
 const DENSE_LABEL_SETTINGS_API = "/api/dense-label-settings";
 const PLACEMENT_SETTINGS_API = "/api/placement-settings";
+const PUBLIC_LAYOUT_API = "/api/public-layout";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -66,6 +67,7 @@ type CoordinateLockFilter = "all" | "unlocked" | "locked";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PrintMode = "auto" | "include" | "exclude";
 type PlacementState = "unplaced" | "deleted";
+type PublicLayoutAccess = "loading" | "editor" | "viewer";
 
 type UploadedBaseMap = {
   available: boolean;
@@ -290,6 +292,24 @@ type DocumentState = {
   denseLabelPositions?: DenseLabelPosition[];
   denseLabelExcludedIds?: string[];
   placementOverrides?: PlacementOverride[];
+};
+
+type PublicViewSettings = {
+  baseMap: BaseMapMode;
+  markerLabelsVisible: boolean;
+  mergeDenseLabels: boolean;
+  screenRecommendedOnly: boolean;
+};
+
+type PublicLayoutPayload = {
+  document?: DocumentState | null;
+  view?: PublicViewSettings;
+  canEdit?: boolean;
+  persistent?: boolean;
+  publishedAt?: string | null;
+  revision?: number;
+  hasPrevious?: boolean;
+  error?: string;
 };
 
 const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" | "anchorX" | "anchorY" | "size" | "z"> = {
@@ -1473,6 +1493,8 @@ export default function Home() {
   const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
   const denseLabelExcludedIdsRef = useRef<string[]>([]);
   const placementOverridesRef = useRef<PlacementOverride[]>([]);
+  const publishedLayoutDocumentRef = useRef<DocumentState | null>(null);
+  const publishedLayoutViewRef = useRef<PublicViewSettings | null>(null);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -1522,6 +1544,11 @@ export default function Home() {
   const [denseLabelSettingsStorage, setDenseLabelSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [denseLabelSettingsRemoteReady, setDenseLabelSettingsRemoteReady] = useState(false);
   const [placementSettingsRemoteReady, setPlacementSettingsRemoteReady] = useState(false);
+  const [publicLayoutAccess, setPublicLayoutAccess] = useState<PublicLayoutAccess>("loading");
+  const [publicLayoutPublishedAt, setPublicLayoutPublishedAt] = useState<string | null>(null);
+  const [publicLayoutRevision, setPublicLayoutRevision] = useState(0);
+  const [publicLayoutHasPrevious, setPublicLayoutHasPrevious] = useState(false);
+  const [publicLayoutPublishing, setPublicLayoutPublishing] = useState(false);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
@@ -2222,6 +2249,71 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    fetch(PUBLIC_LAYOUT_API, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
+        if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "public layout load failed");
+        return payload;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const canEdit = Boolean(payload?.canEdit);
+        const publishedDocument = payload?.document && Array.isArray(payload.document.elements)
+          ? sanitizeDocument(payload.document)
+          : null;
+        publishedLayoutDocumentRef.current = publishedDocument;
+        publishedLayoutViewRef.current = payload?.view ?? null;
+        setPublicLayoutPublishedAt(payload?.publishedAt ?? null);
+        setPublicLayoutRevision(typeof payload?.revision === "number" ? payload.revision : 0);
+        setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
+        if (canEdit) {
+          setPublicLayoutAccess("editor");
+          return;
+        }
+        setPublicLayoutAccess("viewer");
+        if (publishedDocument) {
+          setDocument(publishedDocument);
+          if (payload?.view) {
+            setBaseMap(payload.view.baseMap);
+            setMarkerLabelsVisible(payload.view.markerLabelsVisible);
+            setMergeDenseLabels(payload.view.mergeDenseLabels);
+            setScreenRecommendedOnly(payload.view.screenRecommendedOnly);
+          }
+          setSaveState("공개 배치본");
+        } else {
+          setDocument({
+            elements: initialElements,
+            assets: builtInAssets,
+            reviewNotes: [],
+            directoryPlaces: defaultDirectoryPlaces,
+            calibrationPoints: initialCalibrationPoints,
+            landmarkDefaultPositions: factoryLandmarkDefaultPositions,
+            denseLabelPositions: [],
+            denseLabelExcludedIds: [],
+            placementOverrides: [],
+          });
+          setSaveState("공개 배치본 준비 중");
+        }
+        setLeftOpen(false);
+        setRightOpen(false);
+        setSelectedId(null);
+        setHydrated(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPublicLayoutAccess("viewer");
+        setLeftOpen(false);
+        setRightOpen(false);
+        setSelectedId(null);
+        setSaveState("공개 배치본을 불러오지 못함");
+        setHydrated(true);
+      });
+    return () => { cancelled = true; };
+  }, [setDocument]);
+
+  useEffect(() => {
+    if (publicLayoutAccess !== "editor") return;
     const timer = window.setTimeout(() => {
       try {
         const savedLayouts = JSON.parse(localStorage.getItem(LAYOUTS_KEY) ?? "{}") as Record<string, { updatedAt: string; document: DocumentState }>;
@@ -2410,7 +2502,7 @@ export default function Home() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [setDocument]);
+  }, [publicLayoutAccess, setDocument]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2424,24 +2516,24 @@ export default function Home() {
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [assets, calibrationPoints, currentDocument, denseLabelExcludedIds, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, placementOverrides, reviewNotes]);
+  }, [assets, calibrationPoints, currentDocument, denseLabelExcludedIds, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, placementOverrides, publicLayoutAccess, reviewNotes]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     try {
       localStorage.setItem(VISIBILITY_GROUPS_KEY, JSON.stringify(expandedVisibilityGroups));
     } catch {}
-  }, [expandedVisibilityGroups, hydrated]);
+  }, [expandedVisibilityGroups, hydrated, publicLayoutAccess]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     try {
       localStorage.setItem(CALIBRATION_GROUPS_KEY, JSON.stringify(expandedCalibrationGroups));
     } catch {}
-  }, [expandedCalibrationGroups, hydrated]);
+  }, [expandedCalibrationGroups, hydrated, publicLayoutAccess]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     try {
       localStorage.setItem(MAP_VIEW_SETTINGS_KEY, JSON.stringify({
         markerLabelsVisible,
@@ -2449,10 +2541,10 @@ export default function Home() {
         expandedPlacedMarkerGroups,
       }));
     } catch {}
-  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels]);
+  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels, publicLayoutAccess]);
 
   useEffect(() => {
-    if (!hydrated || placeDirectoryLoadedRef.current) return;
+    if (!hydrated || publicLayoutAccess !== "editor" || placeDirectoryLoadedRef.current) return;
     placeDirectoryLoadedRef.current = true;
     let cancelled = false;
     const applyBundledDirectory = () => {
@@ -2504,7 +2596,7 @@ export default function Home() {
         if (!cancelled) applyBundledDirectory();
       });
     return () => { cancelled = true; };
-  }, [hydrated, replaceDirectoryPlaces, replaceElements]);
+  }, [hydrated, publicLayoutAccess, replaceDirectoryPlaces, replaceElements]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2569,7 +2661,7 @@ export default function Home() {
   }, [printSettingsCanEdit]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     let cancelled = false;
     fetch(DENSE_LABEL_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => {
@@ -2607,7 +2699,7 @@ export default function Home() {
         setDenseLabelSettingsRemoteReady(true);
       });
     return () => { cancelled = true; };
-  }, [hydrated]);
+  }, [hydrated, publicLayoutAccess]);
 
   const denseLabelSettingsSignature = useMemo(() => JSON.stringify({
     positions: denseLabelPositions,
@@ -2615,7 +2707,7 @@ export default function Home() {
   }), [denseLabelExcludedIds, denseLabelPositions]);
 
   useEffect(() => {
-    if (!hydrated || !denseLabelSettingsRemoteReady) return;
+    if (!hydrated || publicLayoutAccess !== "editor" || !denseLabelSettingsRemoteReady) return;
     const updatedAt = new Date().toISOString();
     localDenseLabelsUpdatedAtRef.current = Date.parse(updatedAt);
     try {
@@ -2638,10 +2730,10 @@ export default function Home() {
         .catch(() => setDenseLabelSettingsStorage("local"));
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [denseLabelSettingsCanEdit, denseLabelSettingsRemoteReady, denseLabelSettingsSignature, hydrated]);
+  }, [denseLabelSettingsCanEdit, denseLabelSettingsRemoteReady, denseLabelSettingsSignature, hydrated, publicLayoutAccess]);
 
   useEffect(() => {
-    if (!hydrated || !primaryCalibrationRemoteReady) return;
+    if (!hydrated || publicLayoutAccess !== "editor" || !primaryCalibrationRemoteReady) return;
     try {
       const updatedAt = new Date().toISOString();
       localCalibrationUpdatedAtRef.current = Date.parse(updatedAt);
@@ -2651,10 +2743,10 @@ export default function Home() {
         updatedAt,
       }));
     } catch {}
-  }, [calibrationPoints, hydrated, landmarkDefaultPositions, primaryCalibrationRemoteReady]);
+  }, [calibrationPoints, hydrated, landmarkDefaultPositions, primaryCalibrationRemoteReady, publicLayoutAccess]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     let cancelled = false;
     fetch(CALIBRATION_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => response.ok ? await response.json() as { points?: CalibrationPoint[]; updatedAt?: string | null } : null)
@@ -2706,10 +2798,10 @@ export default function Home() {
         setPrimaryCalibrationRemoteReady(true);
       });
     return () => { cancelled = true; };
-  }, [hydrated, replaceElements, replaceLandmarkDefaults]);
+  }, [hydrated, publicLayoutAccess, replaceElements, replaceLandmarkDefaults]);
 
   useEffect(() => {
-    if (!hydrated || !primaryCalibrationRemoteReady) return;
+    if (!hydrated || publicLayoutAccess !== "editor" || !primaryCalibrationRemoteReady) return;
     const timer = window.setTimeout(() => {
       void fetch(CALIBRATION_SETTINGS_API, {
         method: "PUT",
@@ -2720,10 +2812,10 @@ export default function Home() {
       }).catch(() => setPrimaryCalibrationStorage("local"));
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [calibrationPoints, hydrated, primaryCalibrationRemoteReady]);
+  }, [calibrationPoints, hydrated, primaryCalibrationRemoteReady, publicLayoutAccess]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     let cancelled = false;
     fetch(LOCKED_COORDINATE_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => response.ok ? await response.json() as { settings?: LockedCoordinateSetting[]; updatedAt?: string | null } : null)
@@ -2749,12 +2841,12 @@ export default function Home() {
         setLockedCoordinatesRemoteReady(true);
       });
     return () => { cancelled = true; };
-  }, [hydrated, replaceElements]);
+  }, [hydrated, publicLayoutAccess, replaceElements]);
 
   const lockedCoordinateSignature = useMemo(() => JSON.stringify(lockedCoordinateSettingsFor(elements)), [elements]);
 
   useEffect(() => {
-    if (!hydrated || !lockedCoordinatesRemoteReady) return;
+    if (!hydrated || publicLayoutAccess !== "editor" || !lockedCoordinatesRemoteReady) return;
     const timer = window.setTimeout(() => {
       const settings = lockedCoordinateSettingsFor(elementsRef.current);
       const updatedAt = new Date().toISOString();
@@ -2771,10 +2863,10 @@ export default function Home() {
       }).catch(() => setLockedCoordinateStorage("local"));
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [hydrated, lockedCoordinateSignature, lockedCoordinatesRemoteReady]);
+  }, [hydrated, lockedCoordinateSignature, lockedCoordinatesRemoteReady, publicLayoutAccess]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || publicLayoutAccess !== "editor") return;
     let cancelled = false;
     fetch(PLACEMENT_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => response.ok ? await response.json() as { settings?: PlacementOverride[]; updatedAt?: string | null } : null)
@@ -2799,12 +2891,12 @@ export default function Home() {
         if (!cancelled) setPlacementSettingsRemoteReady(true);
       });
     return () => { cancelled = true; };
-  }, [hydrated, replaceElements]);
+  }, [hydrated, publicLayoutAccess, replaceElements]);
 
   const placementSignature = useMemo(() => JSON.stringify(placementOverrides), [placementOverrides]);
 
   useEffect(() => {
-    if (!hydrated || !placementSettingsRemoteReady) return;
+    if (!hydrated || publicLayoutAccess !== "editor" || !placementSettingsRemoteReady) return;
     const timer = window.setTimeout(() => {
       const settings = placementOverridesRef.current;
       const updatedAt = new Date().toISOString();
@@ -2819,7 +2911,7 @@ export default function Home() {
       }).catch(() => undefined);
     }, 550);
     return () => window.clearTimeout(timer);
-  }, [hydrated, placementSettingsRemoteReady, placementSignature]);
+  }, [hydrated, placementSettingsRemoteReady, placementSignature, publicLayoutAccess]);
 
   useEffect(() => {
     if (!toast) return;
@@ -2937,7 +3029,7 @@ export default function Home() {
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (databaseEditorOpen || !selectedId || ["INPUT", "SELECT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName)) return;
+      if (publicLayoutAccess !== "editor" || databaseEditorOpen || !selectedId || ["INPUT", "SELECT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName)) return;
       const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       const direction = directions[event.key];
       if (!direction) return;
@@ -2964,7 +3056,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [databaseEditorOpen, resourceOutputDragMode, selectedId, updateCalibrationPoint, updateElement, updateElementAnchor]);
+  }, [databaseEditorOpen, publicLayoutAccess, resourceOutputDragMode, selectedId, updateCalibrationPoint, updateElement, updateElementAnchor]);
 
   const undo = () => {
     if (!undoStack.length) return;
@@ -4119,13 +4211,108 @@ export default function Home() {
     download("제주원도심_골목검토메모.csv", `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`, "text/csv;charset=utf-8");
   };
 
+  const currentPublicViewSettings = (): PublicViewSettings => ({
+    baseMap,
+    markerLabelsVisible,
+    mergeDenseLabels,
+    screenRecommendedOnly,
+  });
+
+  const applyPublicViewSettings = (view: PublicViewSettings | null | undefined) => {
+    if (!view) return;
+    setBaseMap(view.baseMap);
+    setMarkerLabelsVisible(view.markerLabelsVisible);
+    setMergeDenseLabels(view.mergeDenseLabels);
+    setScreenRecommendedOnly(view.screenRecommendedOnly);
+  };
+
+  const publishCurrentLayout = async () => {
+    if (publicLayoutAccess !== "editor" || publicLayoutPublishing) return;
+    setPublicLayoutPublishing(true);
+    setToast("현재 편집 상태를 공개 배치본으로 저장하고 있습니다.");
+    try {
+      const document = cloneDocument(currentDocument());
+      const view = currentPublicViewSettings();
+      const response = await fetch(PUBLIC_LAYOUT_API, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ document, view, baseRevision: publicLayoutRevision }),
+      });
+      const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
+      if (!response.ok) {
+        if (response.status === 409) throw new Error("conflict");
+        throw new Error(payload?.error ?? "publish failed");
+      }
+      const publishedDocument = payload?.document ? sanitizeDocument(payload.document) : document;
+      publishedLayoutDocumentRef.current = publishedDocument;
+      publishedLayoutViewRef.current = payload?.view ?? view;
+      setPublicLayoutPublishedAt(payload?.publishedAt ?? new Date().toISOString());
+      setPublicLayoutRevision(payload?.revision ?? publicLayoutRevision + 1);
+      setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
+      setToast("공개 배치본을 업데이트했습니다. 비로그인 방문자에게 같은 배치가 표시됩니다.");
+    } catch (error) {
+      setToast(error instanceof Error && error.message === "conflict"
+        ? "다른 기기에서 공개본이 변경되었습니다. 새로고침해 최신 공개본을 확인한 뒤 다시 게시해 주세요."
+        : "공개 배치본을 저장하지 못했습니다. 로그인 및 연결 상태를 확인해 주세요.");
+    } finally {
+      setPublicLayoutPublishing(false);
+    }
+  };
+
+  const loadPublishedLayoutIntoDraft = () => {
+    const published = publishedLayoutDocumentRef.current;
+    if (!published) {
+      setToast("아직 불러올 공개 배치본이 없습니다.");
+      return;
+    }
+    if (!window.confirm("현재 기기 초안을 공개 배치본으로 바꿀까요? 이 작업 전 상태는 자동복구에 다시 저장될 수 없습니다.")) return;
+    pushHistory();
+    setDocument(published);
+    applyPublicViewSettings(publishedLayoutViewRef.current);
+    setSaveState("공개본을 편집 초안으로 불러옴");
+    setToast("공개 배치본을 현재 편집 초안으로 불러왔습니다.");
+  };
+
+  const restorePreviousPublicLayout = async () => {
+    if (publicLayoutAccess !== "editor" || !publicLayoutHasPrevious || publicLayoutPublishing) return;
+    if (!window.confirm("직전 공개 배치본으로 되돌릴까요? 현재 공개본도 다시 복원할 수 있도록 교체 보관됩니다.")) return;
+    setPublicLayoutPublishing(true);
+    try {
+      const response = await fetch(PUBLIC_LAYOUT_API, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "restore-previous", baseRevision: publicLayoutRevision }),
+      });
+      const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
+      if (!response.ok || !payload?.document) throw new Error(payload?.error ?? "restore failed");
+      const restored = sanitizeDocument(payload.document);
+      publishedLayoutDocumentRef.current = restored;
+      publishedLayoutViewRef.current = payload.view ?? null;
+      setPublicLayoutPublishedAt(payload.publishedAt ?? new Date().toISOString());
+      setPublicLayoutRevision(payload.revision ?? publicLayoutRevision + 1);
+      setPublicLayoutHasPrevious(Boolean(payload.hasPrevious));
+      setDocument(restored);
+      applyPublicViewSettings(payload.view);
+      setToast("직전 공개 배치본으로 복원했습니다.");
+    } catch {
+      setToast("이전 공개 배치본을 복원하지 못했습니다. 새로고침 후 다시 시도해 주세요.");
+    } finally {
+      setPublicLayoutPublishing(false);
+    }
+  };
+
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
+  const editingEnabled = publicLayoutAccess === "editor" && !printPreviewMode;
   const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
 
+  if (publicLayoutAccess === "loading") {
+    return <main className="app-shell public-loading"><div><span /><strong>제주 원도심 지도</strong><p>공개 배치 상태를 확인하고 있습니다.</p></div></main>;
+  }
+
   return (
-    <main className="app-shell">
-      <header className="topbar">
+    <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""}`}>
+      {publicLayoutAccess === "editor" ? <header className="topbar">
         <div className="brand-block"><div className="brand-mark">W</div><div><strong>원도심 지도 배치 검수</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div></div>
         <div className="toolbar-group muted-actions">
           <button onClick={saveNamedLayout}>저장</button><button onClick={loadNamedLayout}>불러오기</button>
@@ -4139,11 +4326,17 @@ export default function Home() {
           <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(0.72); setPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
         <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={() => { const next = !printPreviewMode; setPrintPreviewMode(next); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); if (next) { setViewMode("all"); setZoom(0.72); setPan({ x: 0, y: 0 }); } }}>{printPreviewMode ? "편집 화면" : "출력 미리보기"}</button><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
+        <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button><button disabled={!publicLayoutPublishedAt || publicLayoutPublishing} onClick={loadPublishedLayoutIntoDraft}>공개본 불러오기</button><button disabled={!publicLayoutHasPrevious || publicLayoutPublishing} onClick={() => void restorePreviousPublicLayout()}>이전 공개본</button></div>
         <div className="toolbar-group muted-actions"><button onClick={exportJson}>JSON ↓</button><button onClick={() => jsonInputRef.current?.click()}>JSON ↑</button><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
-      </header>
+      </header> : <header className="topbar public-topbar">
+        <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
+        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(0.72); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
+        <span className="readonly-badge">읽기 전용</span>
+        <a className="owner-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>
+      </header>}
 
-      <section className={`workspace ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"} ${leftPanelMode === "calibration" && leftOpen ? "calibration-open" : ""}`}>
-        <aside ref={leftPanelRef} className="panel asset-panel" aria-label="자산 목록">
+      <section className={`workspace ${publicLayoutAccess === "viewer" ? "public-viewer" : ""} ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"} ${leftPanelMode === "calibration" && leftOpen ? "calibration-open" : ""}`}>
+        {publicLayoutAccess === "editor" && <aside ref={leftPanelRef} className="panel asset-panel" aria-label="자산 목록">
           <div className="panel-heading"><div><strong>{leftPanelMode === "assets" ? "자산" : leftPanelMode === "places" ? "장소 탐색" : "좌표 기준점"}</strong><span>{leftPanelMode === "assets" ? `${layoutName} · ${elements.filter((element) => element.mapVisible).length}개 배치` : leftPanelMode === "places" ? `통합 목록 ${allUnifiedPlaceRows.length}곳 · 배치/미배치 관리` : `기준점 ${calibrationPoints.length}곳 · 실시간 보정`}</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
           <div className="panel-tabs" role="tablist" aria-label="왼쪽 패널 내용">
             <button className={leftPanelMode === "assets" ? "active" : ""} onClick={() => switchLeftPanel("assets")} role="tab" aria-selected={leftPanelMode === "assets"}>아이콘·마커</button>
@@ -4422,17 +4615,17 @@ export default function Home() {
             <div className="review-note-scroll">{reviewNotes.map((note, index) => <button key={note.id} className={selectedNoteId === note.id ? "active" : ""} onClick={() => { setSelectedNoteId(note.id); setSelectedId(null); setRightOpen(true); }}><i className={`note-dot ${note.status}`} /> <span>{index + 1}. {note.text || reviewStatusText[note.status]}</span></button>)}</div>
             <div className="review-export"><button onClick={exportNotesJson}>메모 JSON</button><button onClick={exportNotesCsv}>메모 CSV</button></div>
           </div>
-        </aside>
-        {!leftOpen && <button className="panel-reopen left" onClick={() => setLeftOpen(true)}>자산 ›</button>}
+        </aside>}
+        {publicLayoutAccess === "editor" && !leftOpen && <button className="panel-reopen left" onClick={() => setLeftOpen(true)}>자산 ›</button>}
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
-              <div className={`map-stage ${stageMapClass} ${calibrationMode && !printPreviewMode ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={printPreviewMode ? undefined : handleStagePointerDown}>
+              <div className={`map-stage ${stageMapClass} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} onLoad={() => setMapLoaded(true)} />
-                {calibrationMode && !printPreviewMode && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
+                {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
                   {([ [0, 1], [1, 2], [2, 3], [2, 4], [4, 5], [5, 1], [0, 3] ] as Array<[number, number]>).map(([from, to]) => <line key={`${from}-${to}`} x1={calibrationPoints[from].targetX} y1={calibrationPoints[from].targetY} x2={calibrationPoints[to].targetX} y2={calibrationPoints[to].targetY} className="calibration-mesh-line" />)}
                   {showCalibrationSource && calibrationPoints.map((point) => <g key={`source-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-offset-line" /><circle cx={point.sourceX} cy={point.sourceY} r="0.34" className="calibration-source-dot" /></g>)}
                   {secondaryCalibrationPoints.map((point) => <g key={`secondary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-secondary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.45" className="calibration-secondary-dot" /></g>)}
@@ -4450,15 +4643,15 @@ export default function Home() {
                   return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
-                  const meta = categoryOf(element.category); const isSelected = !printPreviewMode && selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
+                  const meta = categoryOf(element.category); const isSelected = editingEnabled && selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
                   const showMarker = stageMarkerIds.has(element.id);
                   const showLabel = stageLabelIds.has(element.id);
-                  const isCalibrationReference = !printPreviewMode && calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
+                  const isCalibrationReference = editingEnabled && calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${!printPreviewMode && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${!printPreviewMode && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (!printPreviewMode && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={printPreviewMode ? undefined : (event) => startDrag(event, element)}>
-                    {!printPreviewMode && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
+                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={editingEnabled ? (event) => startDrag(event, element) : undefined}>
+                    {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
-                    {!printPreviewMode && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
+                    {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
                     {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
@@ -4468,32 +4661,32 @@ export default function Home() {
                     key={cluster.id}
                     className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
                     style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: `translate(-50%, -50%) scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` }}
-                    onPointerDown={(event) => startDenseLabelDrag(event, cluster)}
-                    title={`${cluster.names.join(" · ")} · 드래그하여 위치 조절`}
-                    role="button"
-                    aria-label={`${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절`}
+                    onPointerDown={editingEnabled ? (event) => startDenseLabelDrag(event, cluster) : undefined}
+                    title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
+                    role={editingEnabled ? "button" : undefined}
+                    aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
                   ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
                 </div>}
-                {!printPreviewMode && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
+                {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.72" className="active-anchor-halo" vectorEffect="non-scaling-stroke" />
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.42" fill="white" stroke={selected.connectorColor} strokeWidth="0.16" vectorEffect="non-scaling-stroke" />
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.14" fill={selected.connectorColor} />
                   </g>
                 </svg>}
-                {calibrationMode && !printPreviewMode && <div className="calibration-badge-layer">{calibrationPoints.map((point, index) => <span key={`badge-${point.id}`} className="calibration-map-badge" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>{index + 1}</span>)}{secondaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge secondary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>S</span>)}{tertiaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge tertiary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>3</span>)}</div>}
-                {!printPreviewMode && <div className="review-pin-layer">{reviewNotes.map((note, index) => <button key={note.id} className={`review-pin ${note.status} ${selectedNoteId === note.id ? "selected" : ""}`} style={{ left: `${note.x}%`, top: `${note.y}%` }} onPointerDown={(event) => { event.stopPropagation(); setSelectedNoteId(note.id); setSelectedId(null); setRightOpen(true); }} title={`${reviewStatusText[note.status]}: ${note.text || "내용 없음"}`}><span>{index + 1}</span></button>)}</div>}
+                {calibrationMode && editingEnabled && <div className="calibration-badge-layer">{calibrationPoints.map((point, index) => <span key={`badge-${point.id}`} className="calibration-map-badge" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>{index + 1}</span>)}{secondaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge secondary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>S</span>)}{tertiaryCalibrationPoints.map((point) => <span key={`badge-${point.id}`} className="calibration-map-badge tertiary" style={{ left: `${point.targetX}%`, top: `${point.targetY}%` }}>3</span>)}</div>}
+                {editingEnabled && <div className="review-pin-layer">{reviewNotes.map((note, index) => <button key={note.id} className={`review-pin ${note.status} ${selectedNoteId === note.id ? "selected" : ""}`} style={{ left: `${note.x}%`, top: `${note.y}%` }} onPointerDown={(event) => { event.stopPropagation(); setSelectedNoteId(note.id); setSelectedId(null); setRightOpen(true); }} title={`${reviewStatusText[note.status]}: ${note.text || "내용 없음"}`}><span>{index + 1}</span></button>)}</div>}
               </div>
             </div>
             {printPreviewMode && <div className={`print-preview-badge ${printAudit.issues.length ? "warning" : "pass"}`}><strong>PNG 출력 미리보기</strong><span>{printAudit.issues.length ? `점검 ${printAudit.issues.length}건` : "점검 통과"}</span></div>}
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 + 3차 ${tertiaryCalibrationPoints.length}점 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>고정좌표 {lockedCoordinateStorage === "persistent" ? "영구 동기화" : lockedCoordinateStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer>
+          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 + 3차 ${tertiaryCalibrationPoints.length}점 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>고정좌표 {lockedCoordinateStorage === "persistent" ? "영구 동기화" : lockedCoordinateStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {visibleElements.length}곳</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">마우스 휠 확대 · 빈 공간 드래그 이동</span></footer>}
         </section>
-        {!rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
+        {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
-        <aside className="panel properties-panel" aria-label="속성 편집">
+        {publicLayoutAccess === "editor" && <aside className="panel properties-panel" aria-label="속성 편집">
           <div className="panel-heading"><div><strong>{selectedNote ? "검토 메모" : "속성"}</strong><span>{selected?.name ?? (selectedNote ? reviewStatusText[selectedNote.status] : "요소를 선택하세요")}</span></div><button className="icon-button" onClick={() => setRightOpen(false)} aria-label="오른쪽 패널 접기">›</button></div>
           {selectedNote ? <div className="property-form note-form">
             <section><div className="section-title"><strong>도로·골목 검토</strong><span>메모 핀</span></div><label>상태<select value={selectedNote.status} onChange={(event) => updateNote(selectedNote.id, { status: event.target.value as ReviewStatus })}><option value="delete">삭제 검토</option><option value="weaken">약화 검토</option><option value="keep">유지</option><option value="hierarchy">도로 위계 조정</option></select></label><label>검토 내용<textarea value={selectedNote.text} onChange={(event) => updateNote(selectedNote.id, { text: event.target.value })} placeholder="가려지는 도로, 골목 정리 이유 등을 기록" /></label></section>
@@ -4509,7 +4702,7 @@ export default function Home() {
             <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div>{selected.category !== "landmark" && <label className="dense-label-eligibility"><input type="checkbox" checked={!denseLabelExcludedIds.includes(selected.id)} onChange={(event) => setDenseLabelEligibility(selected.id, event.target.checked)} /><span><b>밀집 시 통합 라벨 사용</b><small>끄면 이 장소명은 항상 자기 마커 옆에 개별 표시됩니다.</small></span></label>}<div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><button className="wide-secondary" disabled={labelsRefreshing} onClick={refreshLabelPositions}>{labelsRefreshing ? "라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button><p className="field-help">현재 방향과 직접 조정한 지점을 기준으로 가까운 빈자리만 탐색합니다. 랜드마크는 위·아래 기준 위치를 최우선으로 유지하며, 모든 라벨은 다른 이미지·라벨을 피합니다.</p></section>
             <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
-        </aside>
+        </aside>}
       </section>
       {databaseEditorOpen && <div className="database-editor-backdrop" role="presentation">
         <section className="database-editor" role="dialog" aria-modal="true" aria-labelledby="database-editor-title">
