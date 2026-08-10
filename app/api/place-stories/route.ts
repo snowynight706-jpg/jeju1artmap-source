@@ -1,3 +1,5 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -6,10 +8,9 @@ const GLOBAL_PAGE_SIZE = 10;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_COUNT = 3;
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
   BUCKET?: R2Bucket;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 type StoryRow = {
@@ -51,9 +52,8 @@ function json(body: unknown, status = 200) {
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  return { canModerate: Boolean(ownerEmail && currentEmail === ownerEmail), currentEmail };
+  const access = adminAccess(request, runtime);
+  return { canModerate: access.allowed, currentEmail: access.actor };
 }
 
 async function ensureStorage(db: D1Database) {

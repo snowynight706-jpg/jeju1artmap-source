@@ -1,3 +1,5 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
 const PRIMARY_NAMES = new Set([
@@ -9,9 +11,8 @@ const PRIMARY_NAMES = new Set([
   "김만덕기념관",
 ]);
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 type CalibrationInput = {
@@ -60,9 +61,8 @@ export async function GET() {
 export async function PUT(request: Request) {
   const runtime = await runtimeEnv();
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (!ownerEmail || currentEmail !== ownerEmail) return json({ error: "owner authentication required" }, 403);
+  const access = adminAccess(request, runtime);
+  if (!access.allowed || !access.actor) return json({ error: "admin authentication required" }, 403);
 
   let payload: unknown;
   try {
@@ -90,6 +90,6 @@ export async function PUT(request: Request) {
       target_y = excluded.target_y,
       updated_at = excluded.updated_at,
       updated_by = excluded.updated_by`,
-  ).bind(point.name, point.sourceX, point.sourceY, point.targetX, point.targetY, updatedAt, currentEmail)));
+  ).bind(point.name, point.sourceX, point.sourceY, point.targetX, point.targetY, updatedAt, access.actor)));
   return json({ points, persistent: true, updatedAt });
 }

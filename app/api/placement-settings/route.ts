@@ -1,11 +1,12 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
 const STATES = new Set(["unplaced", "deleted"]);
 const MAX_SETTINGS = 800;
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 type PlacementSettingInput = {
@@ -56,9 +57,8 @@ export async function GET() {
 export async function PUT(request: Request) {
   const runtime = await runtimeEnv();
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (!ownerEmail || currentEmail !== ownerEmail) return json({ error: "owner authentication required" }, 403);
+  const access = adminAccess(request, runtime);
+  if (!access.allowed || !access.actor) return json({ error: "admin authentication required" }, 403);
 
   let payload: unknown;
   try {
@@ -84,13 +84,13 @@ export async function PUT(request: Request) {
       `INSERT INTO placement_settings
         (place_key, directory_id, name, state, updated_at, updated_by)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).bind(setting.key, setting.directoryId ?? null, setting.name, setting.state, updatedAt, currentEmail));
+    ).bind(setting.key, setting.directoryId ?? null, setting.name, setting.state, updatedAt, access.actor));
   });
   statements.push(runtime.DB.prepare(
     `INSERT INTO placement_revision (id, updated_at, updated_by)
      VALUES (1, ?, ?)
      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-  ).bind(updatedAt, currentEmail));
+  ).bind(updatedAt, access.actor));
   await runtime.DB.batch(statements);
   return json({ settings, persistent: true, updatedAt });
 }

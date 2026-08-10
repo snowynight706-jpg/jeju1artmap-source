@@ -3,6 +3,7 @@
 
 import {
   ChangeEvent,
+  FormEvent,
   PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -36,6 +37,7 @@ const PUBLIC_LAYOUT_API = "/api/public-layout";
 const PLACE_STORIES_API = "/api/place-stories";
 const PLACE_EVENTS_API = "/api/place-events";
 const PLACE_REGISTRATION_REQUESTS_API = "/api/place-registration-requests";
+const ADMIN_SESSION_API = "/api/admin-session";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -311,6 +313,7 @@ type PublicLayoutPayload = {
   document?: DocumentState | null;
   view?: PublicViewSettings;
   canEdit?: boolean;
+  accessMethod?: "owner" | "shared" | null;
   persistent?: boolean;
   publishedAt?: string | null;
   revision?: number;
@@ -342,10 +345,16 @@ type PlaceStoriesPayload = {
   error?: string;
 };
 
+type PlaceEventPlace = {
+  placeKey: string;
+  placeName: string;
+};
+
 type PlaceEvent = {
   id: string;
   placeKey: string;
   placeName: string;
+  places: PlaceEventPlace[];
   eventName: string;
   eventInfo: string;
   photoUrl: string;
@@ -933,6 +942,12 @@ function localDateTimeInputValue(date: Date) {
   return local.toISOString().slice(0, 16);
 }
 
+function eventPlaceList(event: PlaceEvent): PlaceEventPlace[] {
+  return Array.isArray(event.places) && event.places.length
+    ? event.places
+    : [{ placeKey: event.placeKey, placeName: event.placeName }];
+}
+
 function eventVisibilityState(event: PlaceEvent) {
   if (event.status === "hidden") return "숨김";
   const now = Date.now();
@@ -1408,7 +1423,7 @@ function cloneDocument(document: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(document)) as DocumentState;
 }
 
-function uniqueRuntimeId(prefix: "element" | "asset" | "review" | "db-place", existingIds: Iterable<string>) {
+function uniqueRuntimeId(prefix: "element" | "asset" | "review" | "db-place" | "requested-place", existingIds: Iterable<string>) {
   const used = new Set(existingIds);
   let candidate = "";
   do {
@@ -1680,6 +1695,7 @@ export default function Home() {
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const storyPhotoInputRef = useRef<HTMLInputElement>(null);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
+  const eventDialogDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const geocodeRunRef = useRef(0);
   const storyRequestRunRef = useRef(0);
   const eventRequestRunRef = useRef(0);
@@ -1719,6 +1735,11 @@ export default function Home() {
   const [saveState, setSaveState] = useState("자동 저장 준비");
   const [layoutName, setLayoutName] = useState("최근 자동복구");
   const [toast, setToast] = useState("");
+  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminLoginSubmitting, setAdminLoginSubmitting] = useState(false);
+  const [adminLoginError, setAdminLoginError] = useState("");
+  const [adminAccessMethod, setAdminAccessMethod] = useState<"owner" | "shared" | null>(null);
   const [zoom, setZoom] = useState(0.72);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
     width: EXPORT_CANONICAL_WIDTH,
@@ -1782,13 +1803,19 @@ export default function Home() {
   const [placeEvents, setPlaceEvents] = useState<PlaceEvent[]>([]);
   const [placeEventsLoading, setPlaceEventsLoading] = useState(false);
   const [placeEventsCanManage, setPlaceEventsCanManage] = useState(false);
+  const [placeEventsRefreshKey, setPlaceEventsRefreshKey] = useState(0);
   const [placeEventFormOpen, setPlaceEventFormOpen] = useState(false);
+  const [placeEventEditingId, setPlaceEventEditingId] = useState<string | null>(null);
+  const [placeEventMultiPlace, setPlaceEventMultiPlace] = useState(false);
+  const [placeEventPlaces, setPlaceEventPlaces] = useState<PlaceEventPlace[]>([]);
+  const [placeEventDialogOffset, setPlaceEventDialogOffset] = useState({ x: 0, y: 0 });
   const [placeEventName, setPlaceEventName] = useState("");
   const [placeEventInfo, setPlaceEventInfo] = useState("");
   const [placeEventVisibleFrom, setPlaceEventVisibleFrom] = useState("");
   const [placeEventVisibleUntil, setPlaceEventVisibleUntil] = useState("");
   const [placeEventPhoto, setPlaceEventPhoto] = useState<File | null>(null);
   const [placeEventPhotoPreview, setPlaceEventPhotoPreview] = useState<string | null>(null);
+  const [placeEventExistingPhotoUrl, setPlaceEventExistingPhotoUrl] = useState<string | null>(null);
   const [placeEventSubmitting, setPlaceEventSubmitting] = useState(false);
   const [placeEventActionId, setPlaceEventActionId] = useState<string | null>(null);
   const [globalContentTab, setGlobalContentTab] = useState<GlobalContentTab>("reviews");
@@ -2547,6 +2574,20 @@ export default function Home() {
     setPlaceEventPhoto(file);
   }, []);
 
+  const togglePlaceEventMapSelection = useCallback((elementId: string) => {
+    const element = elementsRef.current.find((item) => item.id === elementId && item.mapVisible);
+    if (!element) return;
+    const place = { placeKey: placeContentKey(element), placeName: element.name };
+    setPlaceEventPlaces((current) => {
+      if (current.some((item) => item.placeKey === place.placeKey)) return current.length > 1 ? current.filter((item) => item.placeKey !== place.placeKey) : current;
+      if (current.length >= 20) {
+        setToast("한 행사에는 장소를 최대 20곳까지 지정할 수 있습니다.");
+        return current;
+      }
+      return [...current, place];
+    });
+  }, []);
+
   useEffect(() => {
     const run = ++storyRequestRunRef.current;
     void Promise.resolve().then(() => {
@@ -2593,8 +2634,12 @@ export default function Home() {
       setPlaceEventsLoading(true);
       setPlaceEvents([]);
       setPlaceEventFormOpen(false);
+      setPlaceEventEditingId(null);
+      setPlaceEventMultiPlace(false);
+      setPlaceEventPlaces([]);
       setPlaceEventName("");
       setPlaceEventInfo("");
+      setPlaceEventExistingPhotoUrl(null);
       updatePlaceEventPhoto(null);
       return fetch(`${PLACE_EVENTS_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store" })
         .then(async (response) => {
@@ -2616,7 +2661,7 @@ export default function Home() {
           if (eventRequestRunRef.current === run) setPlaceEventsLoading(false);
         });
     });
-  }, [publicLayoutAccess, selectedStoryKey, updatePlaceEventPhoto]);
+  }, [placeEventsRefreshKey, publicLayoutAccess, selectedStoryKey, updatePlaceEventPhoto]);
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !globalStoriesOpen || globalContentTab !== "reviews") return;
@@ -2735,6 +2780,7 @@ export default function Home() {
       .then((payload) => {
         if (cancelled) return;
         const canEdit = Boolean(payload?.canEdit);
+        setAdminAccessMethod(payload?.accessMethod ?? null);
         const publishedDocument = payload?.document && Array.isArray(payload.document.elements)
           ? sanitizeDocument(payload.document)
           : null;
@@ -3528,9 +3574,13 @@ export default function Home() {
       if (interaction?.type === "pan" && interaction.pendingPublicPlaceId) {
         const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
         if (moved <= 6) {
-          setSelectedId(interaction.pendingPublicPlaceId);
-          setSelectedNoteId(null);
-          setSelectedDenseLabelId(null);
+          if (placeEventFormOpen && placeEventMultiPlace) {
+            togglePlaceEventMapSelection(interaction.pendingPublicPlaceId);
+          } else {
+            setSelectedId(interaction.pendingPublicPlaceId);
+            setSelectedNoteId(null);
+            setSelectedDenseLabelId(null);
+          }
         }
       }
       setInteraction(null);
@@ -3544,7 +3594,7 @@ export default function Home() {
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleCancel);
     };
-  }, [fitZoom, interaction, updateCalibrationPoint, updateDenseLabelPosition, updateElement, zoom]);
+  }, [fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement, zoom]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -4927,25 +4977,96 @@ export default function Home() {
     }
   };
 
+  const closePlaceEventForm = () => {
+    setPlaceEventFormOpen(false);
+    setPlaceEventEditingId(null);
+    setPlaceEventMultiPlace(false);
+    setPlaceEventPlaces([]);
+    setPlaceEventName("");
+    setPlaceEventInfo("");
+    setPlaceEventExistingPhotoUrl(null);
+    updatePlaceEventPhoto(null);
+    eventDialogDragRef.current = null;
+  };
+
   const togglePlaceEventForm = () => {
-    const next = !placeEventFormOpen;
-    if (next && (!placeEventVisibleFrom || !placeEventVisibleUntil)) {
-      const start = new Date();
-      const end = new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000);
-      setPlaceEventVisibleFrom(localDateTimeInputValue(start));
-      setPlaceEventVisibleUntil(localDateTimeInputValue(end));
+    if (placeEventFormOpen) {
+      closePlaceEventForm();
+      return;
     }
-    setPlaceEventFormOpen(next);
+    if (!selected || !selectedStoryKey) {
+      setToast("행사를 등록할 장소를 먼저 선택해 주세요.");
+      return;
+    }
+    const start = new Date();
+    const end = new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000);
+    setPlaceEventEditingId(null);
+    setPlaceEventMultiPlace(false);
+    setPlaceEventPlaces([{ placeKey: selectedStoryKey, placeName: selected.name }]);
+    setPlaceEventName("");
+    setPlaceEventInfo("");
+    setPlaceEventVisibleFrom(localDateTimeInputValue(start));
+    setPlaceEventVisibleUntil(localDateTimeInputValue(end));
+    setPlaceEventExistingPhotoUrl(null);
+    updatePlaceEventPhoto(null);
+    setPlaceEventDialogOffset({ x: 0, y: 0 });
+    setPlaceEventFormOpen(true);
+  };
+
+  const editPlaceEvent = (event: PlaceEvent) => {
+    const places = eventPlaceList(event);
+    setGlobalStoriesOpen(false);
+    setPlaceEventEditingId(event.id);
+    setPlaceEventMultiPlace(places.length > 1);
+    setPlaceEventPlaces(places);
+    setPlaceEventName(event.eventName);
+    setPlaceEventInfo(event.eventInfo);
+    setPlaceEventVisibleFrom(localDateTimeInputValue(new Date(event.visibleFrom)));
+    setPlaceEventVisibleUntil(localDateTimeInputValue(new Date(event.visibleUntil)));
+    setPlaceEventExistingPhotoUrl(event.photoUrl);
+    updatePlaceEventPhoto(null);
+    setPlaceEventDialogOffset({ x: 0, y: 0 });
+    setPlaceEventFormOpen(true);
+  };
+
+  const startPlaceEventDialogDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest("button, input, textarea, label")) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    eventDialogDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: placeEventDialogOffset.x,
+      offsetY: placeEventDialogOffset.y,
+    };
+  };
+
+  const movePlaceEventDialog = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = eventDialogDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const limitX = Math.max(0, window.innerWidth / 2 - 150);
+    const limitY = Math.max(0, window.innerHeight / 2 - 90);
+    setPlaceEventDialogOffset({
+      x: clamp(drag.offsetX + event.clientX - drag.startX, -limitX, limitX),
+      y: clamp(drag.offsetY + event.clientY - drag.startY, -limitY, limitY),
+    });
+  };
+
+  const endPlaceEventDialogDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (eventDialogDragRef.current?.pointerId !== event.pointerId) return;
+    eventDialogDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const submitPlaceEvent = async () => {
-    if (!selected || !selectedStoryKey || placeEventSubmitting) return;
+    if (placeEventSubmitting) return;
     const eventName = placeEventName.replace(/\s+/g, " ").trim().slice(0, 100);
     const eventInfo = placeEventInfo.trim().slice(0, 1200);
     const visibleFromDate = new Date(placeEventVisibleFrom);
     const visibleUntilDate = new Date(placeEventVisibleUntil);
-    if (eventName.length < 2 || eventInfo.length < 2 || !placeEventPhoto) {
-      setToast("행사명·행사정보·사진을 모두 입력해 주세요.");
+    if (eventName.length < 2 || eventInfo.length < 2 || !placeEventPlaces.length || (!placeEventEditingId && !placeEventPhoto)) {
+      setToast("행사명·행사정보·장소·사진을 모두 입력해 주세요.");
       return;
     }
     if (Number.isNaN(visibleFromDate.getTime()) || Number.isNaN(visibleUntilDate.getTime()) || visibleUntilDate <= visibleFromDate) {
@@ -4954,30 +5075,33 @@ export default function Home() {
     }
     setPlaceEventSubmitting(true);
     try {
-      const prepared = await prepareStoryPhoto(placeEventPhoto);
-      if (prepared.size > 5 * 1024 * 1024) throw new Error("photo-too-large");
       const form = new FormData();
-      form.set("placeKey", selectedStoryKey);
-      form.set("placeName", selected.name);
+      if (placeEventEditingId) form.set("id", placeEventEditingId);
+      form.set("places", JSON.stringify(placeEventPlaces));
       form.set("eventName", eventName);
       form.set("eventInfo", eventInfo);
       form.set("visibleFrom", visibleFromDate.toISOString());
       form.set("visibleUntil", visibleUntilDate.toISOString());
-      form.set("photo", prepared);
-      const response = await fetch(PLACE_EVENTS_API, { method: "POST", body: form });
+      if (placeEventPhoto) {
+        const prepared = await prepareStoryPhoto(placeEventPhoto);
+        if (prepared.size > 5 * 1024 * 1024) throw new Error("photo-too-large");
+        form.set("photo", prepared);
+      }
+      const response = await fetch(PLACE_EVENTS_API, { method: placeEventEditingId ? "PATCH" : "POST", body: form });
       const payload = await response.json().catch(() => null) as PlaceEventsPayload | null;
       if (!response.ok || !payload?.event) {
         if (response.status === 413) throw new Error("photo-too-large");
         throw new Error(payload?.error ?? "event-submit-failed");
       }
-      setPlaceEvents((current) => [payload.event!, ...current]);
+      setGlobalEvents((current) => placeEventEditingId
+        ? current.map((item) => item.id === payload.event!.id ? payload.event! : item)
+        : [payload.event!, ...current.filter((item) => item.id !== payload.event!.id)]);
       setGlobalEventsPage(1);
       setGlobalEventsRefreshKey((current) => current + 1);
-      setPlaceEventName("");
-      setPlaceEventInfo("");
-      updatePlaceEventPhoto(null);
-      setPlaceEventFormOpen(false);
-      setToast("행사를 저장했습니다. 설정한 노출 기간에 공개 화면에 표시됩니다.");
+      setPlaceEventsRefreshKey((current) => current + 1);
+      const wasEditing = Boolean(placeEventEditingId);
+      closePlaceEventForm();
+      setToast(wasEditing ? "행사 내용을 수정했습니다." : "행사를 저장했습니다. 설정한 노출 기간에 공개 화면에 표시됩니다.");
     } catch (error) {
       setToast(error instanceof Error && error.message === "photo-too-large"
         ? "사진을 처리해도 5MB를 넘습니다. 더 작은 사진을 선택해 주세요."
@@ -5224,10 +5348,10 @@ export default function Home() {
     focusMapPosition(element.x, element.y, element.id);
   };
 
-  const openGlobalEventPlace = (event: PlaceEvent) => {
+  const openGlobalEventPlace = (place: PlaceEventPlace) => {
     const element = elements.find((item) => (
-      placeContentKey(item) === event.placeKey
-      || normalizePlaceName(item.name) === normalizePlaceName(event.placeName)
+      placeContentKey(item) === place.placeKey
+      || normalizePlaceName(item.name) === normalizePlaceName(place.placeName)
     ));
     if (!element) {
       setToast("현재 공개 지도에서 이 장소의 마커를 찾지 못했습니다.");
@@ -5240,8 +5364,52 @@ export default function Home() {
     focusMapPosition(element.x, element.y, element.id);
   };
 
+  const submitSharedAdminLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!adminPassword) {
+      setAdminLoginError("공유 관리자 비밀번호를 입력해 주세요.");
+      return;
+    }
+    setAdminLoginSubmitting(true);
+    setAdminLoginError("");
+    try {
+      const response = await fetch(ADMIN_SESSION_API, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: adminPassword }),
+      });
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) {
+        setAdminLoginError(response.status === 429
+          ? "입력 횟수가 많습니다. 15분 뒤 다시 시도해 주세요."
+          : response.status === 401
+            ? "비밀번호가 맞지 않습니다."
+            : payload?.error === "shared admin login unavailable"
+              ? "공유 관리자 로그인이 아직 설정되지 않았습니다."
+              : "로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
+      window.location.reload();
+    } catch {
+      setAdminLoginError("로그인 연결을 확인하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setAdminLoginSubmitting(false);
+    }
+  };
+
+  const signOutSharedAdmin = async () => {
+    try {
+      await fetch(ADMIN_SESSION_API, { method: "DELETE", credentials: "same-origin" });
+    } finally {
+      window.location.reload();
+    }
+  };
+
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
   const editingEnabled = publicLayoutAccess === "editor" && !printPreviewMode;
+  const eventPlaceSelectionMode = editingEnabled && placeEventFormOpen && placeEventMultiPlace;
+  const eventPlaceKeySet = new Set(placeEventPlaces.map((place) => place.placeKey));
   const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
 
@@ -5267,11 +5435,12 @@ export default function Home() {
         <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={() => { const next = !printPreviewMode; setPrintPreviewMode(next); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); if (next) { setViewMode("all"); setZoom(fitZoom); setPan({ x: 0, y: 0 }); } }}>{printPreviewMode ? "편집 화면" : "출력 미리보기"}</button><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button><button disabled={!publicLayoutPublishedAt || publicLayoutPublishing} onClick={loadPublishedLayoutIntoDraft}>공개본 불러오기</button><button disabled={!publicLayoutHasPrevious || publicLayoutPublishing} onClick={() => void restorePreviousPublicLayout()}>이전 공개본</button></div>
         <div className="toolbar-group muted-actions"><button onClick={exportJson}>JSON ↓</button><button onClick={() => jsonInputRef.current?.click()}>JSON ↑</button><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
+        {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
-        <a className="owner-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>
+        <button className="owner-signin admin-login-trigger" type="button" onClick={() => { setAdminPassword(""); setAdminLoginError(""); setAdminLoginOpen(true); }}>관리자 로그인</button>
       </header>}
 
       <section className={`workspace ${publicLayoutAccess === "viewer" ? "public-viewer" : ""} ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"} ${leftPanelMode === "calibration" && leftOpen ? "calibration-open" : ""}`}>
@@ -5559,7 +5728,7 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터</button><button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}</div><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span>{baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}<button className="inline-tool" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button><input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} /><button className={`inline-tool label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={refreshLabelPositions} title="현재 아이콘과 라벨 위치를 기준으로 겹치지 않게 다시 배치"><span aria-hidden="true">↻</span>{labelsRefreshing ? "정리 중…" : "라벨 위치 새로고침"}</button><button className={`inline-memo ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>⌖ 메모 핀</button><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}>
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
@@ -5588,7 +5757,19 @@ export default function Home() {
                   const showLabel = stageLabelIds.has(element.id);
                   const isCalibrationReference = editingEnabled && calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, element.id) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} aria-label={publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(element.id); setSelectedDenseLabelId(null); } } : undefined}>
+                  const eventPlacePicked = eventPlaceSelectionMode && eventPlaceKeySet.has(placeContentKey(element));
+                  const keyboardSelectable = publicLayoutAccess === "viewer" || eventPlaceSelectionMode;
+                  return <div
+                    key={element.id}
+                    data-element-id={element.id}
+                    className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
+                    style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }}
+                    onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, element.id) : undefined}
+                    role={keyboardSelectable ? "button" : undefined}
+                    tabIndex={keyboardSelectable ? 0 : undefined}
+                    aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}
+                    onKeyDown={keyboardSelectable ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (eventPlaceSelectionMode) togglePlaceEventMapSelection(element.id); else { setSelectedId(element.id); setSelectedDenseLabelId(null); } } } : undefined}
+                  >
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
@@ -5619,6 +5800,7 @@ export default function Home() {
               </div>
             </div>
             {printPreviewMode && <div className={`print-preview-badge ${printAudit.issues.length ? "warning" : "pass"}`}><strong>PNG 출력 미리보기</strong><span>{printAudit.issues.length ? `점검 ${printAudit.issues.length}건` : "점검 통과"}</span></div>}
+            {eventPlaceSelectionMode && <div className="event-place-selection-hint"><strong>행사 장소 선택 중</strong><span>지도 마커를 눌러 추가·해제 · 현재 {placeEventPlaces.length}곳</span></div>}
             <div className="map-scale"><span /> 정규화 좌표 0–100%</div>
             {publicLayoutAccess === "editor" && <button type="button" className={`global-story-toggle editor-map ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel"><span aria-hidden="true">✓</span><strong>{globalStoriesOpen ? "관리 닫기" : "리뷰·행사·장소 관리"}</strong>{globalContentTab === "reviews" ? globalStoriesTotal > 0 && <em>{globalStoriesTotal}</em> : globalContentTab === "events" ? globalEventsTotal > 0 && <em>{globalEventsTotal}</em> : placeRequestsTotal > 0 && <em>{placeRequestsTotal}</em>}</button>}
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
@@ -5675,19 +5857,10 @@ export default function Home() {
             <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리{isCoreLandmarkName(selected.name) ? " · 핵심 랜드마크 고정" : ""}<select value={selected.category} disabled={isCoreLandmarkName(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
             <section className="editor-place-events">
               <div className="section-title"><strong>장소 행사</strong><span>{placeEvents.length}개</span></div>
-              {placeEventsCanManage && <button type="button" className="wide-secondary" onClick={togglePlaceEventForm}>{placeEventFormOpen ? "행사 입력 닫기" : "＋ 행사 등록"}</button>}
-              {placeEventFormOpen && <div className="place-event-admin-form">
-                <label>행사명<input value={placeEventName} maxLength={100} onChange={(event) => setPlaceEventName(event.target.value)} placeholder="100자 이내" /></label>
-                <label>행사정보<textarea value={placeEventInfo} maxLength={1200} onChange={(event) => setPlaceEventInfo(event.target.value)} placeholder="일정·관람 방법·참여 대상 등 필요한 안내를 적어주세요." /><small>{placeEventInfo.length}/1200</small></label>
-                <div className="event-visibility-row"><label>노출 시작<input type="datetime-local" value={placeEventVisibleFrom} onChange={(event) => setPlaceEventVisibleFrom(event.target.value)} /></label><label>노출 종료<input type="datetime-local" value={placeEventVisibleUntil} onChange={(event) => setPlaceEventVisibleUntil(event.target.value)} /></label></div>
-                <div className="place-event-photo-row"><button type="button" onClick={() => eventPhotoInputRef.current?.click()}>{placeEventPhoto ? "사진 바꾸기" : "행사 사진 선택"}</button>{placeEventPhoto && <button type="button" className="remove" onClick={() => updatePlaceEventPhoto(null)}>사진 빼기</button>}<input ref={eventPhotoInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { updatePlaceEventPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></div>
-                {placeEventPhotoPreview && <img className="place-event-photo-preview" src={placeEventPhotoPreview} alt="등록할 행사 사진 미리보기" />}
-                <p>노출 종료 시각이 지나면 공개 화면에서 자동으로 숨겨집니다.</p>
-                <button type="button" className="place-event-submit" disabled={placeEventSubmitting || placeEventName.trim().length < 2 || placeEventInfo.trim().length < 2 || !placeEventPhoto || !placeEventVisibleFrom || !placeEventVisibleUntil} onClick={() => void submitPlaceEvent()}>{placeEventSubmitting ? "저장 중…" : "행사 저장"}</button>
-              </div>}
+              {placeEventsCanManage && <button type="button" className="wide-secondary" onClick={togglePlaceEventForm}>＋ 행사 등록</button>}
               {placeEventsLoading ? <p className="field-help">행사를 불러오는 중입니다.</p> : placeEvents.length ? <div className="editor-place-event-list">{placeEvents.map((event) => {
                 const visibility = eventVisibilityState(event);
-                return <article key={event.id} className={!event.isVisible ? "inactive" : ""}><img src={event.photoUrl} alt="" loading="lazy" /><div><header><b>{event.eventName}</b><span>{visibility}</span></header><p>{event.eventInfo}</p><small>{storyDateTimeLabel(event.visibleFrom)}–{storyDateTimeLabel(event.visibleUntil)}</small><footer>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>삭제</button></footer></div></article>;
+                return <article key={event.id} className={!event.isVisible ? "inactive" : ""}><img src={event.photoUrl} alt="" loading="lazy" /><div><header><b>{event.eventName}</b><span>{visibility}</span></header><p>{event.eventInfo}</p><small>{storyDateTimeLabel(event.visibleFrom)}–{storyDateTimeLabel(event.visibleUntil)} · 장소 {eventPlaceList(event).length}곳</small><footer><button type="button" disabled={placeEventActionId !== null} onClick={() => editPlaceEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>삭제</button></footer></div></article>;
               })}</div> : <p className="field-help">등록된 행사가 없습니다.</p>}
               {!placeEventsCanManage && <p className="field-help">소유자 권한을 확인하면 행사를 등록하고 관리할 수 있습니다.</p>}
             </section>
@@ -5702,7 +5875,7 @@ export default function Home() {
           </div>}
         </aside>}
       </section>
-      {publicLayoutAccess !== "loading" && <>
+      <>
         {publicLayoutAccess === "viewer" && <button type="button" className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel">
           <span aria-hidden="true">☰</span><strong>{globalStoriesOpen ? "목록 닫기" : "리뷰 / 행사"}</strong>{(globalContentTab === "reviews" ? globalStoriesTotal : globalEventsTotal) > 0 && <em>{globalContentTab === "reviews" ? globalStoriesTotal : globalEventsTotal}</em>}
         </button>}
@@ -5730,7 +5903,7 @@ export default function Home() {
                 : globalEventsError ? <div className="global-story-state error"><strong>행사를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalEventsRefreshKey((current) => current + 1)}>다시 시도</button></div>
                   : globalEvents.length ? <div className="global-story-list">{globalEvents.map((event) => {
                     const visibility = eventVisibilityState(event);
-                    return <article className={`global-story-card event-card has-photo ${!event.isVisible ? "hidden" : ""}`} key={event.id}><img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" /><div><button type="button" className="global-story-place-link" onClick={() => openGlobalEventPlace(event)}>{event.placeName}<span>지도에서 보기</span></button><div className="global-story-meta"><strong>{event.eventName}<em className={`event-visibility ${event.isVisible ? "visible" : ""}`}>{visibility}</em></strong><time dateTime={event.visibleUntil}>{storyDateTimeLabel(event.visibleUntil)}까지</time></div><p>{event.eventInfo}</p>{globalEventsCanManage && <footer className="global-story-admin-actions">{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>영구 삭제</button></footer>}</div></article>;
+                    return <article className={`global-story-card event-card has-photo ${!event.isVisible ? "hidden" : ""}`} key={event.id}><img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" /><div><div className="global-event-place-links" aria-label="행사 장소">{eventPlaceList(event).map((place) => <button type="button" key={place.placeKey} onClick={() => openGlobalEventPlace(place)}>{place.placeName}<span>지도 보기</span></button>)}</div><div className="global-story-meta"><strong>{event.eventName}<em className={`event-visibility ${event.isVisible ? "visible" : ""}`}>{visibility}</em></strong><time dateTime={event.visibleUntil}>{storyDateTimeLabel(event.visibleUntil)}까지</time></div><p>{event.eventInfo}</p>{globalEventsCanManage && <footer className="global-story-admin-actions"><button type="button" disabled={placeEventActionId !== null} onClick={() => editPlaceEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>영구 삭제</button></footer>}</div></article>;
                   })}</div> : <div className="global-story-state"><strong>{publicLayoutAccess === "editor" ? "아직 등록된 행사가 없습니다." : "현재 노출 중인 행사가 없습니다."}</strong><span>{publicLayoutAccess === "editor" ? "장소를 선택해 행사와 노출 기간을 등록할 수 있습니다." : "새 행사가 등록되면 이곳에 표시됩니다."}</span></div>)
                 : (placeRequestsLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>장소 등록 요청을 불러오는 중입니다.</strong></div>
                   : placeRequestsError ? <div className="global-story-state error"><strong>장소 등록 요청을 불러오지 못했습니다.</strong><button type="button" onClick={() => setPlaceRequestsRefreshKey((current) => current + 1)}>다시 시도</button></div>
@@ -5754,7 +5927,29 @@ export default function Home() {
             : globalContentTab === "events" ? globalEventsPageCount > 1 && <footer className="global-story-pagination" aria-label="행사 페이지 이동"><button type="button" disabled={globalEventsPage <= 1 || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalEventsPage}</b> / {globalEventsPageCount}</span><button type="button" disabled={globalEventsPage >= globalEventsPageCount || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.min(globalEventsPageCount, page + 1))}>다음</button></footer>
               : placeRequestsPageCount > 1 && <footer className="global-story-pagination" aria-label="장소 등록 요청 페이지 이동"><button type="button" disabled={placeRequestsPage <= 1 || placeRequestsLoading} onClick={() => setPlaceRequestsPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{placeRequestsPage}</b> / {placeRequestsPageCount}</span><button type="button" disabled={placeRequestsPage >= placeRequestsPageCount || placeRequestsLoading} onClick={() => setPlaceRequestsPage((page) => Math.min(placeRequestsPageCount, page + 1))}>다음</button></footer>}
         </aside>}
-      </>}
+      </>
+      {publicLayoutAccess === "editor" && placeEventFormOpen && <div className="place-event-dialog-layer" role="presentation">
+        <section className="place-event-dialog" role="dialog" aria-modal="false" aria-labelledby="place-event-dialog-title" style={{ transform: `translate(calc(-50% + ${placeEventDialogOffset.x}px), calc(-50% + ${placeEventDialogOffset.y}px))` }}>
+          <header className="place-event-dialog-head" onPointerDown={startPlaceEventDialogDrag} onPointerMove={movePlaceEventDialog} onPointerUp={endPlaceEventDialogDrag} onPointerCancel={endPlaceEventDialogDrag}>
+            <div><strong id="place-event-dialog-title">{placeEventEditingId ? "행사 수정" : "행사 등록"}</strong><span>상단을 끌어 창을 옮길 수 있습니다.</span></div>
+            <button type="button" onClick={closePlaceEventForm} aria-label="행사 창 닫기">×</button>
+          </header>
+          <div className="place-event-dialog-scroll">
+            <label>행사명<input value={placeEventName} maxLength={100} onChange={(event) => setPlaceEventName(event.target.value)} placeholder="100자 이내" /></label>
+            <label>행사정보<textarea value={placeEventInfo} maxLength={1200} onChange={(event) => setPlaceEventInfo(event.target.value)} placeholder="일정·관람 방법·참여 대상 등 필요한 안내를 적어주세요." /><small>{placeEventInfo.length}/1200</small></label>
+            <div className="event-visibility-row"><label>노출 시작<input type="datetime-local" value={placeEventVisibleFrom} onChange={(event) => setPlaceEventVisibleFrom(event.target.value)} /></label><label>노출 종료<input type="datetime-local" value={placeEventVisibleUntil} onChange={(event) => setPlaceEventVisibleUntil(event.target.value)} /></label></div>
+            <section className={`event-place-picker ${placeEventMultiPlace ? "active" : ""}`}>
+              <label className="event-place-multi-toggle"><input type="checkbox" checked={placeEventMultiPlace} onChange={(event) => { const checked = event.target.checked; setPlaceEventMultiPlace(checked); if (!checked) setPlaceEventPlaces((current) => current.slice(0, 1)); }} /><span><b>복수 장소 지정</b><small>{placeEventMultiPlace ? "지도에서 마커를 눌러 장소를 함께 지정하세요." : "현재 선택한 한 장소에 등록합니다."}</small></span></label>
+              <div className="event-place-picked-list">{placeEventPlaces.map((place) => <span key={place.placeKey}><b>{place.placeName}</b>{placeEventMultiPlace && placeEventPlaces.length > 1 && <button type="button" onClick={() => setPlaceEventPlaces((current) => current.filter((item) => item.placeKey !== place.placeKey))} aria-label={`${place.placeName} 제외`}>×</button>}</span>)}</div>
+              {placeEventMultiPlace && <p>팝업을 옮긴 뒤 지도 마커를 클릭하면 이 목록에 추가되며, 다시 클릭하면 해제됩니다. 최대 20곳까지 지정할 수 있습니다.</p>}
+            </section>
+            <div className="place-event-photo-row"><button type="button" onClick={() => eventPhotoInputRef.current?.click()}>{placeEventPhoto || placeEventExistingPhotoUrl ? "행사 사진 교체" : "행사 사진 선택"}</button>{placeEventPhoto && <button type="button" className="remove" onClick={() => updatePlaceEventPhoto(null)}>새 사진 취소</button>}<input ref={eventPhotoInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { updatePlaceEventPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></div>
+            {(placeEventPhotoPreview || placeEventExistingPhotoUrl) && <img className="place-event-photo-preview" src={placeEventPhotoPreview ?? placeEventExistingPhotoUrl ?? ""} alt="행사 사진 미리보기" />}
+            <p className="place-event-auto-hide-note">노출 종료 시각이 지나면 공개 화면에서 자동으로 숨겨집니다. 여러 장소를 지정해도 행사 모음에는 한 번만 표시됩니다.</p>
+          </div>
+          <footer><button type="button" onClick={closePlaceEventForm}>취소</button><button type="button" className="primary" disabled={placeEventSubmitting || placeEventName.trim().length < 2 || placeEventInfo.trim().length < 2 || !placeEventPlaces.length || (!placeEventPhoto && !placeEventExistingPhotoUrl) || !placeEventVisibleFrom || !placeEventVisibleUntil} onClick={() => void submitPlaceEvent()}>{placeEventSubmitting ? "저장 중…" : placeEventEditingId ? "수정 내용 저장" : "행사 저장"}</button></footer>
+        </section>
+      </div>}
       {publicLayoutAccess === "viewer" && placeRequestFormOpen && <div className="place-request-backdrop" role="presentation">
         <section className="place-request-dialog" role="dialog" aria-modal="true" aria-labelledby="place-request-dialog-title">
           <header><div><strong id="place-request-dialog-title">장소 등록 요청</strong><span>지도에 추가되면 좋을 원도심 장소를 알려주세요.</span></div><button type="button" onClick={() => setPlaceRequestFormOpen(false)} aria-label="장소 등록 요청 닫기">×</button></header>
@@ -5766,6 +5961,18 @@ export default function Home() {
             <p>요청은 곧바로 공개되지 않습니다. 관리자가 장소 정보와 마커를 수정·검수한 뒤 지도 편집 초안에 반영합니다.</p>
           </div>
           <footer><button type="button" onClick={() => setPlaceRequestFormOpen(false)}>취소</button><button type="button" className="primary" disabled={placeRequestSubmitting} onClick={() => void submitPlaceRegistrationRequest()}>{placeRequestSubmitting ? "요청 저장 중…" : "등록 요청 보내기"}</button></footer>
+        </section>
+      </div>}
+      {publicLayoutAccess === "viewer" && adminLoginOpen && <div className="admin-login-backdrop" role="presentation">
+        <section className="admin-login-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
+          <header><div><strong id="admin-login-title">관리자 로그인</strong><span>지도 편집과 리뷰·행사·장소 요청 관리</span></div><button type="button" onClick={() => setAdminLoginOpen(false)} aria-label="관리자 로그인 닫기">×</button></header>
+          <form onSubmit={(event) => void submitSharedAdminLogin(event)}>
+            <label htmlFor="shared-admin-password">공유 관리자 비밀번호</label>
+            <input id="shared-admin-password" type="password" value={adminPassword} autoComplete="current-password" autoFocus maxLength={200} onChange={(event) => { setAdminPassword(event.target.value); setAdminLoginError(""); }} />
+            {adminLoginError && <p role="alert">{adminLoginError}</p>}
+            <button type="submit" disabled={adminLoginSubmitting}>{adminLoginSubmitting ? "확인 중…" : "관리자 화면 들어가기"}</button>
+          </form>
+          <footer><span>사이트 소유자는 기존 계정으로도 들어갈 수 있습니다.</span><a href="/signin-with-chatgpt?return_to=/">소유자 계정 로그인</a></footer>
         </section>
       </div>}
       {databaseEditorOpen && <div className="database-editor-backdrop" role="presentation">

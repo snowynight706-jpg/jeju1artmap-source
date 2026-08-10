@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const primaryCalibrationSettings = sqliteTable("primary_calibration_settings", {
   name: text("name").primaryKey(),
@@ -144,6 +144,16 @@ export const placeEvents = sqliteTable("place_events", {
   index("place_events_status_visibility_created_idx").on(table.status, table.visibleFrom, table.visibleUntil, table.createdAt),
 ]);
 
+export const placeEventPlaces = sqliteTable("place_event_places", {
+  eventId: text("event_id").notNull(),
+  placeKey: text("place_key").notNull(),
+  placeName: text("place_name").notNull(),
+  position: integer("position").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.eventId, table.placeKey] }),
+  index("place_event_places_place_event_idx").on(table.placeKey, table.eventId),
+]);
+
 export const placeRegistrationRequests = sqliteTable("place_registration_requests", {
   id: text("id").primaryKey(),
   submittedName: text("submitted_name").notNull(),
@@ -168,3 +178,10 @@ export const placeRegistrationRequests = sqliteTable("place_registration_request
   index("place_registration_requests_status_created_idx").on(table.status, table.createdAt),
   index("place_registration_requests_actor_created_idx").on(table.actorHash, table.createdAt),
 ]);
+
+export const adminLoginAttempts = sqliteTable("admin_login_attempts", {
+  actorHash: text("actor_hash").primaryKey(),
+  failureCount: integer("failure_count").notNull(),
+  windowStartedAt: text("window_started_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

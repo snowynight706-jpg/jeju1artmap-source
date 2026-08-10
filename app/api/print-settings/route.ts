@@ -1,10 +1,10 @@
 import { normalizePlaceName } from "../../core-landmarks";
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 
 export const runtime = "edge";
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 type PrintMode = "auto" | "include" | "exclude";
@@ -44,9 +44,8 @@ function cleanText(value: unknown, max: number) {
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  return { canEdit: Boolean(ownerEmail && currentEmail === ownerEmail), currentEmail };
+  const access = adminAccess(request, runtime);
+  return { canEdit: access.allowed, currentEmail: access.actor };
 }
 
 function normalizeSetting(value: unknown): PrintSetting | null {

@@ -1,3 +1,5 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
 const CATEGORIES = new Set(["landmark", "culture", "cafe", "food", "shop", "parking", "park", "utility"]);
@@ -10,9 +12,8 @@ const PRIMARY_NAMES = new Set([
   "김만덕기념관",
 ]);
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 type LockedCoordinateInput = {
@@ -79,9 +80,8 @@ export async function GET() {
 export async function PUT(request: Request) {
   const runtime = await runtimeEnv();
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (!ownerEmail || currentEmail !== ownerEmail) return json({ error: "owner authentication required" }, 403);
+  const access = adminAccess(request, runtime);
+  if (!access.allowed || !access.actor) return json({ error: "admin authentication required" }, 403);
 
   let payload: unknown;
   try {
@@ -114,14 +114,14 @@ export async function PUT(request: Request) {
       setting.x,
       setting.y,
       updatedAt,
-      currentEmail,
+      access.actor,
     ));
   });
   statements.push(runtime.DB.prepare(
     `INSERT INTO locked_coordinate_revision (id, updated_at, updated_by)
      VALUES (1, ?, ?)
      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-  ).bind(updatedAt, currentEmail));
+  ).bind(updatedAt, access.actor));
   await runtime.DB.batch(statements);
   return json({ settings, persistent: true, updatedAt });
 }

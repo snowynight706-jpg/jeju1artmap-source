@@ -1,12 +1,13 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
 const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
 const MAX_ELEMENTS = 1200;
 const MAX_ASSETS = 900;
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 type PublicViewSettings = {
@@ -35,9 +36,8 @@ function json(body: unknown, status = 200) {
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  return { canEdit: Boolean(ownerEmail && currentEmail === ownerEmail), currentEmail };
+  const access = adminAccess(request, runtime);
+  return { canEdit: access.allowed, currentEmail: access.actor, accessMethod: access.method };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -130,14 +130,14 @@ function parseStored(row: StoredLayout, canEdit: boolean) {
 
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
-  const { canEdit } = ownerAccess(request, runtime);
-  if (!runtime.DB) return json({ document: null, canEdit, persistent: false, publishedAt: null, revision: 0, hasPrevious: false }, 503);
+  const { canEdit, accessMethod } = ownerAccess(request, runtime);
+  if (!runtime.DB) return json({ document: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false }, 503);
   const row = await readLayout(runtime.DB);
-  if (!row) return json({ document: null, canEdit, persistent: true, publishedAt: null, revision: 0, hasPrevious: false });
+  if (!row) return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false });
   try {
-    return json({ ...parseStored(row, canEdit), canEdit, persistent: true });
+    return json({ ...parseStored(row, canEdit), canEdit, accessMethod, persistent: true });
   } catch {
-    return json({ document: null, canEdit, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson) }, 500);
+    return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson) }, 500);
   }
 }
 

@@ -1,14 +1,14 @@
 import { masterDirectoryRows, masterDirectorySource, retiredMasterDirectoryIds } from "../../master-directory";
 import { categoryForPlace, normalizePlaceName } from "../../core-landmarks";
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 
 export const runtime = "edge";
 
 const CATEGORIES = new Set(["landmark", "culture", "cafe", "food", "shop", "parking", "park", "utility"]);
 const MAX_ROWS = 600;
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 type PlaceDirectoryInput = {
@@ -69,9 +69,8 @@ function normalizeRow(value: unknown): PlaceDirectoryInput | null {
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  return { canEdit: Boolean(ownerEmail && currentEmail === ownerEmail), currentEmail };
+  const access = adminAccess(request, runtime);
+  return { canEdit: access.allowed, currentEmail: access.actor };
 }
 
 function bundledRows(): PlaceDirectoryInput[] {

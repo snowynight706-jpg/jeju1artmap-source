@@ -1,9 +1,10 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
   BUCKET?: R2Bucket;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 async function runtimeEnv() {
@@ -12,9 +13,7 @@ async function runtimeEnv() {
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  return Boolean(ownerEmail && currentEmail === ownerEmail);
+  return adminAccess(request, runtime).allowed;
 }
 
 export async function GET(request: Request) {

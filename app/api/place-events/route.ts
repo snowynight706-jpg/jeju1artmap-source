@@ -1,13 +1,20 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const GLOBAL_PAGE_SIZE = 10;
 const MAX_EVENTS_PER_PLACE = 60;
+const MAX_PLACES_PER_EVENT = 20;
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
   BUCKET?: R2Bucket;
-  BASE_MAP_OWNER_EMAIL?: string;
+};
+
+type EventPlace = {
+  placeKey: string;
+  placeName: string;
 };
 
 type EventRow = {
@@ -18,6 +25,7 @@ type EventRow = {
   eventInfo: string;
   photoKey: string;
   photoContentType: string;
+  photoSize: number;
   visibleFrom: string;
   visibleUntil: string;
   status: "active" | "hidden";
@@ -25,7 +33,7 @@ type EventRow = {
   updatedAt: string;
 };
 
-const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_events (
+const EVENTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_events (
   id TEXT PRIMARY KEY NOT NULL,
   place_key TEXT NOT NULL,
   place_name TEXT NOT NULL,
@@ -42,6 +50,14 @@ const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_events (
   updated_by TEXT NOT NULL
 )`;
 
+const EVENT_PLACES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_event_places (
+  event_id TEXT NOT NULL,
+  place_key TEXT NOT NULL,
+  place_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (event_id, place_key)
+)`;
+
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
   return workers.env as unknown as RuntimeEnv;
@@ -52,16 +68,19 @@ function json(body: unknown, status = 200) {
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  return { canManage: Boolean(ownerEmail && currentEmail === ownerEmail), currentEmail };
+  const access = adminAccess(request, runtime);
+  return { canManage: access.allowed, currentEmail: access.actor };
 }
 
 async function ensureStorage(db: D1Database) {
   await db.batch([
-    db.prepare(TABLE_SQL),
+    db.prepare(EVENTS_TABLE_SQL),
+    db.prepare(EVENT_PLACES_TABLE_SQL),
     db.prepare("CREATE INDEX IF NOT EXISTS place_events_place_status_visibility_idx ON place_events (place_key, status, visible_from, visible_until)"),
     db.prepare("CREATE INDEX IF NOT EXISTS place_events_status_visibility_created_idx ON place_events (status, visible_from, visible_until, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS place_event_places_place_event_idx ON place_event_places (place_key, event_id)"),
+    db.prepare(`INSERT OR IGNORE INTO place_event_places (event_id, place_key, place_name, position)
+      SELECT id, place_key, place_name, 0 FROM place_events`),
   ]);
 }
 
@@ -93,31 +112,78 @@ function photoFormat(bytes: Uint8Array) {
   return null;
 }
 
-async function publishedPlaceExists(db: D1Database, placeKey: string, placeName: string) {
+function parsePlaces(form: FormData) {
+  const raw = cleanMultiline(form.get("places"), 12000);
+  let candidates: unknown[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      candidates = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return null;
+    }
+  } else {
+    candidates = [{ placeKey: cleanText(form.get("placeKey"), 260), placeName: cleanText(form.get("placeName"), 120) }];
+  }
+  const places: EventPlace[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates.slice(0, MAX_PLACES_PER_EVENT)) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const record = candidate as Record<string, unknown>;
+    const placeKey = typeof record.placeKey === "string" ? record.placeKey.trim().slice(0, 260) : "";
+    const placeName = typeof record.placeName === "string" ? record.placeName.replace(/\s+/g, " ").trim().slice(0, 120) : "";
+    if (!validPlaceKey(placeKey) || !placeName || seen.has(placeKey)) continue;
+    seen.add(placeKey);
+    places.push({ placeKey, placeName });
+  }
+  return places.length ? places : null;
+}
+
+async function publishedPlacesExist(db: D1Database, places: EventPlace[]) {
   const row = await db.prepare("SELECT document_json AS documentJson FROM public_map_layout WHERE id = 1").first() as { documentJson?: string } | null;
   if (!row?.documentJson) return false;
   try {
-    const document = JSON.parse(row.documentJson) as { elements?: Array<{ id?: unknown; directoryId?: unknown; name?: unknown; category?: unknown; mapVisible?: unknown }> };
-    return Array.isArray(document.elements) && document.elements.some((element) => {
+    const document = JSON.parse(row.documentJson) as { elements?: Array<{ id?: unknown; directoryId?: unknown; name?: unknown; mapVisible?: unknown }> };
+    if (!Array.isArray(document.elements)) return false;
+    const published = new Map<string, string>();
+    document.elements.forEach((element) => {
+      if (element.mapVisible === false || typeof element.name !== "string") return;
       const key = typeof element.directoryId === "string" && element.directoryId.trim()
         ? `directory:${element.directoryId.trim()}`
         : typeof element.id === "string" ? `element:${element.id}` : "";
-      return key === placeKey
-        && element.mapVisible !== false
-        && typeof element.name === "string"
-        && element.name.trim() === placeName;
+      if (key) published.set(key, element.name.trim());
     });
+    return places.every((place) => published.get(place.placeKey) === place.placeName);
   } catch {
     return false;
   }
 }
 
-function publicEvent(row: EventRow, now: string) {
+async function placesForRows(db: D1Database, rows: EventRow[]) {
+  const byEvent = new Map<string, EventPlace[]>();
+  if (rows.length) {
+    const placeholders = rows.map(() => "?").join(", ");
+    const result = await db.prepare(
+      `SELECT event_id AS eventId, place_key AS placeKey, place_name AS placeName
+       FROM place_event_places WHERE event_id IN (${placeholders}) ORDER BY event_id, position, place_name`,
+    ).bind(...rows.map((row) => row.id)).all() as { results?: Array<{ eventId: string; placeKey: string; placeName: string }> };
+    for (const relation of result.results ?? []) {
+      const places = byEvent.get(relation.eventId) ?? [];
+      places.push({ placeKey: relation.placeKey, placeName: relation.placeName });
+      byEvent.set(relation.eventId, places);
+    }
+  }
+  return byEvent;
+}
+
+function publicEvent(row: EventRow, places: EventPlace[], now: string) {
+  const normalizedPlaces = places.length ? places : [{ placeKey: row.placeKey, placeName: row.placeName }];
   const isVisible = row.status === "active" && row.visibleFrom <= now && row.visibleUntil > now;
   return {
     id: row.id,
-    placeKey: row.placeKey,
-    placeName: row.placeName,
+    placeKey: normalizedPlaces[0].placeKey,
+    placeName: normalizedPlaces[0].placeName,
+    places: normalizedPlaces,
     eventName: row.eventName,
     eventInfo: row.eventInfo,
     photoUrl: `/api/place-event-photo?id=${encodeURIComponent(row.id)}`,
@@ -130,11 +196,17 @@ function publicEvent(row: EventRow, now: string) {
   };
 }
 
-const EVENT_SELECT = `SELECT id, place_key AS placeKey, place_name AS placeName,
-  event_name AS eventName, event_info AS eventInfo, photo_key AS photoKey,
-  photo_content_type AS photoContentType, visible_from AS visibleFrom,
-  visible_until AS visibleUntil, status, created_at AS createdAt, updated_at AS updatedAt
- FROM place_events`;
+const EVENT_SELECT = `SELECT e.id, e.place_key AS placeKey, e.place_name AS placeName,
+  e.event_name AS eventName, e.event_info AS eventInfo, e.photo_key AS photoKey,
+  e.photo_content_type AS photoContentType, e.photo_size AS photoSize,
+  e.visible_from AS visibleFrom, e.visible_until AS visibleUntil, e.status,
+  e.created_at AS createdAt, e.updated_at AS updatedAt
+ FROM place_events e`;
+
+async function eventPayload(db: D1Database, rows: EventRow[], now: string) {
+  const relations = await placesForRows(db, rows);
+  return rows.map((row) => publicEvent(row, relations.get(row.id) ?? [], now));
+}
 
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
@@ -147,20 +219,21 @@ export async function GET(request: Request) {
   const now = new Date().toISOString();
 
   if (scope === "all") {
-    const where = canManage ? "1 = 1" : "status = 'active' AND visible_from <= ? AND visible_until > ?";
+    const where = canManage ? "1 = 1" : "e.status = 'active' AND e.visible_from <= ? AND e.visible_until > ?";
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
     const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-    const countStatement = runtime.DB.prepare(`SELECT COUNT(*) AS count FROM place_events WHERE ${where}`);
+    const countStatement = runtime.DB.prepare(`SELECT COUNT(*) AS count FROM place_events e WHERE ${where}`);
     const countRow = (canManage ? await countStatement.first() : await countStatement.bind(now, now).first()) as { count?: number } | null;
     const total = Number(countRow?.count ?? 0);
     const pageCount = Math.ceil(total / GLOBAL_PAGE_SIZE);
     const normalizedPage = pageCount > 0 ? Math.min(page, pageCount) : 1;
-    const query = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`);
+    const query = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`);
     const result = (canManage
       ? await query.bind(GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()
       : await query.bind(now, now, GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()) as { results?: EventRow[] };
+    const rows = result.results ?? [];
     return json({
-      events: (result.results ?? []).map((row) => publicEvent(row, now)),
+      events: await eventPayload(runtime.DB, rows, now),
       canManage,
       persistent: true,
       page: normalizedPage,
@@ -171,14 +244,16 @@ export async function GET(request: Request) {
   }
 
   if (!validPlaceKey(placeKey)) return json({ error: "valid place key required" }, 400);
-  const where = canManage
-    ? "place_key = ?"
-    : "place_key = ? AND status = 'active' AND visible_from <= ? AND visible_until > ?";
-  const query = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY created_at DESC LIMIT ?`);
+  const visibility = canManage ? "1 = 1" : "e.status = 'active' AND e.visible_from <= ? AND e.visible_until > ?";
+  const where = `(${visibility}) AND EXISTS (
+    SELECT 1 FROM place_event_places ep WHERE ep.event_id = e.id AND ep.place_key = ?
+  )`;
+  const query = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC LIMIT ?`);
   const result = (canManage
     ? await query.bind(placeKey, MAX_EVENTS_PER_PLACE).all()
-    : await query.bind(placeKey, now, now, MAX_EVENTS_PER_PLACE).all()) as { results?: EventRow[] };
-  return json({ events: (result.results ?? []).map((row) => publicEvent(row, now)), canManage, persistent: true });
+    : await query.bind(now, now, placeKey, MAX_EVENTS_PER_PLACE).all()) as { results?: EventRow[] };
+  const rows = result.results ?? [];
+  return json({ events: await eventPayload(runtime.DB, rows, now), canManage, persistent: true });
 }
 
 export async function POST(request: Request) {
@@ -187,23 +262,22 @@ export async function POST(request: Request) {
   const { canManage, currentEmail } = ownerAccess(request, runtime);
   if (!canManage || !currentEmail) return json({ error: "owner authentication required" }, 403);
   const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_PHOTO_BYTES + 96 * 1024) return json({ error: "upload too large" }, 413);
+  if (declaredLength > MAX_PHOTO_BYTES + 128 * 1024) return json({ error: "upload too large" }, 413);
   const form = await request.formData().catch(() => null);
   if (!form) return json({ error: "multipart form required" }, 400);
 
-  const placeKey = cleanText(form.get("placeKey"), 260);
-  const placeName = cleanText(form.get("placeName"), 120);
+  const places = parsePlaces(form);
   const eventName = cleanText(form.get("eventName"), 100);
   const eventInfo = cleanMultiline(form.get("eventInfo"), 1200);
   const visibleFrom = validIsoDate(cleanText(form.get("visibleFrom"), 60));
   const visibleUntil = validIsoDate(cleanText(form.get("visibleUntil"), 60));
-  if (!validPlaceKey(placeKey) || !placeName || eventName.length < 2 || eventInfo.length < 2 || !visibleFrom || !visibleUntil || visibleUntil <= visibleFrom) {
-    return json({ error: "valid cultural place, event, information, and visibility period required" }, 400);
+  if (!places || eventName.length < 2 || eventInfo.length < 2 || !visibleFrom || !visibleUntil || visibleUntil <= visibleFrom) {
+    return json({ error: "valid places, event, information, and visibility period required" }, 400);
   }
   if (Date.parse(visibleUntil) - Date.parse(visibleFrom) > 366 * 24 * 60 * 60 * 1000) return json({ error: "visibility period too long" }, 400);
 
   await ensureStorage(runtime.DB);
-  if (!await publishedPlaceExists(runtime.DB, placeKey, placeName)) return json({ error: "published place not found" }, 404);
+  if (!await publishedPlacesExist(runtime.DB, places)) return json({ error: "published place not found" }, 404);
 
   const photo = form.get("photo");
   if (!(photo instanceof File) || photo.size < 1) return json({ error: "event photo required" }, 400);
@@ -217,21 +291,26 @@ export async function POST(request: Request) {
   const createdAt = new Date().toISOString();
   await runtime.BUCKET.put(photoKey, buffer, {
     httpMetadata: { contentType: format.contentType },
-    customMetadata: { placeKey, placeName, eventName, uploadedAt: createdAt },
+    customMetadata: { placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, uploadedAt: createdAt },
   });
   try {
-    await runtime.DB.prepare(
-      `INSERT INTO place_events
-        (id, place_key, place_name, event_name, event_info, photo_key, photo_content_type,
-         photo_size, visible_from, visible_until, status, created_at, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-    ).bind(id, placeKey, placeName, eventName, eventInfo, photoKey, format.contentType, buffer.byteLength, visibleFrom, visibleUntil, createdAt, createdAt, currentEmail).run();
+    await runtime.DB.batch([
+      runtime.DB.prepare(
+        `INSERT INTO place_events
+          (id, place_key, place_name, event_name, event_info, photo_key, photo_content_type,
+           photo_size, visible_from, visible_until, status, created_at, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+      ).bind(id, places[0].placeKey, places[0].placeName, eventName, eventInfo, photoKey, format.contentType, buffer.byteLength, visibleFrom, visibleUntil, createdAt, createdAt, currentEmail),
+      ...places.map((place, index) => runtime.DB!.prepare(
+        "INSERT INTO place_event_places (event_id, place_key, place_name, position) VALUES (?, ?, ?, ?)",
+      ).bind(id, place.placeKey, place.placeName, index)),
+    ]);
   } catch (error) {
     await runtime.BUCKET.delete(photoKey).catch(() => undefined);
     throw error;
   }
-  const row: EventRow = { id, placeKey, placeName, eventName, eventInfo, photoKey, photoContentType: format.contentType, visibleFrom, visibleUntil, status: "active", createdAt, updatedAt: createdAt };
-  return json({ event: publicEvent(row, createdAt), persistent: true }, 201);
+  const row: EventRow = { id, placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, eventInfo, photoKey, photoContentType: format.contentType, photoSize: buffer.byteLength, visibleFrom, visibleUntil, status: "active", createdAt, updatedAt: createdAt };
+  return json({ event: publicEvent(row, places, createdAt), persistent: true }, 201);
 }
 
 export async function PATCH(request: Request) {
@@ -239,17 +318,80 @@ export async function PATCH(request: Request) {
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
   const { canManage, currentEmail } = ownerAccess(request, runtime);
   if (!canManage || !currentEmail) return json({ error: "owner authentication required" }, 403);
-  const payload = await request.json().catch(() => null) as { id?: unknown; status?: unknown } | null;
-  const id = typeof payload?.id === "string" ? payload.id : "";
-  const status = payload?.status === "active" || payload?.status === "hidden" ? payload.status : null;
-  if (!id || !status) return json({ error: "valid event and status required" }, 400);
   await ensureStorage(runtime.DB);
+
+  if (!request.headers.get("content-type")?.includes("multipart/form-data")) {
+    const payload = await request.json().catch(() => null) as { id?: unknown; status?: unknown } | null;
+    const id = typeof payload?.id === "string" ? payload.id : "";
+    const status = payload?.status === "active" || payload?.status === "hidden" ? payload.status : null;
+    if (!id || !status) return json({ error: "valid event and status required" }, 400);
+    const updatedAt = new Date().toISOString();
+    const result = await runtime.DB.prepare(
+      "UPDATE place_events SET status = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+    ).bind(status, updatedAt, currentEmail, id).run();
+    if (!result.meta.changes) return json({ error: "event not found" }, 404);
+    return json({ id, status, updatedAt });
+  }
+
+  if (!runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
+  const declaredLength = Number(request.headers.get("content-length") ?? 0);
+  if (declaredLength > MAX_PHOTO_BYTES + 128 * 1024) return json({ error: "upload too large" }, 413);
+  const form = await request.formData().catch(() => null);
+  if (!form) return json({ error: "multipart form required" }, 400);
+  const id = cleanText(form.get("id"), 120);
+  const places = parsePlaces(form);
+  const eventName = cleanText(form.get("eventName"), 100);
+  const eventInfo = cleanMultiline(form.get("eventInfo"), 1200);
+  const visibleFrom = validIsoDate(cleanText(form.get("visibleFrom"), 60));
+  const visibleUntil = validIsoDate(cleanText(form.get("visibleUntil"), 60));
+  if (!id || !places || eventName.length < 2 || eventInfo.length < 2 || !visibleFrom || !visibleUntil || visibleUntil <= visibleFrom) {
+    return json({ error: "valid event edit required" }, 400);
+  }
+  if (Date.parse(visibleUntil) - Date.parse(visibleFrom) > 366 * 24 * 60 * 60 * 1000) return json({ error: "visibility period too long" }, 400);
+  if (!await publishedPlacesExist(runtime.DB, places)) return json({ error: "published place not found" }, 404);
+
+  const existing = await runtime.DB.prepare(`${EVENT_SELECT} WHERE e.id = ?`).bind(id).first() as EventRow | null;
+  if (!existing) return json({ error: "event not found" }, 404);
+  const photo = form.get("photo");
+  let nextPhotoKey = existing.photoKey;
+  let nextPhotoContentType = existing.photoContentType;
+  let nextPhotoSize = existing.photoSize;
+  let uploadedPhotoKey: string | null = null;
+  if (photo instanceof File && photo.size > 0) {
+    if (photo.size > MAX_PHOTO_BYTES) return json({ error: "photo too large" }, 413);
+    const buffer = await photo.arrayBuffer();
+    const format = photoFormat(new Uint8Array(buffer.slice(0, 16)));
+    if (!format) return json({ error: "unsupported photo type" }, 415);
+    uploadedPhotoKey = `place-events/${id}-${crypto.randomUUID()}.${format.extension}`;
+    await runtime.BUCKET.put(uploadedPhotoKey, buffer, {
+      httpMetadata: { contentType: format.contentType },
+      customMetadata: { placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, uploadedAt: new Date().toISOString() },
+    });
+    nextPhotoKey = uploadedPhotoKey;
+    nextPhotoContentType = format.contentType;
+    nextPhotoSize = buffer.byteLength;
+  }
+
   const updatedAt = new Date().toISOString();
-  const result = await runtime.DB.prepare(
-    "UPDATE place_events SET status = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-  ).bind(status, updatedAt, currentEmail, id).run();
-  if (!result.meta.changes) return json({ error: "event not found" }, 404);
-  return json({ id, status, updatedAt });
+  try {
+    await runtime.DB.batch([
+      runtime.DB.prepare(
+        `UPDATE place_events SET place_key = ?, place_name = ?, event_name = ?, event_info = ?,
+          photo_key = ?, photo_content_type = ?, photo_size = ?, visible_from = ?, visible_until = ?,
+          updated_at = ?, updated_by = ? WHERE id = ?`,
+      ).bind(places[0].placeKey, places[0].placeName, eventName, eventInfo, nextPhotoKey, nextPhotoContentType, nextPhotoSize, visibleFrom, visibleUntil, updatedAt, currentEmail, id),
+      runtime.DB.prepare("DELETE FROM place_event_places WHERE event_id = ?").bind(id),
+      ...places.map((place, index) => runtime.DB!.prepare(
+        "INSERT INTO place_event_places (event_id, place_key, place_name, position) VALUES (?, ?, ?, ?)",
+      ).bind(id, place.placeKey, place.placeName, index)),
+    ]);
+  } catch (error) {
+    if (uploadedPhotoKey) await runtime.BUCKET.delete(uploadedPhotoKey).catch(() => undefined);
+    throw error;
+  }
+  if (uploadedPhotoKey && existing.photoKey !== uploadedPhotoKey) await runtime.BUCKET.delete(existing.photoKey).catch(() => undefined);
+  const row: EventRow = { ...existing, placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, eventInfo, photoKey: nextPhotoKey, photoContentType: nextPhotoContentType, photoSize: nextPhotoSize, visibleFrom, visibleUntil, updatedAt };
+  return json({ event: publicEvent(row, places, updatedAt), persistent: true });
 }
 
 export async function DELETE(request: Request) {
@@ -263,6 +405,9 @@ export async function DELETE(request: Request) {
   const row = await runtime.DB.prepare("SELECT photo_key AS photoKey FROM place_events WHERE id = ?").bind(id).first() as { photoKey: string } | null;
   if (!row) return json({ error: "event not found" }, 404);
   await runtime.BUCKET.delete(row.photoKey).catch(() => undefined);
-  await runtime.DB.prepare("DELETE FROM place_events WHERE id = ?").bind(id).run();
+  await runtime.DB.batch([
+    runtime.DB.prepare("DELETE FROM place_event_places WHERE event_id = ?").bind(id),
+    runtime.DB.prepare("DELETE FROM place_events WHERE id = ?").bind(id),
+  ]);
   return json({ deleted: true, id });
 }

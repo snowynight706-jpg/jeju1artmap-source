@@ -1,11 +1,12 @@
+import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+
 export const runtime = "edge";
 
 const CURRENT_MAP_KEY = "base-maps/current";
 const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
 
-type RuntimeEnv = {
+type RuntimeEnv = AdminRuntimeEnv & {
   BUCKET?: R2Bucket;
-  BASE_MAP_OWNER_EMAIL?: string;
 };
 
 async function runtimeEnv() {
@@ -20,9 +21,7 @@ function json(body: unknown, status = 200) {
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const bucket = runtime.BUCKET;
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  const canUpload = Boolean(ownerEmail && currentEmail === ownerEmail);
+  const canUpload = adminAccess(request, runtime).allowed;
   if (!bucket) return json({ available: false, canUpload }, 404);
   const object = await bucket.get(CURRENT_MAP_KEY);
   if (!object) return new URL(request.url).searchParams.get("meta") === "1" ? json({ available: false, canUpload }) : json({ available: false }, 404);
@@ -48,9 +47,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const runtime = await runtimeEnv();
   if (!runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
-  const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase();
-  const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (!ownerEmail || currentEmail !== ownerEmail) return json({ error: "owner authentication required" }, 403);
+  if (!adminAccess(request, runtime).allowed) return json({ error: "admin authentication required" }, 403);
 
   const contentType = request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? "";
   if (!contentType.startsWith("image/")) return json({ error: "unsupported file type" }, 415);
