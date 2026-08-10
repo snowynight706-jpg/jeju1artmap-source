@@ -769,7 +769,10 @@ function printSettingKey(target: Pick<MapElement, "directoryId" | "category" | "
 }
 
 function buildDenseLabelClusters(labelElements: MapElement[], iconElements: MapElement[]): DenseLabelCluster[] {
-  const candidates = labelElements.filter((element) => element.category !== "landmark" && !element.labelLocked);
+  // A fixed label still belongs to its ordinary marker and can be represented by a
+  // dense-label cluster. The lock protects the saved direction/gap/offset; it must
+  // not opt the label out of the temporary screen/print presentation layer.
+  const candidates = labelElements.filter((element) => element.category !== "landmark");
   if (candidates.length < 2) return [];
   const parent = candidates.map((_, index) => index);
   const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
@@ -3413,7 +3416,7 @@ export default function Home() {
             <div className="view-toggle-list">
               <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
               <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
-              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>겹치는 일반 마커 라벨을 한 묶음으로 표시</small></span></label>
+              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>고정 위치를 포함한 일반 마커 라벨을 한 묶음으로 표시</small></span></label>
             </div>
             <label className="view-detail-select">검수·지도 효과<select value={(["anchors", "clearance", "collisions", "dim", "gray", "nomap"] as ViewMode[]).includes(viewMode) ? viewMode : "all"} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
               <option value="all">효과 없음</option><option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option><option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
