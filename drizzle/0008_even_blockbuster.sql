@@ -1,0 +1,2 @@
+CREATE INDEX `place_stories_place_status_created_idx` ON `place_stories` (`place_key`,`status`,`created_at`);--> statement-breakpoint
+CREATE INDEX `place_stories_actor_created_idx` ON `place_stories` (`actor_hash`,`created_at`);

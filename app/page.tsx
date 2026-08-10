@@ -33,6 +33,7 @@ const PRINT_SETTINGS_API = "/api/print-settings";
 const DENSE_LABEL_SETTINGS_API = "/api/dense-label-settings";
 const PLACEMENT_SETTINGS_API = "/api/placement-settings";
 const PUBLIC_LAYOUT_API = "/api/public-layout";
+const PLACE_STORIES_API = "/api/place-stories";
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const LAYOUTS_KEY = "jeju-wondosim-map-review:layouts:v3";
@@ -44,6 +45,8 @@ const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
 const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
 const DENSE_LABEL_SETTINGS_KEY = "jeju-wondosim-map-review:dense-label-settings:v1";
 const PLACEMENT_SETTINGS_KEY = "jeju-wondosim-map-review:placement-settings:v1";
+const PLACE_STORY_VISITOR_KEY = "jeju-wondosim-map-review:story-visitor:v1";
+const PLACE_STORY_AUTHOR_KEY = "jeju-wondosim-map-review:story-author:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 
 const categories = [
@@ -309,6 +312,26 @@ type PublicLayoutPayload = {
   publishedAt?: string | null;
   revision?: number;
   hasPrevious?: boolean;
+  error?: string;
+};
+
+type PlaceStory = {
+  id: string;
+  placeKey: string;
+  placeName: string;
+  authorName: string;
+  reviewText: string;
+  photoUrl: string | null;
+  status: "published" | "hidden";
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PlaceStoriesPayload = {
+  stories?: PlaceStory[];
+  story?: PlaceStory;
+  canModerate?: boolean;
+  persistent?: boolean;
   error?: string;
 };
 
@@ -818,6 +841,23 @@ function isPrimaryHubLabel(name: string) {
   return normalizePlaceName(name) === "제주아트플랫폼";
 }
 
+function placeContentKey(element: Pick<MapElement, "id" | "directoryId">) {
+  return element.directoryId?.trim() ? `directory:${element.directoryId.trim()}` : `element:${element.id}`;
+}
+
+function storyDateLabel(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "날짜 미상" : date.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
+}
+
+function persistentVisitorId() {
+  const existing = localStorage.getItem(PLACE_STORY_VISITOR_KEY)?.trim();
+  if (existing && /^[a-zA-Z0-9_-]{24,100}$/.test(existing)) return existing;
+  const next = `${crypto.randomUUID().replaceAll("-", "")}${Date.now().toString(36)}`;
+  localStorage.setItem(PLACE_STORY_VISITOR_KEY, next);
+  return next;
+}
+
 type VisualBounds = { left: number; top: number; right: number; bottom: number };
 
 function labelStyle(position: LabelPosition, gap: number, offsetX: number, offsetY: number, zoom: number, bounds: VisualBounds = { left: 0, top: 0, right: 1, bottom: 1 }) {
@@ -838,6 +878,28 @@ function loadImage(src: string) {
     image.onerror = () => reject(new Error(`image load failed: ${src}`));
     image.src = src;
   });
+}
+
+async function prepareStoryPhoto(file: File) {
+  const source = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(source);
+    const maximumEdge = 1600;
+    const scale = Math.min(1, maximumEdge / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("photo canvas unavailable");
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.84));
+    if (!blob) throw new Error("photo conversion failed");
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.webp`, { type: "image/webp" });
+  } finally {
+    URL.revokeObjectURL(source);
+  }
 }
 
 type NormalizedRect = { left: number; top: number; right: number; bottom: number };
@@ -951,6 +1013,7 @@ function buildDenseLabelClusters(
   iconElements: MapElement[],
   positionOverrides: DenseLabelPosition[] = [],
   excludedElementIds: Iterable<string> = [],
+  densityScale = 1,
 ): DenseLabelCluster[] {
   // A fixed label still belongs to its ordinary marker and can be represented by a
   // dense-label cluster. The lock protects the saved direction/gap/offset; it must
@@ -970,7 +1033,8 @@ function buildDenseLabelClusters(
     for (let other = index + 1; other < candidates.length; other += 1) {
       const dx = candidates[index].x - candidates[other].x;
       const dy = (candidates[index].y - candidates[other].y) / MAP_ASPECT;
-      const labelReach = Math.min(6.2, 2.4 + (candidates[index].name.length + candidates[other].name.length) * 0.11);
+      const labelReach = Math.min(6.2, 2.4 + (candidates[index].name.length + candidates[other].name.length) * 0.11)
+        * clamp(densityScale, 0.24, 1.6);
       if (Math.hypot(dx, dy) <= labelReach) unite(index, other);
     }
   }
@@ -1475,7 +1539,9 @@ export default function Home() {
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const dbInputRef = useRef<HTMLInputElement>(null);
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
+  const storyPhotoInputRef = useRef<HTMLInputElement>(null);
   const geocodeRunRef = useRef(0);
+  const storyRequestRunRef = useRef(0);
   const elementsRef = useRef<MapElement[]>(initialElements);
   const assetsRef = useRef<MapAsset[]>(builtInAssets);
   const notesRef = useRef<ReviewNote[]>([]);
@@ -1549,6 +1615,15 @@ export default function Home() {
   const [publicLayoutRevision, setPublicLayoutRevision] = useState(0);
   const [publicLayoutHasPrevious, setPublicLayoutHasPrevious] = useState(false);
   const [publicLayoutPublishing, setPublicLayoutPublishing] = useState(false);
+  const [placeStories, setPlaceStories] = useState<PlaceStory[]>([]);
+  const [placeStoriesLoading, setPlaceStoriesLoading] = useState(false);
+  const [placeStoriesCanModerate, setPlaceStoriesCanModerate] = useState(false);
+  const [placeStoryFormOpen, setPlaceStoryFormOpen] = useState(false);
+  const [placeStoryAuthor, setPlaceStoryAuthor] = useState("");
+  const [placeStoryText, setPlaceStoryText] = useState("");
+  const [placeStoryPhoto, setPlaceStoryPhoto] = useState<File | null>(null);
+  const [placeStoryPhotoPreview, setPlaceStoryPhotoPreview] = useState<string | null>(null);
+  const [placeStorySubmitting, setPlaceStorySubmitting] = useState(false);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
@@ -2030,6 +2105,11 @@ export default function Home() {
 
   const selected = elements.find((element) => element.id === selectedId) ?? null;
   const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
+  const selectedStoryKey = selected ? placeContentKey(selected) : null;
+  const selectedDirectoryPlace = selected ? directoryPlaces.find((place) => (
+    (selected.directoryId && place.id === selected.directoryId)
+    || normalizePlaceName(place.name) === normalizePlaceName(selected.name)
+  )) ?? null : null;
   const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces), [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions]);
   const secondaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"), [effectiveCalibrationPoints]);
   const tertiaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"), [effectiveCalibrationPoints]);
@@ -2200,8 +2280,9 @@ export default function Home() {
         stageMarkerElements,
         denseLabelPositions,
         denseLabelExcludedIds,
+        printPreviewMode ? 1 : 1 / Math.max(zoom, 0.22),
       )
-    : [], [denseLabelExcludedIds, denseLabelPositions, mergeDenseLabels, stageLabelElements, stageMarkerElements]);
+    : [], [denseLabelExcludedIds, denseLabelPositions, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements, zoom]);
   const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
   const selectedDenseLabel = useMemo(
     () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
@@ -2247,6 +2328,49 @@ export default function Home() {
       y: clamp(((clientY - rect.top) / rect.height) * 100, 0, 100),
     };
   }, []);
+
+  const updatePlaceStoryPhoto = useCallback((file: File | null) => {
+    setPlaceStoryPhotoPreview((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return file ? URL.createObjectURL(file) : null;
+    });
+    setPlaceStoryPhoto(file);
+  }, []);
+
+  useEffect(() => {
+    const run = ++storyRequestRunRef.current;
+    void Promise.resolve().then(() => {
+      if (!selectedStoryKey || publicLayoutAccess === "loading") {
+        setPlaceStories([]);
+        setPlaceStoriesCanModerate(false);
+        return null;
+      }
+      setPlaceStoriesLoading(true);
+      setPlaceStories([]);
+      setPlaceStoryFormOpen(false);
+      setPlaceStoryText("");
+      updatePlaceStoryPhoto(null);
+      return fetch(`${PLACE_STORIES_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store" })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
+          if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "story load failed");
+          return payload;
+        })
+        .then((payload) => {
+          if (storyRequestRunRef.current !== run) return;
+          setPlaceStories(Array.isArray(payload?.stories) ? payload.stories : []);
+          setPlaceStoriesCanModerate(Boolean(payload?.canModerate));
+        })
+        .catch(() => {
+          if (storyRequestRunRef.current !== run) return;
+          setPlaceStories([]);
+          setPlaceStoriesCanModerate(false);
+        })
+        .finally(() => {
+          if (storyRequestRunRef.current === run) setPlaceStoriesLoading(false);
+        });
+    });
+  }, [publicLayoutAccess, selectedStoryKey, updatePlaceStoryPhoto]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4301,6 +4425,87 @@ export default function Home() {
     }
   };
 
+  const togglePlaceStoryForm = () => {
+    const next = !placeStoryFormOpen;
+    if (next && !placeStoryAuthor.trim()) {
+      try {
+        setPlaceStoryAuthor(localStorage.getItem(PLACE_STORY_AUTHOR_KEY)?.slice(0, 20) ?? "");
+      } catch {}
+    }
+    setPlaceStoryFormOpen(next);
+  };
+
+  const submitPlaceStory = async () => {
+    if (!selected || !selectedStoryKey || placeStorySubmitting) return;
+    const authorName = placeStoryAuthor.replace(/\s+/g, " ").trim().slice(0, 20);
+    const reviewText = placeStoryText.replace(/\s+/g, " ").trim().slice(0, 220);
+    if (!authorName || reviewText.length < 2) {
+      setToast("닉네임과 2자 이상의 짧은 후기를 입력해 주세요.");
+      return;
+    }
+    setPlaceStorySubmitting(true);
+    try {
+      const form = new FormData();
+      form.set("placeKey", selectedStoryKey);
+      form.set("placeName", selected.name);
+      form.set("authorName", authorName);
+      form.set("reviewText", reviewText);
+      form.set("visitorId", persistentVisitorId());
+      if (placeStoryPhoto) {
+        const prepared = await prepareStoryPhoto(placeStoryPhoto);
+        if (prepared.size > 5 * 1024 * 1024) throw new Error("photo-too-large");
+        form.set("photo", prepared);
+      }
+      const response = await fetch(PLACE_STORIES_API, { method: "POST", body: form });
+      const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
+      if (!response.ok || !payload?.story) {
+        if (response.status === 429) throw new Error("rate-limit");
+        if (response.status === 413) throw new Error("photo-too-large");
+        throw new Error(payload?.error ?? "story-submit-failed");
+      }
+      setPlaceStories((current) => [payload.story!, ...current]);
+      setPlaceStoryText("");
+      updatePlaceStoryPhoto(null);
+      setPlaceStoryFormOpen(false);
+      localStorage.setItem(PLACE_STORY_AUTHOR_KEY, authorName);
+      setToast("사진과 후기를 원도심 아카이브에 남겼습니다.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setToast(message === "rate-limit"
+        ? "짧은 시간에 등록이 많습니다. 잠시 뒤 다시 시도해 주세요."
+        : message === "photo-too-large"
+          ? "사진을 처리해도 5MB를 넘습니다. 더 작은 사진을 선택해 주세요."
+          : "후기를 저장하지 못했습니다. 입력 내용을 확인해 다시 시도해 주세요.");
+    } finally {
+      setPlaceStorySubmitting(false);
+    }
+  };
+
+  const moderatePlaceStory = async (story: PlaceStory, status: "published" | "hidden") => {
+    const response = await fetch(PLACE_STORIES_API, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: story.id, status }),
+    });
+    if (!response.ok) {
+      setToast("후기 공개 상태를 변경하지 못했습니다.");
+      return;
+    }
+    setPlaceStories((current) => current.map((item) => item.id === story.id ? { ...item, status } : item));
+    setToast(status === "hidden" ? "후기를 공개 목록에서 숨겼습니다." : "후기를 다시 공개했습니다.");
+  };
+
+  const deletePlaceStory = async (story: PlaceStory) => {
+    if (!window.confirm("이 사진과 후기를 서버에서 완전히 삭제할까요?")) return;
+    const response = await fetch(`${PLACE_STORIES_API}?id=${encodeURIComponent(story.id)}`, { method: "DELETE" });
+    if (!response.ok) {
+      setToast("후기를 삭제하지 못했습니다.");
+      return;
+    }
+    setPlaceStories((current) => current.filter((item) => item.id !== story.id));
+    setToast("사진과 후기를 삭제했습니다.");
+  };
+
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
   const editingEnabled = publicLayoutAccess === "editor" && !printPreviewMode;
   const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
@@ -4331,7 +4536,7 @@ export default function Home() {
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(0.72); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
-        <span className="readonly-badge">읽기 전용</span>
+        <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <a className="owner-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>
       </header>}
 
@@ -4644,15 +4849,16 @@ export default function Home() {
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
                   const meta = categoryOf(element.category); const isSelected = editingEnabled && selectedId === element.id; const asset = assets.find((item) => item.id === element.assetId);
+                  const isPublicSelected = publicLayoutAccess === "viewer" && selectedId === element.id;
                   const showMarker = stageMarkerIds.has(element.id);
                   const showLabel = stageLabelIds.has(element.id);
                   const isCalibrationReference = editingEnabled && calibrationMode && effectiveCalibrationPoints.some((point) => point.name === normalizePlaceName(element.name));
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={editingEnabled ? (event) => startDrag(event, element) : undefined}>
+                  return <div key={element.id} data-element-id={element.id} className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }} onPointerDown={editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => { event.stopPropagation(); setSelectedId(element.id); setSelectedDenseLabelId(null); } : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} aria-label={publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(element.id); setSelectedDenseLabelId(null); } } : undefined}>
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : undefined}>{element.name}</div>}
+                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}>{element.name}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -4665,7 +4871,7 @@ export default function Home() {
                     title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
                     role={editingEnabled ? "button" : undefined}
                     aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => { event.stopPropagation(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
                 </div>}
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
@@ -4679,10 +4885,40 @@ export default function Home() {
               </div>
             </div>
             {printPreviewMode && <div className={`print-preview-badge ${printAudit.issues.length ? "warning" : "pass"}`}><strong>PNG 출력 미리보기</strong><span>{printAudit.issues.length ? `점검 ${printAudit.issues.length}건` : "점검 통과"}</span></div>}
-            <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">모바일에서는 확대·이동과 배치 열람을 지원합니다.</div>
+            <div className="map-scale"><span /> 정규화 좌표 0–100%</div><div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 + 3차 ${tertiaryCalibrationPoints.length}점 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>고정좌표 {lockedCoordinateStorage === "persistent" ? "영구 동기화" : lockedCoordinateStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {visibleElements.length}곳</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">마우스 휠 확대 · 빈 공간 드래그 이동</span></footer>}
+          {publicLayoutAccess === "viewer" && selected && <aside className="public-place-sheet" aria-label={`${selected.name} 장소 정보`}>
+            <header className="public-place-sheet-head">
+              <div><span style={{ color: categoryOf(selected.category).color }}>{categoryOf(selected.category).name}</span><strong>{selected.name}</strong></div>
+              <button type="button" onClick={() => setSelectedId(null)} aria-label="장소 정보 닫기">×</button>
+            </header>
+            <div className="public-place-sheet-scroll">
+              <section className="public-place-summary">
+                {selected.address && <p className="public-place-address">{selected.address}</p>}
+                {selectedDirectoryPlace?.area && <span className="public-place-area">{selectedDirectoryPlace.area}</span>}
+                {selectedDirectoryPlace?.description && <p className="public-place-description">{selectedDirectoryPlace.description}</p>}
+                {selectedDirectoryPlace?.operatingInfo && <div className="public-place-hours"><b>이용 안내</b><span>{selectedDirectoryPlace.operatingInfo}</span></div>}
+                {selectedDirectoryPlace?.mapUrl && <a className="public-place-map-link" href={selectedDirectoryPlace.mapUrl} target="_blank" rel="noreferrer">지도에서 위치 확인 ↗</a>}
+              </section>
+              <section className="public-place-archive">
+                <div className="public-place-archive-title"><div><strong>함께 만든 장소 기록</strong><span>사진과 짧은 후기 {placeStories.filter((story) => story.status === "published").length}개</span></div><button type="button" onClick={togglePlaceStoryForm}>{placeStoryFormOpen ? "작성 닫기" : "＋ 기록 남기기"}</button></div>
+                {placeStoryFormOpen && <div className="place-story-form">
+                  <label>닉네임<input value={placeStoryAuthor} maxLength={20} onChange={(event) => setPlaceStoryAuthor(event.target.value)} placeholder="20자 이내" /></label>
+                  <label>짧은 후기<textarea value={placeStoryText} maxLength={220} onChange={(event) => setPlaceStoryText(event.target.value)} placeholder="이 장소에서 기억하고 싶은 순간을 남겨주세요." /><small>{placeStoryText.length}/220</small></label>
+                  <div className="place-story-photo-row"><button type="button" onClick={() => storyPhotoInputRef.current?.click()}>{placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</button>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}<input ref={storyPhotoInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></div>
+                  {placeStoryPhotoPreview && <img className="place-story-photo-preview" src={placeStoryPhotoPreview} alt="등록할 사진 미리보기" />}
+                  <p>직접 촬영했거나 게시 권한이 있는 사진만 등록해 주세요. 등록한 내용은 다른 방문자에게 바로 공개됩니다.</p>
+                  <button type="button" className="place-story-submit" disabled={placeStorySubmitting || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : "사진·후기 공개하기"}</button>
+                </div>}
+                {placeStoriesLoading ? <div className="place-story-empty">장소 기록을 불러오는 중입니다.</div> : placeStories.filter((story) => story.status === "published").length ? <div className="place-story-list">{placeStories.filter((story) => story.status === "published").map((story) => <article className="place-story-card" key={story.id}>
+                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.authorName}님이 남긴 ${selected.name} 사진`} loading="lazy" />}
+                  <div><header><strong>{story.authorName}</strong><time dateTime={story.createdAt}>{storyDateLabel(story.createdAt)}</time></header><p>{story.reviewText}</p></div>
+                </article>)}</div> : <div className="place-story-empty"><strong>아직 남겨진 기록이 없습니다.</strong><span>이 장소의 첫 사진이나 짧은 후기를 남겨보세요.</span></div>}
+              </section>
+            </div>
+          </aside>}
+          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵 연결됨" : "기본 베이스맵 연결됨"}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `1차 6점 + 2차 ${secondaryCalibrationPoints.length}점 + 3차 ${tertiaryCalibrationPoints.length}점 적용`}</span><span>1차 기준좌표 {primaryCalibrationStorage === "persistent" ? "영구 저장" : primaryCalibrationStorage === "local" ? "기기 저장" : "확인 중"}</span><span>고정좌표 {lockedCoordinateStorage === "persistent" ? "영구 동기화" : lockedCoordinateStorage === "local" ? "기기 저장" : "확인 중"}</span><span>요소 {visibleElements.length} / {elements.length}</span><span>장소 목록 {directoryPlaces.length}</span><span>메모 {reviewNotes.length}</span><span>{saveState}</span><span className="status-end">드래그 배치 · 앵커 중심 좌표 보정</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {visibleElements.length}곳</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 통합 라벨이 개별 장소명으로 바뀝니다.</span></footer>}
         </section>
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
@@ -4694,6 +4930,7 @@ export default function Home() {
             <section><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></section>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
             <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리{isCoreLandmarkName(selected.name) ? " · 핵심 랜드마크 고정" : ""}<select value={selected.category} disabled={isCoreLandmarkName(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
+            <section className="editor-place-stories"><div className="section-title"><strong>공개 사진·후기</strong><span>{placeStories.length}개</span></div>{placeStoriesLoading ? <p className="field-help">장소 기록을 불러오는 중입니다.</p> : placeStories.length ? <div className="editor-place-story-list">{placeStories.map((story) => <article key={story.id} className={story.status === "hidden" ? "hidden" : ""}>{story.photoUrl && <img src={story.photoUrl} alt="" loading="lazy" />}<div><header><b>{story.authorName}</b><span>{story.status === "hidden" ? "숨김" : storyDateLabel(story.createdAt)}</span></header><p>{story.reviewText}</p>{placeStoriesCanModerate && <footer><button type="button" onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{story.status === "hidden" ? "다시 공개" : "숨기기"}</button><button type="button" className="danger" onClick={() => void deletePlaceStory(story)}>삭제</button></footer>}</div></article>)}</div> : <p className="field-help">아직 등록된 사진이나 후기가 없습니다.</p>}{!placeStoriesCanModerate && <p className="field-help">소유자 권한을 확인하면 공개 상태와 삭제를 관리할 수 있습니다.</p>}</section>
             <section className="print-property-section"><div className="section-title"><strong>고화질 출력</strong><span>{printPolicyFor(selected).recommended ? "추천 장소" : "일반 장소"}</span></div><label className="print-recommended-toggle"><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span><b>{selected.category === "landmark" ? "랜드마크 기본 포함" : "출력 추천 장소"}</b><small>추천 중심 출력에서 사용할 장소를 지정합니다.</small></span></label><div className="field-row"><label>마커 출력<select value={printPolicyFor(selected).setting?.markerMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { markerMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label><label>라벨 출력<select value={printPolicyFor(selected).setting?.labelMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { labelMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label></div><p className="field-help">자동은 랜드마크와 추천 상태를 따릅니다. 수동 포함·제외는 추천 상태가 바뀌어도 유지됩니다.</p></section>
             <section><div className="section-title"><strong>리소스 출력 오프셋</strong><label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 변경 ON" : "출력위치 변경 OFF"}</span></label></div>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>리소스→앵커</button><button className="anchor-to-resource" disabled={selected.locked || (Math.abs(selectedDisplayOffset.x) < 0.001 && Math.abs(selectedDisplayOffset.y) < 0.001)} onClick={() => moveAnchorToResource(selected)} title="화면의 리소스는 그대로 두고 실제 위치 앵커를 리소스 중심으로 이동합니다.">앵커를 현재 리소스 위치로 이동</button></div></>}<p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 리소스 출력 위치가 유지됩니다." : resourceOutputDragMode ? "출력위치 변경 ON: 드래그와 방향키는 앵커를 고정한 채 이미지 리소스만 이동합니다." : "기본 상태: 드래그와 방향키는 실제 위치 앵커를 이동하며 현재 ΔX·ΔY는 유지됩니다."}</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></section>
             {selected.category === "landmark" && selectedLandmarkDefault && <section className="landmark-default-section"><div className="section-title"><strong>랜드마크 기본 앵커</strong><span>{selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}</span></div><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></section>}

@@ -50,6 +50,20 @@
       "when": 1786341176041,
       "tag": "0006_bored_skrulls",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786341977717,
+      "tag": "0007_heavy_mandroid",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786341989397,
+      "tag": "0008_even_blockbuster",
+      "breakpoints": true
     }
   ]
 }

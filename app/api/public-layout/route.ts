@@ -95,8 +95,6 @@ function publicDocument(value: unknown) {
   const directoryPlaces = Array.isArray(value.directoryPlaces) ? value.directoryPlaces.map((item) => {
     if (!isRecord(item)) return item;
     const safe = { ...item };
-    delete safe.description;
-    delete safe.operatingInfo;
     delete safe.notes;
     delete safe.sourceUrl;
     return safe;

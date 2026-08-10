@@ -25,4 +25,5 @@ interface R2Bucket {
     httpMetadata?: { contentType?: string };
     customMetadata?: Record<string, string>;
   }): Promise<unknown>;
+  delete(key: string): Promise<void>;
 }

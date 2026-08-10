@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const primaryCalibrationSettings = sqliteTable("primary_calibration_settings", {
   name: text("name").primaryKey(),
@@ -103,3 +103,22 @@ export const publicMapLayout = sqliteTable("public_map_layout", {
   publishedBy: text("published_by").notNull(),
   revision: integer("revision").notNull(),
 });
+
+export const placeStories = sqliteTable("place_stories", {
+  id: text("id").primaryKey(),
+  placeKey: text("place_key").notNull(),
+  placeName: text("place_name").notNull(),
+  authorName: text("author_name").notNull(),
+  reviewText: text("review_text").notNull(),
+  photoKey: text("photo_key"),
+  photoContentType: text("photo_content_type"),
+  photoSize: integer("photo_size"),
+  status: text("status").notNull(),
+  actorHash: text("actor_hash").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  moderatedBy: text("moderated_by"),
+}, (table) => [
+  index("place_stories_place_status_created_idx").on(table.placeKey, table.status, table.createdAt),
+  index("place_stories_actor_created_idx").on(table.actorHash, table.createdAt),
+]);
