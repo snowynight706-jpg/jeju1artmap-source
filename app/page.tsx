@@ -322,6 +322,12 @@ type PublicLayoutPayload = {
   revision?: number;
   hasPrevious?: boolean;
   reviewCompletedCount?: number;
+  contentSummary?: {
+    reviews: number;
+    events: number;
+    placeRequests: number;
+    refreshedAt: string;
+  } | null;
   error?: string;
 };
 
@@ -1834,7 +1840,7 @@ export default function Home() {
   const [globalStories, setGlobalStories] = useState<PlaceStory[]>([]);
   const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
   const [globalStoriesPageCount, setGlobalStoriesPageCount] = useState(0);
-  const [globalStoriesTotal, setGlobalStoriesTotal] = useState(0);
+  const [globalStoriesTotal, setGlobalStoriesTotal] = useState<number | null>(null);
   const [globalStoriesCanModerate, setGlobalStoriesCanModerate] = useState(false);
   const [globalStoriesLoading, setGlobalStoriesLoading] = useState(false);
   const [globalStoriesError, setGlobalStoriesError] = useState(false);
@@ -1868,7 +1874,7 @@ export default function Home() {
   const [globalEvents, setGlobalEvents] = useState<PlaceEvent[]>([]);
   const [globalEventsPage, setGlobalEventsPage] = useState(1);
   const [globalEventsPageCount, setGlobalEventsPageCount] = useState(0);
-  const [globalEventsTotal, setGlobalEventsTotal] = useState(0);
+  const [globalEventsTotal, setGlobalEventsTotal] = useState<number | null>(null);
   const [globalEventsCanManage, setGlobalEventsCanManage] = useState(false);
   const [globalEventsLoading, setGlobalEventsLoading] = useState(false);
   const [globalEventsError, setGlobalEventsError] = useState(false);
@@ -1883,7 +1889,7 @@ export default function Home() {
   const [placeRequests, setPlaceRequests] = useState<PlaceRegistrationRequest[]>([]);
   const [placeRequestsPage, setPlaceRequestsPage] = useState(1);
   const [placeRequestsPageCount, setPlaceRequestsPageCount] = useState(0);
-  const [placeRequestsTotal, setPlaceRequestsTotal] = useState(0);
+  const [placeRequestsTotal, setPlaceRequestsTotal] = useState<number | null>(null);
   const [placeRequestsLoading, setPlaceRequestsLoading] = useState(false);
   const [placeRequestsError, setPlaceRequestsError] = useState(false);
   const [placeRequestsRefreshKey, setPlaceRequestsRefreshKey] = useState(0);
@@ -2844,6 +2850,11 @@ export default function Home() {
         publishedLayoutRevisionRef.current = revision;
         setPublicLayoutRevision(revision);
         setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
+        if (payload?.contentSummary) {
+          setGlobalStoriesTotal(Math.max(0, Number(payload.contentSummary.reviews ?? 0)));
+          setGlobalEventsTotal(Math.max(0, Number(payload.contentSummary.events ?? 0)));
+          setPlaceRequestsTotal(Math.max(0, Number(payload.contentSummary.placeRequests ?? 0)));
+        }
         if (canEdit) {
           setPublicLayoutAccess("editor");
           return;
@@ -5235,7 +5246,6 @@ export default function Home() {
       }
       setPlaceStories((current) => current.filter((item) => item.id !== story.id));
       setGlobalStories((current) => current.filter((item) => item.id !== story.id));
-      setGlobalStoriesTotal((current) => Math.max(0, current - 1));
       setGlobalStoriesRefreshKey((current) => current + 1);
       setToast("사진과 후기를 서버에서 완전히 삭제했습니다.");
     } catch {
@@ -5411,7 +5421,6 @@ export default function Home() {
       if (!response.ok) throw new Error("event delete failed");
       setPlaceEvents((current) => current.filter((item) => item.id !== event.id));
       setGlobalEvents((current) => current.filter((item) => item.id !== event.id));
-      setGlobalEventsTotal((current) => Math.max(0, current - 1));
       setGlobalEventsRefreshKey((current) => current + 1);
       setToast("행사와 사진을 서버에서 완전히 삭제했습니다.");
     } catch {
@@ -5578,7 +5587,6 @@ export default function Home() {
       const response = await fetch(`${PLACE_REGISTRATION_REQUESTS_API}?id=${encodeURIComponent(request.id)}`, { method: "DELETE" });
       if (!response.ok) throw new Error("delete failed");
       setPlaceRequests((current) => current.filter((item) => item.id !== request.id));
-      setPlaceRequestsTotal((current) => Math.max(0, current - 1));
       setPlaceRequestsRefreshKey((current) => current + 1);
       setToast("장소 등록 요청 기록을 삭제했습니다.");
     } catch {
@@ -5676,6 +5684,11 @@ export default function Home() {
 
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
   const editingEnabled = publicLayoutAccess === "editor" && !printPreviewMode;
+  const activeGlobalCount = globalContentTab === "reviews"
+    ? globalStoriesTotal
+    : globalContentTab === "events"
+      ? globalEventsTotal
+      : placeRequestsTotal;
   const eventPlaceSelectionMode = editingEnabled && placeEventFormOpen && placeEventMultiPlace;
   const eventPlaceKeySet = useMemo(() => new Set(placeEventPlaces.map((place) => place.placeKey)), [placeEventPlaces]);
   const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
@@ -6070,7 +6083,7 @@ export default function Home() {
             {printPreviewMode && <div className={`print-preview-badge ${printAudit.issues.length ? "warning" : "pass"}`}><strong>PNG 출력 미리보기</strong><span>{printAudit.issues.length ? `점검 ${printAudit.issues.length}건` : "점검 통과"}</span></div>}
             {eventPlaceSelectionMode && <div className="event-place-selection-hint"><strong>행사 장소 선택 중</strong><span>지도 마커를 눌러 추가·해제 · 현재 {placeEventPlaces.length}곳</span></div>}
             {publicLayoutAccess === "editor" && <div className="map-scale"><span /> 정규화 좌표 0–100%</div>}
-            {publicLayoutAccess === "editor" && <button type="button" className={`global-story-toggle editor-map ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel"><span aria-hidden="true">✓</span><strong>{globalStoriesOpen ? "관리 닫기" : "리뷰·행사·장소 관리"}</strong>{globalContentTab === "reviews" ? globalStoriesTotal > 0 && <em>{globalStoriesTotal}</em> : globalContentTab === "events" ? globalEventsTotal > 0 && <em>{globalEventsTotal}</em> : placeRequestsTotal > 0 && <em>{placeRequestsTotal}</em>}</button>}
+            {publicLayoutAccess === "editor" && <button type="button" className={`global-story-toggle editor-map ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel"><span aria-hidden="true">✓</span><strong>{globalStoriesOpen ? "관리 닫기" : "리뷰·행사·장소 관리"}</strong>{activeGlobalCount !== null && activeGlobalCount > 0 && <em>{activeGlobalCount}</em>}</button>}
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
@@ -6145,7 +6158,7 @@ export default function Home() {
       </section>
       <>
         {publicLayoutAccess === "viewer" && <button type="button" className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel">
-          <span aria-hidden="true">☰</span><strong>{globalStoriesOpen ? "목록 닫기" : "리뷰 / 행사"}</strong>{(globalContentTab === "reviews" ? globalStoriesTotal : globalEventsTotal) > 0 && <em>{globalContentTab === "reviews" ? globalStoriesTotal : globalEventsTotal}</em>}
+          <span aria-hidden="true">☰</span><strong>{globalStoriesOpen ? "목록 닫기" : "리뷰 / 행사"}</strong>{activeGlobalCount !== null && activeGlobalCount > 0 && <em>{activeGlobalCount}</em>}
         </button>}
         {globalStoriesOpen && <aside id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : ""}`} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "전체 장소 리뷰와 행사"}>
           <header className="global-story-panel-head">
@@ -6156,9 +6169,9 @@ export default function Home() {
             </div>
           </header>
           <div className={`global-content-tabs ${publicLayoutAccess === "editor" ? "admin" : ""}`} role="tablist" aria-label="리뷰와 행사 선택">
-            <button type="button" role="tab" aria-selected={globalContentTab === "reviews"} className={globalContentTab === "reviews" ? "active" : ""} onClick={() => { setGlobalContentTab("reviews"); setGlobalStoriesPage(1); }}>최신 리뷰 <span>{globalStoriesTotal}</span></button>
-            <button type="button" role="tab" aria-selected={globalContentTab === "events"} className={globalContentTab === "events" ? "active" : ""} onClick={() => { setGlobalContentTab("events"); setGlobalEventsPage(1); }}>행사 <span>{globalEventsTotal}</span></button>
-            {publicLayoutAccess === "editor" && <button type="button" role="tab" aria-selected={globalContentTab === "place-requests"} className={globalContentTab === "place-requests" ? "active" : ""} onClick={() => { setGlobalContentTab("place-requests"); setPlaceRequestsPage(1); }}>장소 요청 <span>{placeRequestsTotal}</span></button>}
+            <button type="button" role="tab" aria-selected={globalContentTab === "reviews"} className={globalContentTab === "reviews" ? "active" : ""} onClick={() => { setGlobalContentTab("reviews"); setGlobalStoriesPage(1); }}>최신 리뷰 <span>{globalStoriesTotal ?? "—"}</span></button>
+            <button type="button" role="tab" aria-selected={globalContentTab === "events"} className={globalContentTab === "events" ? "active" : ""} onClick={() => { setGlobalContentTab("events"); setGlobalEventsPage(1); }}>행사 <span>{globalEventsTotal ?? "—"}</span></button>
+            {publicLayoutAccess === "editor" && <button type="button" role="tab" aria-selected={globalContentTab === "place-requests"} className={globalContentTab === "place-requests" ? "active" : ""} onClick={() => { setGlobalContentTab("place-requests"); setPlaceRequestsPage(1); }}>장소 요청 <span>{placeRequestsTotal ?? "—"}</span></button>}
           </div>
           <div className="global-story-panel-scroll" aria-live="polite">
             {globalContentTab === "reviews" ? (globalStoriesLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>최신 리뷰를 불러오는 중입니다.</strong></div>

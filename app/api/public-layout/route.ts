@@ -1,4 +1,5 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import { contentSummaryFromBatchResults } from "../../content-summary.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
 
 export const runtime = "edge";
@@ -118,6 +119,34 @@ async function readLayout(db: D1Database) {
   ).first() as Promise<StoredLayout | null>;
 }
 
+function batchRow<T>(result: D1Result<T>) {
+  return result.results?.[0] ?? null;
+}
+
+async function readInitialState(db: D1Database, canEdit: boolean) {
+  const now = new Date().toISOString();
+  const reviewWhere = canEdit ? "status IN ('published', 'hidden')" : "status = 'published'";
+  const eventCount = canEdit
+    ? db.prepare("SELECT COUNT(*) AS count FROM place_events")
+    : db.prepare("SELECT COUNT(*) AS count FROM place_events WHERE status = 'active' AND visible_from <= ? AND visible_until > ?").bind(now, now);
+  const placeRequestCount = canEdit
+    ? db.prepare("SELECT COUNT(*) AS count FROM place_registration_requests")
+    : db.prepare("SELECT 0 AS count");
+  const [layoutResult, reviewResult, eventResult, placeRequestResult] = await db.batch([
+    db.prepare(
+      `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
+        previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
+        published_at AS publishedAt, revision
+       FROM public_map_layout WHERE id = 1`,
+    ),
+    db.prepare(`SELECT COUNT(*) AS count FROM place_stories WHERE ${reviewWhere}`),
+    eventCount,
+    placeRequestCount,
+  ]);
+  const contentSummary = contentSummaryFromBatchResults(reviewResult, eventResult, placeRequestResult, now);
+  return { row: batchRow(layoutResult) as StoredLayout | null, contentSummary };
+}
+
 function parseStored(row: StoredLayout, canEdit: boolean) {
   const storedDocument = JSON.parse(row.documentJson) as unknown;
   const completed = completeReviewStatuses(storedDocument);
@@ -134,13 +163,13 @@ function parseStored(row: StoredLayout, canEdit: boolean) {
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit, accessMethod } = ownerAccess(request, runtime);
-  if (!runtime.DB) return json({ document: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false }, 503);
-  const row = await readLayout(runtime.DB);
-  if (!row) return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false });
+  if (!runtime.DB) return json({ document: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null }, 503);
+  const { row, contentSummary } = await readInitialState(runtime.DB, canEdit);
+  if (!row) return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary });
   try {
-    return json({ ...parseStored(row, canEdit), canEdit, accessMethod, persistent: true });
+    return json({ ...parseStored(row, canEdit), canEdit, accessMethod, persistent: true, contentSummary });
   } catch {
-    return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson) }, 500);
+    return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary }, 500);
   }
 }
 
