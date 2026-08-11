@@ -1,4 +1,5 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import { completeReviewStatuses } from "../../review-status.mjs";
 
 export const runtime = "edge";
 
@@ -119,12 +120,14 @@ async function readLayout(db: D1Database) {
 
 function parseStored(row: StoredLayout, canEdit: boolean) {
   const storedDocument = JSON.parse(row.documentJson) as unknown;
+  const completed = completeReviewStatuses(storedDocument);
   return {
-    document: canEdit ? storedDocument : publicDocument(storedDocument),
+    document: canEdit ? completed.document : publicDocument(completed.document),
     view: normalizeViewSettings(JSON.parse(row.viewSettingsJson)),
     publishedAt: row.publishedAt,
     revision: row.revision,
     hasPrevious: Boolean(row.previousDocumentJson),
+    reviewCompletedCount: completed.completedCount,
   };
 }
 
@@ -154,7 +157,8 @@ export async function PUT(request: Request) {
     return json({ error: "invalid json" }, 400);
   }
   if (!isRecord(payload) || !validDocument(payload.document)) return json({ error: "valid layout document required" }, 400);
-  const documentJson = JSON.stringify(payload.document);
+  const completed = completeReviewStatuses(payload.document);
+  const documentJson = JSON.stringify(completed.document);
   if (new TextEncoder().encode(documentJson).byteLength > MAX_DOCUMENT_BYTES) return json({ error: "layout document too large" }, 413);
   const viewSettingsJson = JSON.stringify(normalizeViewSettings(payload.view));
   const current = await readLayout(runtime.DB);
@@ -185,7 +189,7 @@ export async function PUT(request: Request) {
     currentEmail,
     revision,
   ).run();
-  return json({ document: payload.document, view: normalizeViewSettings(payload.view), canEdit: true, persistent: true, publishedAt, revision, hasPrevious: Boolean(current) });
+  return json({ document: completed.document, view: normalizeViewSettings(payload.view), canEdit: true, persistent: true, publishedAt, revision, hasPrevious: Boolean(current), reviewCompletedCount: completed.completedCount });
 }
 
 export async function POST(request: Request) {
@@ -200,7 +204,8 @@ export async function POST(request: Request) {
   if (typeof payload.baseRevision !== "number" || payload.baseRevision !== current.revision) {
     return json({ error: "public layout changed", publishedAt: current.publishedAt, revision: current.revision }, 409);
   }
-  const restoredDocumentJson = current.previousDocumentJson;
+  const restoredCompleted = completeReviewStatuses(JSON.parse(current.previousDocumentJson) as unknown);
+  const restoredDocumentJson = JSON.stringify(restoredCompleted.document);
   const restoredViewSettingsJson = current.previousViewSettingsJson;
   const publishedAt = new Date().toISOString();
   const revision = current.revision + 1;
@@ -227,5 +232,5 @@ export async function POST(request: Request) {
     publishedAt,
     revision,
   };
-  return json({ ...parseStored(restored, true), canEdit: true, persistent: true });
+  return json({ ...parseStored(restored, true), canEdit: true, persistent: true, reviewCompletedCount: restoredCompleted.completedCount });
 }

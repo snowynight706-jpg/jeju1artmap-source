@@ -22,6 +22,7 @@ import {
 import type { MasterDirectoryRow } from "./master-directory";
 import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places";
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
+import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -320,7 +321,15 @@ type PublicLayoutPayload = {
   publishedAt?: string | null;
   revision?: number;
   hasPrevious?: boolean;
+  reviewCompletedCount?: number;
   error?: string;
+};
+
+type LocalAutosavePayload = {
+  schemaVersion: 4;
+  savedAt: string;
+  baseRevision: number;
+  document: DocumentState;
 };
 
 type PlaceStory = {
@@ -1478,6 +1487,7 @@ function ensureIndependentElementIdentity(elements: MapElement[]) {
 }
 
 function sanitizeDocument(document: DocumentState): DocumentState {
+  const storedAssetStatuses = new Map(document.assets.map((asset) => [asset.id, asset.status]));
   const sanitizedElements = document.elements
     .filter((element) => !DELETED_PLACE_NAMES.has(element.name.trim()))
     .map((element) => {
@@ -1503,14 +1513,14 @@ function sanitizeDocument(document: DocumentState): DocumentState {
       const needsCanonicalMarker = category !== "landmark"
         && (!canonical.assetId || !canonicalMarkerAssetIds.has(canonical.assetId));
       return needsCanonicalMarker && defaultAssetId
-        ? { ...canonical, assetId: defaultAssetId, status: "review" as AssetStatus }
+        ? { ...canonical, assetId: defaultAssetId, status: canonical.status === "approved" ? "approved" as AssetStatus : "review" as AssetStatus }
         : canonical;
     });
   return {
     ...document,
     elements: ensureIndependentElementIdentity(sanitizedElements),
     assets: [
-      ...builtInAssets,
+      ...builtInAssets.map((asset) => ({ ...asset, status: storedAssetStatuses.get(asset.id) ?? asset.status })),
       ...document.assets.filter((asset) => !builtInAssetIds.has(asset.id)
         && (asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id) || asset.builtIn === false)),
     ],
@@ -1755,6 +1765,7 @@ export default function Home() {
   const placementOverridesRef = useRef<PlacementOverride[]>([]);
   const publishedLayoutDocumentRef = useRef<DocumentState | null>(null);
   const publishedLayoutViewRef = useRef<PublicViewSettings | null>(null);
+  const publishedLayoutRevisionRef = useRef(0);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -2829,7 +2840,9 @@ export default function Home() {
         publishedLayoutDocumentRef.current = publishedDocument;
         publishedLayoutViewRef.current = payload?.view ?? null;
         setPublicLayoutPublishedAt(payload?.publishedAt ?? null);
-        setPublicLayoutRevision(typeof payload?.revision === "number" ? payload.revision : 0);
+        const revision = typeof payload?.revision === "number" ? payload.revision : 0;
+        publishedLayoutRevisionRef.current = revision;
+        setPublicLayoutRevision(revision);
         setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
         if (canEdit) {
           setPublicLayoutAccess("editor");
@@ -2963,9 +2976,11 @@ export default function Home() {
         localPlacementUpdatedAtRef.current = Date.parse(persistentPlacement?.updatedAt ?? "") || 0;
 
         const raw = localStorage.getItem(AUTOSAVE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Partial<DocumentState>;
-          if (Array.isArray(parsed.elements)) {
+        const localAutosave = raw ? parseVersionedLocalAutosave(raw) as { document: Partial<DocumentState>; baseRevision: number | null } | null : null;
+        const hasPublishedServerDocument = Boolean(publishedLayoutDocumentRef.current);
+        const canRestoreLocalAutosave = shouldRestoreLocalAutosave(localAutosave, hasPublishedServerDocument, publishedLayoutRevisionRef.current);
+        const parsed = canRestoreLocalAutosave ? localAutosave!.document : null;
+        if (parsed && Array.isArray(parsed.elements)) {
             const parsedElements = (parsed.elements as MapElement[]).map((item) => {
               const correctedPlace = defaultDirectoryPlaces.find((place) => place.id === item.directoryId || normalizePlaceName(place.name) === normalizePlaceName(item.name));
               const shouldMoveToCorrectedPosition = Boolean(correctedPlace?.coordinateStatus === "geocoded" && (/^(default-landmark|starter-marker)-/.test(item.id) || /초기 구성용|초기 배치/.test(item.memo ?? "")));
@@ -3044,7 +3059,6 @@ export default function Home() {
               placementOverrides: migratedPlacementOverrides,
             });
             setSaveState("최근 상태 복구됨");
-          }
         } else if (publishedLayoutDocumentRef.current) {
           setDocument(cloneDocument(publishedLayoutDocumentRef.current));
           const publishedView = publishedLayoutViewRef.current;
@@ -3082,7 +3096,13 @@ export default function Home() {
     if (!hydrated || publicLayoutAccess !== "editor") return;
     const timer = window.setTimeout(() => {
       try {
-        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(currentDocument()));
+        const autosave: LocalAutosavePayload = {
+          schemaVersion: 4,
+          savedAt: new Date().toISOString(),
+          baseRevision: publishedLayoutRevisionRef.current,
+          document: currentDocument(),
+        };
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autosave));
         setSaveState("자동 저장됨");
       } catch {
         setSaveState("저장 공간 부족");
@@ -5060,9 +5080,15 @@ export default function Home() {
       publishedLayoutDocumentRef.current = publishedDocument;
       publishedLayoutViewRef.current = payload?.view ?? view;
       setPublicLayoutPublishedAt(payload?.publishedAt ?? new Date().toISOString());
-      setPublicLayoutRevision(payload?.revision ?? publicLayoutRevision + 1);
+      const nextRevision = payload?.revision ?? publicLayoutRevision + 1;
+      publishedLayoutRevisionRef.current = nextRevision;
+      setPublicLayoutRevision(nextRevision);
       setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
-      setToast("공개 배치본을 업데이트했습니다. 비로그인 방문자에게 같은 배치가 표시됩니다.");
+      setDocument(publishedDocument);
+      const completedCount = Math.max(0, Number(payload?.reviewCompletedCount ?? 0));
+      setToast(completedCount > 0
+        ? `공개 배치본을 업데이트하고 미검수 ${completedCount}개를 검수완료로 전환했습니다.`
+        : "공개 배치본을 업데이트했습니다. 모든 항목이 검수완료 상태입니다.");
     } catch (error) {
       setToast(error instanceof Error && error.message === "conflict"
         ? "다른 기기에서 공개본이 변경되었습니다. 새로고침해 최신 공개본을 확인한 뒤 다시 게시해 주세요."
@@ -5102,7 +5128,9 @@ export default function Home() {
       publishedLayoutDocumentRef.current = restored;
       publishedLayoutViewRef.current = payload.view ?? null;
       setPublicLayoutPublishedAt(payload.publishedAt ?? new Date().toISOString());
-      setPublicLayoutRevision(payload.revision ?? publicLayoutRevision + 1);
+      const nextRevision = payload.revision ?? publicLayoutRevision + 1;
+      publishedLayoutRevisionRef.current = nextRevision;
+      setPublicLayoutRevision(nextRevision);
       setPublicLayoutHasPrevious(Boolean(payload.hasPrevious));
       setDocument(restored);
       applyPublicViewSettings(payload.view);
