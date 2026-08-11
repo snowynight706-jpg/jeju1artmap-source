@@ -28,6 +28,15 @@ type StoredLayout = {
   revision: number;
 };
 
+type StoredDraft = {
+  documentJson: string;
+  viewSettingsJson: string;
+  previousDocumentJson: string | null;
+  previousViewSettingsJson: string | null;
+  updatedAt: string;
+  revision: number;
+};
+
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
   return workers.env as unknown as RuntimeEnv;
@@ -119,6 +128,15 @@ async function readLayout(db: D1Database) {
   ).first() as Promise<StoredLayout | null>;
 }
 
+async function readDraft(db: D1Database) {
+  return db.prepare(
+    `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
+      previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
+      updated_at AS updatedAt, revision
+     FROM map_editor_draft WHERE id = 1`,
+  ).first() as Promise<StoredDraft | null>;
+}
+
 function batchRow<T>(result: D1Result<T>) {
   return result.results?.[0] ?? null;
 }
@@ -160,17 +178,76 @@ function parseStored(row: StoredLayout, canEdit: boolean) {
   };
 }
 
+function parseDraft(row: StoredDraft) {
+  return {
+    document: JSON.parse(row.documentJson) as unknown,
+    view: normalizeViewSettings(JSON.parse(row.viewSettingsJson)),
+    updatedAt: row.updatedAt,
+    revision: row.revision,
+    hasPrevious: Boolean(row.previousDocumentJson),
+  };
+}
+
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit, accessMethod } = ownerAccess(request, runtime);
-  if (!runtime.DB) return json({ document: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null }, 503);
+  if (!runtime.DB) return json({ document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null }, 503);
   const { row, contentSummary } = await readInitialState(runtime.DB, canEdit);
-  if (!row) return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary });
+  const draftRow = canEdit ? await readDraft(runtime.DB) : null;
+  let draft = null;
   try {
-    return json({ ...parseStored(row, canEdit), canEdit, accessMethod, persistent: true, contentSummary });
+    draft = draftRow ? parseDraft(draftRow) : null;
   } catch {
-    return json({ document: null, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary }, 500);
+    draft = null;
   }
+  if (!row) return json({ document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary });
+  try {
+    return json({ ...parseStored(row, canEdit), draft, canEdit, accessMethod, persistent: true, contentSummary });
+  } catch {
+    return json({ document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary }, 500);
+  }
+}
+
+export async function PATCH(request: Request) {
+  const runtime = await runtimeEnv();
+  if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
+  const { canEdit, currentEmail } = ownerAccess(request, runtime);
+  if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
+
+  const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!payload || !validDocument(payload.document)) return json({ error: "valid draft document required" }, 400);
+  const documentJson = JSON.stringify(payload.document);
+  if (new TextEncoder().encode(documentJson).byteLength > MAX_DOCUMENT_BYTES) return json({ error: "draft document too large" }, 413);
+  const viewSettingsJson = JSON.stringify(normalizeViewSettings(payload.view));
+  const current = await readDraft(runtime.DB);
+  const baseRevision = typeof payload.baseDraftRevision === "number" ? payload.baseDraftRevision : 0;
+  if (current && baseRevision !== current.revision) {
+    return json({ error: "editor draft changed", updatedAt: current.updatedAt, draftRevision: current.revision }, 409);
+  }
+  const updatedAt = new Date().toISOString();
+  const revision = (current?.revision ?? 0) + 1;
+  await runtime.DB.prepare(
+    `INSERT INTO map_editor_draft
+      (id, document_json, view_settings_json, previous_document_json, previous_view_settings_json, updated_at, updated_by, revision)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       previous_document_json = map_editor_draft.document_json,
+       previous_view_settings_json = map_editor_draft.view_settings_json,
+       document_json = excluded.document_json,
+       view_settings_json = excluded.view_settings_json,
+       updated_at = excluded.updated_at,
+       updated_by = excluded.updated_by,
+       revision = excluded.revision`,
+  ).bind(
+    documentJson,
+    viewSettingsJson,
+    current?.documentJson ?? null,
+    current?.viewSettingsJson ?? null,
+    updatedAt,
+    currentEmail,
+    revision,
+  ).run();
+  return json({ draft: { document: payload.document, view: normalizeViewSettings(payload.view), updatedAt, revision, hasPrevious: Boolean(current) }, canEdit: true, persistent: true });
 }
 
 export async function PUT(request: Request) {
@@ -191,34 +268,69 @@ export async function PUT(request: Request) {
   if (new TextEncoder().encode(documentJson).byteLength > MAX_DOCUMENT_BYTES) return json({ error: "layout document too large" }, 413);
   const viewSettingsJson = JSON.stringify(normalizeViewSettings(payload.view));
   const current = await readLayout(runtime.DB);
+  const currentDraft = await readDraft(runtime.DB);
   const baseRevision = typeof payload.baseRevision === "number" ? payload.baseRevision : 0;
   if (current && baseRevision !== current.revision) {
     return json({ error: "public layout changed", publishedAt: current.publishedAt, revision: current.revision }, 409);
   }
   const publishedAt = new Date().toISOString();
   const revision = (current?.revision ?? 0) + 1;
-  await runtime.DB.prepare(
-    `INSERT INTO public_map_layout
-      (id, document_json, view_settings_json, previous_document_json, previous_view_settings_json, published_at, published_by, revision)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       previous_document_json = public_map_layout.document_json,
-       previous_view_settings_json = public_map_layout.view_settings_json,
-       document_json = excluded.document_json,
-       view_settings_json = excluded.view_settings_json,
-       published_at = excluded.published_at,
-       published_by = excluded.published_by,
-       revision = excluded.revision`,
-  ).bind(
-    documentJson,
-    viewSettingsJson,
-    current?.documentJson ?? null,
-    current?.viewSettingsJson ?? null,
+  const draftRevision = (currentDraft?.revision ?? 0) + 1;
+  await runtime.DB.batch([
+    runtime.DB.prepare(
+      `INSERT INTO public_map_layout
+        (id, document_json, view_settings_json, previous_document_json, previous_view_settings_json, published_at, published_by, revision)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         previous_document_json = public_map_layout.document_json,
+         previous_view_settings_json = public_map_layout.view_settings_json,
+         document_json = excluded.document_json,
+         view_settings_json = excluded.view_settings_json,
+         published_at = excluded.published_at,
+         published_by = excluded.published_by,
+         revision = excluded.revision`,
+    ).bind(
+      documentJson,
+      viewSettingsJson,
+      current?.documentJson ?? null,
+      current?.viewSettingsJson ?? null,
+      publishedAt,
+      currentEmail,
+      revision,
+    ),
+    runtime.DB.prepare(
+      `INSERT INTO map_editor_draft
+        (id, document_json, view_settings_json, previous_document_json, previous_view_settings_json, updated_at, updated_by, revision)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         previous_document_json = map_editor_draft.document_json,
+         previous_view_settings_json = map_editor_draft.view_settings_json,
+         document_json = excluded.document_json,
+         view_settings_json = excluded.view_settings_json,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by,
+         revision = excluded.revision`,
+    ).bind(
+      documentJson,
+      viewSettingsJson,
+      currentDraft?.documentJson ?? null,
+      currentDraft?.viewSettingsJson ?? null,
+      publishedAt,
+      currentEmail,
+      draftRevision,
+    ),
+  ]);
+  return json({
+    document: completed.document,
+    view: normalizeViewSettings(payload.view),
+    draft: { document: completed.document, view: normalizeViewSettings(payload.view), updatedAt: publishedAt, revision: draftRevision, hasPrevious: Boolean(currentDraft) },
+    canEdit: true,
+    persistent: true,
     publishedAt,
-    currentEmail,
     revision,
-  ).run();
-  return json({ document: completed.document, view: normalizeViewSettings(payload.view), canEdit: true, persistent: true, publishedAt, revision, hasPrevious: Boolean(current), reviewCompletedCount: completed.completedCount });
+    hasPrevious: Boolean(current),
+    reviewCompletedCount: completed.completedCount,
+  });
 }
 
 export async function POST(request: Request) {
@@ -226,7 +338,40 @@ export async function POST(request: Request) {
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
   const { canEdit, currentEmail } = ownerAccess(request, runtime);
   if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
-  const payload = await request.json().catch(() => null) as { action?: unknown; baseRevision?: unknown } | null;
+  const payload = await request.json().catch(() => null) as { action?: unknown; baseRevision?: unknown; baseDraftRevision?: unknown } | null;
+  if (payload?.action === "restore-previous-draft") {
+    const currentDraft = await readDraft(runtime.DB);
+    if (!currentDraft?.previousDocumentJson || !currentDraft.previousViewSettingsJson) return json({ error: "previous editor draft unavailable" }, 404);
+    if (typeof payload.baseDraftRevision !== "number" || payload.baseDraftRevision !== currentDraft.revision) {
+      return json({ error: "editor draft changed", updatedAt: currentDraft.updatedAt, draftRevision: currentDraft.revision }, 409);
+    }
+    const updatedAt = new Date().toISOString();
+    const revision = currentDraft.revision + 1;
+    await runtime.DB.prepare(
+      `UPDATE map_editor_draft SET
+        document_json = ?, view_settings_json = ?,
+        previous_document_json = ?, previous_view_settings_json = ?,
+        updated_at = ?, updated_by = ?, revision = ?
+       WHERE id = 1`,
+    ).bind(
+      currentDraft.previousDocumentJson,
+      currentDraft.previousViewSettingsJson,
+      currentDraft.documentJson,
+      currentDraft.viewSettingsJson,
+      updatedAt,
+      currentEmail,
+      revision,
+    ).run();
+    const restoredDraft: StoredDraft = {
+      documentJson: currentDraft.previousDocumentJson,
+      viewSettingsJson: currentDraft.previousViewSettingsJson,
+      previousDocumentJson: currentDraft.documentJson,
+      previousViewSettingsJson: currentDraft.viewSettingsJson,
+      updatedAt,
+      revision,
+    };
+    return json({ draft: parseDraft(restoredDraft), canEdit: true, persistent: true });
+  }
   if (payload?.action !== "restore-previous") return json({ error: "unsupported action" }, 400);
   const current = await readLayout(runtime.DB);
   if (!current?.previousDocumentJson || !current.previousViewSettingsJson) return json({ error: "previous public layout unavailable" }, 404);
@@ -238,21 +383,46 @@ export async function POST(request: Request) {
   const restoredViewSettingsJson = current.previousViewSettingsJson;
   const publishedAt = new Date().toISOString();
   const revision = current.revision + 1;
-  await runtime.DB.prepare(
-    `UPDATE public_map_layout SET
-      document_json = ?, view_settings_json = ?,
-      previous_document_json = ?, previous_view_settings_json = ?,
-      published_at = ?, published_by = ?, revision = ?
-     WHERE id = 1`,
-  ).bind(
-    restoredDocumentJson,
-    restoredViewSettingsJson,
-    current.documentJson,
-    current.viewSettingsJson,
-    publishedAt,
-    currentEmail,
-    revision,
-  ).run();
+  const currentDraft = await readDraft(runtime.DB);
+  const draftRevision = (currentDraft?.revision ?? 0) + 1;
+  await runtime.DB.batch([
+    runtime.DB.prepare(
+      `UPDATE public_map_layout SET
+        document_json = ?, view_settings_json = ?,
+        previous_document_json = ?, previous_view_settings_json = ?,
+        published_at = ?, published_by = ?, revision = ?
+       WHERE id = 1`,
+    ).bind(
+      restoredDocumentJson,
+      restoredViewSettingsJson,
+      current.documentJson,
+      current.viewSettingsJson,
+      publishedAt,
+      currentEmail,
+      revision,
+    ),
+    runtime.DB.prepare(
+      `INSERT INTO map_editor_draft
+        (id, document_json, view_settings_json, previous_document_json, previous_view_settings_json, updated_at, updated_by, revision)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         previous_document_json = map_editor_draft.document_json,
+         previous_view_settings_json = map_editor_draft.view_settings_json,
+         document_json = excluded.document_json,
+         view_settings_json = excluded.view_settings_json,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by,
+         revision = excluded.revision`,
+    ).bind(
+      restoredDocumentJson,
+      restoredViewSettingsJson,
+      currentDraft?.documentJson ?? null,
+      currentDraft?.viewSettingsJson ?? null,
+      publishedAt,
+      currentEmail,
+      draftRevision,
+    ),
+  ]);
   const restored: StoredLayout = {
     documentJson: restoredDocumentJson,
     viewSettingsJson: restoredViewSettingsJson,
@@ -261,5 +431,11 @@ export async function POST(request: Request) {
     publishedAt,
     revision,
   };
-  return json({ ...parseStored(restored, true), canEdit: true, persistent: true, reviewCompletedCount: restoredCompleted.completedCount });
+  return json({
+    ...parseStored(restored, true),
+    draft: { document: restoredCompleted.document, view: normalizeViewSettings(JSON.parse(restoredViewSettingsJson)), updatedAt: publishedAt, revision: draftRevision, hasPrevious: Boolean(currentDraft) },
+    canEdit: true,
+    persistent: true,
+    reviewCompletedCount: restoredCompleted.completedCount,
+  });
 }

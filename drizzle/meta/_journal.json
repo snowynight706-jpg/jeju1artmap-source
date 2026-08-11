@@ -99,6 +99,13 @@
       "when": 1786352005680,
       "tag": "0013_cold_cargill",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1786424687112,
+      "tag": "0014_free_warpath",
+      "breakpoints": true
     }
   ]
 }

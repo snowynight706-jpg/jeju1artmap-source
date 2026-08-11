@@ -104,6 +104,17 @@ export const publicMapLayout = sqliteTable("public_map_layout", {
   revision: integer("revision").notNull(),
 });
 
+export const mapEditorDraft = sqliteTable("map_editor_draft", {
+  id: integer("id").primaryKey(),
+  documentJson: text("document_json").notNull(),
+  viewSettingsJson: text("view_settings_json").notNull(),
+  previousDocumentJson: text("previous_document_json"),
+  previousViewSettingsJson: text("previous_view_settings_json"),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  revision: integer("revision").notNull(),
+});
+
 export const placeStories = sqliteTable("place_stories", {
   id: text("id").primaryKey(),
   placeKey: text("place_key").notNull(),
