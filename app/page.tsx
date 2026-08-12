@@ -28,6 +28,7 @@ import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import {
   ART_PLATFORM_FACILITY_NAMES,
   ART_PLATFORM_GROUP_ID,
+  LPP_CANONICAL_NAME,
   MAIN_HUB_CANONICAL_NAME,
   MAIN_HUB_ROLE,
   additionalCategoryDefinitions,
@@ -59,6 +60,7 @@ const PLACE_EVENTS_API = "/api/place-events";
 const PLACE_REGISTRATION_REQUESTS_API = "/api/place-registration-requests";
 const ADMIN_SESSION_API = "/api/admin-session";
 const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v04";
+const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
 const SUPERSEDED_SANJICHEON_ASSET_IDS = new Set(["sanjicheon-01", "sanjicheon-02", "sanjicheon-03"]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
@@ -527,6 +529,7 @@ const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" |
 };
 
 const landmarkLocations = [
+  { name: MAIN_HUB_CANONICAL_NAME, address: "제주특별자치도 제주시 관덕로 44", addressSourceUrl: "https://www.jejusotong.kr/", assetId: MAIN_HUB_LANDMARK_ASSET_ID, x: 48, y: 64 },
   { name: "제주아트플랫폼", address: "제주특별자치도 제주시 중앙로14길 18", addressSourceUrl: "https://www.jfac.kr/", assetId: "jeju-art-platform-c01", x: 31, y: 62 },
   { name: "김만덕기념관", address: "제주특별자치도 제주시 산지로 7", addressSourceUrl: "https://www.mandukmuseum.or.kr/", assetId: "kim-memorial-front03", x: 74, y: 31 },
   { name: "예술공간 이아", address: "제주특별자치도 제주시 중앙로14길 21", addressSourceUrl: "https://www.jfac.kr/operatingSpace/artSpaceIAa/iAaGuide", assetId: "artspace-ia-01", x: 34, y: 57 },
@@ -730,6 +733,7 @@ const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-gwandeokjeong", name: "관덕정", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 19", x: 37, y: 58, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-kim-manduk-guesthouse", name: "김만덕객주", category: "culture", area: "산지천", address: "제주특별자치도 제주시 임항로 68", x: 75, y: 25, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-sotong-center", name: "제주특별자치도 소통협력센터", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 44", x: 45, y: 59, coordinateStatus: "review", sourceLabel: "원도심 조사본 · 공식 주소 확인" },
+  { id: "master-v12-lpp-local-player-platform", name: LPP_CANONICAL_NAME, category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로8길 15-3", x: 44.61417391305452, y: 42.09463302752, coordinateStatus: "geocoded", latitude: 33.51162337, longitude: 126.52376126, sourceLabel: "카카오맵 좌표 · 개관 보도 교차확인", sourceUrl: "https://www.headlinejeju.co.kr/news/articleView.html?idxno=596237", subtype: "로컬 브랜드·창업 복합공간", priority: "추천", description: "제주 로컬 브랜드와 청년 창업가의 팝업·테스트베드·교육·교류를 지원하는 3층 복합 창업·문화공간", operatingInfo: "운영시간: 프로그램·팝업별 상이 · 방문 전 공식 채널 확인", notes: "1층 로컬 식음·농산물 팝업과 교육, 2층 로컬 상품 전시·판매, 3층 세미나·포럼 공간 · 정규 운영시간은 공식 채널 확인", mapUrl: "https://place.map.kakao.com/1316005169", checkedAt: "2026-08-12" },
   { id: "place-jeju-arts-center", name: "제주특별자치도 문예회관", category: "culture", area: "이도동", address: "제주특별자치도 제주시 동광로 69", x: 74, y: 84, coordinateStatus: "review", sourceLabel: "원도심 정보 v02" },
   { id: "place-folklore-museum", name: "제주특별자치도 민속자연사박물관", category: "culture", area: "이도동", address: "제주특별자치도 제주시 삼성로 40", x: 64, y: 78, coordinateStatus: "review", sourceLabel: "원도심 정보 v02" },
   { id: "place-triptea-sanji", name: "제주트립티 산지", category: "cafe", area: "산지천", address: "제주특별자치도 제주시 관덕로17길 29", x: 65, y: 43, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
@@ -755,12 +759,11 @@ function ensureSystemDirectoryPlaces(places: DirectoryPlace[]) {
   const normalized = places.map(withDirectoryMetadata);
   const names = new Set(normalized.map((place) => normalizePlaceName(place.name)));
   const hasArtPlatform = names.has("제주아트플랫폼");
-  const additions = hasArtPlatform
-    ? legacyDirectoryPlaces
-      .filter((place) => (ART_PLATFORM_FACILITY_NAMES as readonly string[]).includes(normalizePlaceName(place.name)))
-      .filter((place) => !names.has(normalizePlaceName(place.name)))
-      .map(withDirectoryMetadata)
-    : [];
+  const additions = legacyDirectoryPlaces
+    .filter((place) => normalizePlaceName(place.name) === LPP_CANONICAL_NAME
+      || (hasArtPlatform && (ART_PLATFORM_FACILITY_NAMES as readonly string[]).includes(normalizePlaceName(place.name))))
+    .filter((place) => !names.has(normalizePlaceName(place.name)))
+    .map(withDirectoryMetadata);
   return [...normalized, ...additions];
 }
 
@@ -917,7 +920,9 @@ const builtInLandmarkAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
     fileType: "image",
     address: location?.address ?? "",
     addressSourceUrl: location?.addressSourceUrl ?? "",
-    sourceLabel: `Google Drive 원본 · 1024px WebP 최적화 · ${asset.fileName}`,
+    sourceLabel: asset.id === MAIN_HUB_LANDMARK_ASSET_ID
+      ? `Google Drive A-02 검수 기준안 · 투명 배경 정리 · 1024px WebP 최적화 · ${asset.fileName}`
+      : `Google Drive 원본 · 1024px WebP 최적화 · ${asset.fileName}`,
     builtIn: true,
   };
 });
@@ -982,6 +987,7 @@ const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, i
 });
 
 const starterPlaceNames = new Set([
+  LPP_CANONICAL_NAME,
   "갤러리 레미콘 산지천", "고요산책", "나이롱책방", "비아아트·대동호텔 아트센터",
   "사진예술공간 큰바다영", "스튜디오126", "아트스페이스 빈공간", "종이잡지클럽 제주",
   "THE BARN BERLIN JEJU", "내음커피바", "리듬앤브루스", "마음에온[溫]", "마일스 탑동점",
@@ -1636,7 +1642,6 @@ function ensureIndependentElementIdentity(elements: MapElement[]) {
 }
 
 function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[]) {
-  if (elements.some((element) => isPrimaryHubLabel(element.name))) return elements;
   const hubPlace = places.find((place) => isPrimaryHubLabel(place.name)) ?? withDirectoryMetadata({
     id: "place-sotong-center",
     name: MAIN_HUB_CANONICAL_NAME,
@@ -1649,6 +1654,24 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
     sourceLabel: "시스템 메인 거점 폴백 · DB 좌표 우선",
     featuredRole: MAIN_HUB_ROLE,
   });
+  const existingHub = elements.find((element) => isPrimaryHubLabel(element.name));
+  if (existingHub) {
+    return elements.map((element) => element.id === existingHub.id ? {
+      ...element,
+      directoryId: hubPlace.id,
+      name: MAIN_HUB_CANONICAL_NAME,
+      category: "landmark" as const,
+      size: Math.max(element.size, 5.4),
+      labelVisible: true,
+      labelLocked: true,
+      labelGap: Math.min(element.labelGap, 6),
+      assetId: MAIN_HUB_LANDMARK_ASSET_ID,
+      status: "approved" as const,
+      address: hubPlace.address,
+      addressSourceUrl: hubPlace.sourceUrl ?? "https://www.jejusotong.kr/",
+      memo: "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크",
+    } : element);
+  }
   const requestedId = "system-main-hub-sotong";
   const id = elements.some((element) => element.id === requestedId)
     ? uniqueRuntimeId("element", elements.map((element) => element.id))
@@ -1658,22 +1681,52 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
     id,
     directoryId: hubPlace.id,
     name: normalizePlaceName(hubPlace.name),
-    category: "culture" as const,
+    category: "landmark" as const,
     x: hubPlace.x,
     y: hubPlace.y,
     anchorX: hubPlace.x,
     anchorY: hubPlace.y,
-    size: 2.8,
+    size: 5.4,
     z: Math.max(0, ...elements.map((element) => element.z)) + 1,
     labelVisible: true,
     labelLocked: true,
     labelGap: 6,
-    assetId: defaultMarkerAssetId("culture"),
+    assetId: MAIN_HUB_LANDMARK_ASSET_ID,
     status: "approved" as const,
     mapVisible: true,
     address: hubPlace.address,
     addressSourceUrl: hubPlace.sourceUrl ?? "",
-    memo: "워크케이션 메인 거점 · 전용 랜드마크 자산 교체 예정",
+    memo: "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크",
+  }];
+}
+
+function ensureLppMapElement(
+  elements: MapElement[],
+  places: DirectoryPlace[],
+  placementOverrides: PlacementOverride[] | undefined,
+  calibrationPoints: CalibrationPoint[] | undefined,
+) {
+  if (elements.some((element) => normalizePlaceName(element.name) === LPP_CANONICAL_NAME)) return elements;
+  const lppPlace = places.find((place) => normalizePlaceName(place.name) === LPP_CANONICAL_NAME);
+  if (!lppPlace) return elements;
+  const placementKey = `directory:${lppPlace.id}`;
+  if (sanitizePlacementOverrides(placementOverrides).some((override) => override.key === placementKey)) return elements;
+  const mapped = calibratedPlaceCoordinates(
+    lppPlace.name,
+    lppPlace.latitude,
+    lppPlace.longitude,
+    calibrationPoints?.length ? calibrationPoints : initialCalibrationPoints,
+  );
+  const marker = buildStarterMarkers([{ ...lppPlace, ...(mapped ?? {}) }])[0];
+  if (!marker) return elements;
+  return [...elements, {
+    ...marker,
+    id: elements.some((element) => element.id === "system-lpp-local-player-platform")
+      ? uniqueRuntimeId("element", elements.map((element) => element.id))
+      : "system-lpp-local-player-platform",
+    z: Math.max(0, ...elements.map((element) => element.z)) + 1,
+    status: "approved",
+    memo: "LPP 공식 주소·카카오맵 좌표 확인 · 2차 공개 탐색 패치",
   }];
 }
 
@@ -1690,7 +1743,7 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         mapVisible: element.mapVisible !== false,
       };
       const name = normalizePlaceName(normalized.name);
-      const category = categoryForPlace(name, normalized.category) as CategoryId;
+      const category = isPrimaryHubLabel(name) ? "landmark" : categoryForPlace(name, normalized.category) as CategoryId;
       const landmarkAssetId = landmarkLocationByName.get(name)?.assetId;
       const preferredAssetId = category === "landmark" && name === "산지천갤러리"
         && (!normalized.assetId || SUPERSEDED_SANJICHEON_ASSET_IDS.has(normalized.assetId))
@@ -1726,7 +1779,13 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         };
       }))
     : undefined;
-  const ensuredElements = ensureMainHubMapElement(sanitizedElements, sanitizedDirectoryPlaces ?? defaultDirectoryPlaces);
+  const ensuredMainHubElements = ensureMainHubMapElement(sanitizedElements, sanitizedDirectoryPlaces ?? defaultDirectoryPlaces);
+  const ensuredElements = ensureLppMapElement(
+    ensuredMainHubElements,
+    sanitizedDirectoryPlaces ?? defaultDirectoryPlaces,
+    document.placementOverrides,
+    document.calibrationPoints,
+  );
   return {
     ...document,
     elements: ensureIndependentElementIdentity(ensuredElements),
@@ -2195,7 +2254,7 @@ export default function Home() {
     const clean = sanitizeDocument(cloneDocument(document));
     const hadCalibration = clean.calibrationPoints?.length === initialCalibrationPoints.length;
     const restoredCalibrationPoints = hadCalibration ? clean.calibrationPoints! : initialCalibrationPoints;
-    const restoredLandmarkDefaults = Array.isArray(clean.landmarkDefaultPositions) && clean.landmarkDefaultPositions.length
+    const storedLandmarkDefaults = Array.isArray(clean.landmarkDefaultPositions) && clean.landmarkDefaultPositions.length
       ? clean.landmarkDefaultPositions.map((position) => {
           const matchingLandmark = clean.elements.find((element) => (
             element.category === "landmark" && normalizePlaceName(element.name) === normalizePlaceName(position.name)
@@ -2208,7 +2267,14 @@ export default function Home() {
             confirmed: Boolean(position.confirmed),
           };
         })
-      : factoryLandmarkDefaultPositions.map((position) => ({ ...position }));
+      : [];
+    const storedLandmarkDefaultNames = new Set(storedLandmarkDefaults.map((position) => normalizePlaceName(position.name)));
+    const restoredLandmarkDefaults = [
+      ...storedLandmarkDefaults,
+      ...factoryLandmarkDefaultPositions
+        .filter((position) => !storedLandmarkDefaultNames.has(normalizePlaceName(position.name)))
+        .map((position) => ({ ...position })),
+    ];
     const restoredPlaces = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
     const restoredNames = new Set(restoredPlaces.map((place) => normalizePlaceName(place.name)));
     const restoredPlaceSet = ensureSystemDirectoryPlaces([

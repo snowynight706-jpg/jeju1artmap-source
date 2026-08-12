@@ -16,13 +16,13 @@ export type MasterDirectoryRow = {
 };
 
 export const masterDirectorySource = {
-  "version": "v11-추가매장반영-75a8506e",
+  "version": "v12-2차패치-lpp-소통센터-a02",
   "sourceFile": "문화예술_워케이션_제주시_원도심_결과물_v11_추가매장반영.xlsx",
   "sourceSha256": "fd47cfa556429867dea213e15cb1e6a290d3097bd135b91bec0cdf50a3b9fd9c",
   "backupSha256": "75a8506e322a6866cdc7364e7e1522151dc601ab636f0a23524bb3658bbada4f",
   "restoredAtUtc": "2026-08-09T12:21:41+00:00",
   "workbookVersion": "v11",
-  "placeCount": 186
+  "placeCount": 187
 } as const;
 
 export const retiredMasterDirectoryIds = [
@@ -30,6 +30,22 @@ export const retiredMasterDirectoryIds = [
 ] as const;
 
 export const masterDirectoryRows: MasterDirectoryRow[] = [
+  {
+    "id": "master-v12-lpp-local-player-platform",
+    "name": "LPP (Local Player Platform)",
+    "address": "제주특별자치도 제주시 관덕로8길 15-3",
+    "area": "관덕로·목관아",
+    "subtype": "로컬 브랜드·창업 복합공간",
+    "priority": "추천",
+    "description": "제주 로컬 브랜드와 청년 창업가의 팝업·테스트베드·교육·교류를 지원하는 3층 복합 창업·문화공간",
+    "operatingInfo": "운영시간: 프로그램·팝업별 상이 · 방문 전 공식 채널 확인",
+    "notes": "1층 로컬 식음·농산물 팝업과 교육, 2층 로컬 상품 전시·판매, 3층 세미나·포럼 공간 · 정규 운영시간은 공식 채널 확인",
+    "sourceUrl": "https://www.headlinejeju.co.kr/news/articleView.html?idxno=596237",
+    "mapUrl": "https://place.map.kakao.com/1316005169",
+    "checkedAt": "2026-08-12",
+    "sourceSheet": "문화공간",
+    "category": "culture"
+  },
   {
     "id": "master-v11-c0f294faaa66",
     "name": "가치 제주본점",

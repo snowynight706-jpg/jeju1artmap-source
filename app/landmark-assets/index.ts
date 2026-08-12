@@ -20,6 +20,7 @@ const asset = (id: string, name: string, placeName: string, sourceId: string, st
 });
 
 export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
+  asset("jeju-communication-center-a02", "A-02 우측계단", "제주시소통협력센터", "1TCF2Y0UOlgAwNw1x-GBSaSdQ9D3_rNdL", "approved"),
   asset("jeju-art-platform-c01", "C-01", "제주아트플랫폼", "1wtaceoB3q7UL9KUfwkLu-6SjT52zLW-j", "approved"),
   asset("jeju-art-platform-a01", "A-01", "제주아트플랫폼", "15pl0qSHrJEMqcKHaR9lr9k0lA-BJKaJz"),
   asset("jeju-art-platform-a02", "A-02", "제주아트플랫폼", "1hUxtGB9PSRNjNMoAtHdEaEz4vJ2YWEp5"),

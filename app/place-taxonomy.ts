@@ -68,6 +68,7 @@ const legacyAdditionalCategoryMap: Readonly<Record<string, readonly AdditionalCa
 
 export const MAIN_HUB_CANONICAL_NAME = "제주시소통협력센터";
 export const MAIN_HUB_ROLE = "workation-main-hub";
+export const LPP_CANONICAL_NAME = "LPP (Local Player Platform)";
 export const ART_PLATFORM_GROUP_ID = "jeju-art-platform-building";
 export const ART_PLATFORM_MAP_ANCHOR_ID = "jeju-art-platform";
 
@@ -164,6 +165,8 @@ export function inferAdditionalCategories(
     return ["creative-startup", "event-rental", "experience-education"];
   } else if (canonicalName === MAIN_HUB_CANONICAL_NAME) {
     return ["creative-startup", "event-rental", "experience-education"];
+  } else if (canonicalName === LPP_CANONICAL_NAME) {
+    return ["multi-cultural", "creative-startup", "event-rental"];
   }
 
   return additionalCategoryDefinitions.map((item) => item.id).filter((id) => inferred.has(id)).slice(0, 3);
@@ -179,6 +182,8 @@ export function directoryMetadataDefaults(
   const isArtPlatformFacility = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).includes(canonicalName);
   const aliases = canonicalName === MAIN_HUB_CANONICAL_NAME
     ? ["제주소통협력센터", "제주소통협력센터 메인 오피스", "제주특별자치도 소통협력센터"]
+    : canonicalName === LPP_CANONICAL_NAME
+      ? ["LPP", "Local Player Platform", "로컬 플레이어 플랫폼"]
     : canonicalName === "아르코공연연습센터@제주"
       ? ["아르코 공연 예술센터", "아르코공연연습센터"]
       : canonicalName === "제주예술인복지센터"

@@ -14,6 +14,14 @@ export function projectGeographicCoordinates(latitude: number, longitude: number
 }
 
 export const geocodedPlaces: Record<string, GeocodedPlace> = {
+  "LPP (Local Player Platform)": {
+    "latitude": 33.51162337,
+    "longitude": 126.52376126,
+    "displayName": "LPP, 15-3, 관덕로8길, 일도일동, 제주시, 제주특별자치도, 대한민국",
+    "query": "LPP 제주",
+    "x": 44.61417391305452,
+    "y": 42.09463302752
+  },
   "제주아트플랫폼": {
     "latitude": 33.51159,
     "longitude": 126.5226115,
