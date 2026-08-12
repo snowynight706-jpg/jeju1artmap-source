@@ -909,6 +909,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .field-help { margin: 8px 0 0; color: #89938f; font-size: 9px; line-height: 1.5; }
 .marker-taxonomy-section { background: linear-gradient(145deg, #fbfefd, #f1f8f6); }
 .marker-taxonomy-section.unavailable { background: #fafbfb; }
+.marker-taxonomy-section.pending-link { border-color: #c9ddd8; background: linear-gradient(145deg, #fcfefd, #f3f8f6); }
+.marker-taxonomy-section .taxonomy-connect-action { margin-top: 8px; }
 .marker-taxonomy-section .section-title span.saving { color: #9a6b1d; }
 .marker-taxonomy-section .section-title span.saved { color: #2c786d; }
 .marker-taxonomy-section .section-title span.error { color: #b34b40; }

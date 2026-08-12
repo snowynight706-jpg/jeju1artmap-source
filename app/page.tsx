@@ -26,6 +26,7 @@ import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import {
+  consolidateMainHubDirectoryPlaces,
   isMainHubPersistenceTarget,
   stableMainHubResourceSize,
   withoutMainHubPlacementOverrides,
@@ -768,7 +769,7 @@ function withDirectoryMetadata(place: DirectoryPlace): DirectoryPlace {
 }
 
 function ensureSystemDirectoryPlaces(places: DirectoryPlace[]) {
-  const normalized = places.map(withDirectoryMetadata);
+  const normalized = consolidateMainHubDirectoryPlaces(places.map(withDirectoryMetadata)) as DirectoryPlace[];
   const names = new Set(normalized.map((place) => normalizePlaceName(place.name)));
   const hasArtPlatform = names.has("제주아트플랫폼");
   const additions = legacyDirectoryPlaces
@@ -1679,25 +1680,31 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
   const existingHub = elements.find((element) => isPrimaryHubLabel(element.name) || isMainHubPersistenceTarget(element));
   if (existingHub) {
     const migrateLegacyPresentation = existingHub.memo === LEGACY_MAIN_HUB_MEMO;
-    return elements.map((element) => element.id === existingHub.id ? {
-      ...element,
-      directoryId: hubPlace.id,
-      name: MAIN_HUB_CANONICAL_NAME,
-      category: "landmark" as const,
-      size: stableMainHubResourceSize(element.size),
-      labelVisible: true,
-      labelLocked: migrateLegacyPresentation ? false : element.labelLocked,
-      labelPosition: migrateLegacyPresentation ? "bottom" as const : element.labelPosition,
-      labelGap: migrateLegacyPresentation ? LANDMARK_LABEL_GAP : element.labelGap,
-      labelOffsetX: migrateLegacyPresentation ? 0 : element.labelOffsetX,
-      labelOffsetY: migrateLegacyPresentation ? 0 : element.labelOffsetY,
-      assetId: MAIN_HUB_LANDMARK_ASSET_ID,
-      status: "approved" as const,
-      mapVisible: true,
-      address: hubPlace.address,
-      addressSourceUrl: hubPlace.sourceUrl ?? "https://www.jejusotong.kr/",
-      memo: STANDARD_MAIN_HUB_MEMO,
-    } : element);
+    let inserted = false;
+    return elements.flatMap((element) => {
+      if (!isPrimaryHubLabel(element.name) && !isMainHubPersistenceTarget(element)) return [element];
+      if (inserted) return [];
+      inserted = true;
+      return [{
+        ...element,
+        directoryId: hubPlace.id,
+        name: MAIN_HUB_CANONICAL_NAME,
+        category: "landmark" as const,
+        size: stableMainHubResourceSize(element.size),
+        labelVisible: true,
+        labelLocked: migrateLegacyPresentation ? false : element.labelLocked,
+        labelPosition: migrateLegacyPresentation ? "bottom" as const : element.labelPosition,
+        labelGap: migrateLegacyPresentation ? LANDMARK_LABEL_GAP : element.labelGap,
+        labelOffsetX: migrateLegacyPresentation ? 0 : element.labelOffsetX,
+        labelOffsetY: migrateLegacyPresentation ? 0 : element.labelOffsetY,
+        assetId: MAIN_HUB_LANDMARK_ASSET_ID,
+        status: "approved" as const,
+        mapVisible: true,
+        address: hubPlace.address,
+        addressSourceUrl: hubPlace.sourceUrl ?? "https://www.jejusotong.kr/",
+        memo: STANDARD_MAIN_HUB_MEMO,
+      }];
+    });
   }
   const requestedId = "system-main-hub-sotong";
   const id = elements.some((element) => element.id === requestedId)
@@ -2713,6 +2720,12 @@ export default function Home() {
     && selectedFacilityPlace.locationGroupId === selectedAnchorDirectoryPlace?.locationGroupId
     ? selectedFacilityPlace
     : selectedAnchorDirectoryPlace;
+  const selectedUnlinkedPrimaryCategory = selected && isPrimaryPublicCategory(directoryCategory(selected.category))
+    ? directoryCategory(selected.category)
+    : null;
+  const selectedUnlinkedTaxonomySaving = Boolean(selected)
+    && directoryTaxonomySync.placeId === selected?.id
+    && directoryTaxonomySync.state === "saving";
   const selectedStoryKey = selectedDirectoryPlace
     ? `directory:${selectedDirectoryPlace.id}`
     : selected
@@ -4930,7 +4943,11 @@ export default function Home() {
       const attached = element.directoryId === placeId
         || (!element.directoryId && normalizePlaceName(element.name) === normalizePlaceName(nextPlace.name));
       if (!attached) return element;
-      const mapCategory = mapCategoryForDirectoryPlace(nextPlace);
+      const directoryMapCategory = mapCategoryForDirectoryPlace(nextPlace);
+      const keepsCustomLandmarkResource = element.category === "landmark"
+        && Boolean(element.assetId)
+        && !canonicalMarkerAssetIds.has(element.assetId ?? "");
+      const mapCategory = keepsCustomLandmarkResource ? "landmark" : directoryMapCategory;
       return {
         ...element,
         category: mapCategory,
@@ -5021,6 +5038,121 @@ export default function Home() {
       additionalCategories: additionalCategoryDefinitions
         .map((definition) => definition.id)
         .filter((id) => selected.has(id)),
+    });
+  };
+
+  const connectUnlinkedElementTaxonomy = (
+    element: MapElement,
+    patch: { category: CategoryId; additionalCategories?: AdditionalCategoryId[] },
+  ) => {
+    if (!placeDirectoryCanEdit) {
+      setToast("장소 분류 수정은 관리자 권한으로만 저장할 수 있습니다.");
+      return;
+    }
+    if (element.placeRequestId) {
+      setToast("등록 요청 마커는 먼저 승인한 뒤 장소 분류를 수정해 주세요.");
+      return;
+    }
+    const category = directoryCategory(patch.category);
+    if (!isPrimaryPublicCategory(category)) {
+      setToast("기본분류는 문화공간·카페·음식점·소품샵 중 하나를 선택해 주세요.");
+      return;
+    }
+    const additionalCategories = sanitizeAdditionalCategories(patch.additionalCategories);
+    if (directoryTaxonomySync.placeId === element.id && directoryTaxonomySync.state === "saving") return;
+
+    const runId = ++directoryTaxonomySaveRunRef.current;
+    setDirectoryTaxonomySync({ placeId: element.id, state: "saving" });
+    const queuedSave = directoryTaxonomySaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await fetch(PLACE_DIRECTORY_API, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name: element.name,
+            category,
+            address: element.address,
+            addressSourceUrl: element.addressSourceUrl,
+            additionalCategories,
+          }),
+        });
+        const payload = await response.json().catch(() => null) as {
+          row?: PlaceDirectoryRecord;
+          created?: boolean;
+          updatedAt?: string | null;
+          error?: string;
+        } | null;
+        if (!response.ok || !payload?.row) throw new Error(payload?.error ?? "directory connection failed");
+        return payload;
+      });
+    directoryTaxonomySaveQueueRef.current = queuedSave.then(() => undefined, () => undefined);
+    void queuedSave.then((payload) => {
+      if (runId !== directoryTaxonomySaveRunRef.current || !payload.row) return;
+      const record = payload.row;
+      const createdPlace = withDirectoryMetadata({
+        ...record,
+        category: directoryCategory(record.category),
+        x: element.anchorX,
+        y: element.anchorY,
+        coordinateStatus: element.address.trim() ? "review" : "unresolved",
+        sourceLabel: "내부 DB · 지도 자산 연결",
+      });
+      const nextPlaces = ensureSystemDirectoryPlaces([
+        ...placesRef.current.filter((place) => (
+          place.id !== createdPlace.id
+          && normalizePlaceName(place.name) !== normalizePlaceName(createdPlace.name)
+        )),
+        createdPlace,
+      ]);
+      replaceDirectoryPlaces(() => nextPlaces);
+      setDatabaseDraftPlaces((current) => [
+        ...current.filter((place) => (
+          place.id !== createdPlace.id
+          && normalizePlaceName(place.name) !== normalizePlaceName(createdPlace.name)
+        )),
+        createdPlace,
+      ]);
+      replaceElements((current) => ensureMainHubMapElement(current.map((item) => {
+        if (item.id !== element.id) return item;
+        const directoryMapCategory = mapCategoryForDirectoryPlace(createdPlace);
+        const keepsCustomLandmarkResource = item.category === "landmark"
+          && Boolean(item.assetId)
+          && !canonicalMarkerAssetIds.has(item.assetId ?? "");
+        const mapCategory = keepsCustomLandmarkResource ? "landmark" : directoryMapCategory;
+        return {
+          ...item,
+          directoryId: createdPlace.id,
+          name: createdPlace.name,
+          category: mapCategory,
+          assetId: assetIdAfterDirectoryCategoryChange(item, mapCategory),
+          address: createdPlace.address || item.address,
+          addressSourceUrl: createdPlace.sourceUrl || item.addressSourceUrl,
+        };
+      }), nextPlaces));
+      setSelectedFacilityId(null);
+      setPlaceDirectoryUpdatedAt(payload.updatedAt ?? null);
+      setPlaceDirectoryStorage("persistent");
+      setDirectoryTaxonomySync({ placeId: createdPlace.id, state: "saved" });
+      setToast(payload.created
+        ? `${publicDisplayName(createdPlace.name, createdPlace.featuredRole)} DB 항목을 만들고 분류를 저장했습니다.`
+        : `${publicDisplayName(createdPlace.name, createdPlace.featuredRole)} 기존 DB 항목에 연결했습니다.`);
+    }).catch(() => {
+      if (runId !== directoryTaxonomySaveRunRef.current) return;
+      setDirectoryTaxonomySync({ placeId: element.id, state: "error" });
+      setToast("DB 미연결 자산의 분류를 저장하지 못했습니다. 관리자 로그인과 DB 연결 상태를 확인해 주세요.");
+    });
+  };
+
+  const toggleUnlinkedElementAdditionalCategory = (element: MapElement, categoryId: AdditionalCategoryId) => {
+    const primaryCategory = directoryCategory(element.category);
+    if (!isPrimaryPublicCategory(primaryCategory)) {
+      setToast("추가분류를 선택하기 전에 기본분류를 먼저 지정해 주세요.");
+      return;
+    }
+    connectUnlinkedElementTaxonomy(element, {
+      category: primaryCategory,
+      additionalCategories: [categoryId],
     });
   };
 
@@ -7174,7 +7306,13 @@ export default function Home() {
                 return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} disabled={!placeDirectoryCanEdit} onChange={() => toggleSelectedDirectoryAdditionalCategory(selectedDirectoryPlace, definition.id)} /><span>{definition.name}</span></label>;
               })}</div></div>
               <p className="field-help">이곳에서 바꾼 기본분류와 추가분류는 해당 장소의 영구 DB와 현재 지도 편집본에 함께 반영됩니다.</p>
-            </section> : <section className="marker-taxonomy-section unavailable"><div className="section-title"><strong>장소 분류 · DB 연동</strong><span>연결 없음</span></div><p className="field-help">이 마커는 장소 DB 레코드와 연결되지 않아 분류를 저장할 수 없습니다.</p></section>}
+            </section> : <section className="marker-taxonomy-section pending-link" aria-label="DB 미연결 자산 분류">
+              <div className="section-title"><strong>장소 분류 · DB 자동 연결</strong><span className={directoryTaxonomySync.placeId === selected.id ? directoryTaxonomySync.state : "ready"}>{directoryTaxonomySync.placeId === selected.id && directoryTaxonomySync.state === "saving" ? "연결·저장 중…" : directoryTaxonomySync.placeId === selected.id && directoryTaxonomySync.state === "error" ? "저장 실패" : selected.placeRequestId ? "승인 대기" : placeDirectoryCanEdit ? "미연결 · 편집 가능" : "읽기 전용"}</span></div>
+              <label>기본분류 <em>첫 저장 시 DB 항목 생성</em><select value={selectedUnlinkedPrimaryCategory ?? ""} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || Boolean(selected.placeRequestId)} onChange={(event) => connectUnlinkedElementTaxonomy(selected, { category: event.target.value as CategoryId, additionalCategories: [] })}>{!selectedUnlinkedPrimaryCategory && <option value="" disabled>기본분류 선택</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
+              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>0/3</em></header><div>{additionalCategoryDefinitions.map((definition) => <label key={definition.id}><input type="checkbox" checked={false} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onChange={() => toggleUnlinkedElementAdditionalCategory(selected, definition.id)} /><span>{definition.name}</span></label>)}</div></div>
+              <button type="button" className="wide-secondary taxonomy-connect-action" disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onClick={() => connectUnlinkedElementTaxonomy(selected, { category: selectedUnlinkedPrimaryCategory!, additionalCategories: [] })}>{selectedUnlinkedTaxonomySaving ? "DB 연결 중…" : "현재 분류로 DB 항목 생성·연결"}</button>
+              <p className="field-help">{selected.placeRequestId ? "등록 요청으로 생성된 마커는 승인 후 DB 분류를 편집할 수 있습니다." : "DB에 없는 이미지·마커도 기본분류 변경, 추가분류 선택 또는 연결 버튼을 누르면 장소 항목이 자동 생성되고 현재 자산에 연결됩니다."}</p>
+            </section>}
             <section className="editor-place-events">
               <div className="section-title"><strong>장소 행사</strong><span>{placeEvents.length}개</span></div>
               <p className="field-help">{placeEventsLoading ? "행사 수를 확인하는 중입니다." : placeEvents.length ? `이 장소와 연결된 행사 ${placeEvents.length}개가 있습니다. 수정·숨김·삭제는 전체 관리창에서 처리합니다.` : "이 장소와 연결된 행사가 없습니다."}</p>

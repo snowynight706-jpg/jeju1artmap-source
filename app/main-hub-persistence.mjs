@@ -9,6 +9,11 @@ const MAIN_HUB_NAMES = new Set([
   "제주특별자치도소통협력센터",
   "제주소통협력센터메인오피스",
 ]);
+const MAIN_HUB_ALIASES = [
+  "제주소통협력센터",
+  "제주소통협력센터 메인 오피스",
+  "제주특별자치도 소통협력센터",
+];
 
 function isRecord(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -44,6 +49,32 @@ export function withoutMainHubPlacementOverrides(value) {
 function mainHubDirectoryPlace(document) {
   if (!Array.isArray(document.directoryPlaces)) return null;
   return document.directoryPlaces.find((place) => isMainHubPersistenceTarget(place)) ?? null;
+}
+
+export function consolidateMainHubDirectoryPlaces(value) {
+  if (!Array.isArray(value)) return value;
+  const candidates = value.filter((place) => isMainHubPersistenceTarget(place));
+  if (!candidates.length) return value;
+  const primary = candidates.find((place) => place?.id === MAIN_HUB_DIRECTORY_ID) ?? candidates[0];
+  const aliases = [...new Set([
+    ...MAIN_HUB_ALIASES,
+    ...candidates.flatMap((place) => Array.isArray(place?.aliases) ? place.aliases : []),
+  ])];
+  const stablePlace = {
+    ...primary,
+    id: MAIN_HUB_DIRECTORY_ID,
+    name: "제주시소통협력센터",
+    category: "culture",
+    featuredRole: "workation-main-hub",
+    aliases,
+  };
+  let inserted = false;
+  return value.flatMap((place) => {
+    if (!isMainHubPersistenceTarget(place)) return [place];
+    if (inserted) return [];
+    inserted = true;
+    return [stablePlace];
+  });
 }
 
 function defaultMainHubElement(document) {
@@ -86,14 +117,14 @@ function defaultMainHubElement(document) {
 
 export function stabilizeMainHubDocument(value) {
   if (!isRecord(value) || !Array.isArray(value.elements)) return value;
-  const candidates = value.elements.filter((element) => isMainHubPersistenceTarget(element));
+  const directoryPlaces = consolidateMainHubDirectoryPlaces(value.directoryPlaces);
+  const stableValue = Array.isArray(directoryPlaces) ? { ...value, directoryPlaces } : value;
+  const candidates = stableValue.elements.filter((element) => isMainHubPersistenceTarget(element));
   const existing = candidates[0] ?? null;
-  const fallback = defaultMainHubElement(value);
+  const fallback = defaultMainHubElement(stableValue);
   const stableHub = existing ? {
     ...existing,
-    directoryId: typeof existing.directoryId === "string" && existing.directoryId.trim()
-      ? existing.directoryId.trim()
-      : fallback.directoryId,
+    directoryId: MAIN_HUB_DIRECTORY_ID,
     name: "제주시소통협력센터",
     category: "landmark",
     size: stableMainHubResourceSize(existing.size),
@@ -105,7 +136,7 @@ export function stabilizeMainHubDocument(value) {
     mapVisible: true,
   } : fallback;
   let inserted = false;
-  const elements = value.elements.flatMap((element) => {
+  const elements = stableValue.elements.flatMap((element) => {
     if (!isMainHubPersistenceTarget(element)) return [element];
     if (inserted) return [];
     inserted = true;
@@ -113,10 +144,10 @@ export function stabilizeMainHubDocument(value) {
   });
   if (!inserted) elements.push(stableHub);
   return {
-    ...value,
+    ...stableValue,
     elements,
-    ...(Object.prototype.hasOwnProperty.call(value, "placementOverrides")
-      ? { placementOverrides: withoutMainHubPlacementOverrides(value.placementOverrides) }
+    ...(Object.prototype.hasOwnProperty.call(stableValue, "placementOverrides")
+      ? { placementOverrides: withoutMainHubPlacementOverrides(stableValue.placementOverrides) }
       : {}),
   };
 }

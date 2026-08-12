@@ -63,6 +63,23 @@ test("right marker properties update the linked directory taxonomy", () => {
   assert.match(directoryRouteSource, /UPDATE place_directory[\s\S]+additional_categories_json/);
 });
 
+test("right properties can create and classify a DB record for an unlinked map asset", () => {
+  assert.match(pageSource, /aria-label="DB 미연결 자산 분류"/);
+  assert.match(pageSource, /connectUnlinkedElementTaxonomy\(selected/);
+  assert.match(pageSource, /method: "POST"/);
+  assert.match(pageSource, /현재 분류로 DB 항목 생성·연결/);
+  assert.match(directoryRouteSource, /export async function POST/);
+  assert.match(directoryRouteSource, /id: `map-\$\{crypto\.randomUUID\(\)\}`/);
+  assert.match(directoryRouteSource, /지도 자산 연결/);
+});
+
+test("communication-center DB aliases converge on one canonical directory row", () => {
+  assert.match(directoryRouteSource, /MAIN_HUB_DIRECTORY_ID = "place-sotong-center"/);
+  assert.match(directoryRouteSource, /mainHubDirectoryDrift/);
+  assert.match(directoryRouteSource, /mainHubStoredRows\.length !== 1/);
+  assert.match(directoryRouteSource, /id: isMainHub \? MAIN_HUB_DIRECTORY_ID : existing\.id/);
+});
+
 test("directory source sync binds one value for every insert column", () => {
   const insert = directoryRouteSource.match(
     /INSERT INTO place_directory\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/,

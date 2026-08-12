@@ -2,6 +2,8 @@ import { masterDirectoryRows, masterDirectorySource, retiredMasterDirectoryIds }
 import { normalizePlaceName } from "../../core-landmarks";
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 import {
+  MAIN_HUB_CANONICAL_NAME,
+  MAIN_HUB_ROLE,
   directoryMetadataDefaults,
   isPrimaryPublicCategory,
   mergeDirectoryMetadata,
@@ -16,6 +18,7 @@ export const runtime = "edge";
 
 const CATEGORIES = new Set(["landmark", "culture", "cafe", "food", "shop", "parking", "park", "utility"]);
 const MAX_ROWS = 600;
+const MAIN_HUB_DIRECTORY_ID = "place-sotong-center";
 
 type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
@@ -47,6 +50,7 @@ type StoredDirectoryRow = Omit<PlaceDirectoryInput, "additionalCategories" | "co
   additionalCategoriesJson: string;
   convenienceAttributesJson: string;
   aliasesJson: string;
+  updatedAt?: string;
 };
 
 const SOURCE_STATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_directory_source_state (
@@ -147,10 +151,17 @@ function storedRowToInput(row: StoredDirectoryRow): PlaceDirectoryInput {
     featuredRole: row.featuredRole,
     ...(aliases.length ? { aliases } : {}),
   }, defaults);
-  const { additionalCategoriesJson: _additionalCategoriesJson, convenienceAttributesJson: _convenienceAttributesJson, aliasesJson: _aliasesJson, ...rest } = row;
+  const {
+    additionalCategoriesJson: _additionalCategoriesJson,
+    convenienceAttributesJson: _convenienceAttributesJson,
+    aliasesJson: _aliasesJson,
+    updatedAt: _updatedAt,
+    ...rest
+  } = row;
   void _additionalCategoriesJson;
   void _convenienceAttributesJson;
   void _aliasesJson;
+  void _updatedAt;
   return { ...rest, name, category, ...metadata };
 }
 
@@ -163,7 +174,7 @@ function bundledRows(): PlaceDirectoryInput[] {
   return masterDirectoryRows.map((row) => {
     const name = normalizePlaceName(row.name);
     const base = {
-      id: row.id,
+      id: name === MAIN_HUB_CANONICAL_NAME ? MAIN_HUB_DIRECTORY_ID : row.id,
       name,
       category: normalizeDirectoryCategory(row.category),
       area: row.area,
@@ -203,32 +214,47 @@ async function syncBundledDirectory(db: D1Database) {
   const sourceState = await db.prepare(
     "SELECT source_version AS sourceVersion FROM place_directory_source_state WHERE id = 1",
   ).first() as { sourceVersion: string } | null;
-  if (sourceState?.sourceVersion === masterDirectorySource.version) return;
-
   const existingResult = await db.prepare(
     `SELECT id, name, category, area, address, subtype, priority, description,
       operating_info AS operatingInfo, notes, source_url AS sourceUrl,
       map_url AS mapUrl, checked_at AS checkedAt, additional_categories_json AS additionalCategoriesJson,
       convenience_attributes_json AS convenienceAttributesJson,
       location_group_id AS locationGroupId, map_anchor_id AS mapAnchorId,
-      featured_role AS featuredRole, aliases_json AS aliasesJson
+      featured_role AS featuredRole, aliases_json AS aliasesJson, updated_at AS updatedAt
      FROM place_directory ORDER BY name COLLATE NOCASE`,
   ).all() as { results: StoredDirectoryRow[] };
   const existingRows = existingResult.results.map(storedRowToInput);
+  const mainHubStoredRows = existingResult.results.filter((row) => (
+    normalizePlaceName(row.name) === MAIN_HUB_CANONICAL_NAME || row.featuredRole === MAIN_HUB_ROLE
+  ));
+  const mainHubDirectoryDrift = mainHubStoredRows.length !== 1
+    || mainHubStoredRows[0]?.id !== MAIN_HUB_DIRECTORY_ID
+    || normalizePlaceName(mainHubStoredRows[0]?.name ?? "") !== MAIN_HUB_CANONICAL_NAME;
+  if (sourceState?.sourceVersion === masterDirectorySource.version && !mainHubDirectoryDrift) return;
+
+  const preferredMainHubId = [...mainHubStoredRows]
+    .sort((left, right) => Date.parse(right.updatedAt ?? "") - Date.parse(left.updatedAt ?? ""))[0]?.id;
+  const preferredMainHub = existingRows.find((row) => row.id === preferredMainHubId)
+    ?? existingRows.find((row) => normalizePlaceName(row.name) === MAIN_HUB_CANONICAL_NAME);
   const existingByName = new Map(
     existingRows.map((row) => [normalizePlaceName(row.name).toLocaleLowerCase("ko-KR"), row]),
   );
   const sourceRows = bundledRows().map((row) => {
-    const existing = existingByName.get(row.name.toLocaleLowerCase("ko-KR"));
+    const isMainHub = normalizePlaceName(row.name) === MAIN_HUB_CANONICAL_NAME;
+    const existing = isMainHub
+      ? preferredMainHub
+      : existingByName.get(row.name.toLocaleLowerCase("ko-KR"));
     return existing ? {
       ...row,
-      id: existing.id,
+      id: isMainHub ? MAIN_HUB_DIRECTORY_ID : existing.id,
       additionalCategories: existing.additionalCategories,
       convenienceAttributes: existing.convenienceAttributes,
       locationGroupId: existing.locationGroupId,
       mapAnchorId: existing.mapAnchorId,
-      featuredRole: existing.featuredRole,
-      aliases: existing.aliases,
+      featuredRole: isMainHub ? MAIN_HUB_ROLE : existing.featuredRole,
+      aliases: isMainHub
+        ? [...new Set([...row.aliases, ...existing.aliases])].slice(0, 12)
+        : existing.aliases,
     } : row;
   });
   const sourceNames = new Set(sourceRows.map((row) => row.name.toLocaleLowerCase("ko-KR")));
@@ -318,6 +344,103 @@ export async function PUT(request: Request) {
   ).bind(updatedAt, currentEmail));
   await runtime.DB.batch(statements);
   return json({ rows: validRows, persistent: true, canEdit: true, updatedAt });
+}
+
+export async function POST(request: Request) {
+  const runtime = await runtimeEnv();
+  if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
+  const { canEdit, currentEmail } = ownerAccess(request, runtime);
+  if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ error: "invalid json" }, 400);
+  }
+  const body = payload as {
+    name?: unknown;
+    category?: unknown;
+    address?: unknown;
+    addressSourceUrl?: unknown;
+    additionalCategories?: unknown;
+  };
+  const name = normalizePlaceName(cleanText(body.name, 160));
+  const category = normalizeDirectoryCategory(cleanText(body.category, 32));
+  const additionalCategories = sanitizeAdditionalCategories(body.additionalCategories);
+  if (!name || !isPrimaryPublicCategory(category) || !Array.isArray(body.additionalCategories)) {
+    return json({ error: "valid unlinked place taxonomy required" }, 400);
+  }
+
+  await syncBundledDirectory(runtime.DB);
+  const stored = await runtime.DB.prepare(
+    `SELECT id, name, category, area, address, subtype, priority, description,
+      operating_info AS operatingInfo, notes, source_url AS sourceUrl,
+      map_url AS mapUrl, checked_at AS checkedAt, additional_categories_json AS additionalCategoriesJson,
+      convenience_attributes_json AS convenienceAttributesJson,
+      location_group_id AS locationGroupId, map_anchor_id AS mapAnchorId,
+      featured_role AS featuredRole, aliases_json AS aliasesJson
+     FROM place_directory WHERE name = ? LIMIT 1`,
+  ).bind(name).first() as StoredDirectoryRow | null;
+  const updatedAt = new Date().toISOString();
+
+  if (stored) {
+    const current = storedRowToInput(stored);
+    const next = normalizeRow({ ...current, category, additionalCategories });
+    if (!next) return json({ error: "invalid place taxonomy" }, 400);
+    await runtime.DB.batch([
+      runtime.DB.prepare(
+        `UPDATE place_directory
+         SET category = ?, additional_categories_json = ?, updated_at = ?, updated_by = ?
+         WHERE id = ?`,
+      ).bind(
+        next.category,
+        JSON.stringify({ values: next.additionalCategories }),
+        updatedAt,
+        currentEmail,
+        next.id,
+      ),
+      runtime.DB.prepare(
+        `INSERT INTO place_directory_revision (id, updated_at, updated_by)
+         VALUES (1, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      ).bind(updatedAt, currentEmail),
+    ]);
+    return json({ row: next, created: false, persistent: true, canEdit: true, updatedAt });
+  }
+
+  const row = normalizeRow({
+    id: `map-${crypto.randomUUID()}`,
+    name,
+    category,
+    area: "지도 편집 등록",
+    address: cleanText(body.address, 260),
+    subtype: "지도 자산 연결",
+    priority: "검토",
+    description: "",
+    operatingInfo: "",
+    notes: "관리자 우측 속성에서 DB 미연결 지도 자산을 연결하여 생성",
+    sourceUrl: cleanText(body.addressSourceUrl, 1200),
+    mapUrl: "",
+    checkedAt: "",
+    additionalCategories,
+    convenienceAttributes: [],
+    locationGroupId: "",
+    mapAnchorId: "",
+    featuredRole: "",
+    aliases: [],
+  });
+  if (!row) return json({ error: "invalid unlinked place" }, 400);
+
+  await runtime.DB.batch([
+    insertDirectoryStatement(runtime.DB, row, updatedAt, currentEmail),
+    runtime.DB.prepare(
+      `INSERT INTO place_directory_revision (id, updated_at, updated_by)
+       VALUES (1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+    ).bind(updatedAt, currentEmail),
+  ]);
+  return json({ row, created: true, persistent: true, canEdit: true, updatedAt }, 201);
 }
 
 export async function PATCH(request: Request) {
