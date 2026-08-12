@@ -12,7 +12,7 @@ type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
 };
 
-type RequestStatus = "pending" | "approved" | "rejected";
+type RequestStatus = "pending" | "reviewing" | "approved" | "rejected";
 
 type RegistrationRow = {
   id: string;
@@ -21,16 +21,21 @@ type RegistrationRow = {
   submittedDescription: string;
   submittedCategory: string;
   submittedMarkerStyle: string;
+  submittedX: number | null;
+  submittedY: number | null;
   name: string;
   address: string;
   description: string;
   category: string;
   markerStyle: string;
+  markerX: number | null;
+  markerY: number | null;
   status: RequestStatus;
   directoryId: string | null;
   rejectionNote: string;
   createdAt: string;
   updatedAt: string;
+  reviewStartedAt: string | null;
   reviewedAt: string | null;
 };
 
@@ -41,17 +46,23 @@ const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_registration_requests (
   submitted_description TEXT NOT NULL,
   submitted_category TEXT NOT NULL,
   submitted_marker_style TEXT NOT NULL,
+  submitted_x REAL,
+  submitted_y REAL,
   name TEXT NOT NULL,
   address TEXT NOT NULL,
   description TEXT NOT NULL,
   category TEXT NOT NULL,
   marker_style TEXT NOT NULL,
+  marker_x REAL,
+  marker_y REAL,
   status TEXT NOT NULL,
   actor_hash TEXT NOT NULL,
   directory_id TEXT,
   rejection_note TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  review_started_at TEXT,
+  review_started_by TEXT,
   reviewed_at TEXT,
   reviewed_by TEXT
 )`;
@@ -59,10 +70,11 @@ const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_registration_requests (
 const REQUEST_SELECT = `SELECT id,
   submitted_name AS submittedName, submitted_address AS submittedAddress,
   submitted_description AS submittedDescription, submitted_category AS submittedCategory,
-  submitted_marker_style AS submittedMarkerStyle, name, address, description, category,
-  marker_style AS markerStyle, status, directory_id AS directoryId,
+  submitted_marker_style AS submittedMarkerStyle, submitted_x AS submittedX, submitted_y AS submittedY,
+  name, address, description, category, marker_style AS markerStyle,
+  marker_x AS markerX, marker_y AS markerY, status, directory_id AS directoryId,
   rejection_note AS rejectionNote, created_at AS createdAt, updated_at AS updatedAt,
-  reviewed_at AS reviewedAt
+  review_started_at AS reviewStartedAt, reviewed_at AS reviewedAt
  FROM place_registration_requests`;
 
 let storageReady: Promise<void> | null = null;
@@ -117,6 +129,15 @@ function validatedFields(payload: Record<string, unknown>) {
   return { name, address, description, category, markerStyle };
 }
 
+function validatedLocation(payload: Record<string, unknown>, required = false) {
+  const x = typeof payload.markerX === "number" ? payload.markerX : Number(payload.markerX);
+  const y = typeof payload.markerY === "number" ? payload.markerY : Number(payload.markerY);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 100) {
+    return required ? null : undefined;
+  }
+  return { markerX: Math.round(x * 1000) / 1000, markerY: Math.round(y * 1000) / 1000 };
+}
+
 async function actorHash(request: Request, visitorId: string) {
   const forwarded = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "unknown";
   const userAgent = request.headers.get("user-agent") ?? "unknown";
@@ -138,13 +159,19 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const count = await runtime.DB.prepare("SELECT COUNT(*) AS count FROM place_registration_requests").first() as { count?: number } | null;
-  const total = Number(count?.count ?? 0);
+  const listStatement = (targetPage: number) => runtime.DB!.prepare(
+    `${REQUEST_SELECT} ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'reviewing' THEN 1 WHEN 'rejected' THEN 2 ELSE 3 END, created_at DESC, id DESC LIMIT ? OFFSET ?`,
+  ).bind(PAGE_SIZE, (targetPage - 1) * PAGE_SIZE);
+  const [countResult, requestedResult] = await runtime.DB.batch([
+    runtime.DB.prepare("SELECT COUNT(*) AS count FROM place_registration_requests"),
+    listStatement(page),
+  ]) as [D1Result<{ count?: number }>, D1Result<RegistrationRow>];
+  const total = Number(countResult.results?.[0]?.count ?? 0);
   const pageCount = Math.ceil(total / PAGE_SIZE);
   const normalizedPage = pageCount > 0 ? Math.min(page, pageCount) : 1;
-  const result = await runtime.DB.prepare(
-    `${REQUEST_SELECT} ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END, created_at DESC, id DESC LIMIT ? OFFSET ?`,
-  ).bind(PAGE_SIZE, (normalizedPage - 1) * PAGE_SIZE).all() as { results?: RegistrationRow[] };
+  const result = normalizedPage === page
+    ? requestedResult
+    : await listStatement(normalizedPage).all() as D1Result<RegistrationRow>;
   return json({ requests: result.results ?? [], canManage: true, persistent: true, page: normalizedPage, pageSize: PAGE_SIZE, pageCount, total });
 }
 
@@ -153,23 +180,27 @@ export async function POST(request: Request) {
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
   const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
   const fields = payload ? validatedFields(payload) : null;
+  const location = payload ? validatedLocation(payload, true) : null;
   const visitorId = cleanText(payload?.visitorId, 100);
-  if (!fields || !/^[a-zA-Z0-9_-]{24,100}$/.test(visitorId)) return json({ error: "valid place request required" }, 400);
+  if (!fields || !location || !/^[a-zA-Z0-9_-]{24,100}$/.test(visitorId)) return json({ error: "valid place request and marker location required" }, 400);
   await ensureStorage(runtime.DB);
-
-  const existingPlace = await runtime.DB.prepare("SELECT id FROM place_directory WHERE lower(name) = lower(?) LIMIT 1")
-    .bind(fields.name).first() as { id?: string } | null;
-  if (existingPlace?.id) return json({ error: "place already registered" }, 409);
 
   const hash = await actorHash(request, visitorId);
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const recent = await runtime.DB.prepare(
-    "SELECT COUNT(*) AS count FROM place_registration_requests WHERE actor_hash = ? AND created_at >= ?",
-  ).bind(hash, since).first() as { count?: number } | null;
+  const [existingPlaceResult, recentResult, duplicateResult] = await runtime.DB.batch([
+    runtime.DB.prepare("SELECT id FROM place_directory WHERE lower(name) = lower(?) LIMIT 1").bind(fields.name),
+    runtime.DB.prepare(
+      "SELECT COUNT(*) AS count FROM place_registration_requests WHERE actor_hash = ? AND created_at >= ?",
+    ).bind(hash, since),
+    runtime.DB.prepare(
+      "SELECT id FROM place_registration_requests WHERE actor_hash = ? AND lower(name) = lower(?) AND status IN ('pending', 'reviewing') AND created_at >= ? LIMIT 1",
+    ).bind(hash, fields.name, since),
+  ]) as [D1Result<{ id?: string }>, D1Result<{ count?: number }>, D1Result<{ id?: string }>];
+  const existingPlace = existingPlaceResult.results?.[0];
+  if (existingPlace?.id) return json({ error: "place already registered" }, 409);
+  const recent = recentResult.results?.[0];
   if (Number(recent?.count ?? 0) >= MAX_REQUESTS_PER_DAY) return json({ error: "daily request limit reached" }, 429);
-  const duplicate = await runtime.DB.prepare(
-    "SELECT id FROM place_registration_requests WHERE actor_hash = ? AND lower(name) = lower(?) AND status = 'pending' AND created_at >= ? LIMIT 1",
-  ).bind(hash, fields.name, since).first() as { id?: string } | null;
+  const duplicate = duplicateResult.results?.[0];
   if (duplicate?.id) return json({ error: "duplicate pending request" }, 409);
 
   const id = crypto.randomUUID();
@@ -177,15 +208,18 @@ export async function POST(request: Request) {
   await runtime.DB.prepare(
     `INSERT INTO place_registration_requests
       (id, submitted_name, submitted_address, submitted_description, submitted_category,
-       submitted_marker_style, name, address, description, category, marker_style, status,
-       actor_hash, directory_id, rejection_note, created_at, updated_at, reviewed_at, reviewed_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, '', ?, ?, NULL, NULL)`,
+       submitted_marker_style, submitted_x, submitted_y, name, address, description, category,
+       marker_style, marker_x, marker_y, status, actor_hash, directory_id, rejection_note,
+       created_at, updated_at, review_started_at, review_started_by, reviewed_at, reviewed_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, '', ?, ?, NULL, NULL, NULL, NULL)`,
   ).bind(
     id, fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+    location.markerX, location.markerY,
     fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+    location.markerX, location.markerY,
     hash, createdAt, createdAt,
   ).run();
-  return json({ request: { id, ...fields, status: "pending", createdAt }, persistent: true }, 201);
+  return json({ request: { id, ...fields, ...location, submittedX: location.markerX, submittedY: location.markerY, status: "pending", createdAt }, persistent: true }, 201);
 }
 
 export async function PATCH(request: Request) {
@@ -196,7 +230,7 @@ export async function PATCH(request: Request) {
   const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
   const id = cleanText(payload?.id, 80);
   const action = cleanText(payload?.action, 20);
-  if (!id || !["edit", "approve", "reject"].includes(action)) return json({ error: "valid request action required" }, 400);
+  if (!id || !["edit", "start-review", "move-marker", "approve", "reject"].includes(action)) return json({ error: "valid request action required" }, 400);
   await ensureStorage(runtime.DB);
   const existing = await runtime.DB.prepare(`${REQUEST_SELECT} WHERE id = ?`).bind(id).first() as RegistrationRow | null;
   if (!existing) return json({ error: "request not found" }, 404);
@@ -205,12 +239,47 @@ export async function PATCH(request: Request) {
     if (existing.status === "approved") return json({ error: "approved request cannot be edited" }, 409);
     const fields = payload ? validatedFields(payload) : null;
     if (!fields) return json({ error: "valid edited fields required" }, 400);
+    const location = payload ? validatedLocation(payload) : undefined;
     const updatedAt = new Date().toISOString();
     await runtime.DB.prepare(
       `UPDATE place_registration_requests SET name = ?, address = ?, description = ?, category = ?,
-       marker_style = ?, updated_at = ?, reviewed_by = ? WHERE id = ?`,
-    ).bind(fields.name, fields.address, fields.description, fields.category, fields.markerStyle, updatedAt, currentEmail, id).run();
-    return json({ request: { ...existing, ...fields, updatedAt } });
+       marker_style = ?, marker_x = ?, marker_y = ?, updated_at = ?, reviewed_by = ? WHERE id = ?`,
+    ).bind(
+      fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+      location?.markerX ?? existing.markerX, location?.markerY ?? existing.markerY,
+      updatedAt, currentEmail, id,
+    ).run();
+    return json({ request: { ...existing, ...fields, ...(location ?? {}), updatedAt } });
+  }
+
+  if (action === "start-review") {
+    if (existing.status === "approved" || existing.status === "rejected") return json({ error: "closed request cannot start review" }, 409);
+    const fields = (payload ? validatedFields(payload) : null)
+      ?? validatedFields(existing as unknown as Record<string, unknown>);
+    if (!fields) return json({ error: "request must be corrected before review" }, 400);
+    const location = (payload ? validatedLocation(payload) : undefined)
+      ?? (existing.markerX !== null && existing.markerY !== null ? { markerX: existing.markerX, markerY: existing.markerY } : { markerX: 50, markerY: 50 });
+    const reviewStartedAt = existing.reviewStartedAt ?? new Date().toISOString();
+    const updatedAt = new Date().toISOString();
+    await runtime.DB.prepare(
+      `UPDATE place_registration_requests SET name = ?, address = ?, description = ?, category = ?, marker_style = ?,
+       marker_x = ?, marker_y = ?, status = 'reviewing', updated_at = ?, review_started_at = ?, review_started_by = ?, reviewed_by = ? WHERE id = ?`,
+    ).bind(
+      fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+      location.markerX, location.markerY, updatedAt, reviewStartedAt, currentEmail, currentEmail, id,
+    ).run();
+    return json({ request: { ...existing, ...fields, ...location, status: "reviewing", reviewStartedAt, updatedAt } });
+  }
+
+  if (action === "move-marker") {
+    if (existing.status !== "reviewing") return json({ error: "request is not under review" }, 409);
+    const location = payload ? validatedLocation(payload, true) : null;
+    if (!location) return json({ error: "valid marker location required" }, 400);
+    const updatedAt = new Date().toISOString();
+    await runtime.DB.prepare(
+      "UPDATE place_registration_requests SET marker_x = ?, marker_y = ?, updated_at = ?, reviewed_by = ? WHERE id = ?",
+    ).bind(location.markerX, location.markerY, updatedAt, currentEmail, id).run();
+    return json({ request: { ...existing, ...location, updatedAt } });
   }
 
   if (action === "reject") {
@@ -224,9 +293,13 @@ export async function PATCH(request: Request) {
   }
 
   if (existing.status === "approved") return json({ error: "request already approved" }, 409);
+  if (existing.status !== "reviewing") return json({ error: "request review must start before approval" }, 409);
   const fields = (payload ? validatedFields(payload) : null)
     ?? validatedFields(existing as unknown as Record<string, unknown>);
   if (!fields) return json({ error: "request must be corrected before approval" }, 400);
+  const location = (payload ? validatedLocation(payload) : undefined)
+    ?? (existing.markerX !== null && existing.markerY !== null ? { markerX: existing.markerX, markerY: existing.markerY } : null);
+  if (!location) return json({ error: "marker location required before approval" }, 400);
   const duplicate = await runtime.DB.prepare("SELECT id FROM place_directory WHERE lower(name) = lower(?) LIMIT 1")
     .bind(fields.name).first() as { id?: string } | null;
   if (duplicate?.id) return json({ error: "place already registered", directoryId: duplicate.id }, 409);
@@ -248,11 +321,15 @@ export async function PATCH(request: Request) {
     ).bind(reviewedAt, currentEmail),
     runtime.DB.prepare(
       `UPDATE place_registration_requests SET name = ?, address = ?, description = ?, category = ?, marker_style = ?,
-       status = 'approved', directory_id = ?, rejection_note = '', updated_at = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?`,
-    ).bind(fields.name, fields.address, fields.description, fields.category, fields.markerStyle, directoryId, reviewedAt, reviewedAt, currentEmail, id),
+       marker_x = ?, marker_y = ?, status = 'approved', directory_id = ?, rejection_note = '',
+       updated_at = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?`,
+    ).bind(
+      fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+      location.markerX, location.markerY, directoryId, reviewedAt, reviewedAt, currentEmail, id,
+    ),
   ]);
   return json({
-    request: { ...existing, ...fields, status: "approved", directoryId, rejectionNote: "", updatedAt: reviewedAt, reviewedAt },
+    request: { ...existing, ...fields, ...location, status: "approved", directoryId, rejectionNote: "", updatedAt: reviewedAt, reviewedAt },
     directory: {
       id: directoryId, name: fields.name, category: fields.category, area: "등록 요청", address: fields.address,
       subtype: categorySubtype(fields.category), priority: "관리자 검수 승인", description: fields.description,

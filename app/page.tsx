@@ -134,6 +134,7 @@ type MapElement = {
   address: string;
   addressSourceUrl: string;
   directoryId?: string;
+  placeRequestId?: string;
 };
 
 type DirectoryPlace = {
@@ -411,16 +412,21 @@ type PlaceRegistrationRequest = {
   submittedDescription: string;
   submittedCategory: BundledMarkerCategory;
   submittedMarkerStyle: BundledMarkerStyle;
+  submittedX: number | null;
+  submittedY: number | null;
   name: string;
   address: string;
   description: string;
   category: BundledMarkerCategory;
   markerStyle: BundledMarkerStyle;
-  status: "pending" | "approved" | "rejected";
+  markerX: number | null;
+  markerY: number | null;
+  status: "pending" | "reviewing" | "approved" | "rejected";
   directoryId: string | null;
   rejectionNote: string;
   createdAt: string;
   updatedAt: string;
+  reviewStartedAt: string | null;
   reviewedAt: string | null;
 };
 
@@ -1218,15 +1224,26 @@ function buildDenseLabelClusters(
     const rootB = find(b);
     if (rootA !== rootB) parent[rootB] = rootA;
   };
-  for (let index = 0; index < candidates.length; index += 1) {
-    for (let other = index + 1; other < candidates.length; other += 1) {
-      const dx = candidates[index].x - candidates[other].x;
-      const dy = (candidates[index].y - candidates[other].y) / MAP_ASPECT;
-      const labelReach = Math.min(6.2, 2.4 + (candidates[index].name.length + candidates[other].name.length) * 0.11)
-        * clamp(densityScale, 0.24, 1.6);
-      if (Math.hypot(dx, dy) <= labelReach) unite(index, other);
+  const density = clamp(densityScale, 0.24, 1.6);
+  const cellSize = Math.max(1.25, 6.2 * density);
+  const spatialBuckets = new Map<string, number[]>();
+  candidates.forEach((candidate, index) => {
+    const cellX = Math.floor(candidate.x / cellSize);
+    const cellY = Math.floor((candidate.y / MAP_ASPECT) / cellSize);
+    for (let offsetX = -1; offsetX <= 1; offsetX += 1) for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      const nearby = spatialBuckets.get(`${cellX + offsetX}:${cellY + offsetY}`) ?? [];
+      nearby.forEach((other) => {
+        const dx = candidate.x - candidates[other].x;
+        const dy = (candidate.y - candidates[other].y) / MAP_ASPECT;
+        const labelReach = Math.min(6.2, 2.4 + (candidate.name.length + candidates[other].name.length) * 0.11) * density;
+        if (Math.hypot(dx, dy) <= labelReach) unite(index, other);
+      });
     }
-  }
+    const key = `${cellX}:${cellY}`;
+    const bucket = spatialBuckets.get(key);
+    if (bucket) bucket.push(index);
+    else spatialBuckets.set(key, [index]);
+  });
   const groups = new Map<number, MapElement[]>();
   candidates.forEach((element, index) => {
     const root = find(index);
@@ -1741,6 +1758,7 @@ export default function Home() {
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const storyPhotoInputRef = useRef<HTMLInputElement>(null);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
+  const placeRequestLocationBeforePickingRef = useRef<{ x: number; y: number } | null>(null);
   const eventDialogDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const activeTouchPointersRef = useRef(new Map<number, { clientX: number; clientY: number }>());
   const pinchGestureRef = useRef<{
@@ -1903,6 +1921,8 @@ export default function Home() {
   const [placeRequestDescription, setPlaceRequestDescription] = useState("");
   const [placeRequestCategory, setPlaceRequestCategory] = useState<BundledMarkerCategory>("culture");
   const [placeRequestMarkerStyle, setPlaceRequestMarkerStyle] = useState<BundledMarkerStyle>(recommendedMarkerStyle);
+  const [placeRequestLocation, setPlaceRequestLocation] = useState<{ x: number; y: number } | null>(null);
+  const [placeRequestPickingLocation, setPlaceRequestPickingLocation] = useState(false);
   const [placeRequestSubmitting, setPlaceRequestSubmitting] = useState(false);
   const [placeRequests, setPlaceRequests] = useState<PlaceRegistrationRequest[]>([]);
   const [placeRequestsPage, setPlaceRequestsPage] = useState(1);
@@ -1974,7 +1994,7 @@ export default function Home() {
   const [databaseEditorSelectedId, setDatabaseEditorSelectedId] = useState<string | null>(null);
   const [databaseDraftPlaces, setDatabaseDraftPlaces] = useState<DirectoryPlace[]>([]);
   const [interaction, setInteraction] = useState<
-    | { type: "pan"; startX: number; startY: number; panX: number; panY: number; pendingPublicPlaceId?: string }
+    | { type: "pan"; startX: number; startY: number; panX: number; panY: number; pendingPublicPlaceId?: string; pendingPlaceRequestLocation?: boolean }
     | { type: "resize"; id: string; startX: number; startSize: number }
     | { type: "drag"; id: string; startX: number; startY: number; elementX: number; elementY: number; anchorX: number; anchorY: number; mode: "anchor" | "output"; calibrationPointId?: string }
     | { type: "label"; id: string; startX: number; startY: number; offsetX: number; offsetY: number }
@@ -2604,11 +2624,15 @@ export default function Home() {
   const collisions = useMemo(() => {
     const hard = new Set<string>();
     const clearance = new Set<string>();
-    for (let index = 0; index < stageMarkerElements.length; index += 1) {
-      for (let other = index + 1; other < stageMarkerElements.length; other += 1) {
-        const a = stageMarkerElements[index];
-        const b = stageMarkerElements[other];
+    const ordered = [...stageMarkerElements].sort((a, b) => a.x - b.x);
+    const maximumSize = ordered.reduce((maximum, element) => Math.max(maximum, element.size), 0);
+    for (let index = 0; index < ordered.length; index += 1) {
+      const a = ordered[index];
+      const maximumRelevantDx = (a.size + maximumSize) / 2 * 1.3;
+      for (let other = index + 1; other < ordered.length; other += 1) {
+        const b = ordered[other];
         const dx = Math.abs(a.x - b.x);
+        if (dx >= maximumRelevantDx) break;
         const dyAsWidth = Math.abs(a.y - b.y) / MAP_ASPECT;
         const halfWidth = (a.size + b.size) / 2;
         const halfHeight = halfWidth / 1.12;
@@ -2629,6 +2653,21 @@ export default function Home() {
       x: clamp(((clientX - rect.left) / rect.width) * 100, 0, 100),
       y: clamp(((clientY - rect.top) / rect.height) * 100, 0, 100),
     };
+  }, []);
+
+  const syncReviewedPlaceRequestLocation = useCallback(async (placeRequestId: string, x: number, y: number) => {
+    try {
+      const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: placeRequestId, action: "move-marker", markerX: x, markerY: y }),
+      });
+      const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
+      if (!response.ok || !payload?.request) return;
+      setPlaceRequests((current) => current.map((request) => request.id === placeRequestId ? payload.request! : request));
+    } catch {
+      // The editor document and device recovery copy still retain the position.
+    }
   }, []);
 
   const updatePlaceStoryPhoto = useCallback((file: File | null) => {
@@ -3144,22 +3183,30 @@ export default function Home() {
 
   useEffect(() => {
     if (!hydrated || publicLayoutAccess !== "editor") return;
+    let idleId: number | null = null;
     const timer = window.setTimeout(() => {
-      try {
-        const autosave: LocalAutosavePayload = {
-          schemaVersion: 4,
-          savedAt: new Date().toISOString(),
-          baseRevision: publishedLayoutRevisionRef.current,
-          document: currentDocument(),
-        };
-        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autosave));
-        setSaveState("자동 저장됨");
-      } catch {
-        setSaveState("저장 공간 부족");
-        setToast("대용량 업로드 자산 때문에 브라우저 저장 공간이 부족합니다. JSON을 내려받아 보관해 주세요.");
-      }
-    }, 450);
-    return () => window.clearTimeout(timer);
+      const save = () => {
+        try {
+          const autosave: LocalAutosavePayload = {
+            schemaVersion: 4,
+            savedAt: new Date().toISOString(),
+            baseRevision: publishedLayoutRevisionRef.current,
+            document: currentDocument(),
+          };
+          localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(autosave));
+          setSaveState("자동 저장됨");
+        } catch {
+          setSaveState("저장 공간 부족");
+          setToast("대용량 업로드 자산 때문에 브라우저 저장 공간이 부족합니다. JSON을 내려받아 보관해 주세요.");
+        }
+      };
+      if ("requestIdleCallback" in window) idleId = window.requestIdleCallback(save, { timeout: 1200 });
+      else save();
+    }, 320);
+    return () => {
+      window.clearTimeout(timer);
+      if (idleId !== null && "cancelIdleCallback" in window) window.cancelIdleCallback(idleId);
+    };
   }, [assets, calibrationPoints, currentDocument, denseLabelExcludedIds, denseLabelPositions, directoryPlaces, elements, hydrated, landmarkDefaultPositions, placementOverrides, publicLayoutAccess, reviewNotes]);
 
   useEffect(() => {
@@ -3859,6 +3906,21 @@ export default function Home() {
           }
         }
       }
+      if (interaction?.type === "pan" && interaction.pendingPlaceRequestLocation) {
+        const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
+        if (moved <= 6) {
+          const point = clientToMap(event.clientX, event.clientY);
+          setPlaceRequestLocation({ x: Math.round(point.x * 1000) / 1000, y: Math.round(point.y * 1000) / 1000 });
+          setToast("요청할 마커 위치를 지정했습니다. 필요하면 지도를 이동·확대한 뒤 다시 눌러 조정하세요.");
+        }
+      }
+      if (interaction?.type === "drag") {
+        const draggedId = interaction.id;
+        window.requestAnimationFrame(() => {
+          const element = elementsRef.current.find((item) => item.id === draggedId && item.placeRequestId && !item.directoryId);
+          if (element?.placeRequestId) void syncReviewedPlaceRequestLocation(element.placeRequestId, element.x, element.y);
+        });
+      }
       setInteraction(null);
     };
     const handleCancel = (event: PointerEvent) => {
@@ -3878,7 +3940,7 @@ export default function Home() {
       window.removeEventListener("pointercancel", handleCancel);
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
     };
-  }, [fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
+  }, [clientToMap, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -3960,7 +4022,7 @@ export default function Home() {
     });
   };
 
-  const startPan = (event: ReactPointerEvent<HTMLElement>, pendingPublicPlaceId?: string) => {
+  const startPan = (event: ReactPointerEvent<HTMLElement>, pendingPublicPlaceId?: string, pendingPlaceRequestLocation = false) => {
     if (event.button !== 0 || memoMode) return;
     event.preventDefault();
     event.stopPropagation();
@@ -3972,7 +4034,7 @@ export default function Home() {
     if (!pendingPublicPlaceId) {
       setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     }
-    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId });
+    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId, pendingPlaceRequestLocation });
   };
 
   const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -3985,7 +4047,7 @@ export default function Home() {
       setSelectedId(null); setSelectedNoteId(note.id); setMemoMode(false); setRightOpen(true);
       return;
     }
-    startPan(event);
+    startPan(event, undefined, placeRequestPickingLocation && publicLayoutAccess === "viewer");
   };
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>, element: MapElement) => {
@@ -5184,6 +5246,10 @@ export default function Home() {
 
   const publishCurrentLayout = async () => {
     if (publicLayoutAccess !== "editor" || publicLayoutPublishing) return;
+    if (elementsRef.current.some((element) => element.placeRequestId && !element.directoryId)) {
+      setToast("지도 검수 중인 장소 요청이 있습니다. 요청을 승인하거나 반려한 뒤 공개본을 업데이트해 주세요.");
+      return;
+    }
     setPublicLayoutPublishing(true);
     setToast("현재 편집 상태를 공개 배치본으로 저장하고 있습니다.");
     try {
@@ -5197,6 +5263,7 @@ export default function Home() {
       const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
       if (!response.ok) {
         if (response.status === 409) throw new Error("conflict");
+        if (response.status === 422) throw new Error("pending-place-request");
         throw new Error(payload?.error ?? "publish failed");
       }
       const publishedDocument = payload?.document ? sanitizeDocument(payload.document) : document;
@@ -5216,6 +5283,8 @@ export default function Home() {
     } catch (error) {
       setToast(error instanceof Error && error.message === "conflict"
         ? "다른 기기에서 공개본이 변경되었습니다. 새로고침해 최신 공개본을 확인한 뒤 다시 게시해 주세요."
+        : error instanceof Error && error.message === "pending-place-request"
+          ? "지도 검수 중인 장소 요청을 먼저 승인하거나 반려해 주세요."
         : "공개 배치본을 저장하지 못했습니다. 로그인 및 연결 상태를 확인해 주세요.");
     } finally {
       setPublicLayoutPublishing(false);
@@ -5550,6 +5619,10 @@ export default function Home() {
       setToast("장소명·주소·설명을 조금 더 자세히 적어 주세요.");
       return;
     }
+    if (!placeRequestLocation) {
+      setToast("지도에서 마커 위치를 먼저 지정해 주세요.");
+      return;
+    }
     setPlaceRequestSubmitting(true);
     try {
       const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
@@ -5561,6 +5634,8 @@ export default function Home() {
           description: placeRequestDescription,
           category: placeRequestCategory,
           markerStyle: placeRequestMarkerStyle,
+          markerX: placeRequestLocation.x,
+          markerY: placeRequestLocation.y,
           visitorId: persistentVisitorId(),
         }),
       });
@@ -5575,6 +5650,8 @@ export default function Home() {
       setPlaceRequestDescription("");
       setPlaceRequestCategory("culture");
       setPlaceRequestMarkerStyle(recommendedMarkerStyle);
+      setPlaceRequestLocation(null);
+      setPlaceRequestPickingLocation(false);
       setPlaceRequestFormOpen(false);
       setToast("장소 등록 요청을 보냈습니다. 관리자 검수 후 지도에 반영됩니다.");
     } catch (error) {
@@ -5588,8 +5665,24 @@ export default function Home() {
     }
   };
 
-  const updatePlaceRequestDraft = (id: string, patch: Partial<Pick<PlaceRegistrationRequest, "name" | "address" | "description" | "category" | "markerStyle">>) => {
+  const updatePlaceRequestDraft = (id: string, patch: Partial<Pick<PlaceRegistrationRequest, "name" | "address" | "description" | "category" | "markerStyle" | "markerX" | "markerY">>) => {
     setPlaceRequests((current) => current.map((request) => request.id === id ? { ...request, ...patch } : request));
+    const linked = elementsRef.current.find((element) => element.placeRequestId === id && !element.directoryId);
+    if (!linked) return;
+    const nextCategory = patch.category ?? linked.category;
+    const nextStyle = patch.markerStyle ?? (linked.assetId?.match(/-(01|02|03)-/)?.[1] as BundledMarkerStyle | undefined) ?? recommendedMarkerStyle;
+    replaceElements((current) => current.map((element) => element.id === linked.id ? {
+      ...element,
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.address !== undefined ? { address: patch.address } : {}),
+      ...(patch.category !== undefined || patch.markerStyle !== undefined ? {
+        category: nextCategory,
+        assetId: markerAssetId(nextStyle, nextCategory),
+        size: nextCategory === "culture" || nextCategory === "park" ? 2.5 : 1.65,
+      } : {}),
+      ...(typeof patch.markerX === "number" ? { x: patch.markerX, anchorX: patch.markerX } : {}),
+      ...(typeof patch.markerY === "number" ? { y: patch.markerY, anchorY: patch.markerY } : {}),
+    } : element));
   };
 
   const savePlaceRequestEdits = async (request: PlaceRegistrationRequest) => {
@@ -5599,7 +5692,7 @@ export default function Home() {
       const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: request.id, action: "edit", name: request.name, address: request.address, description: request.description, category: request.category, markerStyle: request.markerStyle }),
+        body: JSON.stringify({ id: request.id, action: "edit", name: request.name, address: request.address, description: request.description, category: request.category, markerStyle: request.markerStyle, markerX: request.markerX, markerY: request.markerY }),
       });
       const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
       if (!response.ok || !payload?.request) throw new Error(payload?.error ?? "save failed");
@@ -5612,14 +5705,102 @@ export default function Home() {
     }
   };
 
-  const approvePlaceRequest = async (request: PlaceRegistrationRequest) => {
-    if (placeRequestActionId || request.status === "approved" || !window.confirm(`‘${request.name}’을(를) 장소 DB와 지도 편집 초안에 반영할까요?`)) return;
+  const startPlaceRequestReview = async (request: PlaceRegistrationRequest) => {
+    if (placeRequestActionId || request.status === "approved" || request.status === "rejected") return;
+    const existingElement = elementsRef.current.find((element) => element.placeRequestId === request.id && !element.directoryId);
+    if (existingElement) {
+      setSelectedId(existingElement.id);
+      setSelectedNoteId(null);
+      setSelectedDenseLabelId(null);
+      setRightOpen(true);
+      setGlobalStoriesOpen(false);
+      focusMapPosition(existingElement.x, existingElement.y, existingElement.id);
+      setToast("검수 중인 마커로 이동했습니다. 위치·크기·라벨을 조정한 뒤 장소 요청을 승인하세요.");
+      return;
+    }
     setPlaceRequestActionId(request.id);
     try {
       const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: request.id, action: "approve", name: request.name, address: request.address, description: request.description, category: request.category, markerStyle: request.markerStyle }),
+        body: JSON.stringify({
+          id: request.id,
+          action: "start-review",
+          name: request.name,
+          address: request.address,
+          description: request.description,
+          category: request.category,
+          markerStyle: request.markerStyle,
+          markerX: request.markerX,
+          markerY: request.markerY,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
+      if (!response.ok || !payload?.request) throw new Error(payload?.error ?? "review start failed");
+      const reviewing = payload.request;
+      const x = typeof reviewing.markerX === "number" ? reviewing.markerX : 50;
+      const y = typeof reviewing.markerY === "number" ? reviewing.markerY : 50;
+      const nextElement: MapElement = {
+        ...elementDefaults,
+        id: `requested-place-${reviewing.id}`,
+        placeRequestId: reviewing.id,
+        name: reviewing.name,
+        category: reviewing.category,
+        x,
+        y,
+        anchorX: x,
+        anchorY: y,
+        size: reviewing.category === "culture" || reviewing.category === "park" ? 2.5 : 1.65,
+        z: Math.max(0, ...elementsRef.current.map((element) => element.z)) + 1,
+        labelVisible: true,
+        labelGap: 4,
+        assetId: markerAssetId(reviewing.markerStyle, reviewing.category),
+        status: "review",
+        address: reviewing.address,
+        memo: "장소 등록 요청 검수 중 · 위치·크기·라벨을 조정한 뒤 장소 요청 관리에서 승인하세요.",
+      };
+      pushHistory();
+      replaceElements((current) => [...current.filter((element) => element.placeRequestId !== reviewing.id), nextElement]);
+      setPlaceRequests((current) => current.map((item) => item.id === reviewing.id ? reviewing : item));
+      setSelectedId(nextElement.id);
+      setSelectedNoteId(null);
+      setSelectedDenseLabelId(null);
+      setRightOpen(true);
+      setGlobalStoriesOpen(false);
+      focusMapPosition(x, y, nextElement.id);
+      setToast("요청자가 지정한 위치에 검수용 마커를 표시했습니다. 조정 후 장소 요청 관리에서 승인하세요.");
+    } catch {
+      setToast("장소 요청 검수를 시작하지 못했습니다.");
+    } finally {
+      setPlaceRequestActionId(null);
+    }
+  };
+
+  const approvePlaceRequest = async (request: PlaceRegistrationRequest) => {
+    const reviewElement = elementsRef.current.find((element) => element.placeRequestId === request.id && !element.directoryId);
+    if (placeRequestActionId || request.status !== "reviewing" || !reviewElement) {
+      if (!placeRequestActionId && request.status !== "approved") setToast("먼저 지도 검수를 시작해 마커 위치를 확인해 주세요.");
+      return;
+    }
+    if (!window.confirm(`‘${request.name}’을(를) 검수한 위치대로 장소 DB와 지도 편집 초안에 반영할까요?`)) return;
+    const reviewedCategory = reviewElement.category === "landmark" ? request.category : reviewElement.category as BundledMarkerCategory;
+    const reviewedMarkerStyle = (reviewElement.assetId?.match(/^generic-marker-(01|02|03)-/)?.[1] as BundledMarkerStyle | undefined) ?? request.markerStyle;
+    setPlaceRequestActionId(request.id);
+    try {
+      const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: request.id,
+          action: "approve",
+          name: reviewElement.name,
+          address: reviewElement.address,
+          description: request.description,
+          category: reviewedCategory,
+          markerStyle: reviewedMarkerStyle,
+          markerX: reviewElement.x,
+          markerY: reviewElement.y,
+        }),
       });
       const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
       if (!response.ok || !payload?.request || !payload.directory) {
@@ -5630,27 +5811,42 @@ export default function Home() {
       const newPlace = mergeDirectoryRecords([payload.directory], [])[0];
       pushHistory();
       replaceDirectoryPlaces((current) => [...current.filter((place) => place.id !== newPlace.id), newPlace]);
-      const assetId = markerAssetId(approved.markerStyle, approved.category);
-      const nextElement: MapElement = {
-        ...elementDefaults,
-        id: uniqueRuntimeId("requested-place", elementsRef.current.map((element) => element.id)),
+      const x = reviewElement?.x ?? approved.markerX ?? 50;
+      const y = reviewElement?.y ?? approved.markerY ?? 50;
+      const nextElement: MapElement = reviewElement ? {
+        ...reviewElement,
         directoryId: newPlace.id,
         name: approved.name,
         category: approved.category,
-        x: 50,
-        y: 50,
-        anchorX: 50,
-        anchorY: 50,
+        x,
+        y,
+        anchorX: x,
+        anchorY: y,
+        assetId: markerAssetId(approved.markerStyle, approved.category),
+        status: "review",
+        address: approved.address,
+        memo: "장소 등록 요청 승인 · 최종 표시 상태를 확인한 뒤 공개본을 업데이트하세요.",
+      } : {
+        ...elementDefaults,
+        id: `requested-place-${approved.id}`,
+        placeRequestId: approved.id,
+        directoryId: newPlace.id,
+        name: approved.name,
+        category: approved.category,
+        x,
+        y,
+        anchorX: x,
+        anchorY: y,
         size: approved.category === "culture" || approved.category === "park" ? 2.5 : 1.65,
         z: Math.max(0, ...elementsRef.current.map((element) => element.z)) + 1,
         labelVisible: true,
         labelGap: 4,
-        assetId,
+        assetId: markerAssetId(approved.markerStyle, approved.category),
         status: "review",
         address: approved.address,
-        memo: "장소 등록 요청 승인 · 실제 위치와 마커 표시를 검수한 뒤 공개본을 업데이트하세요.",
+        memo: "장소 등록 요청 승인 · 최종 표시 상태를 확인한 뒤 공개본을 업데이트하세요.",
       };
-      replaceElements((current) => [...current, nextElement]);
+      replaceElements((current) => [...current.filter((element) => element.id !== nextElement.id && element.placeRequestId !== approved.id), nextElement]);
       setSelectedId(nextElement.id);
       setSelectedNoteId(null);
       setSelectedDenseLabelId(null);
@@ -5660,8 +5856,8 @@ export default function Home() {
       setPlaceRequests((current) => current.map((item) => item.id === request.id ? approved : item));
       setPlaceRequestsRefreshKey((current) => current + 1);
       setGlobalStoriesOpen(false);
-      focusMapPosition(50, 50, nextElement.id);
-      setToast("장소 DB와 편집 초안에 반영했습니다. 지도 위치를 검수한 뒤 공개본을 업데이트해 주세요.");
+      focusMapPosition(x, y, nextElement.id);
+      setToast("검수한 위치와 마커를 장소 DB·편집 초안에 반영했습니다. 최종 확인 후 공개본을 업데이트해 주세요.");
     } catch (error) {
       setToast(error instanceof Error && error.message === "duplicate"
         ? "같은 이름의 장소가 이미 DB에 있습니다. 기존 장소를 먼저 확인해 주세요."
@@ -5684,6 +5880,12 @@ export default function Home() {
       });
       const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
       if (!response.ok || !payload?.request) throw new Error(payload?.error ?? "reject failed");
+      const linkedElement = elementsRef.current.find((element) => element.placeRequestId === request.id && !element.directoryId);
+      if (linkedElement) {
+        pushHistory();
+        replaceElements((current) => current.filter((element) => element.id !== linkedElement.id));
+        if (selectedId === linkedElement.id) setSelectedId(null);
+      }
       setPlaceRequests((current) => current.map((item) => item.id === request.id ? payload.request! : item));
       setPlaceRequestsRefreshKey((current) => current + 1);
       setToast("장소 등록 요청을 반려 처리했습니다.");
@@ -5700,6 +5902,12 @@ export default function Home() {
     try {
       const response = await fetch(`${PLACE_REGISTRATION_REQUESTS_API}?id=${encodeURIComponent(request.id)}`, { method: "DELETE" });
       if (!response.ok) throw new Error("delete failed");
+      const linkedElement = elementsRef.current.find((element) => element.placeRequestId === request.id && !element.directoryId);
+      if (linkedElement) {
+        pushHistory();
+        replaceElements((current) => current.filter((element) => element.id !== linkedElement.id));
+        if (selectedId === linkedElement.id) setSelectedId(null);
+      }
       setPlaceRequests((current) => current.filter((item) => item.id !== request.id));
       setPlaceRequestsRefreshKey((current) => current + 1);
       setToast("장소 등록 요청 기록을 삭제했습니다.");
@@ -6174,9 +6382,9 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))` }}>
-              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? startPan : undefined}>
+              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
                 {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
@@ -6210,7 +6418,7 @@ export default function Home() {
                     data-element-id={element.id}
                     className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
                     style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }}
-                    onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, element.id) : undefined}
+                    onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : element.id, placeRequestPickingLocation) : undefined}
                     role={keyboardSelectable ? "button" : undefined}
                     tabIndex={keyboardSelectable ? 0 : undefined}
                     aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}
@@ -6223,6 +6431,10 @@ export default function Home() {
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
+                {placeRequestPickingLocation && placeRequestLocation && <div className="place-request-location-marker" style={{ left: `${placeRequestLocation.x}%`, top: `${placeRequestLocation.y}%` }} aria-label="요청할 마커 위치">
+                  <img src={`/markers/범용마커_${placeRequestMarkerStyle}_${placeRequestCategory}.svg`} alt="" draggable={false} decoding="async" />
+                  <span>제안 위치</span>
+                </div>}
                 {!!denseLabelClusters.length && <div className="dense-label-layer" aria-label="통합 라벨">
                   {denseLabelClusters.map((cluster) => <div
                     key={cluster.id}
@@ -6232,7 +6444,7 @@ export default function Home() {
                     title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
                     role={editingEnabled ? "button" : undefined}
                     aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, row.elementId) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
                 </div>}
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
@@ -6247,6 +6459,7 @@ export default function Home() {
             </div>
             {printPreviewMode && <div className={`print-preview-badge ${printAudit.issues.length ? "warning" : "pass"}`}><strong>PNG 출력 미리보기</strong><span>{printAudit.issues.length ? `점검 ${printAudit.issues.length}건` : "점검 통과"}</span></div>}
             {eventPlaceSelectionMode && <div className="event-place-selection-hint"><strong>행사 장소 선택 중</strong><span>지도 마커를 눌러 추가·해제 · 현재 {placeEventPlaces.length}곳</span></div>}
+            {placeRequestPickingLocation && <div className="place-request-location-hint" role="status" onPointerDown={(event) => event.stopPropagation()}><div><strong>마커 위치 지정 중</strong><span>{placeRequestLocation ? "선택한 위치를 다시 눌러 조정하거나 지도를 이동·확대할 수 있습니다." : "지도를 이동·확대한 뒤 마커를 둘 지점을 눌러 주세요."}</span></div><div><button type="button" onClick={() => { setPlaceRequestLocation(placeRequestLocationBeforePickingRef.current); setPlaceRequestPickingLocation(false); setPlaceRequestFormOpen(true); }}>선택 취소</button><button type="button" className="primary" disabled={!placeRequestLocation} onClick={() => { setPlaceRequestPickingLocation(false); setPlaceRequestFormOpen(true); }}>이 위치 사용</button></div></div>}
             {publicLayoutAccess === "editor" && <div className="map-scale"><span /> 정규화 좌표 0–100%</div>}
             {publicLayoutAccess === "editor" && <button type="button" className={`global-story-toggle editor-map ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel"><span aria-hidden="true">✓</span><strong>{globalStoriesOpen ? "관리 닫기" : "리뷰·행사·장소 관리"}</strong>{activeGlobalCount !== null && activeGlobalCount > 0 && <em>{activeGlobalCount}</em>}</button>}
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
@@ -6353,18 +6566,21 @@ export default function Home() {
                 : (placeRequestsLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>장소 등록 요청을 불러오는 중입니다.</strong></div>
                   : placeRequestsError ? <div className="global-story-state error"><strong>장소 등록 요청을 불러오지 못했습니다.</strong><button type="button" onClick={() => setPlaceRequestsRefreshKey((current) => current + 1)}>다시 시도</button></div>
                     : placeRequests.length ? <div className="place-request-admin-list">{placeRequests.map((request) => {
-                      const statusLabel = request.status === "pending" ? "검수 대기" : request.status === "approved" ? "승인 완료" : "반려";
-                      const disabled = request.status === "approved" || placeRequestActionId !== null;
+                      const statusLabel = request.status === "pending" ? "검수 대기" : request.status === "reviewing" ? "지도 검수 중" : request.status === "approved" ? "승인 완료" : "반려";
+                      const closed = request.status === "approved" || request.status === "rejected";
+                      const disabled = closed || placeRequestActionId !== null;
+                      const linkedMarker = elements.find((element) => element.placeRequestId === request.id && !element.directoryId);
                       return <article className={`place-request-admin-card ${request.status}`} key={request.id}>
-                        <header><div><span className={`place-request-status ${request.status}`}>{statusLabel}</span><time dateTime={request.createdAt}>{storyDateTimeLabel(request.createdAt)}</time></div><img src={`/markers/범용마커_${request.markerStyle}_${request.category}.svg`} alt="요청 마커 미리보기" /></header>
-                        <label>장소명<input value={request.name} maxLength={120} disabled={request.status === "approved"} onChange={(event) => updatePlaceRequestDraft(request.id, { name: event.target.value })} /></label>
-                        <div className="place-request-admin-row"><label>마커 분류<select value={request.category} disabled={request.status === "approved"} onChange={(event) => updatePlaceRequestDraft(request.id, { category: event.target.value as BundledMarkerCategory })}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><label>형태<select value={request.markerStyle} disabled={request.status === "approved"} onChange={(event) => updatePlaceRequestDraft(request.id, { markerStyle: event.target.value as BundledMarkerStyle })}><option value="01">형태 01</option><option value="02">형태 02</option><option value="03">형태 03</option></select></label></div>
-                        <label>주소<input value={request.address} maxLength={260} disabled={request.status === "approved"} onChange={(event) => updatePlaceRequestDraft(request.id, { address: event.target.value })} /></label>
-                        <label>설명<textarea value={request.description} maxLength={800} disabled={request.status === "approved"} onChange={(event) => updatePlaceRequestDraft(request.id, { description: event.target.value })} /></label>
+                        <header><div><span className={`place-request-status ${request.status}`}>{statusLabel}</span><time dateTime={request.createdAt}>{storyDateTimeLabel(request.createdAt)}</time></div><img src={`/markers/범용마커_${request.markerStyle}_${request.category}.svg`} alt="요청 마커 미리보기" loading="lazy" decoding="async" /></header>
+                        <label>장소명<input value={request.name} maxLength={120} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { name: event.target.value })} /></label>
+                        <div className="place-request-admin-row"><label>마커 분류<select value={request.category} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { category: event.target.value as BundledMarkerCategory })}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><label>형태<select value={request.markerStyle} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { markerStyle: event.target.value as BundledMarkerStyle })}><option value="01">형태 01</option><option value="02">형태 02</option><option value="03">형태 03</option></select></label></div>
+                        <label>주소<input value={request.address} maxLength={260} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { address: event.target.value })} /></label>
+                        <label>설명<textarea value={request.description} maxLength={800} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { description: event.target.value })} /></label>
+                        <div className="place-request-coordinate-summary"><span>요청 위치</span><strong>{typeof request.submittedX === "number" && typeof request.submittedY === "number" ? `${request.submittedX.toFixed(2)}, ${request.submittedY.toFixed(2)}` : "기존 요청 · 위치 정보 없음"}</strong>{linkedMarker && <em>현재 검수 위치 {linkedMarker.x.toFixed(2)}, {linkedMarker.y.toFixed(2)}</em>}</div>
                         {(request.submittedName !== request.name || request.submittedAddress !== request.address || request.submittedDescription !== request.description || request.submittedCategory !== request.category || request.submittedMarkerStyle !== request.markerStyle) && <details><summary>요청자가 보낸 원문 보기</summary><p><b>{request.submittedName}</b><br />{request.submittedAddress}<br />{request.submittedDescription}</p></details>}
                         {request.rejectionNote && <p className="place-request-rejection-note"><b>반려 메모</b>{request.rejectionNote}</p>}
-                        {request.status === "approved" && <p className="place-request-approved-note">장소 DB 반영 완료 · 지도 중앙에 검수용 마커를 추가했습니다.</p>}
-                        <footer><button type="button" disabled={disabled} onClick={() => void savePlaceRequestEdits(request)}>{placeRequestActionId === request.id ? "처리 중…" : "수정 저장"}</button><button type="button" className="approve" disabled={disabled} onClick={() => void approvePlaceRequest(request)}>승인·초안 반영</button><button type="button" disabled={disabled} onClick={() => void rejectPlaceRequest(request)}>반려</button><button type="button" className="danger" disabled={placeRequestActionId !== null} onClick={() => void deletePlaceRequest(request)}>기록 삭제</button></footer>
+                        {request.status === "approved" && <p className="place-request-approved-note">장소 DB와 검수한 지도 위치 반영 완료</p>}
+                        <footer><button type="button" className="review-start" disabled={disabled} onClick={() => void startPlaceRequestReview(request)}>{placeRequestActionId === request.id ? "처리 중…" : request.status === "reviewing" ? "지도 검수 계속" : "검수 시작"}</button><button type="button" disabled={disabled} onClick={() => void savePlaceRequestEdits(request)}>수정 저장</button><button type="button" className="approve" disabled={disabled || request.status !== "reviewing" || !linkedMarker} onClick={() => void approvePlaceRequest(request)}>검수 완료·DB 반영</button><button type="button" disabled={disabled} onClick={() => void rejectPlaceRequest(request)}>반려</button><button type="button" className="danger" disabled={placeRequestActionId !== null} onClick={() => void deletePlaceRequest(request)}>기록 삭제</button></footer>
                       </article>;
                     })}</div> : <div className="global-story-state"><strong>대기 중인 장소 등록 요청이 없습니다.</strong><span>방문자가 요청을 보내면 이 목록에서 수정·검수하고 편집 초안에 반영할 수 있습니다.</span></div>)}
           </div>
@@ -6397,15 +6613,16 @@ export default function Home() {
       </div>}
       {publicLayoutAccess === "viewer" && placeRequestFormOpen && <div className="place-request-backdrop" role="presentation">
         <section className="place-request-dialog" role="dialog" aria-modal="true" aria-labelledby="place-request-dialog-title">
-          <header><div><strong id="place-request-dialog-title">장소 등록 요청</strong><span>지도에 추가되면 좋을 원도심 장소를 알려주세요.</span></div><button type="button" onClick={() => setPlaceRequestFormOpen(false)} aria-label="장소 등록 요청 닫기">×</button></header>
+          <header><div><strong id="place-request-dialog-title">장소 등록 요청</strong><span>지도에 추가되면 좋을 원도심 장소를 알려주세요.</span></div><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }} aria-label="장소 등록 요청 닫기">×</button></header>
           <div className="place-request-dialog-scroll">
             <div className="place-request-marker-section"><div><strong>마커 형태</strong><span>장소 성격과 어울리는 분류·형태를 선택해 주세요.</span></div><label>장소 분류<select value={placeRequestCategory} onChange={(event) => setPlaceRequestCategory(event.target.value as BundledMarkerCategory)}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><div className="place-request-style-grid" role="radiogroup" aria-label="마커 형태 선택">{(["01", "02", "03"] as BundledMarkerStyle[]).map((style) => <button type="button" role="radio" aria-checked={placeRequestMarkerStyle === style} className={placeRequestMarkerStyle === style ? "active" : ""} key={style} onClick={() => setPlaceRequestMarkerStyle(style)}><img src={`/markers/범용마커_${style}_${placeRequestCategory}.svg`} alt="" /><span>형태 {style}</span></button>)}</div></div>
+            <section className={`place-request-location-field ${placeRequestLocation ? "selected" : ""}`}><div><img src={`/markers/범용마커_${placeRequestMarkerStyle}_${placeRequestCategory}.svg`} alt="" /><span><strong>지도에서 마커 위치 지정 <em>필수</em></strong><small>{placeRequestLocation ? `위치 선택됨 · ${placeRequestLocation.x.toFixed(2)}, ${placeRequestLocation.y.toFixed(2)}` : "실제 장소가 있는 지점을 지도에서 눌러 주세요."}</small></span></div><button type="button" onClick={() => { placeRequestLocationBeforePickingRef.current = placeRequestLocation; setPlaceRequestFormOpen(false); setGlobalStoriesOpen(false); setSelectedId(null); setPlaceRequestPickingLocation(true); }}>{placeRequestLocation ? "위치 다시 지정" : "지도에서 지정"}</button></section>
             <label>장소 이름 <em>필수</em><input value={placeRequestName} maxLength={120} placeholder="예: 카페단단" onChange={(event) => setPlaceRequestName(event.target.value)} /></label>
             <label>주소 <em>필수</em><input value={placeRequestAddress} maxLength={260} placeholder="도로명 주소를 적어주세요." onChange={(event) => setPlaceRequestAddress(event.target.value)} /></label>
             <label>장소 설명 <em>필수</em><textarea value={placeRequestDescription} maxLength={800} placeholder="어떤 장소인지, 지도에 소개할 핵심 내용을 짧게 적어주세요." onChange={(event) => setPlaceRequestDescription(event.target.value)} /><small>{placeRequestDescription.length}/800</small></label>
             <p>요청은 곧바로 공개되지 않습니다. 관리자가 장소 정보와 마커를 수정·검수한 뒤 지도 편집 초안에 반영합니다.</p>
           </div>
-          <footer><button type="button" onClick={() => setPlaceRequestFormOpen(false)}>취소</button><button type="button" className="primary" disabled={placeRequestSubmitting} onClick={() => void submitPlaceRegistrationRequest()}>{placeRequestSubmitting ? "요청 저장 중…" : "등록 요청 보내기"}</button></footer>
+          <footer><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }}>취소</button><button type="button" className="primary" disabled={placeRequestSubmitting || !placeRequestLocation || placeRequestName.trim().length < 2 || placeRequestAddress.trim().length < 5 || placeRequestDescription.trim().length < 10} onClick={() => void submitPlaceRegistrationRequest()}>{placeRequestSubmitting ? "요청 저장 중…" : "등록 요청 보내기"}</button></footer>
         </section>
       </div>}
       {publicLayoutAccess === "viewer" && adminLoginOpen && <div className="admin-login-backdrop" role="presentation">

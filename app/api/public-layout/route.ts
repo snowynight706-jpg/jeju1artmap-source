@@ -75,6 +75,14 @@ function validDocument(value: unknown) {
   });
 }
 
+function hasUnapprovedPlaceRequestMarker(value: unknown) {
+  if (!isRecord(value) || !Array.isArray(value.elements)) return false;
+  return value.elements.some((item) => isRecord(item)
+    && typeof item.placeRequestId === "string"
+    && item.placeRequestId.length > 0
+    && !(typeof item.directoryId === "string" && item.directoryId.length > 0));
+}
+
 function normalizeViewSettings(value: unknown): PublicViewSettings {
   const raw = isRecord(value) ? value : {};
   const baseMap = raw.baseMap === "png" || raw.baseMap === "uploaded" ? raw.baseMap : "svg";
@@ -93,6 +101,7 @@ function publicDocument(value: unknown) {
     const safe = { ...item };
     delete safe.memo;
     delete safe.addressSourceUrl;
+    delete safe.placeRequestId;
     return { ...safe, status: "approved", locked: false, labelLocked: false };
   }) : [];
   const assets = Array.isArray(value.assets) ? value.assets.map((item) => {
@@ -150,7 +159,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
   const placeRequestCount = canEdit
     ? db.prepare("SELECT COUNT(*) AS count FROM place_registration_requests")
     : db.prepare("SELECT 0 AS count");
-  const [layoutResult, reviewResult, eventResult, placeRequestResult] = await db.batch([
+  const statements = [
     db.prepare(
       `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
         previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
@@ -160,9 +169,20 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
     db.prepare(`SELECT COUNT(*) AS count FROM place_stories WHERE ${reviewWhere}`),
     eventCount,
     placeRequestCount,
-  ]);
+    ...(canEdit ? [db.prepare(
+      `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
+        previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
+        updated_at AS updatedAt, revision
+       FROM map_editor_draft WHERE id = 1`,
+    )] : []),
+  ];
+  const [layoutResult, reviewResult, eventResult, placeRequestResult, draftResult] = await db.batch(statements);
   const contentSummary = contentSummaryFromBatchResults(reviewResult, eventResult, placeRequestResult, now);
-  return { row: batchRow(layoutResult) as StoredLayout | null, contentSummary };
+  return {
+    row: batchRow(layoutResult) as StoredLayout | null,
+    draftRow: canEdit && draftResult ? batchRow(draftResult) as StoredDraft | null : null,
+    contentSummary,
+  };
 }
 
 function parseStored(row: StoredLayout, canEdit: boolean) {
@@ -192,8 +212,7 @@ export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit, accessMethod } = ownerAccess(request, runtime);
   if (!runtime.DB) return json({ document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null }, 503);
-  const { row, contentSummary } = await readInitialState(runtime.DB, canEdit);
-  const draftRow = canEdit ? await readDraft(runtime.DB) : null;
+  const { row, draftRow, contentSummary } = await readInitialState(runtime.DB, canEdit);
   let draft = null;
   try {
     draft = draftRow ? parseDraft(draftRow) : null;
@@ -263,6 +282,9 @@ export async function PUT(request: Request) {
     return json({ error: "invalid json" }, 400);
   }
   if (!isRecord(payload) || !validDocument(payload.document)) return json({ error: "valid layout document required" }, 400);
+  if (hasUnapprovedPlaceRequestMarker(payload.document)) {
+    return json({ error: "place request marker still under review" }, 422);
+  }
   const completed = completeReviewStatuses(payload.document);
   const documentJson = JSON.stringify(completed.document);
   if (new TextEncoder().encode(documentJson).byteLength > MAX_DOCUMENT_BYTES) return json({ error: "layout document too large" }, 413);
