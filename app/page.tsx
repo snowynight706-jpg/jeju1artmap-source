@@ -106,11 +106,11 @@ const publicListCategories: ReadonlyArray<{
   color: string;
   iconSrc: string;
 }> = [
-  { id: "culture", name: "문화공간", color: "#4d9a91", iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_규격통일.png" },
-  { id: "food", name: "음식점", color: "#d8974f", iconSrc: "/category-icons/category_ui_restaurant_v02_규격통일.png" },
-  { id: "cafe", name: "카페", color: "#b7835b", iconSrc: "/category-icons/category_ui_cafe_v02_규격통일.png" },
-  { id: "shop", name: "소품샵", color: "#9a6dae", iconSrc: "/category-icons/category_ui_goods_shop_v02_규격통일.png" },
-  { id: "convenience", name: "편의시설", color: "#60958f", iconSrc: "/category-icons/category_ui_amenities_v01_규격통일.png" },
+  { id: "culture", name: "문화공간", color: "#4d9a91", iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_ui-96px.png" },
+  { id: "food", name: "음식점", color: "#d8974f", iconSrc: "/category-icons/category_ui_restaurant_v02_ui-96px.png" },
+  { id: "cafe", name: "카페", color: "#b7835b", iconSrc: "/category-icons/category_ui_cafe_v03_ui-96px.png" },
+  { id: "shop", name: "소품샵", color: "#9a6dae", iconSrc: "/category-icons/category_ui_goods_shop_v03_ui-96px.png" },
+  { id: "convenience", name: "편의시설", color: "#60958f", iconSrc: "/category-icons/category_ui_amenities_v01_ui-96px.png" },
 ] as const;
 
 type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "shop" | "convenience";

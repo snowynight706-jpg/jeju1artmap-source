@@ -27,6 +27,7 @@ test("LPP gets three activity categories and remains searchable by aliases", () 
 test("communication center uses the dedicated A-02 final-review landmark in stored public layouts", () => {
   assert.match(assetSource, /jeju-communication-center-a02/);
   assert.match(assetSource, /"A-02 외곽선보강 최종"/);
+  assert.match(assetSource, /"20260812-091129"/);
   assert.match(assetSource, /"1n1G-0HbAOv9FavuBo54SdxDZWY276b3j"/);
   assert.match(pageSource, /MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02"/);
   assert.match(pageSource, /category: "landmark" as const,[\s\S]{0,420}assetId: MAIN_HUB_LANDMARK_ASSET_ID/);

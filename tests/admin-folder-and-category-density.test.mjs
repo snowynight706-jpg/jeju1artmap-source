@@ -47,11 +47,11 @@ test("public category controls use five compact buttons while place rows stay sl
   }
   assert.doesNotMatch(categoryBlock, /id: "all"|id: "exhibition-performance"/);
   for (const resource of [
-    "category_ui_culture_book_brush_note_v03_규격통일.png",
-    "category_ui_restaurant_v02_규격통일.png",
-    "category_ui_cafe_v02_규격통일.png",
-    "category_ui_goods_shop_v02_규격통일.png",
-    "category_ui_amenities_v01_규격통일.png",
+    "category_ui_culture_book_brush_note_v03_ui-96px.png",
+    "category_ui_restaurant_v02_ui-96px.png",
+    "category_ui_cafe_v03_ui-96px.png",
+    "category_ui_goods_shop_v03_ui-96px.png",
+    "category_ui_amenities_v01_ui-96px.png",
   ]) {
     assert.match(categoryBlock, new RegExp(`/category-icons/${resource.replace(".", "\\.")}`));
   }
@@ -62,6 +62,8 @@ test("public category controls use five compact buttons while place rows stay sl
   assert.match(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*height: 1px[^}]*background: #dce5e2/);
   assert.doesNotMatch(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*repeating-linear-gradient/);
   assert.match(cssSource, /\.public-place-list article \{[^}]*min-height: 44px/);
+  assert.match(cssSource, /\.global-story-panel-scroll \{[^}]*scrollbar-gutter: stable/);
+  assert.match(cssSource, /\.global-story-panel \{[^}]*min-width: min\(410px, calc\(100vw - 36px\)\)[^}]*max-width: min\(410px, calc\(100vw - 36px\)\)/);
   assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
   assert.match(pageSource, /if \(primary === "shop"\) return "shop";/);
   assert.match(pageSource, /return "convenience";/);

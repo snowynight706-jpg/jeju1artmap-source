@@ -9,18 +9,18 @@ export type BundledLandmarkAsset = {
 };
 
 const drive = (id: string) => `https://drive.google.com/file/d/${id}/view?usp=drivesdk`;
-const asset = (id: string, name: string, placeName: string, sourceId: string, status: "approved" | "review" = "review"): BundledLandmarkAsset => ({
+const asset = (id: string, name: string, placeName: string, sourceId: string, status: "approved" | "review" = "review", revision?: string): BundledLandmarkAsset => ({
   id,
   name,
   placeName,
   status,
-  src: `/landmarks-hq/${id}.webp`,
+  src: `/landmarks-hq/${id}.webp${revision ? `?v=${revision}` : ""}`,
   fileName: `${id}.webp`,
   sourceUrl: drive(sourceId),
 });
 
 export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
-  asset("jeju-communication-center-a02", "A-02 외곽선보강 최종", "제주시소통협력센터", "1n1G-0HbAOv9FavuBo54SdxDZWY276b3j", "approved"),
+  asset("jeju-communication-center-a02", "A-02 외곽선보강 최종", "제주시소통협력센터", "1n1G-0HbAOv9FavuBo54SdxDZWY276b3j", "approved", "20260812-091129"),
   asset("jeju-art-platform-c01", "C-01", "제주아트플랫폼", "1wtaceoB3q7UL9KUfwkLu-6SjT52zLW-j", "approved"),
   asset("jeju-art-platform-a01", "A-01", "제주아트플랫폼", "15pl0qSHrJEMqcKHaR9lr9k0lA-BJKaJz"),
   asset("jeju-art-platform-a02", "A-02", "제주아트플랫폼", "1hUxtGB9PSRNjNMoAtHdEaEz4vJ2YWEp5"),
