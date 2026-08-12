@@ -46,24 +46,36 @@ test("public category controls use five compact buttons while place rows stay sl
     assert.match(categoryBlock, new RegExp(`id: "${id}", name: "${name}"`));
   }
   assert.doesNotMatch(categoryBlock, /id: "all"|id: "exhibition-performance"/);
-  for (const resource of ["cultural-facility.svg", "restaurant.svg", "cafe.svg", "goods-shop.svg", "convenience.png"]) {
+  for (const resource of [
+    "category_ui_culture_book_brush_note_v03_규격통일.png",
+    "category_ui_restaurant_v02_규격통일.png",
+    "category_ui_cafe_v02_규격통일.png",
+    "category_ui_goods_shop_v02_규격통일.png",
+    "category_ui_amenities_v01_규격통일.png",
+  ]) {
     assert.match(categoryBlock, new RegExp(`/category-icons/${resource.replace(".", "\\.")}`));
   }
   assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 36px[^}]*border-radius: 9px/);
   assert.doesNotMatch(cssSource, /\.public-place-category-chips button:not\(:last-child\)::after/);
   assert.match(cssSource, /\.public-place-list \{[^}]*gap: 0/);
-  assert.match(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*repeating-linear-gradient/);
-  assert.match(cssSource, /\.public-place-focus \{[^}]*min-height: 44px/);
+  assert.match(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*height: 1px[^}]*background: #dce5e2/);
+  assert.doesNotMatch(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*repeating-linear-gradient/);
+  assert.match(cssSource, /\.public-place-list article \{[^}]*min-height: 44px/);
   assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
   assert.match(pageSource, /if \(primary === "shop"\) return "shop";/);
   assert.match(pageSource, /return "convenience";/);
 });
 
-test("public place rows align district and category metadata to the right of the name", () => {
-  assert.match(pageSource, /className="public-place-title-row"/);
-  assert.match(pageSource, /className="public-place-meta"/);
-  assert.match(pageSource, /\{item\.place\.area \|\| "권역 미입력"\}[\s\S]{0,80}\{meta\.name\}/);
-  assert.match(cssSource, /\.public-place-title-row \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto/);
-  assert.match(cssSource, /\.public-place-meta \{[^}]*justify-items: end/);
+test("public place rows use the five requested columns without a district field", () => {
+  const explorerBlock = pageSource.match(/<section className="public-place-explorer">[\s\S]*?<\/section> : globalContentTab/)?.[0] ?? "";
+  assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,80}>지도보기<[\s\S]{0,80}>상세</);
+  assert.match(explorerBlock, /className="public-place-identity"/);
+  assert.match(explorerBlock, /className="public-place-primary-category"[\s\S]{0,100}\{meta\.name\}/);
+  assert.match(explorerBlock, /className="public-place-additional-category"/);
+  assert.match(explorerBlock, /className="public-place-map-action"[\s\S]{0,160}>지도보기<\/button>/);
+  assert.match(explorerBlock, /className="public-place-detail-action"[\s\S]{0,160}>상세<\/button>/);
+  assert.doesNotMatch(explorerBlock, /item\.place\.area|권역 미입력|public-place-meta/);
+  assert.match(cssSource, /\.public-place-list-header \{[^}]*grid-template-columns: minmax\(118px, 1\.65fr\) 52px minmax\(62px, \.85fr\) 50px 40px/);
+  assert.match(cssSource, /\.public-place-list article \{[^}]*grid-template-columns: minmax\(118px, 1\.65fr\) 52px minmax\(62px, \.85fr\) 50px 40px/);
 });

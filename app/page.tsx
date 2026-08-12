@@ -106,11 +106,11 @@ const publicListCategories: ReadonlyArray<{
   color: string;
   iconSrc: string;
 }> = [
-  { id: "culture", name: "문화공간", color: "#4d9a91", iconSrc: "/category-icons/cultural-facility.svg" },
-  { id: "food", name: "음식점", color: "#d8974f", iconSrc: "/category-icons/restaurant.svg" },
-  { id: "cafe", name: "카페", color: "#b7835b", iconSrc: "/category-icons/cafe.svg" },
-  { id: "shop", name: "소품샵", color: "#9a6dae", iconSrc: "/category-icons/goods-shop.svg" },
-  { id: "convenience", name: "편의시설", color: "#60958f", iconSrc: "/category-icons/convenience.png" },
+  { id: "culture", name: "문화공간", color: "#4d9a91", iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_규격통일.png" },
+  { id: "food", name: "음식점", color: "#d8974f", iconSrc: "/category-icons/category_ui_restaurant_v02_규격통일.png" },
+  { id: "cafe", name: "카페", color: "#b7835b", iconSrc: "/category-icons/category_ui_cafe_v02_규격통일.png" },
+  { id: "shop", name: "소품샵", color: "#9a6dae", iconSrc: "/category-icons/category_ui_goods_shop_v02_규격통일.png" },
+  { id: "convenience", name: "편의시설", color: "#60958f", iconSrc: "/category-icons/category_ui_amenities_v01_규격통일.png" },
 ] as const;
 
 type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "shop" | "convenience";
@@ -7521,8 +7521,9 @@ export default function Home() {
           </div>
           <div className="global-story-panel-scroll" aria-live="polite">
             {globalContentTab === "places" ? <section className="public-place-explorer">
-              <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
+              <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
               <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><img src={category.iconSrc} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
+              <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span>지도보기</span><span>상세</span></div>
               <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "문화공간"} 목록`}>
                 {filteredPublicPlaceItems.map((item) => {
                   const meta = publicCategoryMetaForPlace(item.place, item.anchor);
@@ -7532,17 +7533,13 @@ export default function Home() {
                     .slice(0, 2)
                     .map((definition) => definition.name);
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
-                    <button type="button" className="public-place-focus" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>
+                    <span className="public-place-identity">
                       <span className={`public-place-symbol ${item.isMainHub ? "main-hub" : "category-resource"}`} style={item.isMainHub ? { background: MAIN_HUB_PUBLIC_COLOR } : undefined}>{item.isMainHub ? "▼" : <img src={meta.iconSrc} alt="" aria-hidden="true" />}</span>
-                      <span className="public-place-copy">
-                        <span className="public-place-title-row">
-                          <strong>{item.displayName}</strong>
-                          <span className="public-place-meta" title={`${item.place.area || "권역 미입력"} / ${meta.name}`}><small>{item.place.area || "권역 미입력"}</small><b>{meta.name}</b></span>
-                        </span>
-                        {(item.place.locationGroupId || tagNames.length > 0) && <span className="public-place-tags">{item.place.locationGroupId && <em>제주아트플랫폼 건물</em>}{tagNames.map((tag) => <em key={tag}>{tag}</em>)}</span>}
-                      </span>
-                      <span className="public-place-map-action">지도 보기</span>
-                    </button>
+                      <strong title={item.displayName}>{item.displayName}</strong>
+                    </span>
+                    <span className="public-place-primary-category" title={meta.name}>{meta.name}</span>
+                    <span className="public-place-additional-category" title={tagNames.length ? tagNames.join(" · ") : "추가분류 없음"}>{tagNames.length ? tagNames.join(" · ") : "—"}</span>
+                    <button type="button" className="public-place-map-action" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>지도보기</button>
                     <button type="button" className="public-place-detail-action" onClick={() => focusPublicPlaceItem(item, true)}>상세</button>
                   </article>;
                 })}
