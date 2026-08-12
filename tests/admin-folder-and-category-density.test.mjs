@@ -34,8 +34,18 @@ test("left admin panels are grouped into collapsible functional folders", () => 
   }
 });
 
-test("public category controls use compact two-row chips", () => {
-  assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-rows: repeat\(2, 28px\)/);
-  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*min-height: 28px/);
-  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*padding: 0 5px/);
+test("public category controls use one slim four-column list", () => {
+  const categoryBlock = pageSource.match(/const publicListCategories:[\s\S]*?\] as const;/)?.[0] ?? "";
+  for (const [id, name] of [
+    ["culture", "문화공간"],
+    ["food", "음식점"],
+    ["cafe", "카페"],
+    ["convenience", "편의시설"],
+  ]) {
+    assert.match(categoryBlock, new RegExp(`id: "${id}", name: "${name}"`));
+  }
+  assert.doesNotMatch(categoryBlock, /id: "all"|id: "shop"|id: "exhibition-performance"/);
+  assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 30px/);
+  assert.match(pageSource, /return "convenience";/);
 });

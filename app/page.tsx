@@ -45,13 +45,11 @@ import {
   isPrimaryPublicCategory,
   mergeDirectoryMetadata,
   normalizeDirectoryCategory,
-  publicCategoriesForAdditionalCategories,
   publicDisplayName,
   sanitizeAdditionalCategories,
   sanitizeConvenienceAttributes,
   type AdditionalCategoryId,
   type ConvenienceAttributeId,
-  type PublicListCategoryId,
 } from "./place-taxonomy";
 
 const MAP_ASPECT = 8944 / 7324;
@@ -103,27 +101,17 @@ const categories = [
 ] as const;
 
 const publicListCategories: ReadonlyArray<{
-  id: "all" | PublicListCategoryId;
+  id: PublicPlaceCategoryFilter;
   name: string;
-  shortName: string;
   color: string;
-  glyph: string;
 }> = [
-  { id: "all", name: "전체 장소", shortName: "전체", color: "#61756f", glyph: "全" },
-  { id: "culture", name: "문화공간", shortName: "문화", color: "#4d9a91", glyph: "文" },
-  { id: "cafe", name: "카페", shortName: "카페", color: "#b7835b", glyph: "珈" },
-  { id: "food", name: "음식점", shortName: "음식", color: "#d8974f", glyph: "食" },
-  { id: "shop", name: "소품샵", shortName: "소품샵", color: "#9a6dae", glyph: "物" },
-  { id: "exhibition-performance", name: "전시·공연", shortName: "전시·공연", color: "#5a84a8", glyph: "展" },
-  { id: "multi-cultural", name: "복합문화", shortName: "복합문화", color: "#6f73ad", glyph: "複" },
-  { id: "creative-startup", name: "창작·창업", shortName: "창작·창업", color: "#4b8e78", glyph: "創" },
-  { id: "event-rental", name: "행사·대관", shortName: "행사·대관", color: "#bb765b", glyph: "會" },
-  { id: "experience-education", name: "체험·교육", shortName: "체험·교육", color: "#b88b42", glyph: "學" },
-  { id: "local-goods", name: "소품·로컬상품", shortName: "로컬상품", color: "#9a6dae", glyph: "品" },
-  { id: "walk-rest", name: "산책·휴식", shortName: "산책·휴식", color: "#69a56d", glyph: "休" },
+  { id: "culture", name: "문화공간", color: "#4d9a91" },
+  { id: "food", name: "음식점", color: "#d8974f" },
+  { id: "cafe", name: "카페", color: "#b7835b" },
+  { id: "convenience", name: "편의시설", color: "#71838f" },
 ] as const;
 
-type PublicPlaceCategoryFilter = (typeof publicListCategories)[number]["id"];
+type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "convenience";
 
 type CategoryId = (typeof categories)[number]["id"];
 type AssetStatus = "approved" | "review" | "unchecked";
@@ -250,7 +238,7 @@ type PublicPlaceListItem = {
   place: DirectoryPlace;
   anchor: MapElement;
   displayName: string;
-  categoryIds: PublicListCategoryId[];
+  categoryId: PublicPlaceCategoryFilter;
   isMainHub: boolean;
 };
 
@@ -1084,20 +1072,23 @@ function mapCategoryForDirectoryPlace(place: Pick<DirectoryPlace, "name" | "cate
     : place.category;
 }
 
-function publicCategoryIdsForPlace(place: DirectoryPlace, anchor: MapElement): PublicListCategoryId[] {
-  const ids = new Set<PublicListCategoryId>(publicCategoriesForAdditionalCategories(place.additionalCategories));
+function publicCategoryIdForPlace(place: DirectoryPlace, anchor: MapElement): PublicPlaceCategoryFilter {
   const primary = place.category === "landmark" ? anchor.category : place.category;
-  if (primary === "culture" || primary === "cafe" || primary === "food" || primary === "shop") ids.add(primary);
-  if (place.featuredRole === MAIN_HUB_ROLE || isPrimaryHubLabel(place.name)) ids.add("culture");
-  return publicListCategories.flatMap((category): PublicListCategoryId[] => (
-    category.id !== "all" && ids.has(category.id) ? [category.id] : []
-  ));
+  if (
+    primary === "culture"
+    || primary === "landmark"
+    || isCoreLandmarkName(place.name)
+    || place.featuredRole === MAIN_HUB_ROLE
+    || isPrimaryHubLabel(place.name)
+  ) return "culture";
+  if (primary === "food") return "food";
+  if (primary === "cafe") return "cafe";
+  return "convenience";
 }
 
 function publicCategoryMetaForPlace(place: DirectoryPlace, anchor: MapElement) {
-  const first = publicCategoryIdsForPlace(place, anchor)[0];
-  return publicListCategories.find((category) => category.id === first)
-    ?? publicListCategories.find((category) => category.id === "culture")!;
+  const id = publicCategoryIdForPlace(place, anchor);
+  return publicListCategories.find((category) => category.id === id) ?? publicListCategories[0];
 }
 
 function isPrimaryHubLabel(name: string) {
@@ -2200,7 +2191,7 @@ export default function Home() {
   const [publicPanelExpanded, setPublicPanelExpanded] = useState(false);
   const [publicPlaceExpanded, setPublicPlaceExpanded] = useState(false);
   const [publicPlaceQuery, setPublicPlaceQuery] = useState("");
-  const [publicPlaceCategory, setPublicPlaceCategory] = useState<PublicPlaceCategoryFilter>("all");
+  const [publicPlaceCategory, setPublicPlaceCategory] = useState<PublicPlaceCategoryFilter>("culture");
   const [mapFocusAnimating, setMapFocusAnimating] = useState(false);
   const [globalStories, setGlobalStories] = useState<PlaceStory[]>([]);
   const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
@@ -3029,7 +3020,7 @@ export default function Home() {
           place,
           anchor,
           displayName: publicDisplayName(place.name, place.featuredRole),
-          categoryIds: publicCategoryIdsForPlace(place, anchor),
+          categoryId: publicCategoryIdForPlace(place, anchor),
           isMainHub,
         });
       });
@@ -3042,18 +3033,14 @@ export default function Home() {
   }, [directoryPlaces, visibleElements]);
 
   const publicPlaceCategoryCounts = useMemo(() => publicListCategories.reduce<Record<PublicPlaceCategoryFilter, number>>((counts, category) => {
-    counts[category.id] = category.id === "all"
-      ? publicPlaceItems.length
-      : publicPlaceItems.filter((item) => item.categoryIds.includes(category.id)).length;
+    counts[category.id] = publicPlaceItems.filter((item) => item.categoryId === category.id).length;
     return counts;
   }, Object.fromEntries(publicListCategories.map((category) => [category.id, 0])) as Record<PublicPlaceCategoryFilter, number>), [publicPlaceItems]);
 
   const filteredPublicPlaceItems = useMemo(() => {
     const query = publicPlaceQuery.trim().toLocaleLowerCase("ko-KR");
     return publicPlaceItems.filter((item) => {
-      const categoryMatch = publicPlaceCategory === "all"
-        || item.categoryIds.includes(publicPlaceCategory);
-      if (!categoryMatch) return false;
+      if (item.categoryId !== publicPlaceCategory) return false;
       if (!query) return true;
       const tags = additionalCategoryDefinitions
         .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
@@ -4177,10 +4164,10 @@ export default function Home() {
       viewportDimensions.height / stageDimensions.height,
     );
     const targetZoom = compact
-      ? clamp(Math.max(fitZoom * 2.05, viewportFillZoom * 1.12), fitZoom, 1.2)
+      ? clamp(Math.max(fitZoom * 2.35, viewportFillZoom * 1.28), fitZoom, 1.38)
       : clamp(Math.max(fitZoom * 1.32, viewportFillZoom * 1.02), fitZoom, 1.32);
     const desiredScreen = compact
-      ? { x: viewportDimensions.width * 0.5, y: viewportDimensions.height * 0.42 }
+      ? { x: viewportDimensions.width * 0.5, y: viewportDimensions.height * 0.48 }
       : { x: viewportDimensions.width * 0.52, y: viewportDimensions.height * 0.48 };
     const rawPan = {
       x: desiredScreen.x - viewportDimensions.width / 2
@@ -6888,7 +6875,7 @@ export default function Home() {
   return (
     <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""}`}>
       {publicLayoutAccess === "editor" ? <header className="topbar">
-        <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div></div>
+        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div></div>
         <div className="toolbar-group draft-tools">
           <span className={editorSyncClass} title={editorDraftUpdatedAt ? `서버 초안 ${editorDraftRevision}번` : "아직 저장된 서버 초안이 없습니다."}>{editorDraftUpdatedAt ? `초안 ${editorDraftRevision}` : "서버 초안"}</span>
           <button className="draft-save" disabled={editorDraftSaving} onClick={() => void saveEditorDraft()}>{editorDraftSaving ? "저장 중…" : "초안 저장"}</button>
@@ -6908,7 +6895,7 @@ export default function Home() {
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button><button disabled={!publicLayoutPublishedAt || publicLayoutPublishing} onClick={loadPublishedLayoutIntoDraft}>공개본 불러오기</button><button disabled={!publicLayoutHasPrevious || publicLayoutPublishing} onClick={() => void restorePreviousPublicLayout()}>이전 공개본</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
-        <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
+        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
@@ -7431,8 +7418,8 @@ export default function Home() {
           <div className="global-story-panel-scroll" aria-live="polite">
             {globalContentTab === "places" ? <section className="public-place-explorer">
               <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
-              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.filter((category) => category.id === "all" || publicPlaceCategoryCounts[category.id] > 0).map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><i>{category.glyph}</i><span>{category.shortName}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
-              <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "전체 장소"} 목록`}>
+              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
+              <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "문화공간"} 목록`}>
                 {filteredPublicPlaceItems.map((item) => {
                   const meta = publicCategoryMetaForPlace(item.place, item.anchor);
                   const selectedItem = selectedId === item.anchor.id && selectedDirectoryPlace?.id === item.place.id;
@@ -7573,7 +7560,7 @@ export default function Home() {
                   <header><div><strong>추가분류 · 최대 3개</strong><span>업종이 아니라 이 장소에서 할 수 있는 활동과 부가 기능을 선택합니다.</span></div><em>{sanitizeAdditionalCategories(selectedDatabasePlace.additionalCategories).length}/3 선택</em></header>
                   <div>{additionalCategoryDefinitions.map((definition) => {
                     const checked = sanitizeAdditionalCategories(selectedDatabasePlace.additionalCategories).includes(definition.id);
-                    return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} onChange={() => toggleDatabaseAdditionalCategory(selectedDatabasePlace.id, definition.id)} /><span><b>{definition.name}</b><small>{definition.publicCategories.map((categoryId) => publicListCategories.find((item) => item.id === categoryId)?.name ?? categoryId).join(" · ")} 목록</small></span></label>;
+                    return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} onChange={() => toggleDatabaseAdditionalCategory(selectedDatabasePlace.id, definition.id)} /><span><b>{definition.name}</b><small>공개 상세 태그</small></span></label>;
                   })}</div>
                   {(selectedDatabasePlace.locationGroupId || selectedDatabasePlace.featuredRole) && <p>{selectedDatabasePlace.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : "동일 건물 시설 묶음"}{selectedDatabasePlace.locationGroupId ? ` · ${selectedDatabasePlace.locationGroupId}` : ""}</p>}
                 </section>

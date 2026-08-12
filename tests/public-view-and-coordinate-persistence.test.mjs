@@ -14,9 +14,17 @@ test("a partial coordinate snapshot never clears a lock stored in the layout", (
 test("public viewers start focused and zoomed on the main hub on desktop and mobile", () => {
   assert.match(pageSource, /const publicInitialViewAppliedRef = useRef\(false\)/);
   assert.match(pageSource, /const compact = viewportDimensions\.width <= 760/);
-  assert.match(pageSource, /fitZoom \* 2\.05, viewportFillZoom \* 1\.12/);
+  assert.match(pageSource, /fitZoom \* 2\.35, viewportFillZoom \* 1\.28/);
   assert.match(pageSource, /fitZoom \* 1\.32, viewportFillZoom \* 1\.02/);
   assert.match(pageSource, /elements\.find\(\(element\) => isPrimaryHubLabel\(element\.name\) && element\.mapVisible\)/);
+});
+
+test("mobile public chrome floats only the main-hub return button", () => {
+  assert.match(pageSource, /<img src="\/jfac-symbol\.png" alt="" aria-hidden="true" \/>/);
+  assert.doesNotMatch(pageSource, /<div className="brand-mark">W<\/div>/);
+  assert.match(cssSource, /\.public-topbar \{[^}]*position: absolute;[^}]*right: 9px;[^}]*background: transparent/);
+  assert.match(cssSource, /\.public-topbar \.brand-block, \.public-topbar \.zoom-tools, \.public-topbar \.readonly-badge, \.public-topbar \.owner-signin \{ display: none; \}/);
+  assert.match(pageSource, /className="main-hub-quick"/);
 });
 
 test("the public main-hub pointer is a fixed-size smooth red down marker", () => {
@@ -27,7 +35,7 @@ test("the public main-hub pointer is a fixed-size smooth red down marker", () =>
 
 test("main hub is folded into culture instead of having a separate list filter", () => {
   assert.doesNotMatch(pageSource, /\{ id: "hub", name: "워크케이션 거점"/);
-  assert.match(pageSource, /isPrimaryHubLabel\(place\.name\)\) ids\.add\("culture"\)/);
+  assert.match(pageSource, /place\.featuredRole === MAIN_HUB_ROLE\s*\|\| isPrimaryHubLabel\(place\.name\)\s*\) return "culture";/);
   assert.match(pageSource, /Number\(b\.isMainHub\) - Number\(a\.isMainHub\)/);
   assert.match(pageSource, /background: item\.isMainHub \? MAIN_HUB_PUBLIC_COLOR : meta\.color/);
 });
