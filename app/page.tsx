@@ -26,6 +26,11 @@ import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import {
+  isMainHubPersistenceTarget,
+  stableMainHubResourceSize,
+  withoutMainHubPlacementOverrides,
+} from "./main-hub-persistence.mjs";
+import {
   ART_PLATFORM_FACILITY_NAMES,
   ART_PLATFORM_GROUP_ID,
   LPP_CANONICAL_NAME,
@@ -1671,7 +1676,7 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
     sourceLabel: "시스템 메인 거점 폴백 · DB 좌표 우선",
     featuredRole: MAIN_HUB_ROLE,
   });
-  const existingHub = elements.find((element) => isPrimaryHubLabel(element.name));
+  const existingHub = elements.find((element) => isPrimaryHubLabel(element.name) || isMainHubPersistenceTarget(element));
   if (existingHub) {
     const migrateLegacyPresentation = existingHub.memo === LEGACY_MAIN_HUB_MEMO;
     return elements.map((element) => element.id === existingHub.id ? {
@@ -1679,7 +1684,7 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
       directoryId: hubPlace.id,
       name: MAIN_HUB_CANONICAL_NAME,
       category: "landmark" as const,
-      size: migrateLegacyPresentation ? LANDMARK_RESOURCE_SIZE : element.size,
+      size: stableMainHubResourceSize(element.size),
       labelVisible: true,
       labelLocked: migrateLegacyPresentation ? false : element.labelLocked,
       labelPosition: migrateLegacyPresentation ? "bottom" as const : element.labelPosition,
@@ -1688,6 +1693,7 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
       labelOffsetY: migrateLegacyPresentation ? 0 : element.labelOffsetY,
       assetId: MAIN_HUB_LANDMARK_ASSET_ID,
       status: "approved" as const,
+      mapVisible: true,
       address: hubPlace.address,
       addressSourceUrl: hubPlace.sourceUrl ?? "https://www.jejusotong.kr/",
       memo: STANDARD_MAIN_HUB_MEMO,
@@ -1852,7 +1858,9 @@ function sanitizePlacementOverrides(value: unknown): PlacementOverride[] {
       : undefined;
     return [{ key, ...(directoryId ? { directoryId } : {}), name, state: candidate.state }];
   });
-  return [...new Map(normalized.map((item) => [item.key, item])).values()].sort((a, b) => a.key.localeCompare(b.key));
+  return withoutMainHubPlacementOverrides(
+    [...new Map(normalized.map((item) => [item.key, item])).values()],
+  ).sort((a, b) => a.key.localeCompare(b.key));
 }
 
 function applyPlacementOverrides(elements: MapElement[], overrides: PlacementOverride[], authoritative = false) {
@@ -2434,6 +2442,7 @@ export default function Home() {
     const directoryId = "anchorX" in target ? target.directoryId : target.id;
     replacePlacementOverrides((current) => {
       const remaining = current.filter((item) => item.key !== key);
+      if (state && isMainHubPersistenceTarget(target)) return remaining;
       return state ? [...remaining, {
         key,
         ...(directoryId ? { directoryId } : {}),
@@ -3989,7 +3998,10 @@ export default function Home() {
         if (shouldRestoreRemote) {
           placementOverridesRef.current = remoteSettings;
           setPlacementOverrides(remoteSettings);
-          replaceElements((current) => applyPlacementOverrides(current, remoteSettings, true));
+          replaceElements((current) => ensureMainHubMapElement(
+            applyPlacementOverrides(current, remoteSettings, true),
+            placesRef.current,
+          ));
           localPlacementUpdatedAtRef.current = remoteUpdatedAt;
           try {
             localStorage.setItem(PLACEMENT_SETTINGS_KEY, JSON.stringify({ settings: remoteSettings, updatedAt: payload!.updatedAt }));
@@ -4831,6 +4843,12 @@ export default function Home() {
   };
 
   const toggleElementMapVisibility = (element: MapElement, visible: boolean) => {
+    if (!visible && isMainHubPersistenceTarget(element)) {
+      setPlacementOverride(element, null);
+      updateElement(element.id, { mapVisible: true });
+      setToast("제주소통협력센터는 주요 거점이므로 지도에서 미배치할 수 없습니다.");
+      return;
+    }
     setPlacementOverride(element, visible ? null : "unplaced");
     updateElement(element.id, { mapVisible: visible });
     setToast(`${element.name} 마커를 ${visible ? "배치" : "미배치"} 상태로 변경했습니다.`);
@@ -5496,6 +5514,12 @@ export default function Home() {
 
   const deleteSelected = () => {
     if (!selected || selected.locked) return;
+    if (isMainHubPersistenceTarget(selected)) {
+      setPlacementOverride(selected, null);
+      updateElement(selected.id, { mapVisible: true });
+      setToast("제주소통협력센터는 주요 거점이므로 지도에서 삭제할 수 없습니다.");
+      return;
+    }
     pushHistory();
     setPlacementOverride(selected, "deleted");
     replaceElements((current) => current.filter((item) => item.id !== selected.id));
@@ -7166,7 +7190,7 @@ export default function Home() {
             <section><div className="section-title"><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : selected.locked ? "좌표 고정됨" : "직접 편집"}</span></div>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 움직이지 않으며 가까운 미고정 장소의 대략적 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></section>
             <section><div className="section-title"><strong>연결선</strong><label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></div><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></section>
             <section><div className="section-title"><strong>라벨</strong><div className="section-title-actions"><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></div></div>{selected.category !== "landmark" && <label className="dense-label-eligibility"><input type="checkbox" checked={!denseLabelExcludedIds.includes(selected.id)} onChange={(event) => setDenseLabelEligibility(selected.id, event.target.checked)} /><span><b>밀집 시 통합 라벨 사용</b><small>끄면 이 장소명은 항상 자기 마커 옆에 개별 표시됩니다.</small></span></label>}<div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><p className="field-help">맞춤 화면에서 정한 위치를 기준으로 하며, 확대할수록 화면상 간격을 유지하면서 마커의 중앙 하단 또는 상단으로 자동 정렬됩니다. 전체 라벨 정리는 왼쪽 ‘지도 전체 조절’에서 한 번에 실행합니다.</p></section>
-            <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked} onClick={deleteSelected}>삭제</button></div></section>
+            <section><div className="section-title"><strong>빠른 작업</strong></div><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button disabled={isMainHubPersistenceTarget(selected)} onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked || isMainHubPersistenceTarget(selected)} onClick={deleteSelected}>삭제</button></div></section>
           </div>}
         </aside>}
       </section>

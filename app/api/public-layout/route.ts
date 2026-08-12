@@ -1,6 +1,7 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 import { contentSummaryFromBatchResults } from "../../content-summary.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
+import { stabilizeMainHubDocument } from "../../main-hub-persistence.mjs";
 
 export const runtime = "edge";
 
@@ -186,7 +187,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
 }
 
 function parseStored(row: StoredLayout, canEdit: boolean) {
-  const storedDocument = JSON.parse(row.documentJson) as unknown;
+  const storedDocument = stabilizeMainHubDocument(JSON.parse(row.documentJson) as unknown);
   const completed = completeReviewStatuses(storedDocument);
   return {
     document: canEdit ? completed.document : publicDocument(completed.document),
@@ -200,7 +201,7 @@ function parseStored(row: StoredLayout, canEdit: boolean) {
 
 function parseDraft(row: StoredDraft) {
   return {
-    document: JSON.parse(row.documentJson) as unknown,
+    document: stabilizeMainHubDocument(JSON.parse(row.documentJson) as unknown),
     view: normalizeViewSettings(JSON.parse(row.viewSettingsJson)),
     updatedAt: row.updatedAt,
     revision: row.revision,
@@ -234,8 +235,9 @@ export async function PATCH(request: Request) {
   if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
 
   const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!payload || !validDocument(payload.document)) return json({ error: "valid draft document required" }, 400);
-  const documentJson = JSON.stringify(payload.document);
+  const stableDocument = payload ? stabilizeMainHubDocument(payload.document) : null;
+  if (!payload || !validDocument(stableDocument)) return json({ error: "valid draft document required" }, 400);
+  const documentJson = JSON.stringify(stableDocument);
   if (new TextEncoder().encode(documentJson).byteLength > MAX_DOCUMENT_BYTES) return json({ error: "draft document too large" }, 413);
   const viewSettingsJson = JSON.stringify(normalizeViewSettings(payload.view));
   const current = await readDraft(runtime.DB);
@@ -266,7 +268,7 @@ export async function PATCH(request: Request) {
     currentEmail,
     revision,
   ).run();
-  return json({ draft: { document: payload.document, view: normalizeViewSettings(payload.view), updatedAt, revision, hasPrevious: Boolean(current) }, canEdit: true, persistent: true });
+  return json({ draft: { document: stableDocument, view: normalizeViewSettings(payload.view), updatedAt, revision, hasPrevious: Boolean(current) }, canEdit: true, persistent: true });
 }
 
 export async function PUT(request: Request) {
@@ -281,11 +283,12 @@ export async function PUT(request: Request) {
   } catch {
     return json({ error: "invalid json" }, 400);
   }
-  if (!isRecord(payload) || !validDocument(payload.document)) return json({ error: "valid layout document required" }, 400);
-  if (hasUnapprovedPlaceRequestMarker(payload.document)) {
+  const stableDocument = isRecord(payload) ? stabilizeMainHubDocument(payload.document) : null;
+  if (!isRecord(payload) || !validDocument(stableDocument)) return json({ error: "valid layout document required" }, 400);
+  if (hasUnapprovedPlaceRequestMarker(stableDocument)) {
     return json({ error: "place request marker still under review" }, 422);
   }
-  const completed = completeReviewStatuses(payload.document);
+  const completed = completeReviewStatuses(stableDocument);
   const documentJson = JSON.stringify(completed.document);
   if (new TextEncoder().encode(documentJson).byteLength > MAX_DOCUMENT_BYTES) return json({ error: "layout document too large" }, 413);
   const viewSettingsJson = JSON.stringify(normalizeViewSettings(payload.view));
@@ -367,6 +370,8 @@ export async function POST(request: Request) {
     if (typeof payload.baseDraftRevision !== "number" || payload.baseDraftRevision !== currentDraft.revision) {
       return json({ error: "editor draft changed", updatedAt: currentDraft.updatedAt, draftRevision: currentDraft.revision }, 409);
     }
+    const restoredDraftDocument = stabilizeMainHubDocument(JSON.parse(currentDraft.previousDocumentJson) as unknown);
+    const restoredDraftDocumentJson = JSON.stringify(restoredDraftDocument);
     const updatedAt = new Date().toISOString();
     const revision = currentDraft.revision + 1;
     await runtime.DB.prepare(
@@ -376,7 +381,7 @@ export async function POST(request: Request) {
         updated_at = ?, updated_by = ?, revision = ?
        WHERE id = 1`,
     ).bind(
-      currentDraft.previousDocumentJson,
+      restoredDraftDocumentJson,
       currentDraft.previousViewSettingsJson,
       currentDraft.documentJson,
       currentDraft.viewSettingsJson,
@@ -385,7 +390,7 @@ export async function POST(request: Request) {
       revision,
     ).run();
     const restoredDraft: StoredDraft = {
-      documentJson: currentDraft.previousDocumentJson,
+      documentJson: restoredDraftDocumentJson,
       viewSettingsJson: currentDraft.previousViewSettingsJson,
       previousDocumentJson: currentDraft.documentJson,
       previousViewSettingsJson: currentDraft.viewSettingsJson,
@@ -400,7 +405,9 @@ export async function POST(request: Request) {
   if (typeof payload.baseRevision !== "number" || payload.baseRevision !== current.revision) {
     return json({ error: "public layout changed", publishedAt: current.publishedAt, revision: current.revision }, 409);
   }
-  const restoredCompleted = completeReviewStatuses(JSON.parse(current.previousDocumentJson) as unknown);
+  const restoredCompleted = completeReviewStatuses(
+    stabilizeMainHubDocument(JSON.parse(current.previousDocumentJson) as unknown),
+  );
   const restoredDocumentJson = JSON.stringify(restoredCompleted.document);
   const restoredViewSettingsJson = current.previousViewSettingsJson;
   const publishedAt = new Date().toISOString();

@@ -33,7 +33,7 @@ test("communication center uses the dedicated A-02 final-review landmark in stor
   assert.match(pageSource, /const ensuredMainHubElements = ensureMainHubMapElement/);
   assert.match(pageSource, /STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 외곽선보강 최종검수안 · 표준 랜드마크 이미지·라벨 처리"/);
   assert.match(pageSource, /Google Drive A-02 외곽선보강 최종검수안/);
-  assert.match(pageSource, /size: migrateLegacyPresentation \? LANDMARK_RESOURCE_SIZE : element\.size/);
+  assert.match(pageSource, /size: stableMainHubResourceSize\(element\.size\)/);
   assert.match(pageSource, /labelPosition: migrateLegacyPresentation \? "bottom" as const : element\.labelPosition/);
   assert.match(pageSource, /labelGap: migrateLegacyPresentation \? LANDMARK_LABEL_GAP : element\.labelGap/);
 });
