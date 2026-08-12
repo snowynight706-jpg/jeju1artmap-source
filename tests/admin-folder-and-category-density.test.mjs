@@ -34,7 +34,7 @@ test("left admin panels are grouped into collapsible functional folders", () => 
   }
 });
 
-test("public category controls use one slim four-column list", () => {
+test("public category controls use one extra-slim notebook-divided four-column list", () => {
   const categoryBlock = pageSource.match(/const publicListCategories:[\s\S]*?\] as const;/)?.[0] ?? "";
   for (const [id, name] of [
     ["culture", "문화공간"],
@@ -46,6 +46,15 @@ test("public category controls use one slim four-column list", () => {
   }
   assert.doesNotMatch(categoryBlock, /id: "all"|id: "shop"|id: "exhibition-performance"/);
   assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
-  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 30px/);
+  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 17px/);
+  assert.match(cssSource, /\.public-place-category-chips button:not\(:last-child\)::after \{[^}]*repeating-linear-gradient/);
   assert.match(pageSource, /return "convenience";/);
+});
+
+test("public place rows align district and category metadata to the right of the name", () => {
+  assert.match(pageSource, /className="public-place-title-row"/);
+  assert.match(pageSource, /className="public-place-meta"/);
+  assert.match(pageSource, /\{item\.place\.area \|\| "권역 미입력"\}[\s\S]{0,80}\{meta\.name\}/);
+  assert.match(cssSource, /\.public-place-title-row \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto/);
+  assert.match(cssSource, /\.public-place-meta \{[^}]*justify-items: end/);
 });

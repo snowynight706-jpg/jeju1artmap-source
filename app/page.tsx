@@ -2080,6 +2080,7 @@ export default function Home() {
     startPanY: number;
   } | null>(null);
   const publicInitialViewAppliedRef = useRef(false);
+  const startupLoadCompletedRef = useRef(false);
   const geocodeRunRef = useRef(0);
   const storyRequestRunRef = useRef(0);
   const eventRequestRunRef = useRef(0);
@@ -2289,6 +2290,9 @@ export default function Home() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [startupAssetsReady, setStartupAssetsReady] = useState(false);
+  const [startupLoadDone, setStartupLoadDone] = useState(0);
+  const [startupLoadTotal, setStartupLoadTotal] = useState(0);
   const [memoMode, setMemoMode] = useState(false);
   const [landmarkGroupSize, setLandmarkGroupSize] = useState(6.2);
   const [markerGroupSize, setMarkerGroupSize] = useState(1.7);
@@ -4095,6 +4099,57 @@ export default function Home() {
     const image = baseMapImgRef.current;
     if (image?.complete && image.naturalWidth > 0) setMapLoaded(true);
   }, [baseMap]);
+
+  useEffect(() => {
+    if (publicLayoutAccess === "loading" || !hydrated || startupLoadCompletedRef.current) return;
+    let cancelled = false;
+    const mapSource = baseMap === "svg"
+      ? MAP_SVG
+      : baseMap === "png"
+        ? MAP_PNG
+        : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
+    const sources = [...new Set([
+      "/jfac-symbol.png",
+      "/jfac-signature-c.png",
+      mapSource,
+      ...visibleElements.flatMap((element) => {
+        const asset = element.assetId ? assetsById.get(element.assetId) : undefined;
+        return asset?.src ? [asset.src] : [];
+      }),
+    ])];
+    setStartupLoadDone(0);
+    setStartupLoadTotal(sources.length);
+
+    const preload = (source: string) => new Promise<void>((resolve) => {
+      const image = new Image();
+      let finished = false;
+      let timeout = 0;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timeout);
+        if (!cancelled) setStartupLoadDone((current) => current + 1);
+        resolve();
+      };
+      timeout = window.setTimeout(finish, 15000);
+      image.decoding = "async";
+      image.onload = finish;
+      image.onerror = finish;
+      image.src = source;
+      if (image.complete) finish();
+    });
+
+    void Promise.all(sources.map(preload)).then(() => {
+      if (cancelled) return;
+      setMapLoaded(true);
+      window.requestAnimationFrame(() => {
+        if (cancelled) return;
+        startupLoadCompletedRef.current = true;
+        setStartupAssetsReady(true);
+      });
+    });
+    return () => { cancelled = true; };
+  }, [assetsById, baseMap, hydrated, publicLayoutAccess, uploadedBaseMap?.uploadedAt, visibleElements]);
 
   useEffect(() => {
     const stageWrap = stageWrapRef.current;
@@ -6868,8 +6923,20 @@ export default function Home() {
       ? "서버 동기화됨"
       : "기기 임시 저장";
 
-  if (publicLayoutAccess === "loading") {
-    return <main className="app-shell public-loading"><div><span /><strong>제주 원도심 지도</strong><p>공개 배치 상태를 확인하고 있습니다.</p></div></main>;
+  if (publicLayoutAccess === "loading" || !startupAssetsReady) {
+    const loadPercent = startupLoadTotal > 0 ? Math.round((startupLoadDone / startupLoadTotal) * 100) : 8;
+    return <main className="app-shell public-loading">
+      <section className="public-loading-card" aria-live="polite" aria-busy="true">
+        <img className="public-loading-symbol" src="/jfac-symbol.png" alt="" aria-hidden="true" />
+        <img className="public-loading-signature" src="/jfac-signature-c.png" alt="제주문화예술재단 Jeju Foundation for Arts and Culture" />
+        <span className="public-loading-rule" aria-hidden="true" />
+        <strong>제주 원도심 아트맵</strong>
+        <div className="public-loading-status"><span aria-hidden="true" /><b>로딩 중</b></div>
+        <p>{publicLayoutAccess === "loading" ? "공개 지도를 확인하고 있습니다." : "지도와 장소 자산을 준비하고 있습니다."}</p>
+        <div className="public-loading-track" aria-hidden="true"><span style={{ width: `${loadPercent}%` }} /></div>
+        <small>{startupLoadTotal > 0 ? `${Math.min(startupLoadDone, startupLoadTotal)} / ${startupLoadTotal}` : "연결 준비"}</small>
+      </section>
+    </main>;
   }
 
   return (
@@ -7430,7 +7497,13 @@ export default function Home() {
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
                     <button type="button" className="public-place-focus" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>
                       <span className="public-place-symbol" style={{ background: item.isMainHub ? MAIN_HUB_PUBLIC_COLOR : meta.color }}>{item.isMainHub ? "▼" : meta.glyph}</span>
-                      <span className="public-place-copy"><strong>{item.displayName}</strong><small>{item.place.area || categoryOf(item.anchor.category).name}{item.place.locationGroupId ? " · 제주아트플랫폼 건물" : ""}</small>{tagNames.length > 0 && <span>{tagNames.map((tag) => <em key={tag}>{tag}</em>)}</span>}</span>
+                      <span className="public-place-copy">
+                        <span className="public-place-title-row">
+                          <strong>{item.displayName}</strong>
+                          <span className="public-place-meta" title={`${item.place.area || "권역 미입력"} / ${meta.name}`}><small>{item.place.area || "권역 미입력"}</small><b>{meta.name}</b></span>
+                        </span>
+                        {(item.place.locationGroupId || tagNames.length > 0) && <span className="public-place-tags">{item.place.locationGroupId && <em>제주아트플랫폼 건물</em>}{tagNames.map((tag) => <em key={tag}>{tag}</em>)}</span>}
+                      </span>
                       <span className="public-place-map-action">지도 보기</span>
                     </button>
                     <button type="button" className="public-place-detail-action" onClick={() => focusPublicPlaceItem(item, true)}>상세</button>

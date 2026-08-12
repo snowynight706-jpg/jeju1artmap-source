@@ -5,6 +5,17 @@ import test from "node:test";
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
+test("the first screen stays branded until the map and visible assets are preloaded", () => {
+  assert.match(pageSource, /const startupLoadCompletedRef = useRef\(false\)/);
+  assert.match(pageSource, /visibleElements\.flatMap\(\(element\) =>/);
+  assert.match(pageSource, /Promise\.all\(sources\.map\(preload\)\)/);
+  assert.match(pageSource, /publicLayoutAccess === "loading" \|\| !startupAssetsReady/);
+  assert.match(pageSource, /src="\/jfac-symbol\.png"/);
+  assert.match(pageSource, /src="\/jfac-signature-c\.png"/);
+  assert.match(pageSource, />로딩 중</);
+  assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
+});
+
 test("a partial coordinate snapshot never clears a lock stored in the layout", () => {
   assert.match(pageSource, /if \(!setting\) return element;/);
   assert.doesNotMatch(pageSource, /if \(!setting\) return \{ \.\.\.element, locked: false \};/);
