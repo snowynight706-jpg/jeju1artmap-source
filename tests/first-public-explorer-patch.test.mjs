@@ -33,7 +33,7 @@ test("communication center is the persisted and visible workation main hub", () 
   assert.match(taxonomySource, /MAIN_HUB_CANONICAL_NAME = "제주시소통협력센터"/);
   assert.match(taxonomySource, /\? "제주소통협력센터"\s*:\s*name/);
   assert.match(pageSource, /publicElementName = isMainHub \? "제주소통협력센터" : element\.name/);
-  assert.match(pageSource, /className="main-hub-badge" aria-label="주요 거점">▼/);
+  assert.match(pageSource, /className="main-hub-badge" aria-label="주요 거점 ▼"><svg className="main-hub-pointer-icon"/);
   assert.match(pageSource, /item\.isMainHub \? "▼" : meta\.glyph/);
   assert.match(pageSource, /const initialElements: MapElement\[\] = ensureMainHubMapElement/);
   assert.match(metadataMigration, /featured_role` = 'workation-main-hub'/);
@@ -90,10 +90,13 @@ test("directory source sync binds one value for every insert column", () => {
   assert.equal(placeholders.length, columns.length);
 });
 
-test("mobile explorer and detail sheets preserve the map-first default", () => {
+test("mobile explorer opens large and folds to the map when a place is selected", () => {
   assert.match(pageSource, /장소 · 리뷰 · 행사/);
   assert.match(pageSource, /globalContentTab === "places"/);
   assert.match(cssSource, /global-story-panel\.public-explorer-panel[^}]+height: min\(38dvh, 360px\)/);
   assert.match(cssSource, /public-place-sheet[^}]+height: min\(34dvh, 310px\)/);
-  assert.match(cssSource, /public-place-sheet\.expanded[^}]+68dvh/);
+  assert.match(cssSource, /public-place-sheet\.expanded[^}]+100dvh - 96px/);
+  assert.match(cssSource, /global-story-panel\.public-explorer-panel\.expanded[^}]+100dvh - 96px/);
+  assert.match(pageSource, /setPublicPanelExpanded\(publicLayoutAccess === "viewer" && viewportDimensions\.width <= 760\)/);
+  assert.match(pageSource, /setPublicPlaceExpanded\(showDetails && viewportDimensions\.width <= 760\);\s*setGlobalStoriesOpen\(false\)/);
 });
