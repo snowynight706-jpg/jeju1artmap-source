@@ -34,7 +34,7 @@ test("left admin panels are grouped into collapsible functional folders", () => 
   }
 });
 
-test("public category controls use one extra-slim notebook-divided four-column list", () => {
+test("public category controls use four slim stacked notebook rows with approved resources", () => {
   const categoryBlock = pageSource.match(/const publicListCategories:[\s\S]*?\] as const;/)?.[0] ?? "";
   for (const [id, name] of [
     ["culture", "문화공간"],
@@ -45,9 +45,13 @@ test("public category controls use one extra-slim notebook-divided four-column l
     assert.match(categoryBlock, new RegExp(`id: "${id}", name: "${name}"`));
   }
   assert.doesNotMatch(categoryBlock, /id: "all"|id: "shop"|id: "exhibition-performance"/);
-  assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
-  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 17px/);
+  for (const resource of ["cultural-facility.svg", "restaurant.svg", "cafe.svg", "goods-shop.svg"]) {
+    assert.match(categoryBlock, new RegExp(`/category-icons/${resource.replace(".", "\\.")}`));
+  }
+  assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 22px/);
   assert.match(cssSource, /\.public-place-category-chips button:not\(:last-child\)::after \{[^}]*repeating-linear-gradient/);
+  assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
   assert.match(pageSource, /return "convenience";/);
 });
 

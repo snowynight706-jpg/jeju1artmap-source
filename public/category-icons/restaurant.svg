@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">음식점 카테고리 아이콘</title>
+  <g stroke="#3E3733" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="286" fill="#FFFDF8" stroke-width="54"/>
+    <circle cx="512" cy="512" r="196" fill="none" stroke="#C9C8C5" stroke-width="22"/>
+    <g fill="none">
+      <path d="M164 175v197c0 78 35 122 82 142v310" stroke-width="76"/>
+      <path d="M164 175v197c0 78 35 122 82 142v310" stroke="#D9DCDF" stroke-width="30"/>
+      <path d="M108 175v188M164 175v188M220 175v188" stroke-width="50"/>
+      <path d="M108 175v188M164 175v188M220 175v188" stroke="#D9DCDF" stroke-width="16"/>
+      <path d="M860 499v325" stroke-width="76"/>
+      <path d="M860 499v325" stroke="#D9DCDF" stroke-width="30"/>
+    </g>
+    <ellipse cx="860" cy="325" rx="83" ry="145" fill="#D9DCDF" stroke-width="54"/>
+    <path d="M512 488c-38-55-92-53-118-32 2 61 42 101 118 119 76-18 116-58 118-119-26-21-80-23-118 32Z" fill="#9AD7B5" stroke-width="34"/>
+    <path d="M512 488v87M468 509l44 42M556 509l-44 42" fill="none" stroke-width="22"/>
+  </g>
+</svg>

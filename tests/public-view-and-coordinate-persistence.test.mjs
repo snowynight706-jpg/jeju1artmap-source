@@ -5,13 +5,15 @@ import test from "node:test";
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("the first screen stays branded until the map and visible assets are preloaded", () => {
+test("the first screen keeps only symbol B until assets, initial focus, and settling are complete", () => {
   assert.match(pageSource, /const startupLoadCompletedRef = useRef\(false\)/);
   assert.match(pageSource, /visibleElements\.flatMap\(\(element\) =>/);
   assert.match(pageSource, /Promise\.all\(sources\.map\(preload\)\)/);
-  assert.match(pageSource, /publicLayoutAccess === "loading" \|\| !startupAssetsReady/);
-  assert.match(pageSource, /src="\/jfac-symbol\.png"/);
-  assert.match(pageSource, /src="\/jfac-signature-c\.png"/);
+  assert.match(pageSource, /const \[startupInitialViewReady, setStartupInitialViewReady\] = useState\(false\)/);
+  assert.match(pageSource, /setStartupRevealReady\(true\), 1600/);
+  assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
+  assert.match(pageSource, /src="\/jfac-symbol\.png" alt="제주문화예술재단 심볼 B"/);
+  assert.doesNotMatch(pageSource, /jfac-signature-c\.png/);
   assert.match(pageSource, />로딩 중</);
   assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
 });
@@ -48,7 +50,7 @@ test("main hub is folded into culture instead of having a separate list filter",
   assert.doesNotMatch(pageSource, /\{ id: "hub", name: "워크케이션 거점"/);
   assert.match(pageSource, /place\.featuredRole === MAIN_HUB_ROLE\s*\|\| isPrimaryHubLabel\(place\.name\)\s*\) return "culture";/);
   assert.match(pageSource, /Number\(b\.isMainHub\) - Number\(a\.isMainHub\)/);
-  assert.match(pageSource, /background: item\.isMainHub \? MAIN_HUB_PUBLIC_COLOR : meta\.color/);
+  assert.match(pageSource, /style=\{item\.isMainHub \? \{ background: MAIN_HUB_PUBLIC_COLOR \} : undefined\}/);
 });
 
 test("mobile panels open large but map navigation folds them away", () => {

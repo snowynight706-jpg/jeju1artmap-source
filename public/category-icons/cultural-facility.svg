@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">문화시설 카테고리 아이콘</title>
+  <g stroke="#3E3733" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="rotate(-42 365 523)">
+      <rect x="300" y="175" width="130" height="470" rx="62" fill="#FF8D73" stroke-width="52"/>
+      <rect x="300" y="597" width="130" height="104" rx="18" fill="#FFF7E8" stroke-width="52"/>
+      <path d="M300 678h130l33 151c9 46-29 82-71 59l-27-15-27 15c-42 23-80-13-71-59Z" fill="#FFF7E8" stroke-width="52"/>
+      <path d="M299 820c45-23 87-23 132 0l-8 43-58 10-58-10Z" fill="#66D8A5" stroke-width="24"/>
+    </g>
+    <g>
+      <path d="M865 318v361" fill="none" stroke="#FFD464" stroke-width="82"/>
+      <path d="M865 318c83 12 128 71 116 153-30-42-68-63-116-69Z" fill="#FFD464" stroke-width="52"/>
+      <ellipse cx="803" cy="710" rx="94" ry="72" transform="rotate(-18 803 710)" fill="#FFD464" stroke-width="52"/>
+    </g>
+  </g>
+</svg>

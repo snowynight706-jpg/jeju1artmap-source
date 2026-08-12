@@ -34,7 +34,7 @@ test("communication center is the persisted and visible workation main hub", () 
   assert.match(taxonomySource, /\? "제주소통협력센터"\s*:\s*name/);
   assert.match(pageSource, /publicElementName = isMainHub \? "제주소통협력센터" : element\.name/);
   assert.match(pageSource, /className="main-hub-badge" aria-label="주요 거점 ▼"><svg className="main-hub-pointer-icon"/);
-  assert.match(pageSource, /item\.isMainHub \? "▼" : meta\.glyph/);
+  assert.match(pageSource, /item\.isMainHub \? "▼" : <img src=\{meta\.iconSrc\}/);
   assert.match(pageSource, /const initialElements: MapElement\[\] = ensureMainHubMapElement/);
   assert.match(metadataMigration, /featured_role` = 'workation-main-hub'/);
   assert.match(metadataMigration, /\["creative-startup","event-rental","experience-education"\]/);

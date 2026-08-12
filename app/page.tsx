@@ -104,11 +104,12 @@ const publicListCategories: ReadonlyArray<{
   id: PublicPlaceCategoryFilter;
   name: string;
   color: string;
+  iconSrc: string;
 }> = [
-  { id: "culture", name: "문화공간", color: "#4d9a91" },
-  { id: "food", name: "음식점", color: "#d8974f" },
-  { id: "cafe", name: "카페", color: "#b7835b" },
-  { id: "convenience", name: "편의시설", color: "#71838f" },
+  { id: "culture", name: "문화공간", color: "#4d9a91", iconSrc: "/category-icons/cultural-facility.svg" },
+  { id: "food", name: "음식점", color: "#d8974f", iconSrc: "/category-icons/restaurant.svg" },
+  { id: "cafe", name: "카페", color: "#b7835b", iconSrc: "/category-icons/cafe.svg" },
+  { id: "convenience", name: "편의시설", color: "#71838f", iconSrc: "/category-icons/goods-shop.svg" },
 ] as const;
 
 type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "convenience";
@@ -2291,6 +2292,8 @@ export default function Home() {
   const [rightOpen, setRightOpen] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [startupAssetsReady, setStartupAssetsReady] = useState(false);
+  const [startupInitialViewReady, setStartupInitialViewReady] = useState(false);
+  const [startupRevealReady, setStartupRevealReady] = useState(false);
   const [startupLoadDone, setStartupLoadDone] = useState(0);
   const [startupLoadTotal, setStartupLoadTotal] = useState(0);
   const [memoMode, setMemoMode] = useState(false);
@@ -4110,7 +4113,7 @@ export default function Home() {
         : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
     const sources = [...new Set([
       "/jfac-symbol.png",
-      "/jfac-signature-c.png",
+      ...publicListCategories.map((category) => category.iconSrc),
       mapSource,
       ...visibleElements.flatMap((element) => {
         const asset = element.assetId ? assetsById.get(element.assetId) : undefined;
@@ -4206,12 +4209,18 @@ export default function Home() {
     if (
       publicInitialViewAppliedRef.current
       || !hydrated
+      || !startupAssetsReady
       || publicLayoutAccess !== "viewer"
       || viewportDimensions.width <= 0
       || viewportDimensions.height <= 0
     ) return;
     const primaryHub = elements.find((element) => isPrimaryHubLabel(element.name) && element.mapVisible);
-    if (!primaryHub || stageDimensions.width <= 0 || stageDimensions.height <= 0) return;
+    if (stageDimensions.width <= 0 || stageDimensions.height <= 0) return;
+    if (!primaryHub) {
+      publicInitialViewAppliedRef.current = true;
+      setStartupInitialViewReady(true);
+      return;
+    }
 
     const compact = viewportDimensions.width <= 760;
     const viewportFillZoom = Math.max(
@@ -4237,6 +4246,7 @@ export default function Home() {
       y: clamp(rawPan.y, -verticalTravel, verticalTravel),
     };
 
+    let settledFrame = 0;
     const frame = window.requestAnimationFrame(() => {
       if (publicInitialViewAppliedRef.current) return;
       publicInitialViewAppliedRef.current = true;
@@ -4244,9 +4254,23 @@ export default function Home() {
       panRef.current = targetPan;
       setZoom(targetZoom);
       setPan(targetPan);
+      settledFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [elements, fitZoom, hydrated, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (settledFrame) window.cancelAnimationFrame(settledFrame);
+    };
+  }, [elements, fitZoom, hydrated, publicLayoutAccess, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
+
+  useEffect(() => {
+    if (publicLayoutAccess === "editor" && startupAssetsReady) setStartupInitialViewReady(true);
+  }, [publicLayoutAccess, startupAssetsReady]);
+
+  useEffect(() => {
+    if (publicLayoutAccess === "loading" || !startupAssetsReady || !startupInitialViewReady) return;
+    const timer = window.setTimeout(() => setStartupRevealReady(true), 1600);
+    return () => window.clearTimeout(timer);
+  }, [publicLayoutAccess, startupAssetsReady, startupInitialViewReady]);
 
   useEffect(() => {
     if (printPreviewMode) return;
@@ -6923,24 +6947,35 @@ export default function Home() {
       ? "서버 동기화됨"
       : "기기 임시 저장";
 
-  if (publicLayoutAccess === "loading" || !startupAssetsReady) {
-    const loadPercent = startupLoadTotal > 0 ? Math.round((startupLoadDone / startupLoadTotal) * 100) : 8;
-    return <main className="app-shell public-loading">
-      <section className="public-loading-card" aria-live="polite" aria-busy="true">
-        <img className="public-loading-symbol" src="/jfac-symbol.png" alt="" aria-hidden="true" />
-        <img className="public-loading-signature" src="/jfac-signature-c.png" alt="제주문화예술재단 Jeju Foundation for Arts and Culture" />
-        <span className="public-loading-rule" aria-hidden="true" />
-        <strong>제주 원도심 아트맵</strong>
-        <div className="public-loading-status"><span aria-hidden="true" /><b>로딩 중</b></div>
-        <p>{publicLayoutAccess === "loading" ? "공개 지도를 확인하고 있습니다." : "지도와 장소 자산을 준비하고 있습니다."}</p>
-        <div className="public-loading-track" aria-hidden="true"><span style={{ width: `${loadPercent}%` }} /></div>
-        <small>{startupLoadTotal > 0 ? `${Math.min(startupLoadDone, startupLoadTotal)} / ${startupLoadTotal}` : "연결 준비"}</small>
-      </section>
-    </main>;
+  const startupLoadPercent = startupAssetsReady
+    ? 100
+    : startupLoadTotal > 0
+      ? Math.round((startupLoadDone / startupLoadTotal) * 100)
+      : 8;
+  const startupLoadingMessage = publicLayoutAccess === "loading"
+    ? "공개 지도를 확인하고 있습니다."
+    : !startupAssetsReady
+      ? "지도와 장소 자산을 준비하고 있습니다."
+      : !startupInitialViewReady
+        ? "주요 거점을 중심으로 지도를 맞추고 있습니다."
+        : "화면을 안정화하고 있습니다.";
+  const startupLoadingCard = <section className="public-loading-card" aria-live="polite" aria-busy="true">
+    <img className="public-loading-symbol" src="/jfac-symbol.png" alt="제주문화예술재단 심볼 B" />
+    <span className="public-loading-rule" aria-hidden="true" />
+    <strong>제주 원도심 아트맵</strong>
+    <div className="public-loading-status"><span aria-hidden="true" /><b>로딩 중</b></div>
+    <p>{startupLoadingMessage}</p>
+    <div className="public-loading-track" aria-hidden="true"><span style={{ width: `${startupLoadPercent}%` }} /></div>
+    <small>{startupAssetsReady && startupInitialViewReady ? "화면 정리" : startupLoadTotal > 0 ? `${Math.min(startupLoadDone, startupLoadTotal)} / ${startupLoadTotal}` : "연결 준비"}</small>
+  </section>;
+
+  if (publicLayoutAccess === "loading") {
+    return <main className="app-shell public-loading">{startupLoadingCard}</main>;
   }
 
   return (
     <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""}`}>
+      {!startupRevealReady && <div className="public-loading public-loading-overlay">{startupLoadingCard}</div>}
       {publicLayoutAccess === "editor" ? <header className="topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div></div>
         <div className="toolbar-group draft-tools">
@@ -7485,7 +7520,7 @@ export default function Home() {
           <div className="global-story-panel-scroll" aria-live="polite">
             {globalContentTab === "places" ? <section className="public-place-explorer">
               <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
-              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
+              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><img src={category.iconSrc} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
               <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "문화공간"} 목록`}>
                 {filteredPublicPlaceItems.map((item) => {
                   const meta = publicCategoryMetaForPlace(item.place, item.anchor);
@@ -7496,7 +7531,7 @@ export default function Home() {
                     .map((definition) => definition.name);
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
                     <button type="button" className="public-place-focus" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>
-                      <span className="public-place-symbol" style={{ background: item.isMainHub ? MAIN_HUB_PUBLIC_COLOR : meta.color }}>{item.isMainHub ? "▼" : meta.glyph}</span>
+                      <span className={`public-place-symbol ${item.isMainHub ? "main-hub" : "category-resource"}`} style={item.isMainHub ? { background: MAIN_HUB_PUBLIC_COLOR } : undefined}>{item.isMainHub ? "▼" : <img src={meta.iconSrc} alt="" aria-hidden="true" />}</span>
                       <span className="public-place-copy">
                         <span className="public-place-title-row">
                           <strong>{item.displayName}</strong>
