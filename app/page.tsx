@@ -34,7 +34,9 @@ import {
   additionalCategoryDefinitions,
   convenienceAttributeDefinitions,
   directoryMetadataDefaults,
+  isPrimaryPublicCategory,
   mergeDirectoryMetadata,
+  normalizeDirectoryCategory,
   publicCategoriesForAdditionalCategories,
   publicDisplayName,
   sanitizeAdditionalCategories,
@@ -61,6 +63,10 @@ const PLACE_REGISTRATION_REQUESTS_API = "/api/place-registration-requests";
 const ADMIN_SESSION_API = "/api/admin-session";
 const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v04";
 const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
+const LANDMARK_RESOURCE_SIZE = 6.2;
+const LANDMARK_LABEL_GAP = 8;
+const LEGACY_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크";
+const STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 우측계단 · 표준 랜드마크 이미지·라벨 처리";
 const SUPERSEDED_SANJICHEON_ASSET_IDS = new Set(["sanjicheon-01", "sanjicheon-02", "sanjicheon-03"]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
@@ -743,7 +749,8 @@ const legacyDirectoryPlaces: DirectoryPlace[] = [
 ];
 
 function withDirectoryMetadata(place: DirectoryPlace): DirectoryPlace {
-  const defaults = directoryMetadataDefaults(place.name, place.category, place.subtype, place.description);
+  const category = directoryCategory(place.category);
+  const defaults = directoryMetadataDefaults(place.name, category, place.subtype, place.description);
   const metadata = mergeDirectoryMetadata({
     ...(Object.prototype.hasOwnProperty.call(place, "additionalCategories") ? { additionalCategories: place.additionalCategories } : {}),
     ...(Object.prototype.hasOwnProperty.call(place, "convenienceAttributes") ? { convenienceAttributes: place.convenienceAttributes } : {}),
@@ -752,7 +759,7 @@ function withDirectoryMetadata(place: DirectoryPlace): DirectoryPlace {
     featuredRole: place.featuredRole,
     ...(Object.prototype.hasOwnProperty.call(place, "aliases") ? { aliases: place.aliases } : {}),
   }, defaults);
-  return { ...place, ...metadata };
+  return { ...place, category, ...metadata };
 }
 
 function ensureSystemDirectoryPlaces(places: DirectoryPlace[]) {
@@ -800,7 +807,7 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
       return {
         id: legacy?.id ?? row.id,
         name,
-        category: categoryForPlace(name, row.category),
+        category: directoryCategory(row.category),
         area: row.area,
         address: row.address,
         x: geocoded?.x ?? legacy?.x ?? fallback.x,
@@ -824,7 +831,7 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
     ...built,
     ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))).map((place) => {
       const geocoded = geocodedPlaces[normalizePlaceName(place.name)];
-      const category = categoryForPlace(place.name, place.category) as CategoryId;
+      const category = directoryCategory(place.category);
       return geocoded
         ? { ...place, ...geocoded, category, coordinateStatus: isCoreLandmarkName(place.name) ? "landmark" as const : "geocoded" as const }
         : { ...place, category, coordinateStatus: isCoreLandmarkName(place.name) ? "landmark" as const : place.coordinateStatus };
@@ -849,7 +856,7 @@ function directoryRecordFromPlace(place: DirectoryPlace): PlaceDirectoryRecord {
   return {
     id: decorated.id,
     name,
-    category: categoryForPlace(name, decorated.category) as CategoryId,
+    category: directoryCategory(decorated.category),
     area: decorated.area ?? "",
     address: decorated.address ?? "",
     subtype: decorated.subtype ?? "",
@@ -876,7 +883,7 @@ function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: Directo
   const defaultByName = new Map(defaultDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
   return ensureSystemDirectoryPlaces(records.map((record) => {
     const name = normalizePlaceName(record.name);
-    const category = categoryForPlace(name, record.category) as CategoryId;
+    const category = directoryCategory(record.category);
     const geocoded = geocodedPlaces[name];
     const calibrated = calibratedPlaceCoordinates(name, geocoded?.latitude, geocoded?.longitude, initialCalibrationPoints);
     const base = currentById.get(record.id)
@@ -974,7 +981,7 @@ const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, i
     y,
     anchorX: x,
     anchorY: y,
-    size: 6.2,
+    size: LANDMARK_RESOURCE_SIZE,
     z: index + 1,
     labelVisible: true,
     assetId: location.assetId,
@@ -1057,6 +1064,16 @@ function clamp(value: number, min: number, max: number) {
 
 function categoryOf(id: CategoryId) {
   return categories.find((category) => category.id === id) ?? categories[categories.length - 1];
+}
+
+function directoryCategory(category: CategoryId): CategoryId {
+  return normalizeDirectoryCategory(category) as CategoryId;
+}
+
+function mapCategoryForDirectoryPlace(place: Pick<DirectoryPlace, "name" | "category" | "featuredRole">): CategoryId {
+  return isCoreLandmarkName(place.name) || place.featuredRole === MAIN_HUB_ROLE || isPrimaryHubLabel(place.name)
+    ? "landmark"
+    : place.category;
 }
 
 function publicCategoryIdsForPlace(place: DirectoryPlace, anchor: MapElement): PublicListCategoryId[] {
@@ -1656,20 +1673,24 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
   });
   const existingHub = elements.find((element) => isPrimaryHubLabel(element.name));
   if (existingHub) {
+    const migrateLegacyPresentation = existingHub.memo === LEGACY_MAIN_HUB_MEMO;
     return elements.map((element) => element.id === existingHub.id ? {
       ...element,
       directoryId: hubPlace.id,
       name: MAIN_HUB_CANONICAL_NAME,
       category: "landmark" as const,
-      size: Math.max(element.size, 5.4),
+      size: migrateLegacyPresentation ? LANDMARK_RESOURCE_SIZE : element.size,
       labelVisible: true,
-      labelLocked: true,
-      labelGap: Math.min(element.labelGap, 6),
+      labelLocked: migrateLegacyPresentation ? false : element.labelLocked,
+      labelPosition: migrateLegacyPresentation ? "bottom" as const : element.labelPosition,
+      labelGap: migrateLegacyPresentation ? LANDMARK_LABEL_GAP : element.labelGap,
+      labelOffsetX: migrateLegacyPresentation ? 0 : element.labelOffsetX,
+      labelOffsetY: migrateLegacyPresentation ? 0 : element.labelOffsetY,
       assetId: MAIN_HUB_LANDMARK_ASSET_ID,
       status: "approved" as const,
       address: hubPlace.address,
       addressSourceUrl: hubPlace.sourceUrl ?? "https://www.jejusotong.kr/",
-      memo: "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크",
+      memo: STANDARD_MAIN_HUB_MEMO,
     } : element);
   }
   const requestedId = "system-main-hub-sotong";
@@ -1686,17 +1707,20 @@ function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[
     y: hubPlace.y,
     anchorX: hubPlace.x,
     anchorY: hubPlace.y,
-    size: 5.4,
+    size: LANDMARK_RESOURCE_SIZE,
     z: Math.max(0, ...elements.map((element) => element.z)) + 1,
     labelVisible: true,
-    labelLocked: true,
-    labelGap: 6,
+    labelLocked: false,
+    labelPosition: "bottom" as const,
+    labelGap: LANDMARK_LABEL_GAP,
+    labelOffsetX: 0,
+    labelOffsetY: 0,
     assetId: MAIN_HUB_LANDMARK_ASSET_ID,
     status: "approved" as const,
     mapVisible: true,
     address: hubPlace.address,
     addressSourceUrl: hubPlace.sourceUrl ?? "",
-    memo: "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크",
+    memo: STANDARD_MAIN_HUB_MEMO,
   }];
 }
 
@@ -1768,7 +1792,7 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         return {
           ...place,
           name,
-          category: categoryForPlace(name, place.category) as CategoryId,
+          category: directoryCategory(place.category),
           ...(Object.prototype.hasOwnProperty.call(place, "additionalCategories")
             ? { additionalCategories: sanitizeAdditionalCategories(place.additionalCategories) }
             : {}),
@@ -2023,6 +2047,8 @@ export default function Home() {
   const focusTransitionTimerRef = useRef<number | null>(null);
   const pendingWheelRef = useRef<{ deltaY: number; cursorX: number; cursorY: number } | null>(null);
   const placeDirectoryLoadedRef = useRef(false);
+  const directoryTaxonomySaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const directoryTaxonomySaveRunRef = useRef(0);
   const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
   const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
   const denseLabelExcludedIdsRef = useRef<string[]>([]);
@@ -2229,6 +2255,10 @@ export default function Home() {
   const [databaseEditorQuery, setDatabaseEditorQuery] = useState("");
   const [databaseEditorSelectedId, setDatabaseEditorSelectedId] = useState<string | null>(null);
   const [databaseDraftPlaces, setDatabaseDraftPlaces] = useState<DirectoryPlace[]>([]);
+  const [directoryTaxonomySync, setDirectoryTaxonomySync] = useState<{
+    placeId: string | null;
+    state: "ready" | "saving" | "saved" | "error";
+  }>({ placeId: null, state: "ready" });
   const [interaction, setInteraction] = useState<
     | { type: "pan"; startX: number; startY: number; panX: number; panY: number; pendingPublicPlaceId?: string; pendingPlaceRequestLocation?: boolean }
     | { type: "resize"; id: string; startX: number; startSize: number }
@@ -2327,7 +2357,7 @@ export default function Home() {
     setSelectedFacilityId(null);
     setSelectedNoteId(null);
     setSelectedDenseLabelId(null);
-  }, []);
+  }, [setSelectedId]);
 
   const pushHistory = useCallback(() => {
     const snapshot = cloneDocument(currentDocument());
@@ -2557,7 +2587,7 @@ export default function Home() {
       if (element.id !== id) return element;
       const next = { ...element, ...patch };
       const name = normalizePlaceName(next.name);
-      if (!isCoreLandmarkName(name)) return next;
+      if (!isCoreLandmarkName(name) && !isPrimaryHubLabel(name)) return next;
       const preferredAssetId = landmarkLocationByName.get(name)?.assetId;
       return {
         ...next,
@@ -3077,7 +3107,7 @@ export default function Home() {
       }
       return [...current, place];
     });
-  }, []);
+  }, [setPlaceEventPlaces]);
 
   useEffect(() => {
     const run = ++storyRequestRunRef.current;
@@ -3659,14 +3689,15 @@ export default function Home() {
           const place = (element.directoryId ? byId.get(element.directoryId) : undefined)
             ?? byName.get(normalizePlaceName(element.name));
           if (!place) return element;
+          const mapCategory = mapCategoryForDirectoryPlace(place);
           return {
             ...element,
             directoryId: place.id,
             name: place.name,
-            category: place.category,
+            category: mapCategory,
             address: place.address,
             addressSourceUrl: place.sourceUrl ?? "",
-            assetId: assetIdAfterDirectoryCategoryChange(element, place.category),
+            assetId: assetIdAfterDirectoryCategoryChange(element, mapCategory),
           };
         }));
         setPlaceDirectoryStorage("persistent");
@@ -4771,19 +4802,20 @@ export default function Home() {
     }
     pushHistory();
     setPlacementOverride(place, null);
+    const mapCategory = mapCategoryForDirectoryPlace(place);
     const preferredLandmarkAssetId = landmarkLocationByName.get(normalizePlaceName(place.name))?.assetId;
-    const placeAssetId = place.category === "landmark" ? preferredLandmarkAssetId ?? null : defaultMarkerAssetId(place.category);
+    const placeAssetId = mapCategory === "landmark" ? preferredLandmarkAssetId ?? null : defaultMarkerAssetId(mapCategory);
     const next: MapElement = {
       ...elementDefaults,
       id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)),
       directoryId: place.id,
       name: place.name,
-      category: place.category,
+      category: mapCategory,
       x: place.x,
       y: place.y,
       anchorX: place.x,
       anchorY: place.y,
-      size: place.category === "landmark" ? 6.2 : place.category === "culture" ? 3 : 1.7,
+      size: mapCategory === "landmark" ? 6.2 : mapCategory === "culture" ? 3 : 1.7,
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
       labelVisible: true,
       assetId: placeAssetId,
@@ -4862,6 +4894,118 @@ export default function Home() {
     if (row.place) openDirectoryPlace(row.place);
   };
 
+  const applyDirectoryTaxonomyLocally = (
+    placeId: string,
+    category: CategoryId,
+    additionalCategories: AdditionalCategoryId[],
+  ) => {
+    const currentPlace = placesRef.current.find((place) => place.id === placeId);
+    if (!currentPlace) return null;
+    const nextPlace = withDirectoryMetadata({
+      ...currentPlace,
+      category: directoryCategory(category),
+      additionalCategories: sanitizeAdditionalCategories(additionalCategories),
+    });
+    replaceDirectoryPlaces((current) => current.map((place) => place.id === placeId ? nextPlace : place));
+    setDatabaseDraftPlaces((current) => current.map((place) => place.id === placeId ? nextPlace : place));
+    replaceElements((current) => current.map((element) => {
+      const attached = element.directoryId === placeId
+        || (!element.directoryId && normalizePlaceName(element.name) === normalizePlaceName(nextPlace.name));
+      if (!attached) return element;
+      const mapCategory = mapCategoryForDirectoryPlace(nextPlace);
+      return {
+        ...element,
+        category: mapCategory,
+        assetId: assetIdAfterDirectoryCategoryChange(element, mapCategory),
+      };
+    }));
+    return nextPlace;
+  };
+
+  const updateSelectedDirectoryTaxonomy = (
+    place: DirectoryPlace,
+    patch: { category?: CategoryId; additionalCategories?: AdditionalCategoryId[] },
+  ) => {
+    if (!placeDirectoryCanEdit) {
+      setToast("장소 분류 수정은 관리자 권한으로만 저장할 수 있습니다.");
+      return;
+    }
+    const currentPlace = placesRef.current.find((item) => item.id === place.id) ?? place;
+    const category = directoryCategory(patch.category ?? currentPlace.category);
+    if (!isPrimaryPublicCategory(category)) {
+      setToast("기본분류는 문화공간·카페·음식점·소품샵 중 하나를 선택해 주세요.");
+      return;
+    }
+    const additionalCategories = sanitizeAdditionalCategories(
+      patch.additionalCategories ?? currentPlace.additionalCategories,
+    );
+    const nextPlace = applyDirectoryTaxonomyLocally(currentPlace.id, category, additionalCategories);
+    if (!nextPlace) return;
+
+    const runId = ++directoryTaxonomySaveRunRef.current;
+    setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "saving" });
+    const queuedSave = directoryTaxonomySaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await fetch(PLACE_DIRECTORY_API, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: nextPlace.id,
+            category: nextPlace.category,
+            additionalCategories: nextPlace.additionalCategories,
+          }),
+        });
+        const payload = await response.json().catch(() => null) as {
+          row?: PlaceDirectoryRecord;
+          updatedAt?: string | null;
+          error?: string;
+        } | null;
+        if (!response.ok || !payload?.row) throw new Error(payload?.error ?? "taxonomy save failed");
+        return payload;
+      });
+    directoryTaxonomySaveQueueRef.current = queuedSave.then(() => undefined, () => undefined);
+    void queuedSave.then((payload) => {
+      if (runId !== directoryTaxonomySaveRunRef.current) return;
+      const savedCategory = directoryCategory(payload.row!.category);
+      applyDirectoryTaxonomyLocally(
+        payload.row!.id,
+        savedCategory,
+        sanitizeAdditionalCategories(payload.row!.additionalCategories),
+      );
+      setPlaceDirectoryUpdatedAt(payload.updatedAt ?? null);
+      setPlaceDirectoryStorage("persistent");
+      setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "saved" });
+      setToast(`${publicDisplayName(currentPlace.name, currentPlace.featuredRole)} 분류를 DB에 저장했습니다.`);
+    }).catch(() => {
+      if (runId !== directoryTaxonomySaveRunRef.current) return;
+      applyDirectoryTaxonomyLocally(
+        currentPlace.id,
+        directoryCategory(currentPlace.category),
+        sanitizeAdditionalCategories(currentPlace.additionalCategories),
+      );
+      setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "error" });
+      setToast("분류 저장에 실패했습니다. 관리자 로그인과 DB 연결 상태를 확인해 주세요.");
+    });
+  };
+
+  const toggleSelectedDirectoryAdditionalCategory = (place: DirectoryPlace, categoryId: AdditionalCategoryId) => {
+    const selected = new Set(sanitizeAdditionalCategories(place.additionalCategories));
+    if (selected.has(categoryId)) selected.delete(categoryId);
+    else {
+      if (selected.size >= 3) {
+        setToast("추가분류는 장소별로 최대 3개까지 선택할 수 있습니다.");
+        return;
+      }
+      selected.add(categoryId);
+    }
+    updateSelectedDirectoryTaxonomy(place, {
+      additionalCategories: additionalCategoryDefinitions
+        .map((definition) => definition.id)
+        .filter((id) => selected.has(id)),
+    });
+  };
+
   const openDatabaseEditor = () => {
     if (!placeDirectoryCanEdit) {
       setToast("내부 DB 수정은 소유자 로그인 후 사용할 수 있습니다.");
@@ -4889,7 +5033,7 @@ export default function Home() {
       return withDirectoryMetadata({
         ...next,
         name,
-        category: categoryForPlace(name, next.category) as CategoryId,
+        category: directoryCategory(next.category),
         ...(isCoreLandmarkName(name) ? { coordinateStatus: "landmark" as const } : {}),
       });
     }));
@@ -4981,14 +5125,15 @@ export default function Home() {
       const place = (element.directoryId ? byId.get(element.directoryId) : undefined)
         ?? byName.get(normalizePlaceName(element.name));
       if (!place) return element;
+      const mapCategory = mapCategoryForDirectoryPlace(place);
       return {
         ...element,
         directoryId: place.id,
         name: place.name,
-        category: place.category,
+        category: mapCategory,
         address: place.address,
         addressSourceUrl: place.sourceUrl ?? "",
-        assetId: assetIdAfterDirectoryCategoryChange(element, place.category),
+        assetId: assetIdAfterDirectoryCategoryChange(element, mapCategory),
       };
     }));
     setPlaceDirectoryUpdatedAt(updatedAt);
@@ -6996,7 +7141,16 @@ export default function Home() {
             <section><div className="section-title"><strong>지도 위치</strong><span>%</span></div><div className="field-row"><label>X<input type="number" step="0.1" value={selectedNote.x.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { x: clamp(Number(event.target.value), 0, 100) })} /></label><label>Y<input type="number" step="0.1" value={selectedNote.y.toFixed(2)} onChange={(event) => updateNote(selectedNote.id, { y: clamp(Number(event.target.value), 0, 100) })} /></label></div></section>
             <section><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></section>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
-            <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}<label>카테고리{isCoreLandmarkName(selected.name) ? " · 핵심 랜드마크 고정" : ""}<select value={selected.category} disabled={isCoreLandmarkName(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
+            <section><div className="section-title"><strong>기본 정보</strong><div className="section-title-actions"><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></div></div><label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label><label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>{selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}{selectedDirectoryPlace ? <label>지도 표현 <em>DB 기본분류와 랜드마크 역할에 따라 자동 적용</em><select value={selected.category} disabled>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label> : <label>지도 요소 유형<select value={selected.category} disabled={isCoreLandmarkName(selected.name) || isPrimaryHubLabel(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}<label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}{selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}<label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label><label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label></section>
+            {selectedDirectoryPlace ? <section className="marker-taxonomy-section" aria-label="DB 연동 장소 분류">
+              <div className="section-title"><strong>장소 분류 · DB 연동</strong><span className={directoryTaxonomySync.placeId === selectedDirectoryPlace.id ? directoryTaxonomySync.state : "ready"}>{directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "saving" ? "저장 중…" : directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "saved" ? "DB 저장됨" : directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "error" ? "저장 실패" : placeDirectoryCanEdit ? "변경 즉시 저장" : "읽기 전용"}</span></div>
+              <label>기본분류 <em>1개 필수</em><select value={directoryCategory(selectedDirectoryPlace.category)} disabled={!placeDirectoryCanEdit} onChange={(event) => updateSelectedDirectoryTaxonomy(selectedDirectoryPlace, { category: event.target.value as CategoryId })}>{!isPrimaryPublicCategory(directoryCategory(selectedDirectoryPlace.category)) && <option value={directoryCategory(selectedDirectoryPlace.category)} disabled>{categoryOf(directoryCategory(selectedDirectoryPlace.category)).name} · 기존 분류</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
+              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>{sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).length}/3</em></header><div>{additionalCategoryDefinitions.map((definition) => {
+                const checked = sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).includes(definition.id);
+                return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} disabled={!placeDirectoryCanEdit} onChange={() => toggleSelectedDirectoryAdditionalCategory(selectedDirectoryPlace, definition.id)} /><span>{definition.name}</span></label>;
+              })}</div></div>
+              <p className="field-help">이곳에서 바꾼 기본분류와 추가분류는 해당 장소의 영구 DB와 현재 지도 편집본에 함께 반영됩니다.</p>
+            </section> : <section className="marker-taxonomy-section unavailable"><div className="section-title"><strong>장소 분류 · DB 연동</strong><span>연결 없음</span></div><p className="field-help">이 마커는 장소 DB 레코드와 연결되지 않아 분류를 저장할 수 없습니다.</p></section>}
             <section className="editor-place-events">
               <div className="section-title"><strong>장소 행사</strong><span>{placeEvents.length}개</span></div>
               <p className="field-help">{placeEventsLoading ? "행사 수를 확인하는 중입니다." : placeEvents.length ? `이 장소와 연결된 행사 ${placeEvents.length}개가 있습니다. 수정·숨김·삭제는 전체 관리창에서 처리합니다.` : "이 장소와 연결된 행사가 없습니다."}</p>

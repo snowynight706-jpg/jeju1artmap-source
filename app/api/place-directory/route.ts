@@ -1,9 +1,11 @@
 import { masterDirectoryRows, masterDirectorySource, retiredMasterDirectoryIds } from "../../master-directory";
-import { categoryForPlace, normalizePlaceName } from "../../core-landmarks";
+import { normalizePlaceName } from "../../core-landmarks";
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 import {
   directoryMetadataDefaults,
+  isPrimaryPublicCategory,
   mergeDirectoryMetadata,
+  normalizeDirectoryCategory,
   sanitizeAdditionalCategories,
   sanitizeConvenienceAttributes,
   type AdditionalCategoryId,
@@ -73,7 +75,7 @@ function normalizeRow(value: unknown): PlaceDirectoryInput | null {
   const normalizedBase = {
     id: cleanText(row.id, 180),
     name,
-    category: categoryForPlace(name, cleanText(row.category, 32)),
+    category: normalizeDirectoryCategory(cleanText(row.category, 32)),
     area: cleanText(row.area, 160),
     address: cleanText(row.address, 260),
     subtype: cleanText(row.subtype, 160),
@@ -100,7 +102,7 @@ function normalizeRow(value: unknown): PlaceDirectoryInput | null {
 
 function storedRowToInput(row: StoredDirectoryRow): PlaceDirectoryInput {
   const name = normalizePlaceName(row.name);
-  const category = categoryForPlace(name, row.category);
+  const category = normalizeDirectoryCategory(row.category);
   const defaults = directoryMetadataDefaults(name, category, row.subtype, row.description);
   let additionalCategoriesSource: unknown = row.additionalCategoriesJson;
   let hasExplicitAdditionalCategories = false;
@@ -163,7 +165,7 @@ function bundledRows(): PlaceDirectoryInput[] {
     const base = {
       id: row.id,
       name,
-      category: categoryForPlace(name, row.category),
+      category: normalizeDirectoryCategory(row.category),
       area: row.area,
       address: row.address,
       subtype: row.subtype,
@@ -316,4 +318,61 @@ export async function PUT(request: Request) {
   ).bind(updatedAt, currentEmail));
   await runtime.DB.batch(statements);
   return json({ rows: validRows, persistent: true, canEdit: true, updatedAt });
+}
+
+export async function PATCH(request: Request) {
+  const runtime = await runtimeEnv();
+  if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
+  const { canEdit, currentEmail } = ownerAccess(request, runtime);
+  if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ error: "invalid json" }, 400);
+  }
+  const body = payload as { id?: unknown; category?: unknown; additionalCategories?: unknown };
+  const id = cleanText(body.id, 180);
+  const category = normalizeDirectoryCategory(cleanText(body.category, 32));
+  const additionalCategories = sanitizeAdditionalCategories(body.additionalCategories);
+  if (!id || !isPrimaryPublicCategory(category) || !Array.isArray(body.additionalCategories)) {
+    return json({ error: "valid place taxonomy required" }, 400);
+  }
+
+  const stored = await runtime.DB.prepare(
+    `SELECT id, name, category, area, address, subtype, priority, description,
+      operating_info AS operatingInfo, notes, source_url AS sourceUrl,
+      map_url AS mapUrl, checked_at AS checkedAt, additional_categories_json AS additionalCategoriesJson,
+      convenience_attributes_json AS convenienceAttributesJson,
+      location_group_id AS locationGroupId, map_anchor_id AS mapAnchorId,
+      featured_role AS featuredRole, aliases_json AS aliasesJson
+     FROM place_directory WHERE id = ? LIMIT 1`,
+  ).bind(id).first() as StoredDirectoryRow | null;
+  if (!stored) return json({ error: "place not found" }, 404);
+
+  const current = storedRowToInput(stored);
+  const next = normalizeRow({ ...current, category, additionalCategories });
+  if (!next) return json({ error: "invalid place taxonomy" }, 400);
+
+  const updatedAt = new Date().toISOString();
+  await runtime.DB.batch([
+    runtime.DB.prepare(
+      `UPDATE place_directory
+       SET category = ?, additional_categories_json = ?, updated_at = ?, updated_by = ?
+       WHERE id = ?`,
+    ).bind(
+      next.category,
+      JSON.stringify({ values: next.additionalCategories }),
+      updatedAt,
+      currentEmail,
+      next.id,
+    ),
+    runtime.DB.prepare(
+      `INSERT INTO place_directory_revision (id, updated_at, updated_by)
+       VALUES (1, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+    ).bind(updatedAt, currentEmail),
+  ]);
+  return json({ row: next, persistent: true, canEdit: true, updatedAt });
 }

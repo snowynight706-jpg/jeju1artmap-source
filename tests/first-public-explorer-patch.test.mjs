@@ -54,6 +54,15 @@ test("convenience information is stored independently from category tags", () =>
   assert.match(convenienceMigration, /ADD `convenience_attributes_json`/);
 });
 
+test("right marker properties update the linked directory taxonomy", () => {
+  assert.match(pageSource, /className="marker-taxonomy-section" aria-label="DB 연동 장소 분류"/);
+  assert.match(pageSource, /updateSelectedDirectoryTaxonomy\(selectedDirectoryPlace/);
+  assert.match(pageSource, /toggleSelectedDirectoryAdditionalCategory\(selectedDirectoryPlace/);
+  assert.match(pageSource, /method: "PATCH"/);
+  assert.match(directoryRouteSource, /export async function PATCH/);
+  assert.match(directoryRouteSource, /UPDATE place_directory[\s\S]+additional_categories_json/);
+});
+
 test("mobile explorer and detail sheets preserve the map-first default", () => {
   assert.match(pageSource, /장소 · 리뷰 · 행사/);
   assert.match(pageSource, /globalContentTab === "places"/);

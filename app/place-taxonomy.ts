@@ -10,6 +10,16 @@ export type AdditionalCategoryId =
 export type PrimaryPublicCategoryId = "culture" | "cafe" | "food" | "shop";
 export type PublicListCategoryId = PrimaryPublicCategoryId | AdditionalCategoryId;
 
+const primaryPublicCategoryIds = new Set<string>(["culture", "cafe", "food", "shop"]);
+
+export function normalizeDirectoryCategory(category: string): string {
+  return category === "landmark" ? "culture" : category;
+}
+
+export function isPrimaryPublicCategory(category: string): category is PrimaryPublicCategoryId {
+  return primaryPublicCategoryIds.has(category);
+}
+
 export type ConvenienceAttributeId =
   | "alcohol"
   | "late-night"
