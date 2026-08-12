@@ -187,7 +187,7 @@ function insertDirectoryStatement(db: D1Database, row: PlaceDirectoryInput, upda
       (id, name, category, area, address, subtype, priority, description, operating_info,
        notes, source_url, map_url, checked_at, additional_categories_json, convenience_attributes_json, location_group_id,
        map_anchor_id, featured_role, aliases_json, updated_at, updated_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     row.id, row.name, row.category, row.area, row.address, row.subtype, row.priority,
     row.description, row.operatingInfo, row.notes, row.sourceUrl, row.mapUrl, row.checkedAt,

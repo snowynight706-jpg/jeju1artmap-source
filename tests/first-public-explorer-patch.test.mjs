@@ -63,6 +63,16 @@ test("right marker properties update the linked directory taxonomy", () => {
   assert.match(directoryRouteSource, /UPDATE place_directory[\s\S]+additional_categories_json/);
 });
 
+test("directory source sync binds one value for every insert column", () => {
+  const insert = directoryRouteSource.match(
+    /INSERT INTO place_directory\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/,
+  );
+  assert.ok(insert, "place_directory insert statement should exist");
+  const columns = insert[1].split(",").map((value) => value.trim()).filter(Boolean);
+  const placeholders = insert[2].match(/\?/g) ?? [];
+  assert.equal(placeholders.length, columns.length);
+});
+
 test("mobile explorer and detail sheets preserve the map-first default", () => {
   assert.match(pageSource, /장소 · 리뷰 · 행사/);
   assert.match(pageSource, /globalContentTab === "places"/);
