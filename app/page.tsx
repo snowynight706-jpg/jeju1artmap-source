@@ -66,7 +66,7 @@ const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
 const LANDMARK_RESOURCE_SIZE = 6.2;
 const LANDMARK_LABEL_GAP = 8;
 const LEGACY_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크";
-const STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 우측계단 · 표준 랜드마크 이미지·라벨 처리";
+const STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 외곽선보강 최종검수안 · 표준 랜드마크 이미지·라벨 처리";
 const SUPERSEDED_SANJICHEON_ASSET_IDS = new Set(["sanjicheon-01", "sanjicheon-02", "sanjicheon-03"]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
@@ -928,7 +928,7 @@ const builtInLandmarkAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
     address: location?.address ?? "",
     addressSourceUrl: location?.addressSourceUrl ?? "",
     sourceLabel: asset.id === MAIN_HUB_LANDMARK_ASSET_ID
-      ? `Google Drive A-02 검수 기준안 · 투명 배경 정리 · 1024px WebP 최적화 · ${asset.fileName}`
+      ? `Google Drive A-02 외곽선보강 최종검수안 · 투명 배경 정리 · 1024px WebP 최적화 · ${asset.fileName}`
       : `Google Drive 원본 · 1024px WebP 최적화 · ${asset.fileName}`,
     builtIn: true,
   };

@@ -24,13 +24,15 @@ test("LPP gets three activity categories and remains searchable by aliases", () 
   assert.match(pageSource, /function ensureLppMapElement/);
 });
 
-test("communication center uses the dedicated A-02 landmark in stored public layouts", () => {
+test("communication center uses the dedicated A-02 final-review landmark in stored public layouts", () => {
   assert.match(assetSource, /jeju-communication-center-a02/);
-  assert.match(assetSource, /"A-02 우측계단"/);
+  assert.match(assetSource, /"A-02 외곽선보강 최종"/);
+  assert.match(assetSource, /"1n1G-0HbAOv9FavuBo54SdxDZWY276b3j"/);
   assert.match(pageSource, /MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02"/);
   assert.match(pageSource, /category: "landmark" as const,[\s\S]{0,420}assetId: MAIN_HUB_LANDMARK_ASSET_ID/);
   assert.match(pageSource, /const ensuredMainHubElements = ensureMainHubMapElement/);
-  assert.match(pageSource, /STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 우측계단 · 표준 랜드마크 이미지·라벨 처리"/);
+  assert.match(pageSource, /STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 외곽선보강 최종검수안 · 표준 랜드마크 이미지·라벨 처리"/);
+  assert.match(pageSource, /Google Drive A-02 외곽선보강 최종검수안/);
   assert.match(pageSource, /size: migrateLegacyPresentation \? LANDMARK_RESOURCE_SIZE : element\.size/);
   assert.match(pageSource, /labelPosition: migrateLegacyPresentation \? "bottom" as const : element\.labelPosition/);
   assert.match(pageSource, /labelGap: migrateLegacyPresentation \? LANDMARK_LABEL_GAP : element\.labelGap/);
