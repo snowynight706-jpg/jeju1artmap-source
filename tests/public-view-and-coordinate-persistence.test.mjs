@@ -4,6 +4,7 @@ import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const signatureB = await readFile(new URL("../public/jfac-signature-b.png", import.meta.url));
 
 test("the first screen uses only Korean signature B until assets, initial focus, and settling are complete", () => {
   const loaderBlock = pageSource.match(/const startupLoadingCard =[\s\S]*?<\/section>;/)?.[0] ?? "";
@@ -18,6 +19,8 @@ test("the first screen uses only Korean signature B until assets, initial focus,
   assert.doesNotMatch(loaderBlock, /jfac-symbol\.png|jfac-signature-c\.png|제주 원도심 아트맵/);
   assert.match(loaderBlock, />로딩 중</);
   assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
+  assert.equal(signatureB.readUInt32BE(16), 1182);
+  assert.equal(signatureB.readUInt32BE(20), 626);
 });
 
 test("a partial coordinate snapshot never clears a lock stored in the layout", () => {
