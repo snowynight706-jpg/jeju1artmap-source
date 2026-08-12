@@ -31,10 +31,20 @@ test("same-building facilities share one anchor but remain separate selectable r
 
 test("communication center is the persisted and visible workation main hub", () => {
   assert.match(taxonomySource, /MAIN_HUB_CANONICAL_NAME = "제주시소통협력센터"/);
-  assert.match(pageSource, /제주소통협력센터 메인 오피스/);
+  assert.match(taxonomySource, /\? "제주소통협력센터"\s*:\s*name/);
+  assert.match(pageSource, /publicElementName = isMainHub \? "제주소통협력센터" : element\.name/);
+  assert.match(pageSource, /className="main-hub-badge" aria-label="주요 거점">▼/);
+  assert.match(pageSource, /item\.isMainHub \? "▼" : meta\.glyph/);
   assert.match(pageSource, /const initialElements: MapElement\[\] = ensureMainHubMapElement/);
   assert.match(metadataMigration, /featured_role` = 'workation-main-hub'/);
   assert.match(metadataMigration, /\["creative-startup","event-rental","experience-education"\]/);
+});
+
+test("public marker selection uses a yellow ring only while active", () => {
+  assert.match(cssSource, /\.map-element\.public-active::after[^}]+border: 2px solid #e6a926/);
+  assert.match(cssSource, /\.map-element\.main-hub\.public-active::after/);
+  assert.doesNotMatch(cssSource, /\.map-element\.main-hub \.icon-visual::after/);
+  assert.match(cssSource, /\.public-place-list article\.selected[^}]+border-color: #d9ad45/);
 });
 
 test("convenience information is stored independently from category tags", () => {

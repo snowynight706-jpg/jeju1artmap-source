@@ -6551,7 +6551,7 @@ export default function Home() {
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
-        <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>★ 메인 거점</button>
+        <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <button className="owner-signin admin-login-trigger" type="button" onClick={() => { setAdminPassword(""); setAdminLoginError(""); setAdminLoginOpen(true); }}>관리자 로그인</button>
       </header>}
@@ -6888,7 +6888,7 @@ export default function Home() {
                   const keyboardSelectable = publicLayoutAccess === "viewer" || eventPlaceSelectionMode;
                   const isMainHub = isPrimaryHubLabel(element.name);
                   const locationGroupCount = locationGroupCountByAnchorId.get(element.id) ?? 0;
-                  const publicElementName = isMainHub ? "제주소통협력센터 메인 오피스" : element.name;
+                  const publicElementName = isMainHub ? "제주소통협력센터" : element.name;
                   return <div
                     key={element.id}
                     data-element-id={element.id}
@@ -6902,7 +6902,7 @@ export default function Home() {
                   >
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
-                    {publicLayoutAccess === "viewer" && isMainHub && <span className="main-hub-badge">MAIN</span>}
+                    {publicLayoutAccess === "viewer" && isMainHub && <span className="main-hub-badge" aria-label="주요 거점">▼</span>}
                     {publicLayoutAccess === "viewer" && locationGroupCount > 1 && <span className="location-group-badge">{locationGroupCount}개 시설</span>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
                     {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 정보 보기` : undefined}>{publicElementName}</div>}
@@ -7049,7 +7049,7 @@ export default function Home() {
                     .map((definition) => definition.name);
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
                     <button type="button" className="public-place-focus" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>
-                      <span className="public-place-symbol" style={{ background: meta.color }}>{item.isMainHub ? "★" : meta.glyph}</span>
+                      <span className="public-place-symbol" style={{ background: meta.color }}>{item.isMainHub ? "▼" : meta.glyph}</span>
                       <span className="public-place-copy"><strong>{item.displayName}</strong><small>{item.place.area || categoryOf(item.anchor.category).name}{item.place.locationGroupId ? " · 제주아트플랫폼 건물" : ""}</small>{tagNames.length > 0 && <span>{tagNames.map((tag) => <em key={tag}>{tag}</em>)}</span>}</span>
                       <span className="public-place-map-action">지도 보기</span>
                     </button>

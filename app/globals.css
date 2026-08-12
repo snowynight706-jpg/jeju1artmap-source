@@ -457,11 +457,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-element.public-interactive .icon-visual { transition: filter .16s ease, transform .16s ease; }
 .map-element.public-interactive:hover .icon-visual, .map-element.public-interactive:focus-visible .icon-visual { transform: translateY(-2px); filter: drop-shadow(0 5px 5px rgb(25 57 49 / 28%)); }
 .map-element.public-interactive:focus-visible { outline: 0; }
-.map-element.public-active::after { content: ""; position: absolute; inset: -8px; border: 2px solid #238b80; border-radius: 50%; box-shadow: 0 0 0 3px rgb(255 255 255 / 86%), 0 4px 14px rgb(23 83 70 / 22%); pointer-events: none; }
+.map-element.public-active::after { content: ""; position: absolute; inset: -8px; border: 2px solid #e6a926; border-radius: 50%; box-shadow: 0 0 0 3px rgb(255 255 255 / 88%), 0 4px 15px rgb(112 78 13 / 27%); pointer-events: none; }
 .map-element.focus-pulse::before { content: ""; position: absolute; inset: -15px; border: 3px solid rgb(36 142 129 / 78%); border-radius: 50%; pointer-events: none; animation: focus-ring 1.25s ease-out both; }
-.map-element.main-hub .icon-visual::after { content: ""; position: absolute; inset: -8px; border: 2px solid rgb(231 172 43 / 92%); border-radius: 50%; box-shadow: 0 0 0 4px rgb(255 255 255 / 84%), 0 5px 16px rgb(112 78 13 / 23%); pointer-events: none; }
+.map-element.main-hub.public-active::after { border-width: 2.5px; box-shadow: 0 0 0 4px rgb(255 255 255 / 88%), 0 5px 17px rgb(112 78 13 / 30%); }
 .main-hub-badge, .location-group-badge { position: absolute; z-index: 6; display: grid; place-items: center; min-width: max-content; border: 1px solid rgb(255 255 255 / 90%); box-shadow: 0 2px 7px rgb(33 53 47 / 20%); pointer-events: none; font-weight: 900; white-space: nowrap; }
-.main-hub-badge { right: -16px; top: -15px; min-height: 17px; padding: 0 5px; border-radius: 9px; background: #e6a926; color: #fff; font-size: clamp(5px, .52vw, 7px); letter-spacing: .04em; }
+.main-hub-badge { left: 50%; top: -21px; min-height: 18px; transform: translateX(-50%); padding: 0; border: 0; background: transparent; box-shadow: none; color: #d99a13; font-size: clamp(13px, 1.3vw, 18px); line-height: 1; text-shadow: -1px -1px 0 rgb(255 255 255 / 96%), 1px -1px 0 rgb(255 255 255 / 96%), -1px 1px 0 rgb(255 255 255 / 96%), 1px 1px 0 rgb(255 255 255 / 96%), 0 2px 4px rgb(91 65 12 / 30%); }
 .location-group-badge { left: 50%; top: -18px; min-height: 17px; transform: translateX(-50%); padding: 0 6px; border-radius: 9px; background: #436b8e; color: white; font-size: clamp(5px, .52vw, 7px); }
 @keyframes focus-ring { 0% { transform: scale(.72); opacity: 0; } 20% { opacity: 1; } 100% { transform: scale(1.45); opacity: 0; } }
 .resize-handle { position: absolute; right: -11px; bottom: -11px; width: 13px; height: 13px; padding: 0; border: 2px solid white; border-radius: 3px; background: var(--emerald); box-shadow: 0 0 0 1px #237c72; cursor: nwse-resize; z-index: 4; }
@@ -644,7 +644,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-place-category-chips button.active { border-color: var(--category-color); background: color-mix(in srgb, var(--category-color) 9%, white); color: color-mix(in srgb, var(--category-color) 72%, #26342f); box-shadow: 0 2px 8px color-mix(in srgb, var(--category-color) 14%, transparent); }
 .public-place-list { display: grid; gap: 7px; }
 .public-place-list article { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #dbe4e1; border-radius: 12px; background: white; box-shadow: 0 2px 9px rgb(38 58 52 / 5%); }
-.public-place-list article.selected { border-color: #62a99e; background: #f4fbf9; box-shadow: 0 0 0 2px rgb(63 146 135 / 10%); }
+.public-place-list article.selected { border-color: #d9ad45; background: #fffaf0; box-shadow: 0 0 0 2px rgb(230 169 38 / 14%); }
 .public-place-list article.main-hub { border-color: #dfc37e; background: linear-gradient(135deg, #fffaf0, #fff); }
 .public-place-focus { min-width: 0; min-height: 62px; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 8px 6px 8px 9px; border: 0; background: transparent; cursor: pointer; text-align: left; }
 .public-place-symbol { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; color: white; box-shadow: 0 3px 9px rgb(36 60 53 / 16%); font-size: 13px; font-weight: 900; }

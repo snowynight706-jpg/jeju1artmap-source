@@ -231,6 +231,6 @@ export function publicCategoriesForAdditionalCategories(value: unknown): PublicL
 
 export function publicDisplayName(name: string, featuredRole = "") {
   return featuredRole === MAIN_HUB_ROLE || normalizedName(name) === MAIN_HUB_CANONICAL_NAME
-    ? "제주소통협력센터 메인 오피스"
+    ? "제주소통협력센터"
     : name;
 }
