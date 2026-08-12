@@ -5,16 +5,18 @@ import test from "node:test";
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("the first screen keeps only symbol B until assets, initial focus, and settling are complete", () => {
+test("the first screen uses only Korean signature B until assets, initial focus, and settling are complete", () => {
+  const loaderBlock = pageSource.match(/const startupLoadingCard =[\s\S]*?<\/section>;/)?.[0] ?? "";
   assert.match(pageSource, /const startupLoadCompletedRef = useRef\(false\)/);
   assert.match(pageSource, /visibleElements\.flatMap\(\(element\) =>/);
   assert.match(pageSource, /Promise\.all\(sources\.map\(preload\)\)/);
   assert.match(pageSource, /const \[startupInitialViewReady, setStartupInitialViewReady\] = useState\(false\)/);
   assert.match(pageSource, /setStartupRevealReady\(true\), 1600/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
-  assert.match(pageSource, /src="\/jfac-symbol\.png" alt="제주문화예술재단 심볼 B"/);
-  assert.doesNotMatch(pageSource, /jfac-signature-c\.png/);
-  assert.match(pageSource, />로딩 중</);
+  assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.png"/);
+  assert.match(loaderBlock, /src="\/jfac-signature-b\.png" alt="제주문화예술재단 국문 시그니처 B"/);
+  assert.doesNotMatch(loaderBlock, /jfac-symbol\.png|jfac-signature-c\.png|제주 원도심 아트맵/);
+  assert.match(loaderBlock, />로딩 중</);
   assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
 });
 

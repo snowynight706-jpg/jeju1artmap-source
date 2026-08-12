@@ -109,10 +109,11 @@ const publicListCategories: ReadonlyArray<{
   { id: "culture", name: "문화공간", color: "#4d9a91", iconSrc: "/category-icons/cultural-facility.svg" },
   { id: "food", name: "음식점", color: "#d8974f", iconSrc: "/category-icons/restaurant.svg" },
   { id: "cafe", name: "카페", color: "#b7835b", iconSrc: "/category-icons/cafe.svg" },
-  { id: "convenience", name: "편의시설", color: "#71838f", iconSrc: "/category-icons/goods-shop.svg" },
+  { id: "shop", name: "소품샵", color: "#9a6dae", iconSrc: "/category-icons/goods-shop.svg" },
+  { id: "convenience", name: "편의시설", color: "#60958f", iconSrc: "/category-icons/convenience.png" },
 ] as const;
 
-type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "convenience";
+type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "shop" | "convenience";
 
 type CategoryId = (typeof categories)[number]["id"];
 type AssetStatus = "approved" | "review" | "unchecked";
@@ -1084,6 +1085,7 @@ function publicCategoryIdForPlace(place: DirectoryPlace, anchor: MapElement): Pu
   ) return "culture";
   if (primary === "food") return "food";
   if (primary === "cafe") return "cafe";
+  if (primary === "shop") return "shop";
   return "convenience";
 }
 
@@ -4112,7 +4114,7 @@ export default function Home() {
         ? MAP_PNG
         : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
     const sources = [...new Set([
-      "/jfac-symbol.png",
+      "/jfac-signature-b.png",
       ...publicListCategories.map((category) => category.iconSrc),
       mapSource,
       ...visibleElements.flatMap((element) => {
@@ -4218,8 +4220,8 @@ export default function Home() {
     if (stageDimensions.width <= 0 || stageDimensions.height <= 0) return;
     if (!primaryHub) {
       publicInitialViewAppliedRef.current = true;
-      setStartupInitialViewReady(true);
-      return;
+      const readyFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
+      return () => window.cancelAnimationFrame(readyFrame);
     }
 
     const compact = viewportDimensions.width <= 760;
@@ -4263,7 +4265,9 @@ export default function Home() {
   }, [elements, fitZoom, hydrated, publicLayoutAccess, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
 
   useEffect(() => {
-    if (publicLayoutAccess === "editor" && startupAssetsReady) setStartupInitialViewReady(true);
+    if (publicLayoutAccess !== "editor" || !startupAssetsReady) return;
+    const readyFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
+    return () => window.cancelAnimationFrame(readyFrame);
   }, [publicLayoutAccess, startupAssetsReady]);
 
   useEffect(() => {
@@ -6960,9 +6964,7 @@ export default function Home() {
         ? "주요 거점을 중심으로 지도를 맞추고 있습니다."
         : "화면을 안정화하고 있습니다.";
   const startupLoadingCard = <section className="public-loading-card" aria-live="polite" aria-busy="true">
-    <img className="public-loading-symbol" src="/jfac-symbol.png" alt="제주문화예술재단 심볼 B" />
-    <span className="public-loading-rule" aria-hidden="true" />
-    <strong>제주 원도심 아트맵</strong>
+    <img className="public-loading-symbol" src="/jfac-signature-b.png" alt="제주문화예술재단 국문 시그니처 B" />
     <div className="public-loading-status"><span aria-hidden="true" /><b>로딩 중</b></div>
     <p>{startupLoadingMessage}</p>
     <div className="public-loading-track" aria-hidden="true"><span style={{ width: `${startupLoadPercent}%` }} /></div>
