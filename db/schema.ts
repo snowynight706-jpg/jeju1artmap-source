@@ -43,6 +43,12 @@ export const placeDirectory = sqliteTable("place_directory", {
   sourceUrl: text("source_url").notNull(),
   mapUrl: text("map_url").notNull(),
   checkedAt: text("checked_at").notNull(),
+  additionalCategoriesJson: text("additional_categories_json").notNull().default("[]"),
+  convenienceAttributesJson: text("convenience_attributes_json").notNull().default("[]"),
+  locationGroupId: text("location_group_id").notNull().default(""),
+  mapAnchorId: text("map_anchor_id").notNull().default(""),
+  featuredRole: text("featured_role").notNull().default(""),
+  aliasesJson: text("aliases_json").notNull().default("[]"),
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by").notNull(),
 });

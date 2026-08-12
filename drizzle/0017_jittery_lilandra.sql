@@ -1,0 +1,1 @@
+ALTER TABLE `place_directory` ADD `convenience_attributes_json` text DEFAULT '[]' NOT NULL;

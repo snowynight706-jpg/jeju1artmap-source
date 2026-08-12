@@ -1,6 +1,14 @@
 import { masterDirectoryRows, masterDirectorySource, retiredMasterDirectoryIds } from "../../master-directory";
 import { categoryForPlace, normalizePlaceName } from "../../core-landmarks";
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import {
+  directoryMetadataDefaults,
+  mergeDirectoryMetadata,
+  sanitizeAdditionalCategories,
+  sanitizeConvenienceAttributes,
+  type AdditionalCategoryId,
+  type ConvenienceAttributeId,
+} from "../../place-taxonomy";
 
 export const runtime = "edge";
 
@@ -25,6 +33,18 @@ type PlaceDirectoryInput = {
   sourceUrl: string;
   mapUrl: string;
   checkedAt: string;
+  additionalCategories: AdditionalCategoryId[];
+  convenienceAttributes: ConvenienceAttributeId[];
+  locationGroupId: string;
+  mapAnchorId: string;
+  featuredRole: string;
+  aliases: string[];
+};
+
+type StoredDirectoryRow = Omit<PlaceDirectoryInput, "additionalCategories" | "convenienceAttributes" | "aliases"> & {
+  additionalCategoriesJson: string;
+  convenienceAttributesJson: string;
+  aliasesJson: string;
 };
 
 const SOURCE_STATE_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_directory_source_state (
@@ -50,7 +70,7 @@ function normalizeRow(value: unknown): PlaceDirectoryInput | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<PlaceDirectoryInput>;
   const name = normalizePlaceName(cleanText(row.name, 160));
-  const normalized = {
+  const normalizedBase = {
     id: cleanText(row.id, 180),
     name,
     category: categoryForPlace(name, cleanText(row.category, 32)),
@@ -65,7 +85,71 @@ function normalizeRow(value: unknown): PlaceDirectoryInput | null {
     mapUrl: cleanText(row.mapUrl, 1200),
     checkedAt: cleanText(row.checkedAt, 40),
   };
+  const defaults = directoryMetadataDefaults(name, normalizedBase.category, normalizedBase.subtype, normalizedBase.description);
+  const metadata = mergeDirectoryMetadata({
+    additionalCategories: sanitizeAdditionalCategories(row.additionalCategories),
+    convenienceAttributes: sanitizeConvenienceAttributes(row.convenienceAttributes),
+    locationGroupId: cleanText(row.locationGroupId, 180),
+    mapAnchorId: cleanText(row.mapAnchorId, 180),
+    featuredRole: cleanText(row.featuredRole, 120),
+    aliases: Array.isArray(row.aliases) ? row.aliases.map((item) => cleanText(item, 180)).filter(Boolean).slice(0, 12) : [],
+  }, defaults);
+  const normalized = { ...normalizedBase, ...metadata };
   return normalized.id && normalized.name && CATEGORIES.has(normalized.category) ? normalized : null;
+}
+
+function storedRowToInput(row: StoredDirectoryRow): PlaceDirectoryInput {
+  const name = normalizePlaceName(row.name);
+  const category = categoryForPlace(name, row.category);
+  const defaults = directoryMetadataDefaults(name, category, row.subtype, row.description);
+  let additionalCategoriesSource: unknown = row.additionalCategoriesJson;
+  let hasExplicitAdditionalCategories = false;
+  try {
+    const parsed = JSON.parse(row.additionalCategoriesJson) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray((parsed as { values?: unknown }).values)) {
+      additionalCategoriesSource = (parsed as { values: unknown }).values;
+      hasExplicitAdditionalCategories = true;
+    } else {
+      additionalCategoriesSource = parsed;
+    }
+  } catch {
+    additionalCategoriesSource = row.additionalCategoriesJson;
+  }
+  const additionalCategories = sanitizeAdditionalCategories(additionalCategoriesSource);
+  let convenienceAttributesSource: unknown = row.convenienceAttributesJson;
+  let hasExplicitConvenienceAttributes = false;
+  try {
+    const parsed = JSON.parse(row.convenienceAttributesJson) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray((parsed as { values?: unknown }).values)) {
+      convenienceAttributesSource = (parsed as { values: unknown }).values;
+      hasExplicitConvenienceAttributes = true;
+    } else {
+      convenienceAttributesSource = parsed;
+    }
+  } catch {
+    convenienceAttributesSource = row.convenienceAttributesJson;
+  }
+  const convenienceAttributes = sanitizeConvenienceAttributes(convenienceAttributesSource);
+  let aliases: string[] = [];
+  try {
+    const parsed = JSON.parse(row.aliasesJson) as unknown;
+    aliases = Array.isArray(parsed) ? parsed.map((item) => cleanText(item, 180)).filter(Boolean).slice(0, 12) : [];
+  } catch {
+    aliases = [];
+  }
+  const metadata = mergeDirectoryMetadata({
+    ...(hasExplicitAdditionalCategories || additionalCategories.length ? { additionalCategories } : {}),
+    ...(hasExplicitConvenienceAttributes || convenienceAttributes.length ? { convenienceAttributes } : {}),
+    locationGroupId: row.locationGroupId,
+    mapAnchorId: row.mapAnchorId,
+    featuredRole: row.featuredRole,
+    ...(aliases.length ? { aliases } : {}),
+  }, defaults);
+  const { additionalCategoriesJson: _additionalCategoriesJson, convenienceAttributesJson: _convenienceAttributesJson, aliasesJson: _aliasesJson, ...rest } = row;
+  void _additionalCategoriesJson;
+  void _convenienceAttributesJson;
+  void _aliasesJson;
+  return { ...rest, name, category, ...metadata };
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
@@ -76,7 +160,7 @@ function ownerAccess(request: Request, runtime: RuntimeEnv) {
 function bundledRows(): PlaceDirectoryInput[] {
   return masterDirectoryRows.map((row) => {
     const name = normalizePlaceName(row.name);
-    return {
+    const base = {
       id: row.id,
       name,
       category: categoryForPlace(name, row.category),
@@ -91,6 +175,7 @@ function bundledRows(): PlaceDirectoryInput[] {
       mapUrl: row.mapUrl,
       checkedAt: row.checkedAt,
     };
+    return { ...base, ...directoryMetadataDefaults(name, base.category, row.subtype, row.description) };
   });
 }
 
@@ -98,11 +183,15 @@ function insertDirectoryStatement(db: D1Database, row: PlaceDirectoryInput, upda
   return db.prepare(
     `INSERT INTO place_directory
       (id, name, category, area, address, subtype, priority, description, operating_info,
-       notes, source_url, map_url, checked_at, updated_at, updated_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       notes, source_url, map_url, checked_at, additional_categories_json, convenience_attributes_json, location_group_id,
+       map_anchor_id, featured_role, aliases_json, updated_at, updated_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     row.id, row.name, row.category, row.area, row.address, row.subtype, row.priority,
     row.description, row.operatingInfo, row.notes, row.sourceUrl, row.mapUrl, row.checkedAt,
+    JSON.stringify({ values: row.additionalCategories }), JSON.stringify({ values: row.convenienceAttributes }),
+    row.locationGroupId, row.mapAnchorId, row.featuredRole,
+    JSON.stringify(row.aliases),
     updatedAt, updatedBy,
   );
 }
@@ -117,19 +206,32 @@ async function syncBundledDirectory(db: D1Database) {
   const existingResult = await db.prepare(
     `SELECT id, name, category, area, address, subtype, priority, description,
       operating_info AS operatingInfo, notes, source_url AS sourceUrl,
-      map_url AS mapUrl, checked_at AS checkedAt
+      map_url AS mapUrl, checked_at AS checkedAt, additional_categories_json AS additionalCategoriesJson,
+      convenience_attributes_json AS convenienceAttributesJson,
+      location_group_id AS locationGroupId, map_anchor_id AS mapAnchorId,
+      featured_role AS featuredRole, aliases_json AS aliasesJson
      FROM place_directory ORDER BY name COLLATE NOCASE`,
-  ).all() as { results: PlaceDirectoryInput[] };
+  ).all() as { results: StoredDirectoryRow[] };
+  const existingRows = existingResult.results.map(storedRowToInput);
   const existingByName = new Map(
-    existingResult.results.map((row) => [normalizePlaceName(row.name).toLocaleLowerCase("ko-KR"), row]),
+    existingRows.map((row) => [normalizePlaceName(row.name).toLocaleLowerCase("ko-KR"), row]),
   );
   const sourceRows = bundledRows().map((row) => {
     const existing = existingByName.get(row.name.toLocaleLowerCase("ko-KR"));
-    return existing ? { ...row, id: existing.id } : row;
+    return existing ? {
+      ...row,
+      id: existing.id,
+      additionalCategories: existing.additionalCategories,
+      convenienceAttributes: existing.convenienceAttributes,
+      locationGroupId: existing.locationGroupId,
+      mapAnchorId: existing.mapAnchorId,
+      featuredRole: existing.featuredRole,
+      aliases: existing.aliases,
+    } : row;
   });
   const sourceNames = new Set(sourceRows.map((row) => row.name.toLocaleLowerCase("ko-KR")));
   const retiredIds = new Set<string>(retiredMasterDirectoryIds);
-  const retainedRows = existingResult.results.filter((row) => (
+  const retainedRows = existingRows.filter((row) => (
     !sourceNames.has(normalizePlaceName(row.name).toLocaleLowerCase("ko-KR")) && !retiredIds.has(row.id)
   ));
   const updatedAt = new Date().toISOString();
@@ -160,17 +262,16 @@ export async function GET(request: Request) {
     runtime.DB.prepare(
       `SELECT id, name, category, area, address, subtype, priority, description,
         operating_info AS operatingInfo, notes, source_url AS sourceUrl,
-        map_url AS mapUrl, checked_at AS checkedAt
+        map_url AS mapUrl, checked_at AS checkedAt, additional_categories_json AS additionalCategoriesJson,
+        convenience_attributes_json AS convenienceAttributesJson,
+        location_group_id AS locationGroupId, map_anchor_id AS mapAnchorId,
+        featured_role AS featuredRole, aliases_json AS aliasesJson
        FROM place_directory ORDER BY name COLLATE NOCASE`,
-    ).all() as Promise<{ results: PlaceDirectoryInput[] }>,
+    ).all() as Promise<{ results: StoredDirectoryRow[] }>,
     runtime.DB.prepare("SELECT updated_at AS updatedAt FROM place_directory_revision WHERE id = 1")
       .first() as Promise<{ updatedAt: string } | null>,
   ]);
-  const rows = rowsResult.results.map((row) => ({
-    ...row,
-    name: normalizePlaceName(row.name),
-    category: categoryForPlace(row.name, row.category),
-  }));
+  const rows = rowsResult.results.map(storedRowToInput);
   return json({ rows, persistent: true, canEdit, updatedAt: revision?.updatedAt ?? null });
 }
 

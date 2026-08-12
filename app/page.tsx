@@ -3,6 +3,7 @@
 
 import {
   ChangeEvent,
+  type CSSProperties,
   FormEvent,
   PointerEvent as ReactPointerEvent,
   useCallback,
@@ -24,6 +25,23 @@ import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places"
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
+import {
+  ART_PLATFORM_FACILITY_NAMES,
+  ART_PLATFORM_GROUP_ID,
+  MAIN_HUB_CANONICAL_NAME,
+  MAIN_HUB_ROLE,
+  additionalCategoryDefinitions,
+  convenienceAttributeDefinitions,
+  directoryMetadataDefaults,
+  mergeDirectoryMetadata,
+  publicCategoriesForAdditionalCategories,
+  publicDisplayName,
+  sanitizeAdditionalCategories,
+  sanitizeConvenienceAttributes,
+  type AdditionalCategoryId,
+  type ConvenienceAttributeId,
+  type PublicListCategoryId,
+} from "./place-taxonomy";
 
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -67,6 +85,30 @@ const categories = [
   { id: "utility", name: "기타 편의시설", color: "#8f7ea7", glyph: "＋" },
 ] as const;
 
+const publicListCategories: ReadonlyArray<{
+  id: "all" | "hub" | PublicListCategoryId;
+  name: string;
+  shortName: string;
+  color: string;
+  glyph: string;
+}> = [
+  { id: "all", name: "전체 장소", shortName: "전체", color: "#61756f", glyph: "全" },
+  { id: "hub", name: "워크케이션 거점", shortName: "메인 거점", color: "#c98a2c", glyph: "★" },
+  { id: "culture", name: "문화공간", shortName: "문화", color: "#4d9a91", glyph: "文" },
+  { id: "cafe", name: "카페", shortName: "카페", color: "#b7835b", glyph: "珈" },
+  { id: "food", name: "음식점", shortName: "음식", color: "#d8974f", glyph: "食" },
+  { id: "shop", name: "소품샵", shortName: "소품샵", color: "#9a6dae", glyph: "物" },
+  { id: "exhibition-performance", name: "전시·공연", shortName: "전시·공연", color: "#5a84a8", glyph: "展" },
+  { id: "multi-cultural", name: "복합문화", shortName: "복합문화", color: "#6f73ad", glyph: "複" },
+  { id: "creative-startup", name: "창작·창업", shortName: "창작·창업", color: "#4b8e78", glyph: "創" },
+  { id: "event-rental", name: "행사·대관", shortName: "행사·대관", color: "#bb765b", glyph: "會" },
+  { id: "experience-education", name: "체험·교육", shortName: "체험·교육", color: "#b88b42", glyph: "學" },
+  { id: "local-goods", name: "소품·로컬상품", shortName: "로컬상품", color: "#9a6dae", glyph: "品" },
+  { id: "walk-rest", name: "산책·휴식", shortName: "산책·휴식", color: "#69a56d", glyph: "休" },
+] as const;
+
+type PublicPlaceCategoryFilter = (typeof publicListCategories)[number]["id"];
+
 type CategoryId = (typeof categories)[number]["id"];
 type AssetStatus = "approved" | "review" | "unchecked";
 type LabelPosition = "top" | "bottom" | "left" | "right";
@@ -78,7 +120,7 @@ type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PrintMode = "auto" | "include" | "exclude";
 type PlacementState = "unplaced" | "deleted";
 type PublicLayoutAccess = "loading" | "editor" | "viewer";
-type GlobalContentTab = "reviews" | "events" | "place-requests";
+type GlobalContentTab = "places" | "reviews" | "events" | "place-requests";
 
 type UploadedBaseMap = {
   available: boolean;
@@ -157,6 +199,12 @@ type DirectoryPlace = {
   checkedAt?: string;
   latitude?: number;
   longitude?: number;
+  additionalCategories?: AdditionalCategoryId[];
+  convenienceAttributes?: ConvenienceAttributeId[];
+  locationGroupId?: string;
+  mapAnchorId?: string;
+  featuredRole?: string;
+  aliases?: string[];
 };
 
 type PlaceDirectoryRecord = {
@@ -173,6 +221,21 @@ type PlaceDirectoryRecord = {
   sourceUrl: string;
   mapUrl: string;
   checkedAt: string;
+  additionalCategories: AdditionalCategoryId[];
+  convenienceAttributes: ConvenienceAttributeId[];
+  locationGroupId: string;
+  mapAnchorId: string;
+  featuredRole: string;
+  aliases: string[];
+};
+
+type PublicPlaceListItem = {
+  id: string;
+  place: DirectoryPlace;
+  anchor: MapElement;
+  displayName: string;
+  categoryIds: PublicListCategoryId[];
+  isMainHub: boolean;
 };
 
 type UnifiedPlaceRow = {
@@ -656,6 +719,8 @@ function calibratedPlaceCoordinates(name: string, latitude: number | undefined, 
 
 const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-jeju-art-platform", name: "제주아트플랫폼", category: "culture", area: "중앙로", address: "제주특별자치도 제주시 중앙로14길 18", x: 31, y: 62, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "master-v10-a80e3fe120dd", name: "아르코공연연습센터@제주", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 중앙로14길 18 제주아트플랫폼 3~4층", x: 31, y: 62, coordinateStatus: "landmark", sourceLabel: "제주아트플랫폼 동일 건물 시설", subtype: "공연예술 연습공간", priority: "검토", description: "연습실·리딩룸·분장실과 공연 장비를 갖춘 공연예술인 대관 공간", operatingInfo: "운영·대관 일정은 공식 안내 확인", sourceUrl: "https://www.jfac.kr/notification/notice/19026", checkedAt: "2026-08-12" },
+  { id: "master-v12-jeju-artist-welfare-center", name: "제주예술인복지센터", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 중앙로14길 18 제주아트플랫폼 1층", x: 31, y: 62, coordinateStatus: "landmark", sourceLabel: "제주아트플랫폼 동일 건물 시설", subtype: "예술인 복지·회의공간", priority: "검토", description: "예술인의 행정 상담과 회의·세미나·교육 등 활동을 지원하는 공간", operatingInfo: "운영·상담·대관 일정은 제주문화예술재단 공식 안내 확인", sourceUrl: "https://www.jfac.kr/notification/notice/20301", checkedAt: "2026-08-12" },
   { id: "place-artspace-ia", name: "예술공간 이아", category: "culture", area: "중앙로", address: "제주특별자치도 제주시 중앙로14길 21", x: 34, y: 57, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-sanjicheon-gallery", name: "산지천갤러리", category: "culture", area: "산지천", address: "제주특별자치도 제주시 중앙로3길 36", x: 64, y: 40, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-kim-manduk-memorial", name: "김만덕기념관", category: "culture", area: "산지천", address: "제주특별자치도 제주시 산지로 7", x: 74, y: 31, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
@@ -672,6 +737,32 @@ const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-idongat", name: "이돈갓", category: "food", area: "칠성통", address: "제주특별자치도 제주시 칠성로길 27", x: 58, y: 51, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
   { id: "place-chilseong-buffet", name: "칠성뷔페", category: "food", area: "칠성통", address: "제주특별자치도 제주시 관덕로11길 17", x: 54, y: 54, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
 ];
+
+function withDirectoryMetadata(place: DirectoryPlace): DirectoryPlace {
+  const defaults = directoryMetadataDefaults(place.name, place.category, place.subtype, place.description);
+  const metadata = mergeDirectoryMetadata({
+    ...(Object.prototype.hasOwnProperty.call(place, "additionalCategories") ? { additionalCategories: place.additionalCategories } : {}),
+    ...(Object.prototype.hasOwnProperty.call(place, "convenienceAttributes") ? { convenienceAttributes: place.convenienceAttributes } : {}),
+    locationGroupId: place.locationGroupId,
+    mapAnchorId: place.mapAnchorId,
+    featuredRole: place.featuredRole,
+    ...(Object.prototype.hasOwnProperty.call(place, "aliases") ? { aliases: place.aliases } : {}),
+  }, defaults);
+  return { ...place, ...metadata };
+}
+
+function ensureSystemDirectoryPlaces(places: DirectoryPlace[]) {
+  const normalized = places.map(withDirectoryMetadata);
+  const names = new Set(normalized.map((place) => normalizePlaceName(place.name)));
+  const hasArtPlatform = names.has("제주아트플랫폼");
+  const additions = hasArtPlatform
+    ? legacyDirectoryPlaces
+      .filter((place) => (ART_PLATFORM_FACILITY_NAMES as readonly string[]).includes(normalizePlaceName(place.name)))
+      .filter((place) => !names.has(normalizePlaceName(place.name)))
+      .map(withDirectoryMetadata)
+    : [];
+  return [...normalized, ...additions];
+}
 
 const areaFallbacks: Record<string, { x: number; y: number }> = {
   "관덕로·목관아": { x: 40, y: 59 },
@@ -726,7 +817,7 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
       };
     });
   const names = new Set(built.map((place) => place.name));
-  return [
+  return ensureSystemDirectoryPlaces([
     ...built,
     ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))).map((place) => {
       const geocoded = geocodedPlaces[normalizePlaceName(place.name)];
@@ -739,7 +830,7 @@ function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
       const geocoded = geocodedPlaces[place.name];
       return geocoded ? { ...place, ...geocoded, coordinateStatus: "geocoded" as const } : { ...place, coordinateStatus: "unresolved" as const };
     }),
-  ];
+  ]);
 }
 
 // Keep the public viewer's initial bundle lean. The full master directory is
@@ -751,20 +842,27 @@ const defaultDirectoryPlaces = buildDirectoryPlaces([]).map((place) => {
 
 function directoryRecordFromPlace(place: DirectoryPlace): PlaceDirectoryRecord {
   const name = normalizePlaceName(place.name);
+  const decorated = withDirectoryMetadata({ ...place, name });
   return {
-    id: place.id,
+    id: decorated.id,
     name,
-    category: categoryForPlace(name, place.category) as CategoryId,
-    area: place.area ?? "",
-    address: place.address ?? "",
-    subtype: place.subtype ?? "",
-    priority: place.priority ?? "",
-    description: place.description ?? "",
-    operatingInfo: place.operatingInfo ?? "",
-    notes: place.notes ?? "",
-    sourceUrl: place.sourceUrl ?? "",
-    mapUrl: place.mapUrl ?? "",
-    checkedAt: place.checkedAt ?? "",
+    category: categoryForPlace(name, decorated.category) as CategoryId,
+    area: decorated.area ?? "",
+    address: decorated.address ?? "",
+    subtype: decorated.subtype ?? "",
+    priority: decorated.priority ?? "",
+    description: decorated.description ?? "",
+    operatingInfo: decorated.operatingInfo ?? "",
+    notes: decorated.notes ?? "",
+    sourceUrl: decorated.sourceUrl ?? "",
+    mapUrl: decorated.mapUrl ?? "",
+    checkedAt: decorated.checkedAt ?? "",
+    additionalCategories: sanitizeAdditionalCategories(decorated.additionalCategories),
+    convenienceAttributes: sanitizeConvenienceAttributes(decorated.convenienceAttributes),
+    locationGroupId: decorated.locationGroupId ?? "",
+    mapAnchorId: decorated.mapAnchorId ?? "",
+    featuredRole: decorated.featuredRole ?? "",
+    aliases: decorated.aliases ?? [],
   };
 }
 
@@ -773,7 +871,7 @@ function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: Directo
   const currentByName = new Map(current.map((place) => [normalizePlaceName(place.name), place]));
   const defaultById = new Map(defaultDirectoryPlaces.map((place) => [place.id, place]));
   const defaultByName = new Map(defaultDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
-  return records.map((record) => {
+  return ensureSystemDirectoryPlaces(records.map((record) => {
     const name = normalizePlaceName(record.name);
     const category = categoryForPlace(name, record.category) as CategoryId;
     const geocoded = geocodedPlaces[name];
@@ -783,7 +881,7 @@ function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: Directo
       ?? defaultById.get(record.id)
       ?? defaultByName.get(name);
     const addressChanged = Boolean(base && base.address.trim() !== record.address.trim());
-    return {
+    return withDirectoryMetadata({
       ...(base ?? {
         x: calibrated?.x ?? geocoded?.x ?? 50,
         y: calibrated?.y ?? geocoded?.y ?? 50,
@@ -802,8 +900,8 @@ function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: Directo
         longitude: undefined,
       } : {}),
       ...(isCoreLandmarkName(name) ? { coordinateStatus: "landmark" as const } : {}),
-    };
-  });
+    });
+  }));
 }
 
 const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [place.name, place]));
@@ -931,7 +1029,10 @@ function buildStarterMarkers(places: DirectoryPlace[]): MapElement[] {
   });
 }
 
-const initialElements: MapElement[] = [...initialLandmarkElements, ...buildStarterMarkers(defaultDirectoryPlaces)];
+const initialElements: MapElement[] = ensureMainHubMapElement(
+  [...initialLandmarkElements, ...buildStarterMarkers(defaultDirectoryPlaces)],
+  defaultDirectoryPlaces,
+);
 
 const factoryLandmarkDefaultPositions: LandmarkDefaultPosition[] = initialLandmarkElements.map((element) => ({
   elementId: element.id,
@@ -952,8 +1053,24 @@ function categoryOf(id: CategoryId) {
   return categories.find((category) => category.id === id) ?? categories[categories.length - 1];
 }
 
+function publicCategoryIdsForPlace(place: DirectoryPlace, anchor: MapElement): PublicListCategoryId[] {
+  const ids = new Set<PublicListCategoryId>(publicCategoriesForAdditionalCategories(place.additionalCategories));
+  const primary = place.category === "landmark" ? anchor.category : place.category;
+  if (primary === "culture" || primary === "cafe" || primary === "food" || primary === "shop") ids.add(primary);
+  if (place.featuredRole === MAIN_HUB_ROLE || isPrimaryHubLabel(place.name)) ids.add("culture");
+  return publicListCategories.flatMap((category): PublicListCategoryId[] => (
+    category.id !== "all" && category.id !== "hub" && ids.has(category.id) ? [category.id] : []
+  ));
+}
+
+function publicCategoryMetaForPlace(place: DirectoryPlace, anchor: MapElement) {
+  const first = publicCategoryIdsForPlace(place, anchor)[0];
+  return publicListCategories.find((category) => category.id === first)
+    ?? publicListCategories.find((category) => category.id === "culture")!;
+}
+
 function isPrimaryHubLabel(name: string) {
-  return normalizePlaceName(name) === "제주아트플랫폼";
+  return normalizePlaceName(name) === "제주시소통협력센터";
 }
 
 function placeContentKey(element: Pick<MapElement, "id" | "directoryId">) {
@@ -1518,6 +1635,48 @@ function ensureIndependentElementIdentity(elements: MapElement[]) {
   });
 }
 
+function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[]) {
+  if (elements.some((element) => isPrimaryHubLabel(element.name))) return elements;
+  const hubPlace = places.find((place) => isPrimaryHubLabel(place.name)) ?? withDirectoryMetadata({
+    id: "place-sotong-center",
+    name: MAIN_HUB_CANONICAL_NAME,
+    category: "culture",
+    area: "관덕로·목관아",
+    address: "제주특별자치도 제주시 관덕로 44",
+    x: 45,
+    y: 59,
+    coordinateStatus: "review",
+    sourceLabel: "시스템 메인 거점 폴백 · DB 좌표 우선",
+    featuredRole: MAIN_HUB_ROLE,
+  });
+  const requestedId = "system-main-hub-sotong";
+  const id = elements.some((element) => element.id === requestedId)
+    ? uniqueRuntimeId("element", elements.map((element) => element.id))
+    : requestedId;
+  return [...elements, {
+    ...elementDefaults,
+    id,
+    directoryId: hubPlace.id,
+    name: normalizePlaceName(hubPlace.name),
+    category: "culture" as const,
+    x: hubPlace.x,
+    y: hubPlace.y,
+    anchorX: hubPlace.x,
+    anchorY: hubPlace.y,
+    size: 2.8,
+    z: Math.max(0, ...elements.map((element) => element.z)) + 1,
+    labelVisible: true,
+    labelLocked: true,
+    labelGap: 6,
+    assetId: defaultMarkerAssetId("culture"),
+    status: "approved" as const,
+    mapVisible: true,
+    address: hubPlace.address,
+    addressSourceUrl: hubPlace.sourceUrl ?? "",
+    memo: "워크케이션 메인 거점 · 전용 랜드마크 자산 교체 예정",
+  }];
+}
+
 function sanitizeDocument(document: DocumentState): DocumentState {
   const storedAssetStatuses = new Map(document.assets.map((asset) => [asset.id, asset.status]));
   const sanitizedElements = document.elements
@@ -1548,25 +1707,35 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         ? { ...canonical, assetId: defaultAssetId, status: canonical.status === "approved" ? "approved" as AssetStatus : "review" as AssetStatus }
         : canonical;
     });
-  return {
-    ...document,
-    elements: ensureIndependentElementIdentity(sanitizedElements),
-    assets: [
-      ...builtInAssets.map((asset) => ({ ...asset, status: storedAssetStatuses.get(asset.id) ?? asset.status })),
-      ...document.assets.filter((asset) => !builtInAssetIds.has(asset.id)
-        && (asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id) || asset.builtIn === false)),
-    ],
-    directoryPlaces: document.directoryPlaces
-      ?.filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim()))
+  const sanitizedDirectoryPlaces = document.directoryPlaces
+    ? ensureSystemDirectoryPlaces(document.directoryPlaces
+      .filter((place) => !DELETED_PLACE_NAMES.has(place.name.trim()))
       .map((place) => {
         const name = normalizePlaceName(place.name);
         return {
           ...place,
           name,
           category: categoryForPlace(name, place.category) as CategoryId,
+          ...(Object.prototype.hasOwnProperty.call(place, "additionalCategories")
+            ? { additionalCategories: sanitizeAdditionalCategories(place.additionalCategories) }
+            : {}),
+          ...(Object.prototype.hasOwnProperty.call(place, "convenienceAttributes")
+            ? { convenienceAttributes: sanitizeConvenienceAttributes(place.convenienceAttributes) }
+            : {}),
           ...(isCoreLandmarkName(name) ? { coordinateStatus: "landmark" as const } : {}),
         };
-      }),
+      }))
+    : undefined;
+  const ensuredElements = ensureMainHubMapElement(sanitizedElements, sanitizedDirectoryPlaces ?? defaultDirectoryPlaces);
+  return {
+    ...document,
+    elements: ensureIndependentElementIdentity(ensuredElements),
+    assets: [
+      ...builtInAssets.map((asset) => ({ ...asset, status: storedAssetStatuses.get(asset.id) ?? asset.status })),
+      ...document.assets.filter((asset) => !builtInAssetIds.has(asset.id)
+        && (asset.category === "landmark" || canonicalMarkerAssetIds.has(asset.id) || asset.builtIn === false)),
+    ],
+    directoryPlaces: sanitizedDirectoryPlaces,
     denseLabelPositions: [...new Map((document.denseLabelPositions ?? [])
       .filter((position) => position && typeof position.key === "string" && position.key.length > 0 && Array.isArray(position.elementIds) && position.elementIds.length >= 2 && position.elementIds.length <= 4)
       .map((position) => [position.key, {
@@ -1791,6 +1960,8 @@ export default function Home() {
   const zoomRef = useRef(0.72);
   const panRef = useRef({ x: 0, y: 0 });
   const wheelFrameRef = useRef<number | null>(null);
+  const focusTransitionFrameRef = useRef<number | null>(null);
+  const focusTransitionTimerRef = useRef<number | null>(null);
   const pendingWheelRef = useRef<{ deltaY: number; cursorX: number; cursorY: number } | null>(null);
   const placeDirectoryLoadedRef = useRef(false);
   const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
@@ -1811,6 +1982,7 @@ export default function Home() {
   const [calibrationPoints, setCalibrationPoints] = useState<CalibrationPoint[]>(initialCalibrationPoints);
   const [landmarkDefaultPositions, setLandmarkDefaultPositions] = useState<LandmarkDefaultPosition[]>(factoryLandmarkDefaultPositions);
   const [selectedId, setSelectedId] = useState<string | null>(initialElements[0].id);
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<DocumentState[]>([]);
   const [redoStack, setRedoStack] = useState<DocumentState[]>([]);
@@ -1873,6 +2045,11 @@ export default function Home() {
   const [placeStoriesLoading, setPlaceStoriesLoading] = useState(false);
   const [, setPlaceStoriesCanModerate] = useState(false);
   const [globalStoriesOpen, setGlobalStoriesOpen] = useState(false);
+  const [publicPanelExpanded, setPublicPanelExpanded] = useState(false);
+  const [publicPlaceExpanded, setPublicPlaceExpanded] = useState(false);
+  const [publicPlaceQuery, setPublicPlaceQuery] = useState("");
+  const [publicPlaceCategory, setPublicPlaceCategory] = useState<PublicPlaceCategoryFilter>("all");
+  const [mapFocusAnimating, setMapFocusAnimating] = useState(false);
   const [globalStories, setGlobalStories] = useState<PlaceStory[]>([]);
   const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
   const [globalStoriesPageCount, setGlobalStoriesPageCount] = useState(0);
@@ -1906,7 +2083,7 @@ export default function Home() {
   const [placeEventExistingPhotoUrl, setPlaceEventExistingPhotoUrl] = useState<string | null>(null);
   const [placeEventSubmitting, setPlaceEventSubmitting] = useState(false);
   const [placeEventActionId, setPlaceEventActionId] = useState<string | null>(null);
-  const [globalContentTab, setGlobalContentTab] = useState<GlobalContentTab>("reviews");
+  const [globalContentTab, setGlobalContentTab] = useState<GlobalContentTab>("places");
   const [globalEvents, setGlobalEvents] = useState<PlaceEvent[]>([]);
   const [globalEventsPage, setGlobalEventsPage] = useState(1);
   const [globalEventsPageCount, setGlobalEventsPageCount] = useState(0);
@@ -2034,7 +2211,10 @@ export default function Home() {
       : factoryLandmarkDefaultPositions.map((position) => ({ ...position }));
     const restoredPlaces = clean.directoryPlaces?.length ? clean.directoryPlaces : defaultDirectoryPlaces;
     const restoredNames = new Set(restoredPlaces.map((place) => normalizePlaceName(place.name)));
-    const restoredPlaceSet = [...restoredPlaces, ...supportDirectoryPlaces.filter((place) => !restoredNames.has(normalizePlaceName(place.name)))];
+    const restoredPlaceSet = ensureSystemDirectoryPlaces([
+      ...restoredPlaces,
+      ...supportDirectoryPlaces.filter((place) => !restoredNames.has(normalizePlaceName(place.name))),
+    ]);
     const restoredEffectivePoints = buildEffectiveCalibrationPoints(restoredCalibrationPoints, restoredLandmarkDefaults, clean.elements, restoredPlaceSet);
     const mergedPlaces = restoredPlaceSet.map((place) => {
       if (hadCalibration) return place;
@@ -2052,7 +2232,10 @@ export default function Home() {
       return { ...element, anchorX: mapped.x, anchorY: mapped.y, ...((reference || followsAnchor || isDefaultPlacement) ? { x: mapped.x, y: mapped.y } : {}) };
     });
     const restoredPlacementOverrides = sanitizePlacementOverrides(clean.placementOverrides);
-    const migratedElements = applyPlacementOverrides(migratedElementsBeforePlacement, restoredPlacementOverrides);
+    const migratedElements = ensureMainHubMapElement(
+      applyPlacementOverrides(migratedElementsBeforePlacement, restoredPlacementOverrides),
+      mergedPlaces,
+    );
     elementsRef.current = migratedElements;
     assetsRef.current = clean.assets;
     notesRef.current = clean.reviewNotes;
@@ -2075,6 +2258,7 @@ export default function Home() {
     setPlacementOverrides(restoredPlacementOverrides);
     setCalibrationDirty(false);
     setSelectedId(null);
+    setSelectedFacilityId(null);
     setSelectedNoteId(null);
     setSelectedDenseLabelId(null);
   }, []);
@@ -2413,11 +2597,37 @@ export default function Home() {
 
   const selected = elements.find((element) => element.id === selectedId) ?? null;
   const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
-  const selectedStoryKey = selected ? placeContentKey(selected) : null;
-  const selectedDirectoryPlace = selected ? directoryPlaces.find((place) => (
+  const selectedAnchorDirectoryPlace = selected ? directoryPlaces.find((place) => (
     (selected.directoryId && place.id === selected.directoryId)
     || normalizePlaceName(place.name) === normalizePlaceName(selected.name)
   )) ?? null : null;
+  const selectedFacilityPlace = selectedFacilityId
+    ? directoryPlaces.find((place) => place.id === selectedFacilityId) ?? null
+    : null;
+  const selectedDirectoryPlace = selectedFacilityPlace?.locationGroupId
+    && selectedFacilityPlace.locationGroupId === selectedAnchorDirectoryPlace?.locationGroupId
+    ? selectedFacilityPlace
+    : selectedAnchorDirectoryPlace;
+  const selectedStoryKey = selectedDirectoryPlace
+    ? `directory:${selectedDirectoryPlace.id}`
+    : selected
+      ? placeContentKey(selected)
+      : null;
+  const selectedDisplayName = selectedDirectoryPlace
+    ? publicDisplayName(selectedDirectoryPlace.name, selectedDirectoryPlace.featuredRole)
+    : selected?.name ?? "";
+  const selectedLocationGroupId = selectedDirectoryPlace?.locationGroupId ?? null;
+  const selectedLocationGroupPlaces = (() => {
+    const groupId = selectedLocationGroupId;
+    if (!groupId) return [];
+    return directoryPlaces
+      .filter((place) => place.locationGroupId === groupId)
+      .sort((a, b) => {
+        const order = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(a.name));
+        const otherOrder = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(b.name));
+        return (order < 0 ? 99 : order) - (otherOrder < 0 ? 99 : otherOrder) || a.name.localeCompare(b.name, "ko");
+      });
+  })();
   const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces), [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions]);
   const secondaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"), [effectiveCalibrationPoints]);
   const tertiaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"), [effectiveCalibrationPoints]);
@@ -2513,7 +2723,17 @@ export default function Home() {
   const filteredDatabaseDraftPlaces = useMemo(() => {
     const query = databaseEditorQuery.trim().toLocaleLowerCase("ko-KR");
     return databaseDraftPlaces
-      .filter((place) => !query || `${place.name} ${place.address} ${place.area} ${place.subtype ?? ""}`.toLocaleLowerCase("ko-KR").includes(query))
+      .filter((place) => {
+        const tagNames = additionalCategoryDefinitions
+          .filter((definition) => sanitizeAdditionalCategories(place.additionalCategories).includes(definition.id))
+          .map((definition) => definition.name)
+          .join(" ");
+        const convenienceNames = convenienceAttributeDefinitions
+          .filter((definition) => sanitizeConvenienceAttributes(place.convenienceAttributes).includes(definition.id))
+          .map((definition) => definition.name)
+          .join(" ");
+        return !query || `${place.name} ${(place.aliases ?? []).join(" ")} ${place.address} ${place.area} ${place.subtype ?? ""} ${tagNames} ${convenienceNames}`.toLocaleLowerCase("ko-KR").includes(query);
+      })
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [databaseDraftPlaces, databaseEditorQuery]);
 
@@ -2583,7 +2803,10 @@ export default function Home() {
     .sort((a, b) => a.z - b.z), [activeCategory, elements, printPolicyFor, screenRecommendedOnly, viewMode]);
   const printMarkerElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).marker).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
   const printLabelElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).label).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
-  const editorLabelElements = useMemo(() => editorVisibleElements.filter((element) => element.labelVisible && (element.category === "landmark" || markerLabelsVisible)), [editorVisibleElements, markerLabelsVisible]);
+  const editorLabelElements = useMemo(() => editorVisibleElements.filter((element) => (
+    (element.labelVisible || (publicLayoutAccess === "viewer" && isPrimaryHubLabel(element.name)))
+    && (element.category === "landmark" || markerLabelsVisible || isPrimaryHubLabel(element.name))
+  )), [editorVisibleElements, markerLabelsVisible, publicLayoutAccess]);
   const visibleElements = useMemo(() => {
     if (!printPreviewMode) return editorVisibleElements;
     const byId = new Map([...printMarkerElements, ...printLabelElements].map((element) => [element.id, element]));
@@ -2596,15 +2819,104 @@ export default function Home() {
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
   const visibleElementsById = useMemo(() => new Map(visibleElements.map((element) => [element.id, element])), [visibleElements]);
 
+  const publicPlaceItems = useMemo<PublicPlaceListItem[]>(() => {
+    const placesById = new Map(directoryPlaces.map((place) => [place.id, place]));
+    const placesByName = new Map(directoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
+    const placesByGroup = new Map<string, DirectoryPlace[]>();
+    directoryPlaces.forEach((place) => {
+      if (!place.locationGroupId) return;
+      const group = placesByGroup.get(place.locationGroupId) ?? [];
+      group.push(place);
+      placesByGroup.set(place.locationGroupId, group);
+    });
+    const items = new Map<string, PublicPlaceListItem>();
+    visibleElements.forEach((anchor) => {
+      const ownPlace = (anchor.directoryId ? placesById.get(anchor.directoryId) : undefined)
+        ?? placesByName.get(normalizePlaceName(anchor.name));
+      const candidates = ownPlace?.locationGroupId
+        ? placesByGroup.get(ownPlace.locationGroupId) ?? [ownPlace]
+        : ownPlace
+          ? [ownPlace]
+          : [{
+            id: `element-${anchor.id}`,
+            name: anchor.name,
+            category: anchor.category,
+            area: anchor.category === "landmark" ? "랜드마크" : "지도 배치",
+            address: anchor.address,
+            x: anchor.x,
+            y: anchor.y,
+            coordinateStatus: anchor.category === "landmark" ? "landmark" as const : "review" as const,
+            sourceLabel: "공개 지도",
+            additionalCategories: [],
+          } satisfies DirectoryPlace];
+      candidates.forEach((candidate) => {
+        const place = withDirectoryMetadata(candidate);
+        const itemId = place.id || `element-${anchor.id}`;
+        if (items.has(itemId)) return;
+        const isMainHub = place.featuredRole === MAIN_HUB_ROLE || isPrimaryHubLabel(place.name);
+        items.set(itemId, {
+          id: itemId,
+          place,
+          anchor,
+          displayName: publicDisplayName(place.name, place.featuredRole),
+          categoryIds: publicCategoryIdsForPlace(place, anchor),
+          isMainHub,
+        });
+      });
+    });
+    return [...items.values()].sort((a, b) => (
+      Number(b.isMainHub) - Number(a.isMainHub)
+      || Number(a.place.locationGroupId !== ART_PLATFORM_GROUP_ID) - Number(b.place.locationGroupId !== ART_PLATFORM_GROUP_ID)
+      || a.displayName.localeCompare(b.displayName, "ko")
+    ));
+  }, [directoryPlaces, visibleElements]);
+
+  const publicPlaceCategoryCounts = useMemo(() => publicListCategories.reduce<Record<PublicPlaceCategoryFilter, number>>((counts, category) => {
+    counts[category.id] = category.id === "all"
+      ? publicPlaceItems.length
+      : category.id === "hub"
+        ? publicPlaceItems.filter((item) => item.isMainHub).length
+        : publicPlaceItems.filter((item) => item.categoryIds.includes(category.id)).length;
+    return counts;
+  }, Object.fromEntries(publicListCategories.map((category) => [category.id, 0])) as Record<PublicPlaceCategoryFilter, number>), [publicPlaceItems]);
+
+  const filteredPublicPlaceItems = useMemo(() => {
+    const query = publicPlaceQuery.trim().toLocaleLowerCase("ko-KR");
+    return publicPlaceItems.filter((item) => {
+      const categoryMatch = publicPlaceCategory === "all"
+        || (publicPlaceCategory === "hub" ? item.isMainHub : item.categoryIds.includes(publicPlaceCategory));
+      if (!categoryMatch) return false;
+      if (!query) return true;
+      const tags = additionalCategoryDefinitions
+        .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
+        .map((definition) => definition.name)
+        .join(" ");
+      const conveniences = convenienceAttributeDefinitions
+        .filter((definition) => sanitizeConvenienceAttributes(item.place.convenienceAttributes).includes(definition.id))
+        .map((definition) => definition.name)
+        .join(" ");
+      return `${item.displayName} ${item.place.name} ${(item.place.aliases ?? []).join(" ")} ${item.place.address} ${item.place.area} ${tags} ${conveniences}`.toLocaleLowerCase("ko-KR").includes(query);
+    });
+  }, [publicPlaceCategory, publicPlaceItems, publicPlaceQuery]);
+
+  const locationGroupCountByAnchorId = useMemo(() => publicPlaceItems.reduce<Map<string, number>>((counts, item) => {
+    if (!item.place.locationGroupId) return counts;
+    counts.set(item.anchor.id, (counts.get(item.anchor.id) ?? 0) + 1);
+    return counts;
+  }, new Map()), [publicPlaceItems]);
+
+  const displayDenseLabelExcludedIds = useMemo(() => publicLayoutAccess === "viewer"
+    ? [...new Set([...denseLabelExcludedIds, ...editorVisibleElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id)])]
+    : denseLabelExcludedIds, [denseLabelExcludedIds, editorVisibleElements, publicLayoutAccess]);
   const denseLabelClusters = useMemo(() => mergeDenseLabels && (printPreviewMode || !forceIndividualLabels)
     ? buildDenseLabelClusters(
         stageLabelElements,
         stageMarkerElements,
         denseLabelPositions,
-        denseLabelExcludedIds,
+        printPreviewMode ? denseLabelExcludedIds : displayDenseLabelExcludedIds,
         printPreviewMode ? 1 : fitZoom / Math.max(zoom, 0.22),
       )
-    : [], [denseLabelExcludedIds, denseLabelPositions, fitZoom, forceIndividualLabels, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements, zoom]);
+    : [], [denseLabelExcludedIds, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements, zoom]);
   const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
   const selectedDenseLabel = useMemo(
     () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
@@ -2624,6 +2936,7 @@ export default function Home() {
   const collisions = useMemo(() => {
     const hard = new Set<string>();
     const clearance = new Set<string>();
+    if (publicLayoutAccess === "viewer") return { hard, clearance };
     const ordered = [...stageMarkerElements].sort((a, b) => a.x - b.x);
     const maximumSize = ordered.reduce((maximum, element) => Math.max(maximum, element.size), 0);
     for (let index = 0; index < ordered.length; index += 1) {
@@ -2644,7 +2957,7 @@ export default function Home() {
       }
     }
     return { hard, clearance };
-  }, [stageMarkerElements]);
+  }, [publicLayoutAccess, stageMarkerElements]);
 
   const clientToMap = useCallback((clientX: number, clientY: number) => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -3734,6 +4047,8 @@ export default function Home() {
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
+    if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
+    if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
     activeTouchPointersRef.current.clear();
     pinchGestureRef.current = null;
   }, []);
@@ -3901,6 +4216,8 @@ export default function Home() {
             togglePlaceEventMapSelection(interaction.pendingPublicPlaceId);
           } else {
             setSelectedId(interaction.pendingPublicPlaceId);
+            setSelectedFacilityId(null);
+            setPublicPlaceExpanded(false);
             setSelectedNoteId(null);
             setSelectedDenseLabelId(null);
           }
@@ -4032,7 +4349,7 @@ export default function Home() {
       if (activeTouchPointersRef.current.size >= 2 && beginPinchGesture()) return;
     }
     if (!pendingPublicPlaceId) {
-      setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
+      setSelectedId(null); setSelectedFacilityId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     }
     setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId, pendingPlaceRequestLocation });
   };
@@ -4114,18 +4431,56 @@ export default function Home() {
 
   const focusMapPosition = (x: number, y: number, elementId: string) => {
     const stageRect = stageRef.current?.getBoundingClientRect();
-    const targetZoom = 1.55;
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    const compact = (viewport?.width ?? viewportDimensions.width) <= 760;
+    const currentZoom = zoomRef.current;
+    const targetZoom = compact
+      ? clamp(Math.max(currentZoom, fitZoom * 1.8), fitZoom, 1.16)
+      : clamp(Math.max(currentZoom, fitZoom * 1.38), fitZoom, 1.42);
+    let targetPan = panRef.current;
     if (stageRect) {
-      const unscaledWidth = stageRect.width / Math.max(zoom, 0.01);
-      const unscaledHeight = stageRect.height / Math.max(zoom, 0.01);
-      setPan({
-        x: -((x - 50) / 100) * unscaledWidth * targetZoom,
-        y: -((y - 50) / 100) * unscaledHeight * targetZoom,
-      });
+      const unscaledWidth = stageRect.width / Math.max(currentZoom, 0.01);
+      const unscaledHeight = stageRect.height / Math.max(currentZoom, 0.01);
+      const viewportWidth = viewport?.width ?? viewportDimensions.width;
+      const viewportHeight = viewport?.height ?? viewportDimensions.height;
+      const horizontalSafeOffset = compact
+        ? 0
+        : globalStoriesOpen
+          ? Math.min(215, viewportWidth * 0.22)
+          : selected
+            ? -Math.min(195, viewportWidth * 0.2)
+            : 0;
+      const verticalSafeOffset = compact && (globalStoriesOpen || selected)
+        ? -viewportHeight * (publicPanelExpanded || publicPlaceExpanded ? 0.26 : 0.18)
+        : 0;
+      const rawPan = {
+        x: horizontalSafeOffset - ((x - 50) / 100) * unscaledWidth * targetZoom,
+        y: verticalSafeOffset - ((y - 50) / 100) * unscaledHeight * targetZoom,
+      };
+      const horizontalTravel = Math.max(0, (unscaledWidth * targetZoom - viewportWidth) / 2) + viewportWidth * 0.3;
+      const verticalTravel = Math.max(0, (unscaledHeight * targetZoom - viewportHeight) / 2) + viewportHeight * 0.3;
+      targetPan = {
+        x: clamp(rawPan.x, -horizontalTravel, horizontalTravel),
+        y: clamp(rawPan.y, -verticalTravel, verticalTravel),
+      };
     }
-    setZoom(targetZoom);
+    if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
+    if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    setMapFocusAnimating(!reduceMotion);
+    focusTransitionFrameRef.current = window.requestAnimationFrame(() => {
+      zoomRef.current = targetZoom;
+      panRef.current = targetPan;
+      setPan(targetPan);
+      setZoom(targetZoom);
+      focusTransitionFrameRef.current = null;
+    });
+    focusTransitionTimerRef.current = window.setTimeout(() => {
+      setMapFocusAnimating(false);
+      focusTransitionTimerRef.current = null;
+    }, reduceMotion ? 0 : 320);
     setFocusPulseId(elementId);
-    window.setTimeout(() => setFocusPulseId((current) => current === elementId ? null : current), 1300);
+    window.setTimeout(() => setFocusPulseId((current) => current === elementId ? null : current), reduceMotion ? 80 : 900);
   };
 
   const updateLandmarkDefault = (element: MapElement, patch: Partial<Pick<LandmarkDefaultPosition, "x" | "y" | "confirmed">>) => {
@@ -4465,14 +4820,46 @@ export default function Home() {
       if (place.id !== id) return place;
       const next = { ...place, ...patch };
       const name = normalizePlaceName(next.name);
-      return {
+      return withDirectoryMetadata({
         ...next,
         name,
         category: categoryForPlace(name, next.category) as CategoryId,
         ...(isCoreLandmarkName(name) ? { coordinateStatus: "landmark" as const } : {}),
-      };
+      });
     }));
     setDatabaseEditorDirty(true);
+  };
+
+  const toggleDatabaseAdditionalCategory = (placeId: string, categoryId: AdditionalCategoryId) => {
+    const place = databaseDraftPlaces.find((item) => item.id === placeId);
+    if (!place) return;
+    const selected = new Set(sanitizeAdditionalCategories(place.additionalCategories));
+    if (selected.has(categoryId)) selected.delete(categoryId);
+    else {
+      if (selected.size >= 3) {
+        setToast("추가분류는 장소별로 최대 3개까지 선택할 수 있습니다.");
+        return;
+      }
+      selected.add(categoryId);
+    }
+    updateDatabaseDraftPlace(placeId, {
+      additionalCategories: additionalCategoryDefinitions
+        .map((item) => item.id)
+        .filter((id) => selected.has(id)),
+    });
+  };
+
+  const toggleDatabaseConvenienceAttribute = (placeId: string, attributeId: ConvenienceAttributeId) => {
+    const place = databaseDraftPlaces.find((item) => item.id === placeId);
+    if (!place) return;
+    const selected = new Set(sanitizeConvenienceAttributes(place.convenienceAttributes));
+    if (selected.has(attributeId)) selected.delete(attributeId);
+    else selected.add(attributeId);
+    updateDatabaseDraftPlace(placeId, {
+      convenienceAttributes: convenienceAttributeDefinitions
+        .map((item) => item.id)
+        .filter((id) => selected.has(id)),
+    });
   };
 
   const addDatabaseDraftPlace = () => {
@@ -4495,6 +4882,12 @@ export default function Home() {
       sourceUrl: "",
       mapUrl: "",
       checkedAt: "",
+      additionalCategories: [],
+      convenienceAttributes: [],
+      locationGroupId: "",
+      mapAnchorId: "",
+      featuredRole: "",
+      aliases: [],
     };
     setDatabaseDraftPlaces((current) => [next, ...current]);
     setDatabaseEditorSelectedId(id);
@@ -5921,11 +6314,15 @@ export default function Home() {
   const toggleGlobalStories = () => {
     const next = !globalStoriesOpen;
     if (next) {
+      if (publicLayoutAccess === "viewer" && globalContentTab === "place-requests") setGlobalContentTab("places");
+      if (publicLayoutAccess === "editor" && globalContentTab === "places") setGlobalContentTab("reviews");
       setGlobalStoriesPage(1);
       setGlobalEventsPage(1);
       setPlaceRequestsPage(1);
       setSelectedId(null);
+      setSelectedFacilityId(null);
       setSelectedDenseLabelId(null);
+      setPublicPanelExpanded(false);
     }
     setGlobalStoriesOpen(next);
   };
@@ -5940,39 +6337,46 @@ export default function Home() {
       setGlobalEventsRefreshKey((current) => current + 1);
     }
     setGlobalStoriesOpen(true);
+    setPublicPanelExpanded(false);
     setSelectedDenseLabelId(null);
+  };
+
+  const publicPlaceItemForReference = (placeKey: string, placeName: string) => {
+    const directoryId = placeKey.startsWith("directory:") ? placeKey.slice("directory:".length) : "";
+    const normalized = normalizePlaceName(placeName);
+    return publicPlaceItems.find((item) => (
+      (directoryId && item.place.id === directoryId)
+      || normalizePlaceName(item.place.name) === normalized
+      || item.place.aliases?.some((alias) => normalizePlaceName(alias) === normalized)
+    ));
+  };
+
+  const focusPublicPlaceItem = (item: PublicPlaceListItem, showDetails = false) => {
+    setSelectedId(item.anchor.id);
+    setSelectedFacilityId(item.place.id === item.anchor.directoryId ? null : item.place.id);
+    setSelectedNoteId(null);
+    setSelectedDenseLabelId(null);
+    setPublicPlaceExpanded(false);
+    if (showDetails) setGlobalStoriesOpen(false);
+    focusMapPosition(item.anchor.x, item.anchor.y, item.anchor.id);
   };
 
   const openGlobalStoryPlace = (story: PlaceStory) => {
-    const element = elements.find((item) => (
-      placeContentKey(item) === story.placeKey
-      || normalizePlaceName(item.name) === normalizePlaceName(story.placeName)
-    ));
-    if (!element) {
+    const item = publicPlaceItemForReference(story.placeKey, story.placeName);
+    if (!item) {
       setToast("현재 공개 지도에서 이 장소의 마커를 찾지 못했습니다.");
       return;
     }
-    setGlobalStoriesOpen(false);
-    setSelectedId(element.id);
-    setSelectedNoteId(null);
-    setSelectedDenseLabelId(null);
-    focusMapPosition(element.x, element.y, element.id);
+    focusPublicPlaceItem(item);
   };
 
   const openGlobalEventPlace = (place: PlaceEventPlace) => {
-    const element = elements.find((item) => (
-      placeContentKey(item) === place.placeKey
-      || normalizePlaceName(item.name) === normalizePlaceName(place.placeName)
-    ));
-    if (!element) {
+    const item = publicPlaceItemForReference(place.placeKey, place.placeName);
+    if (!item) {
       setToast("현재 공개 지도에서 이 장소의 마커를 찾지 못했습니다.");
       return;
     }
-    setGlobalStoriesOpen(false);
-    setSelectedId(element.id);
-    setSelectedNoteId(null);
-    setSelectedDenseLabelId(null);
-    focusMapPosition(element.x, element.y, element.id);
+    focusPublicPlaceItem(item);
   };
 
   const submitSharedAdminLogin = async (event: FormEvent<HTMLFormElement>) => {
@@ -6023,7 +6427,9 @@ export default function Home() {
     ? globalStoriesTotal
     : globalContentTab === "events"
       ? globalEventsTotal
-      : placeRequestsTotal;
+      : globalContentTab === "places"
+        ? publicPlaceItems.length
+        : placeRequestsTotal;
   const eventPlaceSelectionMode = editingEnabled && placeEventFormOpen && placeEventMultiPlace;
   const eventPlaceKeySet = useMemo(() => new Set(placeEventPlaces.map((place) => place.placeKey)), [placeEventPlaces]);
   const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
@@ -6079,6 +6485,7 @@ export default function Home() {
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark">W</div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
+        <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>★ 메인 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <button className="owner-signin admin-login-trigger" type="button" onClick={() => { setAdminPassword(""); setAdminLoginError(""); setAdminLoginOpen(true); }}>관리자 로그인</button>
       </header>}
@@ -6382,7 +6789,7 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))` }}>
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
@@ -6413,21 +6820,26 @@ export default function Home() {
                   const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
                   const eventPlacePicked = eventPlaceSelectionMode && eventPlaceKeySet.has(placeContentKey(element));
                   const keyboardSelectable = publicLayoutAccess === "viewer" || eventPlaceSelectionMode;
+                  const isMainHub = isPrimaryHubLabel(element.name);
+                  const locationGroupCount = locationGroupCountByAnchorId.get(element.id) ?? 0;
+                  const publicElementName = isMainHub ? "제주소통협력센터 메인 오피스" : element.name;
                   return <div
                     key={element.id}
                     data-element-id={element.id}
-                    className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
+                    className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${isMainHub ? "main-hub" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
                     style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: element.z, color: meta.color, opacity: element.opacity / 100 }}
                     onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : element.id, placeRequestPickingLocation) : undefined}
                     role={keyboardSelectable ? "button" : undefined}
                     tabIndex={keyboardSelectable ? 0 : undefined}
-                    aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}
-                    onKeyDown={keyboardSelectable ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (eventPlaceSelectionMode) togglePlaceEventMapSelection(element.id); else { setSelectedId(element.id); setSelectedDenseLabelId(null); } } } : undefined}
+                    aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${publicElementName} 정보 보기` : undefined}
+                    onKeyDown={keyboardSelectable ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (eventPlaceSelectionMode) togglePlaceEventMapSelection(element.id); else { setSelectedId(element.id); setSelectedFacilityId(null); setPublicPlaceExpanded(false); setSelectedDenseLabelId(null); } } } : undefined}
                   >
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
+                    {publicLayoutAccess === "viewer" && isMainHub && <span className="main-hub-badge">MAIN</span>}
+                    {publicLayoutAccess === "viewer" && locationGroupCount > 1 && <span className="location-group-badge">{locationGroupCount}개 시설</span>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isPrimaryHubLabel(element.name) ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${element.name} 정보 보기` : undefined}>{element.name}</div>}
+                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 정보 보기` : undefined}>{publicElementName}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -6444,7 +6856,7 @@ export default function Home() {
                     title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
                     role={editingEnabled ? "button" : undefined}
                     aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.elementId); setSelectedDenseLabelId(null); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(row.elementId); setSelectedFacilityId(null); setPublicPlaceExpanded(false); setSelectedDenseLabelId(null); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
                 </div>}
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
@@ -6465,20 +6877,25 @@ export default function Home() {
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          {publicLayoutAccess === "viewer" && selected && <aside className="public-place-sheet" aria-label={`${selected.name} 장소 정보`}>
+          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <aside className={`public-place-sheet ${publicPlaceExpanded ? "expanded" : ""}`} aria-label={`${selectedDisplayName} 장소 정보`}>
             <header className="public-place-sheet-head">
-              <div><span style={{ color: categoryOf(selected.category).color }}>{categoryOf(selected.category).name}</span><strong>{selected.name}</strong></div>
-              <button type="button" onClick={() => setSelectedId(null)} aria-label="장소 정보 닫기">×</button>
+              <div><span style={{ color: selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).color : categoryOf(selected.category).color }}>{selectedDirectoryPlace?.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).name : categoryOf(selected.category).name}</span><strong>{selectedDisplayName}</strong></div>
+              <div className="public-place-sheet-actions"><button type="button" className="public-place-list-back" onClick={() => { setSelectedId(null); setSelectedFacilityId(null); setGlobalContentTab("places"); setGlobalStoriesOpen(true); setPublicPanelExpanded(false); }} aria-label="장소 목록으로 돌아가기">목록</button><button type="button" className="public-place-expand" onClick={() => setPublicPlaceExpanded((current) => !current)} aria-label={publicPlaceExpanded ? "장소 정보 접기" : "장소 정보 펼치기"}>{publicPlaceExpanded ? "접기" : "펼치기"}</button><button type="button" onClick={() => { setSelectedId(null); setSelectedFacilityId(null); setPublicPlaceExpanded(false); }} aria-label="장소 정보 닫기">×</button></div>
             </header>
             <div className="public-place-sheet-scroll">
+              {selectedLocationGroupPlaces.length > 1 && <section className="public-location-group" aria-label="이 건물의 시설">
+                <div><strong>제주아트플랫폼 건물</strong><span>{selectedLocationGroupPlaces.length}개 시설</span></div>
+                <div>{selectedLocationGroupPlaces.map((place) => <button type="button" className={place.id === selectedDirectoryPlace?.id ? "active" : ""} key={place.id} onClick={() => { setSelectedFacilityId(place.id === selected?.directoryId ? null : place.id); setPublicPlaceExpanded(false); }}>{place.name}</button>)}</div>
+              </section>}
               <section className="public-place-summary">
-                {selected.address && <p className="public-place-address">{selected.address}</p>}
+                {(selectedDirectoryPlace?.address || selected.address) && <p className="public-place-address">{selectedDirectoryPlace?.address || selected.address}</p>}
                 {selectedDirectoryPlace?.area && <span className="public-place-area">{selectedDirectoryPlace.area}</span>}
+                {!!sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).length && <div className="public-place-conveniences" aria-label="편의정보">{convenienceAttributeDefinitions.filter((definition) => sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).includes(definition.id)).map((definition) => <span key={definition.id}>{definition.name}</span>)}</div>}
                 {selectedDirectoryPlace?.description && <p className="public-place-description">{selectedDirectoryPlace.description}</p>}
                 {selectedDirectoryPlace?.operatingInfo && <div className="public-place-hours"><b>이용 안내</b><span>{selectedDirectoryPlace.operatingInfo}</span></div>}
                 {selectedDirectoryPlace?.mapUrl && <a className="public-place-map-link" href={selectedDirectoryPlace.mapUrl} target="_blank" rel="noreferrer">지도에서 위치 확인 ↗</a>}
               </section>
-              {placeEvents.length > 0 && <section className="public-place-events" aria-label={`${selected.name} 행사`}>
+              {placeEvents.length > 0 && <section className="public-place-events" aria-label={`${selectedDisplayName} 행사`}>
                 <div className="public-place-events-title"><strong>지금 볼 수 있는 행사</strong><span>{placeEvents.length}개</span></div>
                 <div className="place-event-list">{placeEvents.map((event) => <article className="place-event-card" key={event.id}>
                   <img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" decoding="async" />
@@ -6496,7 +6913,7 @@ export default function Home() {
                   <button type="button" className="place-story-submit" disabled={placeStorySubmitting || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : "사진·후기 공개하기"}</button>
                 </div>}
                 {placeStoriesLoading ? <div className="place-story-empty">장소 기록을 불러오는 중입니다.</div> : publishedPlaceStories.length ? <div className="place-story-list">{publishedPlaceStories.map((story) => <article className="place-story-card" key={story.id}>
-                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.authorName}님이 남긴 ${selected.name} 사진`} loading="lazy" decoding="async" />}
+                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.authorName}님이 남긴 ${selectedDisplayName} 사진`} loading="lazy" decoding="async" />}
                   <div><header><strong>{story.authorName}</strong><time dateTime={story.createdAt}>{storyDateLabel(story.createdAt)}</time></header><p>{story.reviewText}</p></div>
                 </article>)}</div> : <div className="place-story-empty"><strong>아직 남겨진 기록이 없습니다.</strong><span>이 장소의 첫 사진이나 짧은 후기를 남겨보세요.</span></div>}
               </section>
@@ -6535,23 +6952,47 @@ export default function Home() {
       </section>
       <>
         {publicLayoutAccess === "viewer" && <button type="button" className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel">
-          <span aria-hidden="true">☰</span><strong>{globalStoriesOpen ? "목록 닫기" : "리뷰 / 행사"}</strong>{activeGlobalCount !== null && activeGlobalCount > 0 && <em>{activeGlobalCount}</em>}
+          <span aria-hidden="true">⌖</span><strong>{globalStoriesOpen ? "탐색 닫기" : "장소 · 리뷰 · 행사"}</strong>{publicPlaceItems.length > 0 && <em>{publicPlaceItems.length}</em>}
         </button>}
-        {globalStoriesOpen && <aside id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : ""}`} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "전체 장소 리뷰와 행사"}>
+        {globalStoriesOpen && <aside id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : "public-explorer-panel"} ${publicLayoutAccess === "viewer" && publicPanelExpanded ? "expanded" : ""}`} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "원도심 장소·리뷰·행사 탐색"}>
           <header className="global-story-panel-head">
-            <div><strong>{publicLayoutAccess === "editor" ? "리뷰·행사 관리" : "원도심 리뷰·행사"}</strong><span>전체 장소의 최신 기록과 현재 행사</span></div>
+            <div><strong>{publicLayoutAccess === "editor" ? "리뷰·행사 관리" : "원도심 탐색"}</strong><span>{publicLayoutAccess === "editor" ? "전체 장소의 최신 기록과 현재 행사" : "목록을 보면서 지도 위치를 바로 확인하세요."}</span></div>
             <div className="global-story-panel-head-actions">
+              {publicLayoutAccess === "viewer" && <button type="button" className="public-panel-expand" onClick={() => setPublicPanelExpanded((current) => !current)} aria-label={publicPanelExpanded ? "탐색 패널 접기" : "탐색 패널 펼치기"}>{publicPanelExpanded ? "접기" : "펼치기"}</button>}
               {publicLayoutAccess === "viewer" && <button type="button" className="place-request-open-button" onClick={() => setPlaceRequestFormOpen(true)}>＋ 장소 등록 요청</button>}
-              <button type="button" className="global-panel-close" onClick={() => setGlobalStoriesOpen(false)} aria-label="리뷰와 행사 닫기">×</button>
+              <button type="button" className="global-panel-close" onClick={() => { setGlobalStoriesOpen(false); setPublicPanelExpanded(false); }} aria-label="탐색 패널 닫기">×</button>
             </div>
           </header>
-          <div className={`global-content-tabs ${publicLayoutAccess === "editor" ? "admin" : ""}`} role="tablist" aria-label="리뷰와 행사 선택">
+          <div className={`global-content-tabs ${publicLayoutAccess === "editor" ? "admin" : "public"}`} role="tablist" aria-label="장소와 리뷰, 행사 선택">
+            {publicLayoutAccess === "viewer" && <button type="button" role="tab" aria-selected={globalContentTab === "places"} className={globalContentTab === "places" ? "active" : ""} onClick={() => setGlobalContentTab("places")}>장소 <span>{publicPlaceItems.length}</span></button>}
             <button type="button" role="tab" aria-selected={globalContentTab === "reviews"} className={globalContentTab === "reviews" ? "active" : ""} onClick={() => { setGlobalContentTab("reviews"); setGlobalStoriesPage(1); }}>최신 리뷰 <span>{globalStoriesTotal ?? "—"}</span></button>
             <button type="button" role="tab" aria-selected={globalContentTab === "events"} className={globalContentTab === "events" ? "active" : ""} onClick={() => { setGlobalContentTab("events"); setGlobalEventsPage(1); }}>행사 <span>{globalEventsTotal ?? "—"}</span></button>
             {publicLayoutAccess === "editor" && <button type="button" role="tab" aria-selected={globalContentTab === "place-requests"} className={globalContentTab === "place-requests" ? "active" : ""} onClick={() => { setGlobalContentTab("place-requests"); setPlaceRequestsPage(1); }}>장소 요청 <span>{placeRequestsTotal ?? "—"}</span></button>}
           </div>
           <div className="global-story-panel-scroll" aria-live="polite">
-            {globalContentTab === "reviews" ? (globalStoriesLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>최신 리뷰를 불러오는 중입니다.</strong></div>
+            {globalContentTab === "places" ? <section className="public-place-explorer">
+              <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
+              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.filter((category) => category.id === "all" || publicPlaceCategoryCounts[category.id] > 0).map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><i>{category.glyph}</i><span>{category.shortName}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
+              <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "전체 장소"} 목록`}>
+                {filteredPublicPlaceItems.map((item) => {
+                  const meta = item.isMainHub ? publicListCategories.find((category) => category.id === "hub")! : publicCategoryMetaForPlace(item.place, item.anchor);
+                  const selectedItem = selectedId === item.anchor.id && selectedDirectoryPlace?.id === item.place.id;
+                  const tagNames = additionalCategoryDefinitions
+                    .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
+                    .slice(0, 2)
+                    .map((definition) => definition.name);
+                  return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
+                    <button type="button" className="public-place-focus" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>
+                      <span className="public-place-symbol" style={{ background: meta.color }}>{item.isMainHub ? "★" : meta.glyph}</span>
+                      <span className="public-place-copy"><strong>{item.displayName}</strong><small>{item.place.area || categoryOf(item.anchor.category).name}{item.place.locationGroupId ? " · 제주아트플랫폼 건물" : ""}</small>{tagNames.length > 0 && <span>{tagNames.map((tag) => <em key={tag}>{tag}</em>)}</span>}</span>
+                      <span className="public-place-map-action">지도 보기</span>
+                    </button>
+                    <button type="button" className="public-place-detail-action" onClick={() => focusPublicPlaceItem(item, true)}>상세</button>
+                  </article>;
+                })}
+                {!filteredPublicPlaceItems.length && <div className="public-place-empty"><strong>조건에 맞는 장소가 없습니다.</strong><span>검색어나 카테고리를 바꿔보세요.</span></div>}
+              </div>
+            </section> : globalContentTab === "reviews" ? (globalStoriesLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>최신 리뷰를 불러오는 중입니다.</strong></div>
               : globalStoriesError ? <div className="global-story-state error"><strong>리뷰를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalStoriesRefreshKey((current) => current + 1)}>다시 시도</button></div>
                 : globalStories.length ? <div className="global-story-list">{globalStories.map((story) => <article className={`global-story-card ${story.photoUrl ? "has-photo" : ""} ${story.status === "hidden" ? "hidden" : ""}`} key={story.id}>
                   {story.photoUrl && <img src={story.photoUrl} alt={`${story.placeName}에 등록된 사진`} loading="lazy" decoding="async" />}
@@ -6584,7 +7025,7 @@ export default function Home() {
                       </article>;
                     })}</div> : <div className="global-story-state"><strong>대기 중인 장소 등록 요청이 없습니다.</strong><span>방문자가 요청을 보내면 이 목록에서 수정·검수하고 편집 초안에 반영할 수 있습니다.</span></div>)}
           </div>
-          {globalContentTab === "reviews" ? globalStoriesPageCount > 1 && <footer className="global-story-pagination" aria-label="최신 리뷰 페이지 이동"><button type="button" disabled={globalStoriesPage <= 1 || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalStoriesPage}</b> / {globalStoriesPageCount}</span><button type="button" disabled={globalStoriesPage >= globalStoriesPageCount || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.min(globalStoriesPageCount, page + 1))}>다음</button></footer>
+          {globalContentTab === "places" ? null : globalContentTab === "reviews" ? globalStoriesPageCount > 1 && <footer className="global-story-pagination" aria-label="최신 리뷰 페이지 이동"><button type="button" disabled={globalStoriesPage <= 1 || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalStoriesPage}</b> / {globalStoriesPageCount}</span><button type="button" disabled={globalStoriesPage >= globalStoriesPageCount || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.min(globalStoriesPageCount, page + 1))}>다음</button></footer>
             : globalContentTab === "events" ? globalEventsPageCount > 1 && <footer className="global-story-pagination" aria-label="행사 페이지 이동"><button type="button" disabled={globalEventsPage <= 1 || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalEventsPage}</b> / {globalEventsPageCount}</span><button type="button" disabled={globalEventsPage >= globalEventsPageCount || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.min(globalEventsPageCount, page + 1))}>다음</button></footer>
               : placeRequestsPageCount > 1 && <footer className="global-story-pagination" aria-label="장소 등록 요청 페이지 이동"><button type="button" disabled={placeRequestsPage <= 1 || placeRequestsLoading} onClick={() => setPlaceRequestsPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{placeRequestsPage}</b> / {placeRequestsPageCount}</span><button type="button" disabled={placeRequestsPage >= placeRequestsPageCount || placeRequestsLoading} onClick={() => setPlaceRequestsPage((page) => Math.min(placeRequestsPageCount, page + 1))}>다음</button></footer>}
         </aside>}
@@ -6615,7 +7056,7 @@ export default function Home() {
         <section className="place-request-dialog" role="dialog" aria-modal="true" aria-labelledby="place-request-dialog-title">
           <header><div><strong id="place-request-dialog-title">장소 등록 요청</strong><span>지도에 추가되면 좋을 원도심 장소를 알려주세요.</span></div><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }} aria-label="장소 등록 요청 닫기">×</button></header>
           <div className="place-request-dialog-scroll">
-            <div className="place-request-marker-section"><div><strong>마커 형태</strong><span>장소 성격과 어울리는 분류·형태를 선택해 주세요.</span></div><label>장소 분류<select value={placeRequestCategory} onChange={(event) => setPlaceRequestCategory(event.target.value as BundledMarkerCategory)}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><div className="place-request-style-grid" role="radiogroup" aria-label="마커 형태 선택">{(["01", "02", "03"] as BundledMarkerStyle[]).map((style) => <button type="button" role="radio" aria-checked={placeRequestMarkerStyle === style} className={placeRequestMarkerStyle === style ? "active" : ""} key={style} onClick={() => setPlaceRequestMarkerStyle(style)}><img src={`/markers/범용마커_${style}_${placeRequestCategory}.svg`} alt="" /><span>형태 {style}</span></button>)}</div></div>
+            <div className="place-request-marker-section"><div><strong>마커 형태</strong><span>장소의 주된 운영 목적에 맞는 기본분류 하나를 선택해 주세요.</span></div><label>기본분류<select value={placeRequestCategory} onChange={(event) => setPlaceRequestCategory(event.target.value as BundledMarkerCategory)}>{categories.filter((category) => (["culture", "cafe", "food", "shop"] as string[]).includes(category.id)).map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><div className="place-request-style-grid" role="radiogroup" aria-label="마커 형태 선택">{(["01", "02", "03"] as BundledMarkerStyle[]).map((style) => <button type="button" role="radio" aria-checked={placeRequestMarkerStyle === style} className={placeRequestMarkerStyle === style ? "active" : ""} key={style} onClick={() => setPlaceRequestMarkerStyle(style)}><img src={`/markers/범용마커_${style}_${placeRequestCategory}.svg`} alt="" /><span>형태 {style}</span></button>)}</div></div>
             <section className={`place-request-location-field ${placeRequestLocation ? "selected" : ""}`}><div><img src={`/markers/범용마커_${placeRequestMarkerStyle}_${placeRequestCategory}.svg`} alt="" /><span><strong>지도에서 마커 위치 지정 <em>필수</em></strong><small>{placeRequestLocation ? `위치 선택됨 · ${placeRequestLocation.x.toFixed(2)}, ${placeRequestLocation.y.toFixed(2)}` : "실제 장소가 있는 지점을 지도에서 눌러 주세요."}</small></span></div><button type="button" onClick={() => { placeRequestLocationBeforePickingRef.current = placeRequestLocation; setPlaceRequestFormOpen(false); setGlobalStoriesOpen(false); setSelectedId(null); setPlaceRequestPickingLocation(true); }}>{placeRequestLocation ? "위치 다시 지정" : "지도에서 지정"}</button></section>
             <label>장소 이름 <em>필수</em><input value={placeRequestName} maxLength={120} placeholder="예: 카페단단" onChange={(event) => setPlaceRequestName(event.target.value)} /></label>
             <label>주소 <em>필수</em><input value={placeRequestAddress} maxLength={260} placeholder="도로명 주소를 적어주세요." onChange={(event) => setPlaceRequestAddress(event.target.value)} /></label>
@@ -6663,12 +7104,28 @@ export default function Home() {
               {selectedDatabasePlace ? <div className="database-editor-form">
                 <div className="database-form-row primary-fields">
                   <label>장소명 <em>필수</em><input value={selectedDatabasePlace.name} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { name: event.target.value })} /></label>
-                  <label>분류 <em>{isCoreLandmarkName(selectedDatabasePlace.name) ? "핵심 랜드마크 고정" : "필수"}</em><select value={selectedDatabasePlace.category} disabled={isCoreLandmarkName(selectedDatabasePlace.name)} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                  <label>기본분류 <em>{isCoreLandmarkName(selectedDatabasePlace.name) ? "핵심 랜드마크 고정" : "1개 필수"}</em><select value={selectedDatabasePlace.category} disabled={isCoreLandmarkName(selectedDatabasePlace.name)} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { category: event.target.value as CategoryId })}>{categories.filter((category) => isCoreLandmarkName(selectedDatabasePlace.name) ? category.id === selectedDatabasePlace.category : (["culture", "cafe", "food", "shop"] as string[]).includes(category.id) || category.id === selectedDatabasePlace.category).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
                 </div>
                 <div className="database-form-row">
                   <label>세부 지역<input value={selectedDatabasePlace.area} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { area: event.target.value })} /></label>
-                  <label>세부 유형<input value={selectedDatabasePlace.subtype ?? ""} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { subtype: event.target.value })} /></label>
+                  <label>기존 세부유형 <em>설명용</em><input value={selectedDatabasePlace.subtype ?? ""} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { subtype: event.target.value })} /></label>
                 </div>
+                <section className="database-additional-categories" aria-label="추가분류 복수 선택">
+                  <header><div><strong>추가분류 · 최대 3개</strong><span>업종이 아니라 이 장소에서 할 수 있는 활동과 부가 기능을 선택합니다.</span></div><em>{sanitizeAdditionalCategories(selectedDatabasePlace.additionalCategories).length}/3 선택</em></header>
+                  <div>{additionalCategoryDefinitions.map((definition) => {
+                    const checked = sanitizeAdditionalCategories(selectedDatabasePlace.additionalCategories).includes(definition.id);
+                    return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} onChange={() => toggleDatabaseAdditionalCategory(selectedDatabasePlace.id, definition.id)} /><span><b>{definition.name}</b><small>{definition.publicCategories.map((categoryId) => publicListCategories.find((item) => item.id === categoryId)?.name ?? categoryId).join(" · ")} 목록</small></span></label>;
+                  })}</div>
+                  {(selectedDatabasePlace.locationGroupId || selectedDatabasePlace.featuredRole) && <p>{selectedDatabasePlace.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : "동일 건물 시설 묶음"}{selectedDatabasePlace.locationGroupId ? ` · ${selectedDatabasePlace.locationGroupId}` : ""}</p>}
+                </section>
+                <section className="database-convenience-attributes" aria-label="편의정보 속성">
+                  <header><div><strong>편의정보 속성</strong><span>추가분류와 별도로 저장되며 공개 카테고리 수에는 포함되지 않습니다.</span></div><em>{sanitizeConvenienceAttributes(selectedDatabasePlace.convenienceAttributes).length}개</em></header>
+                  <div>{convenienceAttributeDefinitions.map((definition) => {
+                    const checked = sanitizeConvenienceAttributes(selectedDatabasePlace.convenienceAttributes).includes(definition.id);
+                    return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} onChange={() => toggleDatabaseConvenienceAttribute(selectedDatabasePlace.id, definition.id)} /><span><b>{definition.name}</b></span></label>;
+                  })}</div>
+                  <p>추천·랜드마크·인쇄 출력 여부는 기존 우선도·핵심 랜드마크·출력 설정에서 각각 관리합니다.</p>
+                </section>
                 <label>주소<input value={selectedDatabasePlace.address} maxLength={260} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { address: event.target.value })} /></label>
                 <div className="database-form-row">
                   <label>우선도<input value={selectedDatabasePlace.priority ?? ""} maxLength={80} placeholder="추천·참고·검토" onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { priority: event.target.value })} /></label>

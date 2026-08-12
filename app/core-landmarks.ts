@@ -19,7 +19,9 @@ const CORE_LANDMARK_NAME_SET = new Set<string>(CORE_LANDMARK_NAMES);
 export function normalizePlaceName(name: string) {
   const trimmed = name.trim();
   if (trimmed === "제주해변공연장") return "탑동해변공연장";
-  if (trimmed === "제주특별자치도 소통협력센터") return "제주시소통협력센터";
+  if (["제주특별자치도 소통협력센터", "제주소통협력센터", "제주소통협력센터 메인 오피스"].includes(trimmed)) return "제주시소통협력센터";
+  if (trimmed === "아르코 공연 예술센터") return "아르코공연연습센터@제주";
+  if (trimmed === "예술인복지센터") return "제주예술인복지센터";
   return trimmed;
 }
 
