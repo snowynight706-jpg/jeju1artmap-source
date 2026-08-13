@@ -80,7 +80,7 @@ test("the interface uses a bright grayscale base while preserving image resource
   assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
 });
 
-test("five persisted palettes include a hidden public picker and an admin topbar picker", () => {
+test("five persisted palettes include a hidden picker, full tonal hierarchy, and a themed desktop topbar", () => {
   for (const [id, colors] of [
     ["stormy", ["#FAFAFA", "#E1E2E5", "#B9BBC1", "#70737C", "#2B2D33"]],
     ["nordic-sand", ["#F6F3EF", "#DED9D2", "#B4AEA6", "#7A746D", "#3A3835"]],
@@ -96,7 +96,10 @@ test("five persisted palettes include a hidden public picker and an admin topbar
   assert.match(pageSource, /localStorage\.getItem\(UI_THEME_STORAGE_KEY\)/);
   assert.match(pageSource, /localStorage\.setItem\(UI_THEME_STORAGE_KEY, theme\)/);
   assert.match(cssSource, /data-ui-theme="harbor-morning"[^}]*--paper: #26313b[^}]*--ink: #f0f3f7/);
-  assert.match(cssSource, /--radius-window: 12px[^}]*--radius-panel: 8px[^}]*--radius-control: 6px/);
+  assert.match(cssSource, /--radius-window: 8px[^}]*--radius-panel: 5px[^}]*--radius-control: 3px/);
+  assert.match(cssSource, /--ui-spectrum: linear-gradient\(90deg, var\(--palette-1\)[^;]*var\(--palette-5\)/);
+  assert.match(cssSource, /@media \(min-width: 761px\)[\s\S]*\.app-shell\[data-ui-theme\] \.topbar \{[^}]*background: linear-gradient/);
+  assert.match(cssSource, /\.topbar \.main-hub-quick \{[^}]*background: var\(--ui-complement\)/);
 });
 
 test("direct DB editing uses a dense details list and compact category selections", () => {

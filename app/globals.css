@@ -1212,6 +1212,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 
 /* UI palette easter egg and restrained corner system */
 .app-shell[data-ui-theme="stormy"] {
+  --palette-1: #fafafa;
+  --palette-2: #e1e2e5;
+  --palette-3: #b9bbc1;
+  --palette-4: #70737c;
+  --palette-5: #2b2d33;
+  --ui-deep: #2b2d33;
+  --ui-mid: #70737c;
+  --ui-complement: #8b6548;
+  --ui-complement-soft: #f1e6dd;
+  --ui-on-complement: #fafafa;
   --paper: #fafafa;
   --panel: #f8f8f9;
   --line: #e1e2e5;
@@ -1235,6 +1245,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 
 .app-shell[data-ui-theme="nordic-sand"] {
+  --palette-1: #f6f3ef;
+  --palette-2: #ded9d2;
+  --palette-3: #b4aea6;
+  --palette-4: #7a746d;
+  --palette-5: #3a3835;
+  --ui-deep: #3a3835;
+  --ui-mid: #7a746d;
+  --ui-complement: #526b75;
+  --ui-complement-soft: #dfe8eb;
+  --ui-on-complement: #f6f3ef;
   --paper: #f6f3ef;
   --panel: #f8f6f2;
   --line: #ded9d2;
@@ -1258,6 +1278,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 
 .app-shell[data-ui-theme="lilac"] {
+  --palette-1: #f4f2f7;
+  --palette-2: #d6d2df;
+  --palette-3: #a59db6;
+  --palette-4: #5d556f;
+  --palette-5: #26222f;
+  --ui-deep: #26222f;
+  --ui-mid: #5d556f;
+  --ui-complement: #6d693d;
+  --ui-complement-soft: #ece9d8;
+  --ui-on-complement: #f4f2f7;
   --paper: #f4f2f7;
   --panel: #f7f5f9;
   --line: #d6d2df;
@@ -1281,6 +1311,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 
 .app-shell[data-ui-theme="urban-blush"] {
+  --palette-1: #f6f2f4;
+  --palette-2: #ded5da;
+  --palette-3: #b7a4ac;
+  --palette-4: #6e5b63;
+  --palette-5: #c07b8f;
+  --ui-deep: #6e5b63;
+  --ui-mid: #c07b8f;
+  --ui-complement: #4e716b;
+  --ui-complement-soft: #ddeae7;
+  --ui-on-complement: #f6f2f4;
   --paper: #f6f2f4;
   --panel: #f9f6f7;
   --line: #ded5da;
@@ -1305,6 +1345,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 
 .app-shell[data-ui-theme="harbor-morning"] {
   color-scheme: dark;
+  --palette-1: #f0f3f7;
+  --palette-2: #c8d2e0;
+  --palette-3: #8ea2bb;
+  --palette-4: #4e647a;
+  --palette-5: #26313b;
+  --ui-deep: #26313b;
+  --ui-mid: #4e647a;
+  --ui-complement: #c79263;
+  --ui-complement-soft: #493d34;
+  --ui-on-complement: #26313b;
   --paper: #26313b;
   --panel: #2d3a46;
   --line: #4e647a;
@@ -1329,10 +1379,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 
 .app-shell[data-ui-theme] {
-  --radius-window: 12px;
-  --radius-panel: 8px;
-  --radius-control: 6px;
-  --radius-small: 4px;
+  --radius-window: 8px;
+  --radius-panel: 5px;
+  --radius-control: 3px;
+  --radius-small: 2px;
+  --ui-spectrum: linear-gradient(90deg, var(--palette-1) 0 20%, var(--palette-2) 20% 40%, var(--palette-3) 40% 60%, var(--palette-4) 60% 80%, var(--palette-5) 80% 100%);
   color: var(--ink);
 }
 
@@ -1578,6 +1629,30 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 ) { border-radius: var(--radius-panel); }
 
 .app-shell[data-ui-theme] :is(
+  .asset-upload,
+  .asset-card,
+  .asset-preview,
+  .landmark-resource-group,
+  .composition-helper,
+  .database-import,
+  .coordinate-lock-filter,
+  .marker-visibility-panel,
+  .marker-visibility-group,
+  .calibration-summary,
+  .calibration-folder,
+  .calibration-card,
+  .print-preview-badge,
+  .global-story-toggle,
+  .place-story-empty,
+  .place-request-marker-section,
+  .place-request-location-field,
+  .event-place-selection-hint,
+  .place-request-location-hint,
+  .event-place-picker,
+  .toast
+) { border-radius: var(--radius-panel); }
+
+.app-shell[data-ui-theme] :is(
   .toolbar-group button,
   .toolbar-group select,
   .icon-button,
@@ -1614,10 +1689,43 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .database-editor select,
   .database-editor textarea,
   .database-editor-header > button,
-  .database-editor-footer button
+  .database-editor-footer button,
+  .main-hub-quick,
+  .owner-signin,
+  .shared-admin-signout,
+  .public-location-group button,
+  .global-event-place-links button,
+  .global-story-state button,
+  .global-story-pagination button,
+  .place-request-style-grid button,
+  .place-request-location-field > button,
+  .place-request-location-hint button,
+  .event-place-picked-list > span,
+  .event-place-selection-hint button,
+  .coordinate-lock-toggle span,
+  .map-scale,
+  .collision-legend
 ) { border-radius: var(--radius-control); }
 
-.app-shell[data-ui-theme] :is(.public-place-area, .public-place-conveniences span, .status-pill, .readonly-badge, .global-content-tabs span) { border-radius: var(--radius-small); }
+.app-shell[data-ui-theme] :is(
+  .public-place-area,
+  .public-place-conveniences span,
+  .status-pill,
+  .readonly-badge,
+  .global-content-tabs span,
+  .panel-tabs button span,
+  .view-control-head span,
+  .place-filter button span,
+  .marker-group-count,
+  .placed-marker-heading span,
+  .coordinate-badge,
+  .location-group-badge,
+  .public-place-events-title span,
+  .place-request-status,
+  .review-list-head span,
+  .database-additional-categories > header em,
+  .database-convenience-attributes > header em
+) { border-radius: var(--radius-small); }
 
 .admin-theme-menu { position: relative; z-index: 70; flex: 0 0 auto; margin-left: auto; }
 .brand-block .admin-theme-menu > summary > span:first-child { display: block; margin-top: 0; }
@@ -1648,6 +1756,224 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .place-theme-easter-egg strong, .place-theme-easter-egg p { display: block; margin: 0; }
 .place-theme-easter-egg strong { color: var(--ink); font-size: 11px; }
 .place-theme-easter-egg p { margin-top: 3px; color: var(--muted); font-size: 8px; line-height: 1.45; }
+
+/* Carry the full palette through hierarchy, not only the page background. */
+.app-shell[data-ui-theme] :is(.public-place-sheet, .global-story-panel, .admin-login-dialog, .place-request-dialog, .place-event-dialog, .database-editor) {
+  border-color: color-mix(in srgb, var(--palette-3) 72%, var(--line));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--palette-1) 55%, transparent), var(--ui-shadow-strong);
+}
+
+.app-shell[data-ui-theme] :is(.panel-heading, .public-place-sheet-head, .global-story-panel-head, .database-editor-header, .admin-login-dialog > header, .place-request-dialog > header, .place-event-dialog-head) {
+  position: relative;
+  border-color: color-mix(in srgb, var(--palette-3) 62%, var(--line));
+  background: linear-gradient(100deg, var(--ui-surface-soft), color-mix(in srgb, var(--ui-surface-soft) 72%, var(--palette-3)));
+}
+
+.app-shell[data-ui-theme] :is(.panel-heading, .public-place-sheet-head, .global-story-panel-head, .database-editor-header)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 11px;
+  bottom: 11px;
+  width: 3px;
+  background: linear-gradient(180deg, var(--palette-3), var(--ui-mid));
+}
+
+.app-shell[data-ui-theme] :is(.panel-tabs, .global-content-tabs, .database-editor-list-columns) {
+  background: color-mix(in srgb, var(--ui-surface-soft) 72%, var(--palette-2));
+}
+
+.app-shell[data-ui-theme] :is(.panel-tabs button.active, .global-content-tabs button.active, .view-mode-grid button.active, .marker-style-options button.active, .position-grid button.active, .category-filter button.active, .toolbar-group button.active-tool, .toolbar-group button.print-preview-toggle.active) {
+  border-color: var(--palette-3);
+  background: color-mix(in srgb, var(--palette-2) 68%, var(--palette-3));
+  color: var(--ui-deep);
+  box-shadow: inset 0 -2px 0 var(--ui-mid);
+}
+
+.app-shell[data-ui-theme] .public-place-category-chips button {
+  border-color: color-mix(in srgb, var(--palette-2) 78%, var(--palette-3));
+  background: var(--ui-surface-raised);
+}
+
+.app-shell[data-ui-theme] .public-place-category-chips button.active {
+  border-color: var(--palette-3);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--palette-1) 42%, var(--palette-2)), var(--palette-2));
+  color: var(--ui-deep);
+  box-shadow: inset 0 -3px 0 var(--ui-mid), 0 3px 10px color-mix(in srgb, var(--ui-deep) 10%, transparent);
+}
+
+.app-shell[data-ui-theme] .public-place-category-chips button em,
+.app-shell[data-ui-theme] :is(.public-place-area, .public-place-conveniences span, .global-content-tabs span) {
+  border-color: color-mix(in srgb, var(--palette-3) 55%, var(--line));
+  background: color-mix(in srgb, var(--palette-2) 76%, var(--ui-surface-raised));
+  color: var(--ui-deep);
+}
+
+.app-shell[data-ui-theme] .public-place-list-header {
+  border-color: var(--palette-3);
+  background: linear-gradient(90deg, var(--palette-2), color-mix(in srgb, var(--palette-2) 52%, var(--palette-3)));
+  color: var(--ui-deep);
+}
+
+.app-shell[data-ui-theme] .public-place-list article:not(.selected):not(.main-hub):nth-child(even),
+.app-shell[data-ui-theme] .database-editor-list > button:nth-child(even) {
+  background: color-mix(in srgb, var(--ui-surface-raised) 76%, var(--palette-2));
+}
+
+.app-shell[data-ui-theme] .database-editor-list > button.active {
+  background: color-mix(in srgb, var(--palette-2) 58%, var(--palette-3));
+  box-shadow: inset 3px 0 0 var(--ui-mid);
+}
+
+.app-shell[data-ui-theme] :is(.place-event-card, .place-story-card, .global-story-card, .place-request-admin-card) {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--palette-1) 60%, transparent), 0 3px 12px color-mix(in srgb, var(--ui-deep) 8%, transparent);
+}
+
+.app-shell[data-ui-theme] .public-place-events {
+  background: linear-gradient(135deg, var(--ui-complement-soft), color-mix(in srgb, var(--ui-complement-soft) 34%, var(--ui-surface)));
+}
+
+.app-shell[data-ui-theme] .public-place-events-title strong { color: var(--ui-complement); }
+.app-shell[data-ui-theme] .public-place-events-title span {
+  background: color-mix(in srgb, var(--ui-complement-soft) 72%, var(--ui-surface-raised));
+  color: var(--ui-complement);
+}
+.app-shell[data-ui-theme] .place-event-card { border-color: color-mix(in srgb, var(--ui-complement) 28%, var(--line)); }
+
+.app-shell[data-ui-theme] :is(input, select, textarea, button):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ui-complement) 62%, transparent);
+  outline-offset: 1px;
+}
+
+.app-shell[data-ui-theme] .statusbar {
+  border-color: color-mix(in srgb, var(--palette-3) 52%, var(--ui-deep));
+  background: linear-gradient(95deg, var(--ui-deep), color-mix(in srgb, var(--ui-deep) 75%, var(--ui-mid)));
+  color: var(--palette-1);
+}
+.app-shell[data-ui-theme] .statusbar :is(.status-ok, .status-end),
+.app-shell[data-ui-theme] .public-statusbar { color: var(--palette-1); }
+.app-shell[data-ui-theme] .statusbar .status-ok i { background: var(--palette-3); }
+
+@media (min-width: 761px) {
+  .app-shell[data-ui-theme] .topbar {
+    position: relative;
+    isolation: isolate;
+    border-bottom-color: color-mix(in srgb, var(--palette-3) 48%, var(--ui-deep));
+    background: linear-gradient(108deg, var(--ui-deep) 0%, color-mix(in srgb, var(--ui-deep) 70%, var(--ui-mid)) 64%, var(--ui-mid) 130%);
+    box-shadow: 0 7px 24px color-mix(in srgb, var(--ui-deep) 22%, transparent);
+    color: var(--palette-1);
+  }
+
+  .app-shell[data-ui-theme] .topbar::after {
+    content: "";
+    position: absolute;
+    z-index: 3;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--ui-spectrum);
+    opacity: .88;
+    pointer-events: none;
+  }
+
+  .app-shell[data-ui-theme] .topbar .brand-block strong { color: var(--palette-1); }
+  .app-shell[data-ui-theme] .topbar .brand-block > div > span,
+  .app-shell[data-ui-theme] .topbar :is(.zoom-tools output, .readonly-badge, .draft-tools > span, .public-layout-tools > span) { color: var(--palette-2); }
+
+  .app-shell[data-ui-theme] .topbar :is(.draft-tools, .public-layout-tools) {
+    border-color: color-mix(in srgb, var(--palette-2) 24%, transparent);
+    background: color-mix(in srgb, var(--ui-mid) 30%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--palette-1) 10%, transparent);
+  }
+
+  .app-shell[data-ui-theme] .topbar :is(
+    .toolbar-group button:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .toolbar-group select:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .owner-signin:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .shared-admin-signout:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .admin-theme-menu > summary,
+    .readonly-badge
+  ) {
+    border-color: color-mix(in srgb, var(--palette-2) 34%, transparent);
+    background: color-mix(in srgb, var(--ui-mid) 24%, var(--ui-deep));
+    color: var(--palette-1);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--palette-1) 10%, transparent);
+  }
+
+  .app-shell[data-ui-theme] .topbar :is(
+    .toolbar-group button:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .toolbar-group select:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .owner-signin:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .shared-admin-signout:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .admin-theme-menu > summary
+  ):hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--palette-2) 62%, transparent);
+    background: color-mix(in srgb, var(--ui-mid) 32%, var(--ui-deep));
+  }
+
+  .app-shell[data-ui-theme] .topbar :is(
+    .toolbar-group button.primary-export:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .public-layout-tools button.publish-layout:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .draft-tools button.draft-save:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove)
+  ) {
+    border-color: var(--palette-3);
+    background: var(--palette-2);
+    color: var(--ui-deep);
+    font-weight: 800;
+  }
+
+  .app-shell[data-ui-theme] .topbar :is(
+    .toolbar-group button.primary-export:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .public-layout-tools button.publish-layout:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
+    .draft-tools button.draft-save:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove)
+  ):hover:not(:disabled) {
+    border-color: var(--palette-2);
+    background: var(--palette-2);
+    color: var(--ui-deep);
+  }
+
+  .app-shell[data-ui-theme] .topbar .main-hub-quick {
+    border-color: color-mix(in srgb, var(--ui-complement) 76%, var(--ui-deep));
+    background: var(--ui-complement);
+    color: var(--ui-on-complement);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--palette-1) 18%, transparent), 0 4px 12px color-mix(in srgb, var(--ui-deep) 22%, transparent);
+  }
+
+  .app-shell[data-ui-theme] .topbar .main-hub-quick:hover,
+  .app-shell[data-ui-theme] .topbar .main-hub-quick:focus-visible {
+    border-color: var(--ui-complement-soft);
+    background: color-mix(in srgb, var(--ui-complement) 82%, var(--palette-1));
+    color: var(--ui-on-complement);
+  }
+
+  .app-shell[data-ui-theme] .topbar .admin-theme-menu[open] > summary {
+    border-color: var(--palette-2);
+    background: color-mix(in srgb, var(--ui-mid) 32%, var(--ui-deep));
+    color: var(--palette-1);
+  }
+
+  .app-shell[data-ui-theme] .topbar .admin-theme-popover {
+    border-color: var(--palette-3);
+    background: var(--ui-surface-raised);
+    color: var(--ink);
+  }
+  .app-shell[data-ui-theme] .topbar .admin-theme-popover > div:first-child strong { color: var(--ink); }
+  .app-shell[data-ui-theme] .topbar .admin-theme-popover > div:first-child span { color: var(--muted); }
+  .app-shell[data-ui-theme] .topbar .admin-theme-popover .ui-theme-picker > button {
+    border-color: var(--line);
+    background: var(--ui-control);
+    color: var(--muted);
+    box-shadow: none;
+  }
+  .app-shell[data-ui-theme] .topbar .admin-theme-popover .ui-theme-picker > button:hover { border-color: var(--line-strong); background: var(--ui-control-hover); }
+  .app-shell[data-ui-theme] .topbar .admin-theme-popover .ui-theme-picker > button.active {
+    border-color: var(--ui-mid);
+    background: var(--ui-active);
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--ui-mid);
+  }
+}
 
 @media (max-width: 760px) {
   .app-shell[data-ui-theme] .public-topbar { border: 0; background: transparent; box-shadow: none; }
