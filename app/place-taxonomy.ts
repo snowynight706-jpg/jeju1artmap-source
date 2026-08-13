@@ -1,11 +1,19 @@
 export type AdditionalCategoryId =
-  | "exhibition-performance"
   | "multi-cultural"
-  | "creative-startup"
-  | "event-rental"
-  | "experience-education"
-  | "local-goods"
-  | "walk-rest";
+  | "exhibition"
+  | "performance"
+  | "creative"
+  | "startup"
+  | "event"
+  | "rental"
+  | "experience"
+  | "education"
+  | "walk"
+  | "rest"
+  | "goods-shop"
+  | "reading"
+  | "tourism"
+  | "market-shopping";
 
 export type PrimaryPublicCategoryId = "culture" | "cafe" | "food" | "shop";
 export type PublicListCategoryId = PrimaryPublicCategoryId | AdditionalCategoryId;
@@ -37,13 +45,21 @@ export const additionalCategoryDefinitions: ReadonlyArray<{
   name: string;
   publicCategories: readonly PublicListCategoryId[];
 }> = [
-  { id: "exhibition-performance", name: "전시·공연", publicCategories: ["exhibition-performance"] },
   { id: "multi-cultural", name: "복합문화", publicCategories: ["multi-cultural"] },
-  { id: "creative-startup", name: "창작·창업", publicCategories: ["creative-startup"] },
-  { id: "event-rental", name: "행사·대관", publicCategories: ["event-rental"] },
-  { id: "experience-education", name: "체험·교육", publicCategories: ["experience-education"] },
-  { id: "local-goods", name: "소품·로컬상품", publicCategories: ["local-goods"] },
-  { id: "walk-rest", name: "산책·휴식", publicCategories: ["walk-rest"] },
+  { id: "exhibition", name: "전시", publicCategories: ["exhibition"] },
+  { id: "performance", name: "공연", publicCategories: ["performance"] },
+  { id: "creative", name: "창작", publicCategories: ["creative"] },
+  { id: "startup", name: "창업", publicCategories: ["startup"] },
+  { id: "event", name: "행사", publicCategories: ["event"] },
+  { id: "rental", name: "대관", publicCategories: ["rental"] },
+  { id: "experience", name: "체험", publicCategories: ["experience"] },
+  { id: "education", name: "교육", publicCategories: ["education"] },
+  { id: "walk", name: "산책", publicCategories: ["walk"] },
+  { id: "rest", name: "휴식", publicCategories: ["rest"] },
+  { id: "goods-shop", name: "소품샵", publicCategories: ["goods-shop"] },
+  { id: "reading", name: "독서", publicCategories: ["reading"] },
+  { id: "tourism", name: "관광", publicCategories: ["tourism"] },
+  { id: "market-shopping", name: "시장&상가", publicCategories: ["market-shopping"] },
 ] as const;
 
 export const convenienceAttributeDefinitions: ReadonlyArray<{
@@ -65,15 +81,21 @@ export const convenienceAttributeDefinitions: ReadonlyArray<{
 const additionalCategoryIds = new Set<string>(additionalCategoryDefinitions.map((item) => item.id));
 const convenienceAttributeIds = new Set<string>(convenienceAttributeDefinitions.map((item) => item.id));
 const legacyAdditionalCategoryMap: Readonly<Record<string, readonly AdditionalCategoryId[]>> = {
+  "exhibition-performance": ["exhibition", "performance"],
+  "creative-startup": ["creative", "startup"],
+  "event-rental": ["event", "rental"],
+  "experience-education": ["experience", "education"],
+  "local-goods": ["goods-shop"],
+  "walk-rest": ["walk", "rest"],
   "multi-cultural-space": ["multi-cultural"],
-  "exhibition-space": ["exhibition-performance"],
-  "performance-space": ["exhibition-performance"],
-  "work-meeting-space": ["creative-startup", "event-rental"],
-  "books-reading": ["experience-education"],
-  "experience-creation": ["experience-education"],
+  "exhibition-space": ["exhibition"],
+  "performance-space": ["performance"],
+  "work-meeting-space": ["creative", "startup", "event", "rental"],
+  "books-reading": ["reading"],
+  "experience-creation": ["experience", "creative"],
   "cafe-service": [],
   "food-service": [],
-  "outdoor-walk": ["walk-rest"],
+  "outdoor-walk": ["walk", "rest"],
 };
 
 export const MAIN_HUB_CANONICAL_NAME = "제주시소통협력센터";
@@ -128,8 +150,7 @@ export function sanitizeAdditionalCategories(value: unknown): AdditionalCategory
   }));
   return additionalCategoryDefinitions
     .map((definition) => definition.id)
-    .filter((id) => selected.has(id))
-    .slice(0, 3);
+    .filter((id) => selected.has(id));
 }
 
 export function sanitizeConvenienceAttributes(value: unknown): ConvenienceAttributeId[] {
@@ -160,26 +181,34 @@ export function inferAdditionalCategories(
   const inferred = new Set<AdditionalCategoryId>();
 
   if (/복합문화|복합공간|문화예술 플랫폼|문화·판매|문화·음식|문화·교류/.test(text)) inferred.add("multi-cultural");
-  if (/갤러리|미술관|전시|공연|상영|음악회|극장|무대|연습실|아트스페이스|미디어아트/.test(text)) inferred.add("exhibition-performance");
-  if (/창작공간|코워킹|입주공간|입주실|창업|네트워킹|워케이션|업무공간|작업공간|도시재생 거점/.test(text)) inferred.add("creative-startup");
-  if (/팝업|행사|대관|공간대여|모임|회의|세미나|커뮤니티/.test(text)) inferred.add("event-rental");
-  if (/체험|교육|워크숍|클래스|강연|공방|메이커|책|도서|북라운지|문학/.test(text)) inferred.add("experience-education");
-  if (primaryCategory !== "shop" && /소품|굿즈|기념품|편집숍|로컬상품/.test(text)) inferred.add("local-goods");
-  if (/정원|테라스|공원|광장|산책|휴식|해변|야외/.test(text)) inferred.add("walk-rest");
+  if (/갤러리|미술관|전시|상영|아트스페이스|미디어아트/.test(text)) inferred.add("exhibition");
+  if (/공연|음악회|극장|무대|공연장|연습실/.test(text)) inferred.add("performance");
+  if (/창작공간|작업공간|공방|메이커|스튜디오|작가/.test(text)) inferred.add("creative");
+  if (/창업|코워킹|입주공간|입주실|네트워킹|워케이션|업무공간|도시재생 거점/.test(text)) inferred.add("startup");
+  if (/팝업|행사|모임|세미나|커뮤니티|포럼|축제/.test(text)) inferred.add("event");
+  if (/대관|공간대여|회의실|세미나실|연습실/.test(text)) inferred.add("rental");
+  if (/체험|워크숍|클래스|공방|메이커/.test(text)) inferred.add("experience");
+  if (/교육|강연|클래스|아카데미|학교/.test(text)) inferred.add("education");
+  if (/산책|해변|올레|탐방|보행/.test(text)) inferred.add("walk");
+  if (/휴식|정원|테라스|공원|광장|야외|라운지/.test(text)) inferred.add("rest");
+  if (primaryCategory !== "shop" && /소품|굿즈|기념품|편집숍|로컬상품/.test(text)) inferred.add("goods-shop");
+  if (/책|도서|북라운지|문학|서점|독서/.test(text)) inferred.add("reading");
+  if (/관광|명소|역사|유적|기념관|박물관|관아|문화재/.test(text)) inferred.add("tourism");
+  if (/시장|상가|상점가|쇼핑몰|쇼핑거리|아케이드/.test(text)) inferred.add("market-shopping");
 
   if (canonicalName === "제주아트플랫폼") {
-    return ["exhibition-performance", "multi-cultural", "event-rental"];
+    return ["multi-cultural", "exhibition", "performance", "event", "rental"];
   } else if (canonicalName === "아르코공연연습센터@제주") {
-    return ["exhibition-performance", "event-rental"];
+    return ["performance", "creative", "rental"];
   } else if (canonicalName === "제주예술인복지센터") {
-    return ["creative-startup", "event-rental", "experience-education"];
+    return ["creative", "startup", "event", "rental", "education"];
   } else if (canonicalName === MAIN_HUB_CANONICAL_NAME) {
-    return ["creative-startup", "event-rental", "experience-education"];
+    return ["multi-cultural", "creative", "startup", "event", "rental", "experience", "education"];
   } else if (canonicalName === LPP_CANONICAL_NAME) {
-    return ["multi-cultural", "creative-startup", "event-rental"];
+    return ["multi-cultural", "startup", "event", "rental", "experience", "education", "goods-shop"];
   }
 
-  return additionalCategoryDefinitions.map((item) => item.id).filter((id) => inferred.has(id)).slice(0, 3);
+  return additionalCategoryDefinitions.map((item) => item.id).filter((id) => inferred.has(id));
 }
 
 export function directoryMetadataDefaults(

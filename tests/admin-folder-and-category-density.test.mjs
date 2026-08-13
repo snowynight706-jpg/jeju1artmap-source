@@ -16,6 +16,9 @@ test("admin functions use reusable folders with the requested open and closed ar
   assert.match(pageSource, /title="빠른 작업"/);
   assert.match(pageSource, /setPrintFolderOpenRequest\(\(current\) => current \+ 1\)/);
   assert.match(pageSource, /openSignal=\{printFolderOpenRequest\}/);
+  assert.match(pageSource, /folder\.scrollIntoView\(\{ block: "end", inline: "nearest" \}\)/);
+  assert.match(cssSource, /\.admin-folder \{[^}]*flex-direction: column-reverse/);
+  assert.match(cssSource, /\.admin-folder\.open > \.admin-folder-head \{[^}]*border-top/);
 });
 
 test("left admin panels are grouped into collapsible functional folders", () => {
@@ -34,7 +37,7 @@ test("left admin panels are grouped into collapsible functional folders", () => 
   }
 });
 
-test("public category controls keep five compact one-row buttons with larger icons while place rows stay slim and ruled", () => {
+test("public category controls keep five compact one-row buttons with larger icons while place rows stay extra slim and ruled", () => {
   const categoryBlock = pageSource.match(/const publicListCategories:[\s\S]*?\] as const;/)?.[0] ?? "";
   for (const [id, name] of [
     ["culture", "문화공간"],
@@ -57,12 +60,12 @@ test("public category controls keep five compact one-row buttons with larger ico
   }
   assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
   assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 50px[^}]*border-radius: 9px/);
-  assert.match(cssSource, /\.public-place-category-chips button img \{[^}]*width: 27px[^}]*height: 27px/);
+  assert.match(cssSource, /\.public-place-category-chips button img \{[^}]*width: 32px[^}]*height: 32px/);
   assert.doesNotMatch(cssSource, /\.public-place-category-chips button:not\(:last-child\)::after/);
   assert.match(cssSource, /\.public-place-list \{[^}]*gap: 0/);
-  assert.match(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*height: 1px[^}]*background: #dce5e2/);
+  assert.match(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*height: 1px[^}]*background: #e3e3e3/);
   assert.doesNotMatch(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*repeating-linear-gradient/);
-  assert.match(cssSource, /\.public-place-list article \{[^}]*min-height: 44px/);
+  assert.match(cssSource, /\.public-place-list article \{[^}]*min-height: 26px/);
   assert.match(cssSource, /\.global-story-panel-scroll \{[^}]*scrollbar-gutter: stable/);
   assert.match(cssSource, /\.global-story-panel \{[^}]*min-width: min\(410px, calc\(100vw - 36px\)\)[^}]*max-width: min\(410px, calc\(100vw - 36px\)\)/);
   assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
@@ -70,16 +73,34 @@ test("public category controls keep five compact one-row buttons with larger ico
   assert.match(pageSource, /return "convenience";/);
 });
 
-test("public place rows use the five requested columns without a district field", () => {
+test("the interface uses a bright grayscale base while preserving image resources", () => {
+  assert.match(cssSource, /:root \{[^}]*--paper: #f6f6f6[^}]*--panel: #fcfcfc[^}]*--ink: #2d2d2d[^}]*--emerald: #646464[^}]*--emerald-soft: #ededed/);
+  assert.doesNotMatch(cssSource, /--emerald: #3f9287|--emerald-soft: #e3f0ed/);
+  assert.match(cssSource, /\.public-place-category-chips button\.active \{[^}]*border-color: #999[^}]*background: #eeeeee[^}]*box-shadow: inset 0 -3px 0 #666/);
+  assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
+});
+
+test("direct DB editing uses a dense details list and compact category selections", () => {
+  assert.match(pageSource, /className="database-editor-list-columns"[^>]*><span \/><span>장소명<\/span><span>분류<\/span><span>권역<\/span>/);
+  assert.match(cssSource, /\.database-editor-list-pane \{[^}]*grid-template-rows: auto 24px minmax\(0, 1fr\)/);
+  assert.match(cssSource, /\.database-editor-list > button \{[^}]*min-height: 27px[^}]*border-radius: 0/);
+  assert.match(cssSource, /:is\(\.database-additional-categories, \.database-convenience-attributes\) > div \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(cssSource, /:is\(\.database-additional-categories, \.database-convenience-attributes\) label \{[^}]*min-height: 28px/);
+  assert.doesNotMatch(pageSource, /공개 상세 태그/);
+});
+
+test("public place rows use four compact columns with one information action", () => {
   const explorerBlock = pageSource.match(/<section className="public-place-explorer">[\s\S]*?<\/section> : globalContentTab/)?.[0] ?? "";
-  assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,80}>지도보기<[\s\S]{0,80}>상세</);
+  assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,80}>정보보기</);
   assert.match(explorerBlock, /className="public-place-identity"/);
   assert.doesNotMatch(explorerBlock, /public-place-symbol|<img src=\{meta\.iconSrc\}/);
   assert.match(explorerBlock, /className="public-place-primary-category"[\s\S]{0,100}\{meta\.name\}/);
   assert.match(explorerBlock, /className="public-place-additional-category"/);
-  assert.match(explorerBlock, /className="public-place-map-action"[\s\S]{0,160}>지도보기<\/button>/);
-  assert.match(explorerBlock, /className="public-place-detail-action"[\s\S]{0,160}>상세<\/button>/);
+  assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}focusPublicPlaceItem\(item, true\)[\s\S]{0,100}>정보보기<\/button>/);
+  assert.doesNotMatch(explorerBlock, /className="public-place-map-action"|className="public-place-detail-action"/);
   assert.doesNotMatch(explorerBlock, /item\.place\.area|권역 미입력|public-place-meta/);
-  assert.match(cssSource, /\.public-place-list-header \{[^}]*grid-template-columns: minmax\(118px, 1\.65fr\) 52px minmax\(62px, \.85fr\) 50px 40px/);
-  assert.match(cssSource, /\.public-place-list article \{[^}]*grid-template-columns: minmax\(118px, 1\.65fr\) 52px minmax\(62px, \.85fr\) 50px 40px/);
+  assert.match(cssSource, /\.public-place-list-header \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
+  assert.match(cssSource, /\.public-place-list article \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
+  assert.match(cssSource, /\.public-place-primary-category \{[^}]*font-size: 8\.5px/);
+  assert.match(cssSource, /\.public-place-additional-category \{[^}]*font-size: 8px/);
 });

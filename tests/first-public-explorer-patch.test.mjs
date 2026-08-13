@@ -9,16 +9,19 @@ const cssSource = await readFile(new URL("../app/globals.css", import.meta.url),
 const metadataMigration = await readFile(new URL("../drizzle/0016_zippy_swordsman.sql", import.meta.url), "utf8");
 const convenienceMigration = await readFile(new URL("../drizzle/0017_jittery_lilandra.sql", import.meta.url), "utf8");
 
-test("place taxonomy keeps four primary categories and seven activity-based additions", () => {
+test("place taxonomy keeps four primary categories and granular unlimited additions", () => {
   for (const category of ["culture", "cafe", "food", "shop"]) {
     assert.match(taxonomySource, new RegExp(`PrimaryPublicCategoryId[^;]+${category}`, "s"));
   }
-  for (const label of ["전시·공연", "복합문화", "창작·창업", "행사·대관", "체험·교육", "소품·로컬상품", "산책·휴식"]) {
+  for (const label of ["복합문화", "전시", "공연", "창작", "창업", "행사", "대관", "체험", "교육", "산책", "휴식", "소품샵", "독서", "관광", "시장&상가"]) {
     assert.match(taxonomySource, new RegExp(`name: "${label}"`));
   }
-  assert.match(taxonomySource, /\.slice\(0, 3\)/);
-  assert.match(pageSource, /selected\.size >= 3/);
-  assert.match(pageSource, /추가분류는 장소별로 최대 3개/);
+  assert.doesNotMatch(taxonomySource, /\.slice\(0, 3\)/);
+  assert.doesNotMatch(pageSource, /selected\.size >= 3|추가분류는 장소별로 최대 3개/);
+  assert.match(taxonomySource, /"exhibition-performance": \["exhibition", "performance"\]/);
+  assert.match(taxonomySource, /"experience-education": \["experience", "education"\]/);
+  assert.match(taxonomySource, /"walk-rest": \["walk", "rest"\]/);
+  assert.match(pageSource, /추가분류 · 선택 제한 없음/);
 });
 
 test("same-building facilities share one anchor but remain separate selectable records", () => {

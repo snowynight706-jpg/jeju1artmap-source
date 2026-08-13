@@ -2043,7 +2043,14 @@ function AdminFolder({
           type="button"
           className="admin-folder-toggle"
           aria-expanded={open}
-          onClick={() => setFolderState({ open: !open, signal: openSignal })}
+          onClick={(event) => {
+            const nextOpen = !open;
+            const folder = event.currentTarget.closest(".admin-folder");
+            setFolderState({ open: nextOpen, signal: openSignal });
+            if (nextOpen && folder instanceof HTMLElement) {
+              requestAnimationFrame(() => folder.scrollIntoView({ block: "end", inline: "nearest" }));
+            }
+          }}
         >
           <span className="admin-folder-arrow" aria-hidden="true">{open ? "△" : "▽"}</span>
           <strong>{title}</strong>
@@ -5153,13 +5160,7 @@ export default function Home() {
   const toggleSelectedDirectoryAdditionalCategory = (place: DirectoryPlace, categoryId: AdditionalCategoryId) => {
     const selected = new Set(sanitizeAdditionalCategories(place.additionalCategories));
     if (selected.has(categoryId)) selected.delete(categoryId);
-    else {
-      if (selected.size >= 3) {
-        setToast("추가분류는 장소별로 최대 3개까지 선택할 수 있습니다.");
-        return;
-      }
-      selected.add(categoryId);
-    }
+    else selected.add(categoryId);
     updateSelectedDirectoryTaxonomy(place, {
       additionalCategories: additionalCategoryDefinitions
         .map((definition) => definition.id)
@@ -5321,13 +5322,7 @@ export default function Home() {
     if (!place) return;
     const selected = new Set(sanitizeAdditionalCategories(place.additionalCategories));
     if (selected.has(categoryId)) selected.delete(categoryId);
-    else {
-      if (selected.size >= 3) {
-        setToast("추가분류는 장소별로 최대 3개까지 선택할 수 있습니다.");
-        return;
-      }
-      selected.add(categoryId);
-    }
+    else selected.add(categoryId);
     updateDatabaseDraftPlace(placeId, {
       additionalCategories: additionalCategoryDefinitions
         .map((item) => item.id)
@@ -7470,14 +7465,14 @@ export default function Home() {
             </AdminFolder>
             {selectedDirectoryPlace ? <AdminFolder className="marker-taxonomy-section" aria-label="DB 연동 장소 분류" title="장소 분류 · DB 연동" defaultOpen meta={directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "saving" ? "저장 중…" : directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "saved" ? "DB 저장됨" : directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "error" ? "저장 실패" : placeDirectoryCanEdit ? "변경 즉시 저장" : "읽기 전용"}>
               <label>기본분류 <em>1개 필수</em><select value={directoryCategory(selectedDirectoryPlace.category)} disabled={!placeDirectoryCanEdit} onChange={(event) => updateSelectedDirectoryTaxonomy(selectedDirectoryPlace, { category: event.target.value as CategoryId })}>{!isPrimaryPublicCategory(directoryCategory(selectedDirectoryPlace.category)) && <option value={directoryCategory(selectedDirectoryPlace.category)} disabled>{categoryOf(directoryCategory(selectedDirectoryPlace.category)).name} · 기존 분류</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
-              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>{sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).length}/3</em></header><div>{additionalCategoryDefinitions.map((definition) => {
+              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>{sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).length}개 · 제한 없음</em></header><div>{additionalCategoryDefinitions.map((definition) => {
                 const checked = sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).includes(definition.id);
                 return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} disabled={!placeDirectoryCanEdit} onChange={() => toggleSelectedDirectoryAdditionalCategory(selectedDirectoryPlace, definition.id)} /><span>{definition.name}</span></label>;
               })}</div></div>
               <p className="field-help">이곳에서 바꾼 기본분류와 추가분류는 해당 장소의 영구 DB와 현재 지도 편집본에 함께 반영됩니다.</p>
             </AdminFolder> : <AdminFolder className="marker-taxonomy-section pending-link" aria-label="DB 미연결 자산 분류" title="장소 분류 · DB 자동 연결" defaultOpen meta={directoryTaxonomySync.placeId === selected.id && directoryTaxonomySync.state === "saving" ? "연결·저장 중…" : directoryTaxonomySync.placeId === selected.id && directoryTaxonomySync.state === "error" ? "저장 실패" : selected.placeRequestId ? "승인 대기" : placeDirectoryCanEdit ? "미연결 · 편집 가능" : "읽기 전용"}>
               <label>기본분류 <em>첫 저장 시 DB 항목 생성</em><select value={selectedUnlinkedPrimaryCategory ?? ""} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || Boolean(selected.placeRequestId)} onChange={(event) => connectUnlinkedElementTaxonomy(selected, { category: event.target.value as CategoryId, additionalCategories: [] })}>{!selectedUnlinkedPrimaryCategory && <option value="" disabled>기본분류 선택</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
-              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>0/3</em></header><div>{additionalCategoryDefinitions.map((definition) => <label key={definition.id}><input type="checkbox" checked={false} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onChange={() => toggleUnlinkedElementAdditionalCategory(selected, definition.id)} /><span>{definition.name}</span></label>)}</div></div>
+              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>제한 없음</em></header><div>{additionalCategoryDefinitions.map((definition) => <label key={definition.id}><input type="checkbox" checked={false} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onChange={() => toggleUnlinkedElementAdditionalCategory(selected, definition.id)} /><span>{definition.name}</span></label>)}</div></div>
               <button type="button" className="wide-secondary taxonomy-connect-action" disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onClick={() => connectUnlinkedElementTaxonomy(selected, { category: selectedUnlinkedPrimaryCategory!, additionalCategories: [] })}>{selectedUnlinkedTaxonomySaving ? "DB 연결 중…" : "현재 분류로 DB 항목 생성·연결"}</button>
               <p className="field-help">{selected.placeRequestId ? "등록 요청으로 생성된 마커는 승인 후 DB 분류를 편집할 수 있습니다." : "DB에 없는 이미지·마커도 기본분류 변경, 추가분류 선택 또는 연결 버튼을 누르면 장소 항목이 자동 생성되고 현재 자산에 연결됩니다."}</p>
             </AdminFolder>}
@@ -7522,21 +7517,20 @@ export default function Home() {
             {globalContentTab === "places" ? <section className="public-place-explorer">
               <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
               <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><img src={category.iconSrc} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
-              <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span>지도보기</span><span>상세</span></div>
+              <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span>정보보기</span></div>
               <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "문화공간"} 목록`}>
                 {filteredPublicPlaceItems.map((item) => {
                   const meta = publicCategoryMetaForPlace(item.place, item.anchor);
                   const selectedItem = selectedId === item.anchor.id && selectedDirectoryPlace?.id === item.place.id;
                   const tagNames = additionalCategoryDefinitions
                     .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
-                    .slice(0, 2)
                     .map((definition) => definition.name);
+                  const tagLabel = tagNames.length ? tagNames.join(" · ") : "—";
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
                     <span className="public-place-identity"><strong title={item.displayName}>{item.displayName}</strong></span>
                     <span className="public-place-primary-category" title={meta.name}>{meta.name}</span>
-                    <span className="public-place-additional-category" title={tagNames.length ? tagNames.join(" · ") : "추가분류 없음"}>{tagNames.length ? tagNames.join(" · ") : "—"}</span>
-                    <button type="button" className="public-place-map-action" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>지도보기</button>
-                    <button type="button" className="public-place-detail-action" onClick={() => focusPublicPlaceItem(item, true)}>상세</button>
+                    <span className="public-place-additional-category" title={tagNames.length ? tagLabel : "추가분류 없음"}>{tagLabel}</span>
+                    <button type="button" className="public-place-open-action" onClick={() => focusPublicPlaceItem(item, true)} aria-current={selectedItem ? "true" : undefined}>정보보기</button>
                   </article>;
                 })}
                 {!filteredPublicPlaceItems.length && <div className="public-place-empty"><strong>조건에 맞는 장소가 없습니다.</strong><span>검색어나 카테고리를 바꿔보세요.</span></div>}
@@ -7639,11 +7633,12 @@ export default function Home() {
                 <input value={databaseEditorQuery} onChange={(event) => setDatabaseEditorQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="DB 장소 검색" />
                 <button onClick={addDatabaseDraftPlace}>＋ 신규</button>
               </div>
+              <div className="database-editor-list-columns" aria-hidden="true"><span /><span>장소명</span><span>분류</span><span>권역</span></div>
               <div className="database-editor-list" role="listbox" aria-label="DB 장소 목록">
                 {filteredDatabaseDraftPlaces.map((place) => {
                   const category = categoryOf(place.category);
                   return <button key={place.id} className={databaseEditorSelectedId === place.id ? "active" : ""} onClick={() => setDatabaseEditorSelectedId(place.id)} role="option" aria-selected={databaseEditorSelectedId === place.id}>
-                    <i style={{ background: category.color }} /><span><b>{place.name || "이름 없음"}</b><small>{category.name} · {place.area || "권역 미입력"}</small></span>
+                    <i style={{ background: category.color }} /><b title={place.name || "이름 없음"}>{place.name || "이름 없음"}</b><small title={category.name}>{category.name}</small><small title={place.area || "권역 미입력"}>{place.area || "권역 미입력"}</small>
                   </button>;
                 })}
                 {!filteredDatabaseDraftPlaces.length && <p>검색 결과가 없습니다.</p>}
@@ -7660,10 +7655,10 @@ export default function Home() {
                   <label>기존 세부유형 <em>설명용</em><input value={selectedDatabasePlace.subtype ?? ""} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { subtype: event.target.value })} /></label>
                 </div>
                 <section className="database-additional-categories" aria-label="추가분류 복수 선택">
-                  <header><div><strong>추가분류 · 최대 3개</strong><span>업종이 아니라 이 장소에서 할 수 있는 활동과 부가 기능을 선택합니다.</span></div><em>{sanitizeAdditionalCategories(selectedDatabasePlace.additionalCategories).length}/3 선택</em></header>
+                  <header><div><strong>추가분류 · 선택 제한 없음</strong><span>업종이 아니라 이 장소에서 할 수 있는 활동과 부가 기능을 선택합니다.</span></div><em>{sanitizeAdditionalCategories(selectedDatabasePlace.additionalCategories).length}개 선택</em></header>
                   <div>{additionalCategoryDefinitions.map((definition) => {
                     const checked = sanitizeAdditionalCategories(selectedDatabasePlace.additionalCategories).includes(definition.id);
-                    return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} onChange={() => toggleDatabaseAdditionalCategory(selectedDatabasePlace.id, definition.id)} /><span><b>{definition.name}</b><small>공개 상세 태그</small></span></label>;
+                    return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} onChange={() => toggleDatabaseAdditionalCategory(selectedDatabasePlace.id, definition.id)} /><span><b>{definition.name}</b></span></label>;
                   })}</div>
                   {(selectedDatabasePlace.locationGroupId || selectedDatabasePlace.featuredRole) && <p>{selectedDatabasePlace.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : "동일 건물 시설 묶음"}{selectedDatabasePlace.locationGroupId ? ` · ${selectedDatabasePlace.locationGroupId}` : ""}</p>}
                 </section>

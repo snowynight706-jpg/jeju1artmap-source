@@ -17,9 +17,9 @@ test("LPP is registered with the verified official address and exact map coordin
   assert.match(directorySource, /place\.map\.kakao\.com\/1316005169/);
 });
 
-test("LPP gets three activity categories and remains searchable by aliases", () => {
+test("LPP gets granular activity categories and remains searchable by aliases", () => {
   assert.match(taxonomySource, /LPP_CANONICAL_NAME = "LPP \(Local Player Platform\)"/);
-  assert.match(taxonomySource, /canonicalName === LPP_CANONICAL_NAME[\s\S]{0,120}\["multi-cultural", "creative-startup", "event-rental"\]/);
+  assert.match(taxonomySource, /canonicalName === LPP_CANONICAL_NAME[\s\S]{0,160}\["multi-cultural", "startup", "event", "rental", "experience", "education", "goods-shop"\]/);
   assert.match(taxonomySource, /\["LPP", "Local Player Platform", "로컬 플레이어 플랫폼"\]/);
   assert.match(pageSource, /function ensureLppMapElement/);
 });
