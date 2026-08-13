@@ -1352,8 +1352,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   --palette-5: #26313b;
   --ui-deep: #26313b;
   --ui-mid: #4e647a;
-  --ui-complement: #c79263;
-  --ui-complement-soft: #493d34;
+  --ui-complement: #8ea2bb;
+  --ui-complement-soft: #3b4d5d;
   --ui-on-complement: #26313b;
   --paper: #26313b;
   --panel: #2d3a46;
@@ -1592,6 +1592,29 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .app-shell[data-ui-theme] :is(.public-place-primary-category, .public-place-additional-category) { border-color: var(--line); color: var(--muted); }
 .app-shell[data-ui-theme] .public-place-list article:not(.selected):not(.main-hub) { background: var(--ui-surface-raised); }
 .app-shell[data-ui-theme] .public-place-list article:not(:last-child)::after { background: var(--line); }
+.app-shell[data-ui-theme="harbor-morning"] .public-place-list article.main-hub:not(.selected) {
+  border-color: color-mix(in srgb, var(--palette-3) 44%, transparent);
+  background: linear-gradient(110deg, var(--ui-mid), var(--ui-surface-raised) 72%);
+  box-shadow: inset 3px 0 0 var(--palette-3);
+}
+.app-shell[data-ui-theme="harbor-morning"] .public-place-list article.selected {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ui-surface-raised) 88%, #d9ad45), var(--ui-surface-raised));
+}
+.app-shell[data-ui-theme="harbor-morning"] .public-place-list article:is(.main-hub, .selected) .public-place-identity > strong { color: var(--palette-1); }
+.app-shell[data-ui-theme="harbor-morning"] .public-place-list article.main-hub:not(.selected) :is(.public-place-primary-category, .public-place-additional-category) { color: var(--palette-1); }
+.app-shell[data-ui-theme="harbor-morning"] .public-place-list article.selected :is(.public-place-primary-category, .public-place-additional-category) { color: var(--palette-2); }
+.app-shell[data-ui-theme="harbor-morning"] .main-hub-quick {
+  border-color: var(--palette-3);
+  background: var(--palette-3);
+  color: var(--ui-deep);
+  box-shadow: 0 5px 18px rgb(8 14 20 / 28%);
+}
+.app-shell[data-ui-theme="harbor-morning"] .main-hub-quick:hover,
+.app-shell[data-ui-theme="harbor-morning"] .main-hub-quick:focus-visible {
+  border-color: var(--palette-2);
+  background: var(--palette-2);
+  color: var(--ui-deep);
+}
 .app-shell[data-ui-theme] .database-editor-list > button { border-color: var(--line); background: var(--ui-surface-raised); color: var(--ink); }
 .app-shell[data-ui-theme] .database-editor-list > button:nth-child(even) { background: var(--ui-surface-soft); }
 .app-shell[data-ui-theme] .database-editor-list > button:hover { background: var(--ui-control-hover); }

@@ -96,6 +96,10 @@ test("five persisted palettes include a hidden picker, full tonal hierarchy, and
   assert.match(pageSource, /localStorage\.getItem\(UI_THEME_STORAGE_KEY\)/);
   assert.match(pageSource, /localStorage\.setItem\(UI_THEME_STORAGE_KEY, theme\)/);
   assert.match(cssSource, /data-ui-theme="harbor-morning"[^}]*--paper: #26313b[^}]*--ink: #f0f3f7/);
+  assert.match(cssSource, /data-ui-theme="harbor-morning"[^}]*--ui-complement: #8ea2bb[^}]*--ui-complement-soft: #3b4d5d/);
+  assert.match(cssSource, /data-ui-theme="harbor-morning"[^}]*\.public-place-list article\.main-hub:not\(\.selected\)[^}]*background: linear-gradient\(110deg, var\(--ui-mid\), var\(--ui-surface-raised\) 72%\)/);
+  assert.match(cssSource, /data-ui-theme="harbor-morning"[^}]*article\.main-hub:not\(\.selected\)[^}]*public-place-primary-category[^}]*color: var\(--palette-1\)/);
+  assert.match(cssSource, /data-ui-theme="harbor-morning"[^}]*\.public-place-list article\.selected[^}]*var\(--ui-surface-raised\) 88%, #d9ad45/);
   assert.match(cssSource, /--radius-window: 8px[^}]*--radius-panel: 5px[^}]*--radius-control: 3px/);
   assert.match(cssSource, /--ui-spectrum: linear-gradient\(90deg, var\(--palette-1\)[^;]*var\(--palette-5\)/);
   assert.match(cssSource, /@media \(min-width: 761px\)[\s\S]*\.app-shell\[data-ui-theme\] \.topbar \{[^}]*background: linear-gradient/);
