@@ -124,8 +124,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .advanced-view-tools { margin-top: 7px; border: 1px solid #e4e4e4; border-radius: 7px; background: #f9f9f9; }
 .advanced-view-tools summary { min-height: 29px; display: flex; align-items: center; padding: 0 7px; color: #646464; cursor: pointer; font-size: 7px; font-weight: 700; list-style: none; }
 .advanced-view-tools summary::-webkit-details-marker { display: none; }
-.advanced-view-tools summary::before { content: "▽"; margin-right: 5px; color: #646464; }
-.advanced-view-tools[open] summary::before { content: "△"; }
+.advanced-view-tools summary::before { content: ""; width: 7px; height: 7px; flex: 0 0 7px; margin: 0 7px 3px 1px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; color: #646464; transform: rotate(45deg); transition: transform .18s ease, margin .18s ease; }
+.advanced-view-tools[open] summary::before { margin-top: 4px; margin-bottom: 0; transform: rotate(225deg); }
 .advanced-view-tools-body { display: grid; gap: 7px; padding: 0 7px 7px; border-top: 1px solid #e7e7e7; }
 .advanced-basemap-tools { display: grid; gap: 6px; }
 .advanced-basemap-tools > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
@@ -253,13 +253,19 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .marker-visibility-panel { margin: 10px; padding: 9px; border: 1px solid #dfdfdf; border-radius: 9px; background: #fdfdfd; }
 .marker-visibility-panel > p { margin: -1px 3px 8px; color: #707070; font-size: 8px; line-height: 1.45; }
 .marker-visibility-list { max-height: 280px; overflow-y: auto; display: grid; gap: 5px; padding-right: 2px; }
-.marker-visibility-group { overflow: hidden; border: 1px solid #e6e6e6; border-radius: 8px; background: white; }
+.marker-visibility-group { overflow: hidden; border: 1px solid #e6e6e6; border-radius: 8px; background: white; transition: border-color .18s ease, background-color .18s ease; }
 .marker-visibility-group-toggle { width: 100%; min-height: 34px; display: grid; grid-template-columns: 13px 7px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 5px 7px; border: 0; background: #fafafa; color: #5e5e5e; cursor: pointer; text-align: left; }
 .marker-visibility-group-toggle:hover { background: #f5f5f5; color: #5f5f5f; }
 .marker-visibility-group-toggle:focus-visible { position: relative; z-index: 1; outline: 2px solid #afafaf; outline-offset: -2px; }
 .marker-visibility-group-toggle > i { width: 7px; height: 7px; border-radius: 50%; }
 .marker-visibility-group-toggle strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
-.marker-folder-icon { color: #646464; font-size: 9px; text-align: center; }
+.marker-folder-icon { position: relative; width: 13px; height: 13px; display: grid; place-items: center; color: #646464; }
+.marker-folder-icon::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .18s ease, color .18s ease; }
+:is(.marker-visibility-group, .calibration-folder).expanded .marker-folder-icon::before { transform: translateY(2px) rotate(225deg); }
+.marker-visibility-group.collapsed { border-color: #e1e1e1; background: #f2f2f2; }
+.marker-visibility-group.collapsed > .marker-visibility-group-toggle { background: #f2f2f2; color: #686868; }
+.marker-visibility-group.expanded { border-color: #c8c8c8; background: #fff; }
+.marker-visibility-group.expanded > .marker-visibility-group-toggle { background: #e5e5e5; color: #303030; box-shadow: inset 3px 0 0 #707070; }
 .marker-group-count { min-width: 29px; padding: 2px 5px; border-radius: 9px; background: #efefef; color: #646464; text-align: center; font-size: 7px; font-variant-numeric: tabular-nums; }
 .marker-visibility-group-items { display: grid; gap: 3px; padding: 4px; border-top: 1px solid #ebebeb; background: #fdfdfd; }
 .marker-visibility-row { min-height: 35px; display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; gap: 5px; padding: 4px 5px; border: 1px solid transparent; border-radius: 7px; background: white; }
@@ -333,7 +339,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .calibration-summary span { margin-top: 4px; color: #646464; font-size: 8px; line-height: 1.45; }
 .calibration-help { margin: 8px 2px 10px; color: #646464; font-size: 8px; line-height: 1.55; }
 .calibration-list { display: grid; gap: 6px; }
-.calibration-folder { overflow: hidden; margin-top: 8px; border: 1px solid #e3e3e3; border-radius: 9px; background: white; }
+.calibration-folder { overflow: hidden; margin-top: 8px; border: 1px solid #e3e3e3; border-radius: 9px; background: white; transition: border-color .18s ease, background-color .18s ease; }
 .calibration-folder-toggle { width: 100%; min-height: 36px; display: grid; grid-template-columns: 13px 20px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px 8px; border: 0; background: #f9f9f9; color: #5b5b5b; cursor: pointer; text-align: left; }
 .calibration-folder-toggle:hover { background: #f5f5f5; color: #5f5f5f; }
 .calibration-folder-toggle:focus-visible { outline: 2px solid #afafaf; outline-offset: -2px; }
@@ -351,6 +357,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .calibration-folder-items { display: grid; gap: 6px; padding: 6px; border-top: 1px solid #eaeaea; background: #fdfdfd; }
 .calibration-folder.secondary .calibration-folder-items { border-top-color: #e7e1ef; background: #fdfcff; }
 .calibration-folder.tertiary .calibration-folder-items { border-top-color: #eee0ca; background: #fffdf8; }
+.calibration-folder.collapsed { background: #f2f2f2; }
+.calibration-folder.collapsed > .calibration-folder-toggle { background: #f2f2f2; color: #686868; }
+.calibration-folder.expanded { border-color: #c8c8c8; background: #fff; }
+.calibration-folder.expanded > .calibration-folder-toggle { background: #e5e5e5; color: #303030; box-shadow: inset 3px 0 0 #707070; }
 .calibration-card { padding: 7px; border: 1px solid var(--line); border-radius: 9px; background: white; transition: border-color .15s, box-shadow .15s; }
 .calibration-card.active { border-color: #646464; box-shadow: 0 0 0 2px rgb(100 100 100 / 10%); }
 .calibration-focus { width: 100%; display: grid; grid-template-columns: 23px minmax(0, 1fr); align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
@@ -893,19 +903,25 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 
 .properties-panel { overflow-y: auto; }
 .property-form section { padding: 15px 16px; border-bottom: 1px solid var(--line); }
-.admin-folder { display: flex; flex-direction: column-reverse; padding: 0 !important; overflow: hidden; scroll-margin-block: 10px; border-bottom: 1px solid var(--line); background: #fcfcfc; }
-.admin-folder-head { min-height: 41px; display: flex; align-items: center; gap: 6px; padding: 5px 10px; }
+.admin-folder { display: flex; flex-direction: column-reverse; padding: 0 !important; overflow: hidden; scroll-margin-block: 10px; border-bottom: 1px solid var(--line); background: #fcfcfc; transition: border-color .18s ease, background-color .18s ease; }
+.admin-folder-head { min-height: 41px; display: flex; align-items: center; gap: 6px; padding: 5px 10px; transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease; }
 .admin-folder-toggle { min-width: 0; min-height: 31px; flex: 1 1 auto; display: flex; align-items: center; gap: 7px; padding: 0 3px; border: 0; border-radius: 7px; background: transparent; color: #515151; cursor: pointer; text-align: left; }
 .admin-folder-toggle:hover { background: #f3f3f3; color: #5d5d5d; }
 .admin-folder-toggle:focus-visible { outline: 2px solid #bebebe; outline-offset: 1px; }
 .admin-folder-toggle strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.admin-folder-arrow { width: 15px; flex: 0 0 15px; color: #646464; font-size: 11px; font-weight: 800; text-align: center; }
+.admin-folder-arrow { position: relative; width: 16px; height: 16px; flex: 0 0 16px; display: grid; place-items: center; color: #6f6f6f; }
+.admin-folder-arrow::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .18s ease, color .18s ease; }
+.admin-folder.open .admin-folder-arrow::before { transform: translateY(2px) rotate(225deg); }
 .admin-folder-meta { flex: 0 0 auto; max-width: 94px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .admin-folder-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
-.admin-folder-body { padding: 12px 14px 10px; }
+.admin-folder-body { padding: 12px 14px 10px; background: #fff; }
 .admin-folder-body[hidden] { display: none; }
-.admin-folder.closed { background: #fafafa; }
-.admin-folder.open > .admin-folder-head { border-top: 1px solid #e9e9e9; background: #f9f9f9; }
+.admin-folder.closed { border-color: #e2e2e2; background: #f2f2f2; }
+.admin-folder.closed > .admin-folder-head { background: #f2f2f2; color: #686868; }
+.admin-folder.open { border-color: #c8c8c8; background: #fff; }
+.admin-folder.open > .admin-folder-head { border-top: 1px solid #c8c8c8; background: #e5e5e5; color: #303030; box-shadow: inset 3px 0 0 #707070; }
+.admin-folder.open > .admin-folder-head .admin-folder-toggle { color: #303030; }
+.admin-folder.open > .admin-folder-head .admin-folder-arrow { color: #3f3f3f; }
 .side-admin-folder { margin: 9px 10px; padding: 0 !important; border: 1px solid #e0e0e0; border-radius: 10px; background: #fdfdfd; }
 .side-admin-folder .admin-folder-head { min-height: 38px; padding: 3px 7px; }
 .side-admin-folder .admin-folder-body { padding: 9px; }
@@ -2319,4 +2335,133 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
     --font-ui-heading: 14px;
     --font-ui-title: 15px;
   }
+}
+
+/* Clear accordion states across every palette, including the dark theme. */
+.app-shell[data-ui-theme] .admin-folder.closed {
+  border-color: var(--line);
+  background: var(--ui-surface-soft);
+}
+
+.app-shell[data-ui-theme] .admin-folder.closed > .admin-folder-head {
+  border-color: var(--line);
+  background: var(--ui-surface-soft);
+  color: var(--muted);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--line-strong) 54%, transparent);
+}
+
+.app-shell[data-ui-theme] .admin-folder.open {
+  border-color: var(--line-strong);
+  background: var(--ui-surface-raised);
+}
+
+.app-shell[data-ui-theme] .admin-folder.open > .admin-folder-head {
+  border-color: var(--line-strong);
+  background: var(--ui-active);
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.app-shell[data-ui-theme] .admin-folder.open > .admin-folder-body {
+  background: var(--ui-surface-raised);
+  color: var(--ink);
+}
+
+.app-shell[data-ui-theme] .admin-folder.closed > .admin-folder-head .admin-folder-toggle {
+  color: var(--muted);
+}
+
+.app-shell[data-ui-theme] .admin-folder.open > .admin-folder-head .admin-folder-toggle {
+  color: var(--ink);
+}
+
+.app-shell[data-ui-theme] .admin-folder.closed > .admin-folder-head .admin-folder-arrow {
+  color: var(--line-strong);
+}
+
+.app-shell[data-ui-theme] .admin-folder.open > .admin-folder-head .admin-folder-arrow {
+  color: var(--ui-accent-strong);
+}
+
+.app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).collapsed {
+  border-color: var(--line);
+  background: var(--ui-surface-soft);
+}
+
+.app-shell[data-ui-theme] :is(
+  .marker-visibility-group.collapsed > .marker-visibility-group-toggle,
+  .calibration-folder.collapsed > .calibration-folder-toggle
+) {
+  border-color: var(--line) !important;
+  background: var(--ui-surface-soft) !important;
+  color: var(--muted) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--line-strong) 54%, transparent);
+}
+
+.app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).expanded {
+  border-color: var(--line-strong);
+  background: var(--ui-surface-raised);
+}
+
+.app-shell[data-ui-theme] :is(
+  .marker-visibility-group.expanded > .marker-visibility-group-toggle,
+  .calibration-folder.expanded > .calibration-folder-toggle
+) {
+  border-color: var(--line-strong) !important;
+  background: var(--ui-active) !important;
+  color: var(--ink) !important;
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.app-shell[data-ui-theme] :is(
+  .marker-visibility-group.expanded > .marker-visibility-group-items,
+  .calibration-folder.expanded > .calibration-folder-items
+) {
+  border-color: var(--line);
+  background: var(--ui-surface-raised);
+  color: var(--ink);
+}
+
+.app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).collapsed .marker-folder-icon {
+  color: var(--line-strong);
+}
+
+.app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).expanded .marker-folder-icon {
+  color: var(--ui-accent-strong);
+}
+
+.app-shell[data-ui-theme] .advanced-view-tools:not([open]) {
+  border-color: var(--line);
+  background: var(--ui-surface-soft);
+}
+
+.app-shell[data-ui-theme] .advanced-view-tools[open] {
+  border-color: var(--line-strong);
+  background: var(--ui-surface-raised);
+}
+
+.app-shell[data-ui-theme] .advanced-view-tools:not([open]) > summary {
+  background: var(--ui-surface-soft);
+  color: var(--muted);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--line-strong) 54%, transparent);
+}
+
+.app-shell[data-ui-theme] .advanced-view-tools:not([open]) > summary::before {
+  color: var(--line-strong);
+}
+
+.app-shell[data-ui-theme] .advanced-view-tools[open] > summary {
+  border-color: var(--line-strong);
+  background: var(--ui-active);
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.app-shell[data-ui-theme] .advanced-view-tools[open] > summary::before {
+  color: var(--ui-accent-strong);
+}
+
+.app-shell[data-ui-theme] .advanced-view-tools[open] > .advanced-view-tools-body {
+  border-color: var(--line);
+  background: var(--ui-surface-raised);
 }

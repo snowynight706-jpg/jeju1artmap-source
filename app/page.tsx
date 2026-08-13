@@ -2114,7 +2114,7 @@ function AdminFolder({
             }
           }}
         >
-          <span className="admin-folder-arrow" aria-hidden="true">{open ? "△" : "▽"}</span>
+          <span className="admin-folder-arrow" aria-hidden="true" />
           <strong>{title}</strong>
         </button>
         {meta !== undefined && <span className="admin-folder-meta">{meta}</span>}
@@ -7176,7 +7176,7 @@ export default function Home() {
                 const labelCount = groupElements.filter((element) => element.labelVisible).length;
                 return <section key={category.id} className={`marker-visibility-group ${expanded ? "expanded" : "collapsed"}`}>
                   <button type="button" className="marker-visibility-group-toggle" aria-expanded={expanded} aria-controls={`placed-marker-group-${category.id}`} onClick={() => setExpandedPlacedMarkerGroups((current) => ({ ...current, [category.id]: !current[category.id] }))}>
-                    <span className="marker-folder-icon" aria-hidden="true">{expanded ? "△" : "▽"}</span>
+                    <span className="marker-folder-icon" aria-hidden="true" />
                     <i style={{ background: category.color }} />
                     <strong>{category.name}</strong>
                     <span className="marker-group-count">라벨 {labelCount}/{groupElements.length}</span>
@@ -7307,7 +7307,7 @@ export default function Home() {
                   const expanded = Boolean(placeQuery.trim()) || expandedVisibilityGroups[category.id];
                   return <section key={category.id} className={`marker-visibility-group ${expanded ? "expanded" : "collapsed"}`}>
                     <button type="button" className="marker-visibility-group-toggle" aria-expanded={expanded} aria-controls={`place-group-${category.id}`} onClick={() => setExpandedVisibilityGroups((current) => ({ ...current, [category.id]: !current[category.id] }))}>
-                      <span className="marker-folder-icon" aria-hidden="true">{expanded ? "△" : "▽"}</span>
+                      <span className="marker-folder-icon" aria-hidden="true" />
                       <i style={{ background: category.color }} />
                       <strong>{category.name}</strong>
                       <span className="marker-group-count">{placedCount}/{rows.length}</span>
@@ -7345,7 +7345,7 @@ export default function Home() {
             <p className="calibration-help">1차 기준점 6곳으로 전체를 맞추고, 확정 랜드마크를 2차 지역 기준으로 사용합니다. 그 밖의 좌표 고정 요소는 실제 주소 좌표가 확인된 경우 자동으로 3차 근거리 기준점이 되어 주변 미고정 장소의 대략적 위치를 보완합니다.</p>
             <section className={`calibration-folder primary ${expandedCalibrationGroups.primary ? "expanded" : "collapsed"}`}>
               <button type="button" className="calibration-folder-toggle" aria-expanded={expandedCalibrationGroups.primary} aria-controls="calibration-group-primary" onClick={() => setExpandedCalibrationGroups((current) => ({ ...current, primary: !current.primary }))}>
-                <span className="marker-folder-icon" aria-hidden="true">{expandedCalibrationGroups.primary ? "△" : "▽"}</span><i>1</i><strong>1차 전체 기준점</strong><span>{calibrationPoints.length}</span>
+                <span className="marker-folder-icon" aria-hidden="true" /><i>1</i><strong>1차 전체 기준점</strong><span>{calibrationPoints.length}</span>
               </button>
               {expandedCalibrationGroups.primary && <div id="calibration-group-primary" className="calibration-folder-items calibration-list">
                 {calibrationPoints.map((point, index) => {
@@ -7370,7 +7370,7 @@ export default function Home() {
             </section>
             <section className={`calibration-folder secondary ${expandedCalibrationGroups.secondary ? "expanded" : "collapsed"}`}>
               <button type="button" className="calibration-folder-toggle" aria-expanded={expandedCalibrationGroups.secondary} aria-controls="calibration-group-secondary" onClick={() => setExpandedCalibrationGroups((current) => ({ ...current, secondary: !current.secondary }))}>
-                <span className="marker-folder-icon" aria-hidden="true">{expandedCalibrationGroups.secondary ? "△" : "▽"}</span><i>2</i><strong>2차 확정 기준점</strong><span>{secondaryCalibrationPoints.length}</span>
+                <span className="marker-folder-icon" aria-hidden="true" /><i>2</i><strong>2차 확정 기준점</strong><span>{secondaryCalibrationPoints.length}</span>
               </button>
               {expandedCalibrationGroups.secondary && <div id="calibration-group-secondary" className="calibration-folder-items">
                 {secondaryCalibrationPoints.length ? secondaryCalibrationPoints.map((point) => {
@@ -7385,7 +7385,7 @@ export default function Home() {
             </section>
             <section className={`calibration-folder tertiary ${expandedCalibrationGroups.tertiary ? "expanded" : "collapsed"}`}>
               <button type="button" className="calibration-folder-toggle" aria-expanded={expandedCalibrationGroups.tertiary} aria-controls="calibration-group-tertiary" onClick={() => setExpandedCalibrationGroups((current) => ({ ...current, tertiary: !current.tertiary }))}>
-                <span className="marker-folder-icon" aria-hidden="true">{expandedCalibrationGroups.tertiary ? "△" : "▽"}</span><i>3</i><strong>3차 고정 좌표 기준점</strong><span>{tertiaryCalibrationPoints.length}</span>
+                <span className="marker-folder-icon" aria-hidden="true" /><i>3</i><strong>3차 고정 좌표 기준점</strong><span>{tertiaryCalibrationPoints.length}</span>
               </button>
               {expandedCalibrationGroups.tertiary && <div id="calibration-group-tertiary" className="calibration-folder-items">
                 {tertiaryCalibrationPoints.length ? tertiaryCalibrationPoints.map((point) => {

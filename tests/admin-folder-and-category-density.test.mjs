@@ -5,9 +5,11 @@ import test from "node:test";
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("admin functions use reusable folders with the requested open and closed arrows", () => {
+test("admin functions use reusable folders with clean CSS chevrons and distinct states", () => {
   assert.match(pageSource, /function AdminFolder/);
-  assert.match(pageSource, /open \? "△" : "▽"/);
+  assert.match(pageSource, /<span className="admin-folder-arrow" aria-hidden="true" \/>/);
+  assert.doesNotMatch(pageSource, /△|▽/);
+  assert.doesNotMatch(cssSource, /△|▽/);
   assert.match(pageSource, /title="기본 정보"[\s\S]{0,120}defaultOpen/);
   assert.match(pageSource, /title="장소 분류 · DB 연동"[\s\S]{0,160}defaultOpen/);
   assert.match(pageSource, /title="리소스 출력 오프셋"/);
@@ -19,6 +21,16 @@ test("admin functions use reusable folders with the requested open and closed ar
   assert.match(pageSource, /folder\.scrollIntoView\(\{ block: "end", inline: "nearest" \}\)/);
   assert.match(cssSource, /\.admin-folder \{[^}]*flex-direction: column-reverse/);
   assert.match(cssSource, /\.admin-folder\.open > \.admin-folder-head \{[^}]*border-top/);
+  assert.match(cssSource, /\.admin-folder-arrow::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
+  assert.match(cssSource, /\.admin-folder\.open \.admin-folder-arrow::before \{[^}]*rotate\(225deg\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.closed > \.admin-folder-head \{[^}]*background: var\(--ui-surface-soft\)[^}]*color: var\(--muted\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-head \{[^}]*background: var\(--ui-active\)[^}]*color: var\(--ink\)[^}]*box-shadow: inset 3px 0 0 var\(--ui-accent\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-body \{[^}]*background: var\(--ui-surface-raised\)/);
+  assert.match(cssSource, /\.marker-folder-icon::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
+  assert.match(cssSource, /:is\(\.marker-visibility-group, \.calibration-folder\)\.expanded \.marker-folder-icon::before \{[^}]*rotate\(225deg\)/);
+  assert.match(cssSource, /\.advanced-view-tools summary::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] :is\(\.marker-visibility-group, \.calibration-folder\)\.expanded \{[^}]*background: var\(--ui-surface-raised\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.advanced-view-tools\[open\] > summary \{[^}]*background: var\(--ui-active\)[^}]*box-shadow: inset 3px 0 0 var\(--ui-accent\)/);
 });
 
 test("left admin panels are grouped into collapsible functional folders", () => {
