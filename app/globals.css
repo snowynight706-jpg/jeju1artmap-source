@@ -1917,8 +1917,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
     .public-layout-tools button.publish-layout:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
     .draft-tools button.draft-save:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove)
   ) {
-    border-color: var(--palette-3);
-    background: var(--palette-2);
+    border-color: var(--palette-2);
+    background: color-mix(in srgb, var(--palette-1) 82%, var(--palette-2));
     color: var(--ui-deep);
     font-weight: 800;
   }
@@ -1928,8 +1928,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
     .public-layout-tools button.publish-layout:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove),
     .draft-tools button.draft-save:not(.main-hub-quick):not(.danger):not(.wide-danger):not(.remove)
   ):hover:not(:disabled) {
-    border-color: var(--palette-2);
-    background: var(--palette-2);
+    border-color: var(--palette-3);
+    background: var(--palette-1);
     color: var(--ui-deep);
   }
 
