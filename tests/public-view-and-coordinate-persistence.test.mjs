@@ -55,7 +55,8 @@ test("main hub is folded into culture instead of having a separate list filter",
   assert.doesNotMatch(pageSource, /\{ id: "hub", name: "워크케이션 거점"/);
   assert.match(pageSource, /place\.featuredRole === MAIN_HUB_ROLE\s*\|\| isPrimaryHubLabel\(place\.name\)\s*\) return "culture";/);
   assert.match(pageSource, /Number\(b\.isMainHub\) - Number\(a\.isMainHub\)/);
-  assert.match(pageSource, /style=\{item\.isMainHub \? \{ background: MAIN_HUB_PUBLIC_COLOR \} : undefined\}/);
+  assert.match(pageSource, /item\.isMainHub \? "main-hub" : ""/);
+  assert.match(cssSource, /\.public-place-list article\.main-hub \{[^}]*background: linear-gradient/);
 });
 
 test("mobile panels open large but map navigation folds them away", () => {

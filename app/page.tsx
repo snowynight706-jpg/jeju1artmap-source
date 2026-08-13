@@ -73,7 +73,6 @@ const LANDMARK_RESOURCE_SIZE = 6.2;
 const LANDMARK_LABEL_GAP = 8;
 const LEGACY_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크";
 const STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 외곽선보강 최종검수안 · 표준 랜드마크 이미지·라벨 처리";
-const MAIN_HUB_PUBLIC_COLOR = "#d84a42";
 const SUPERSEDED_SANJICHEON_ASSET_IDS = new Set(["sanjicheon-01", "sanjicheon-02", "sanjicheon-03"]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
@@ -7533,10 +7532,7 @@ export default function Home() {
                     .slice(0, 2)
                     .map((definition) => definition.name);
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
-                    <span className="public-place-identity">
-                      <span className={`public-place-symbol ${item.isMainHub ? "main-hub" : "category-resource"}`} style={item.isMainHub ? { background: MAIN_HUB_PUBLIC_COLOR } : undefined}>{item.isMainHub ? "▼" : <img src={meta.iconSrc} alt="" aria-hidden="true" />}</span>
-                      <strong title={item.displayName}>{item.displayName}</strong>
-                    </span>
+                    <span className="public-place-identity"><strong title={item.displayName}>{item.displayName}</strong></span>
                     <span className="public-place-primary-category" title={meta.name}>{meta.name}</span>
                     <span className="public-place-additional-category" title={tagNames.length ? tagNames.join(" · ") : "추가분류 없음"}>{tagNames.length ? tagNames.join(" · ") : "—"}</span>
                     <button type="button" className="public-place-map-action" onClick={() => focusPublicPlaceItem(item)} aria-current={selectedItem ? "true" : undefined}>지도보기</button>

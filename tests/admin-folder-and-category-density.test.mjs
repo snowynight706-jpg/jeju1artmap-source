@@ -34,7 +34,7 @@ test("left admin panels are grouped into collapsible functional folders", () => 
   }
 });
 
-test("public category controls use five compact buttons while place rows stay slim and ruled", () => {
+test("public category controls keep five compact one-row buttons with larger icons while place rows stay slim and ruled", () => {
   const categoryBlock = pageSource.match(/const publicListCategories:[\s\S]*?\] as const;/)?.[0] ?? "";
   for (const [id, name] of [
     ["culture", "문화공간"],
@@ -55,8 +55,9 @@ test("public category controls use five compact buttons while place rows stay sl
   ]) {
     assert.match(categoryBlock, new RegExp(`/category-icons/${resource.replace(".", "\\.")}`));
   }
-  assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
-  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 36px[^}]*border-radius: 9px/);
+  assert.match(cssSource, /\.public-place-category-chips \{[^}]*grid-template-columns: repeat\(5, minmax\(0, 1fr\)\)/);
+  assert.match(cssSource, /\.public-place-category-chips button \{[^}]*height: 50px[^}]*border-radius: 9px/);
+  assert.match(cssSource, /\.public-place-category-chips button img \{[^}]*width: 27px[^}]*height: 27px/);
   assert.doesNotMatch(cssSource, /\.public-place-category-chips button:not\(:last-child\)::after/);
   assert.match(cssSource, /\.public-place-list \{[^}]*gap: 0/);
   assert.match(cssSource, /\.public-place-list article:not\(:last-child\)::after \{[^}]*height: 1px[^}]*background: #dce5e2/);
@@ -73,6 +74,7 @@ test("public place rows use the five requested columns without a district field"
   const explorerBlock = pageSource.match(/<section className="public-place-explorer">[\s\S]*?<\/section> : globalContentTab/)?.[0] ?? "";
   assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,80}>지도보기<[\s\S]{0,80}>상세</);
   assert.match(explorerBlock, /className="public-place-identity"/);
+  assert.doesNotMatch(explorerBlock, /public-place-symbol|<img src=\{meta\.iconSrc\}/);
   assert.match(explorerBlock, /className="public-place-primary-category"[\s\S]{0,100}\{meta\.name\}/);
   assert.match(explorerBlock, /className="public-place-additional-category"/);
   assert.match(explorerBlock, /className="public-place-map-action"[\s\S]{0,160}>지도보기<\/button>/);
