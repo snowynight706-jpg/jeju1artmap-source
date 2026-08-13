@@ -645,7 +645,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-place-category-chips button em { position: absolute; top: 3px; right: 4px; min-width: 13px; padding: 1px 3px; border-radius: 8px; background: #f3f3f3; color: #707070; text-align: center; font-size: 5.5px; line-height: 1.25; font-style: normal; font-weight: 750; }
 .public-place-category-chips button.active { border-color: #999; background: #eeeeee; color: #2f2f2f; box-shadow: inset 0 -3px 0 #666, 0 3px 9px rgb(56 56 56 / 7%); }
 .public-place-list-header { min-width: 0; display: grid; grid-template-columns: minmax(124px, 1.45fr) 60px minmax(112px, 1.15fr) 64px; align-items: stretch; border: 1px solid #dedede; border-bottom: 0; background: #f5f5f5; color: #646464; }
-.public-place-list-header span { min-width: 0; display: grid; place-items: center; padding: 3px 4px; border-left: 1px solid #e6e6e6; font-size: 7.5px; font-weight: 800; letter-spacing: -.015em; white-space: nowrap; }
+.public-place-list-header span { min-width: 0; display: grid; place-items: center; padding: 3px 4px; border-left: 1px solid #e6e6e6; font-size: 8.5px; font-weight: 850; letter-spacing: -.015em; white-space: nowrap; }
 .public-place-list-header span:first-child { place-items: center start; padding-left: 9px; border-left: 0; }
 .public-place-list { width: 100%; min-width: 0; display: grid; gap: 0; overflow: hidden; border: 1px solid #dedede; background: linear-gradient(180deg, #fff, #fcfcfc); }
 .public-place-list article { position: relative; min-width: 0; min-height: 26px; display: grid; grid-template-columns: minmax(124px, 1.45fr) 60px minmax(112px, 1.15fr) 64px; align-items: stretch; overflow: visible; border: 1px solid transparent; border-radius: 0; background: transparent; box-shadow: none; }
@@ -655,8 +655,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-place-identity { min-width: 0; display: flex; align-items: center; padding: 2px 5px 2px 9px; }
 .public-place-identity > strong { min-width: 0; display: block; overflow: hidden; color: #414141; font-size: 9.5px; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
 .public-place-primary-category, .public-place-additional-category { min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px 5px; border-left: 1px solid #ebebeb; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
-.public-place-primary-category { color: #646464; font-size: 8.5px; font-weight: 800; }
-.public-place-additional-category { color: #646464; font-size: 8px; font-weight: 700; }
+.public-place-primary-category { color: #646464; font-size: 9.5px; font-weight: 800; }
+.public-place-additional-category { color: #646464; font-size: 9px; font-weight: 700; }
 .public-place-open-action { min-width: 0; height: 20px; align-self: center; margin: 0 4px; padding: 0 3px; border: 1px solid #bdbdbd; border-radius: 5px; background: #f3f3f3; color: #444; cursor: pointer; font-size: 8px; font-weight: 850; white-space: nowrap; }
 .public-place-open-action:hover, .public-place-open-action:focus-visible { border-color: #9d9d9d; background: #ececec; }
 .public-place-empty { min-height: 150px; display: grid; place-content: center; gap: 5px; color: #707070; text-align: center; font-size: 9px; }
@@ -1165,12 +1165,12 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .public-place-category-chips button em { top: 2px; right: 2px; min-width: 13px; padding-right: 2px; padding-left: 2px; font-size: 6px; }
   .public-place-search input { font-size: 11px; }
   .public-place-list-header, .public-place-list article { grid-template-columns: minmax(110px, 1.35fr) 54px minmax(96px, 1fr) 58px; }
-  .public-place-list-header span { padding-right: 2px; padding-left: 2px; font-size: 8px; }
+  .public-place-list-header span { padding-right: 2px; padding-left: 2px; font-size: 9px; }
   .public-place-list-header span:first-child { padding-left: 7px; }
   .public-place-identity { padding-right: 3px; padding-left: 7px; }
   .public-place-identity > strong { font-size: 10px; }
-  .public-place-primary-category { padding-right: 3px; padding-left: 3px; font-size: 9px; }
-  .public-place-additional-category { padding-right: 3px; padding-left: 3px; font-size: 8.5px; }
+  .public-place-primary-category { padding-right: 3px; padding-left: 3px; font-size: 10px; }
+  .public-place-additional-category { padding-right: 3px; padding-left: 3px; font-size: 9.5px; }
   .public-place-open-action { margin-right: 3px; margin-left: 3px; font-size: 8.5px; }
   .public-loading { padding: 14px; }
   .public-loading-card { padding: 30px 20px 25px; }
@@ -1822,6 +1822,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   box-shadow: inset 0 -3px 0 var(--ui-mid), 0 3px 10px color-mix(in srgb, var(--ui-deep) 10%, transparent);
 }
 
+/* Bright themed selections must not inherit the dark theme's light button text. */
+.app-shell[data-ui-theme] .public-place-category-chips button.active > span {
+  color: var(--ui-deep);
+}
+
 .app-shell[data-ui-theme] .public-place-category-chips button em,
 .app-shell[data-ui-theme] :is(.public-place-area, .public-place-conveniences span, .global-content-tabs span) {
   border-color: color-mix(in srgb, var(--palette-3) 55%, var(--line));
@@ -1832,6 +1837,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .app-shell[data-ui-theme] .public-place-list-header {
   border-color: var(--palette-3);
   background: linear-gradient(90deg, var(--palette-2), color-mix(in srgb, var(--palette-2) 52%, var(--palette-3)));
+  color: var(--ui-deep);
+}
+
+.app-shell[data-ui-theme] .public-place-list-header span {
   color: var(--ui-deep);
 }
 

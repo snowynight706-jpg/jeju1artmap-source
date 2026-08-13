@@ -88,6 +88,12 @@ test("the interface uses a bright grayscale base while preserving image resource
   assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
 });
 
+test("themed category selections and list headings keep legible text on light fills", () => {
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.public-place-category-chips button\.active > span \{[^}]*color: var\(--ui-deep\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.public-place-list-header span \{[^}]*color: var\(--ui-deep\)/);
+  assert.match(cssSource, /\.public-place-list-header span \{[^}]*font-size: 8\.5px[^}]*font-weight: 850/);
+});
+
 test("five persisted palettes include a hidden picker, full tonal hierarchy, and a themed desktop topbar", () => {
   for (const [id, colors] of [
     ["stormy", ["#FAFAFA", "#E1E2E5", "#B9BBC1", "#70737C", "#2B2D33"]],
@@ -135,6 +141,6 @@ test("public place rows use four compact columns with one information action", (
   assert.doesNotMatch(explorerBlock, /item\.place\.area|권역 미입력|public-place-meta/);
   assert.match(cssSource, /\.public-place-list-header \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
   assert.match(cssSource, /\.public-place-list article \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
-  assert.match(cssSource, /\.public-place-primary-category \{[^}]*font-size: 8\.5px/);
-  assert.match(cssSource, /\.public-place-additional-category \{[^}]*font-size: 8px/);
+  assert.match(cssSource, /\.public-place-primary-category \{[^}]*font-size: 9\.5px/);
+  assert.match(cssSource, /\.public-place-additional-category \{[^}]*font-size: 9px/);
 });
