@@ -80,6 +80,25 @@ test("the interface uses a bright grayscale base while preserving image resource
   assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
 });
 
+test("five persisted palettes include a hidden public picker and an admin topbar picker", () => {
+  for (const [id, colors] of [
+    ["stormy", ["#FAFAFA", "#E1E2E5", "#B9BBC1", "#70737C", "#2B2D33"]],
+    ["nordic-sand", ["#F6F3EF", "#DED9D2", "#B4AEA6", "#7A746D", "#3A3835"]],
+    ["lilac", ["#F4F2F7", "#D6D2DF", "#A59DB6", "#5D556F", "#26222F"]],
+    ["urban-blush", ["#F6F2F4", "#DED5DA", "#B7A4AC", "#6E5B63", "#C07B8F"]],
+    ["harbor-morning", ["#F0F3F7", "#C8D2E0", "#8EA2BB", "#4E647A", "#26313B"]],
+  ]) {
+    assert.match(pageSource, new RegExp(`id: "${id}"[^\\n]*${colors.join("[^\\n]*")}`));
+  }
+  for (const place of ["제주아트플랫폼", "예술공간 이아", "산지천갤러리", "김만덕객주"]) assert.match(pageSource, new RegExp(`"${place}"`));
+  assert.match(pageSource, /className="place-theme-easter-egg"/);
+  assert.match(pageSource, /className="admin-theme-menu"/);
+  assert.match(pageSource, /localStorage\.getItem\(UI_THEME_STORAGE_KEY\)/);
+  assert.match(pageSource, /localStorage\.setItem\(UI_THEME_STORAGE_KEY, theme\)/);
+  assert.match(cssSource, /data-ui-theme="harbor-morning"[^}]*--paper: #26313b[^}]*--ink: #f0f3f7/);
+  assert.match(cssSource, /--radius-window: 12px[^}]*--radius-panel: 8px[^}]*--radius-control: 6px/);
+});
+
 test("direct DB editing uses a dense details list and compact category selections", () => {
   assert.match(pageSource, /className="database-editor-list-columns"[^>]*><span \/><span>장소명<\/span><span>분류<\/span><span>권역<\/span>/);
   assert.match(cssSource, /\.database-editor-list-pane \{[^}]*grid-template-rows: auto 24px minmax\(0, 1fr\)/);

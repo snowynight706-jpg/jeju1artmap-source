@@ -86,7 +86,53 @@ const DENSE_LABEL_SETTINGS_KEY = "jeju-wondosim-map-review:dense-label-settings:
 const PLACEMENT_SETTINGS_KEY = "jeju-wondosim-map-review:placement-settings:v1";
 const PLACE_STORY_VISITOR_KEY = "jeju-wondosim-map-review:story-visitor:v1";
 const PLACE_STORY_AUTHOR_KEY = "jeju-wondosim-map-review:story-author:v1";
+const UI_THEME_STORAGE_KEY = "jeju-wondosim-map-review:ui-theme:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
+const UI_THEME_EASTER_EGG_PLACES = new Set([
+  "제주아트플랫폼",
+  "예술공간 이아",
+  "산지천갤러리",
+  "김만덕객주",
+]);
+
+const uiThemes = [
+  { id: "stormy", name: "스토미 미니멀", shortName: "스토미", colors: ["#FAFAFA", "#E1E2E5", "#B9BBC1", "#70737C", "#2B2D33"] },
+  { id: "nordic-sand", name: "노르딕 샌드", shortName: "샌드", colors: ["#F6F3EF", "#DED9D2", "#B4AEA6", "#7A746D", "#3A3835"] },
+  { id: "lilac", name: "라일락", shortName: "라일락", colors: ["#F4F2F7", "#D6D2DF", "#A59DB6", "#5D556F", "#26222F"] },
+  { id: "urban-blush", name: "어반 블러시", shortName: "블러시", colors: ["#F6F2F4", "#DED5DA", "#B7A4AC", "#6E5B63", "#C07B8F"] },
+  { id: "harbor-morning", name: "항구의 아침", shortName: "항구", colors: ["#F0F3F7", "#C8D2E0", "#8EA2BB", "#4E647A", "#26313B"] },
+] as const;
+
+type UiThemeId = (typeof uiThemes)[number]["id"];
+
+function isUiThemeId(value: unknown): value is UiThemeId {
+  return typeof value === "string" && uiThemes.some((theme) => theme.id === value);
+}
+
+function UiThemeSwatch({ colors }: { colors: readonly string[] }) {
+  return <span className="ui-theme-swatch" aria-hidden="true">{colors.map((color, index) => <i style={{ background: color }} key={`${color}-${index}`} />)}</span>;
+}
+
+function UiThemePicker({ activeTheme, compact = false, onSelect }: {
+  activeTheme: UiThemeId;
+  compact?: boolean;
+  onSelect: (theme: UiThemeId) => void;
+}) {
+  return <div className={`ui-theme-picker ${compact ? "compact" : ""}`} role="group" aria-label="화면 테마 선택">
+    {uiThemes.map((theme) => <button
+      type="button"
+      className={activeTheme === theme.id ? "active" : ""}
+      aria-pressed={activeTheme === theme.id}
+      aria-label={`${theme.name} 테마`}
+      title={theme.name}
+      onClick={() => onSelect(theme.id)}
+      key={theme.id}
+    >
+      <UiThemeSwatch colors={theme.colors} />
+      {!compact && <span>{theme.shortName}</span>}
+    </button>)}
+  </div>;
+}
 
 const categories = [
   { id: "landmark", name: "핵심 랜드마크", color: "#df745c", glyph: "景" },
@@ -2139,6 +2185,7 @@ export default function Home() {
   const [undoStack, setUndoStack] = useState<DocumentState[]>([]);
   const [redoStack, setRedoStack] = useState<DocumentState[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [uiTheme, setUiTheme] = useState<UiThemeId>("stormy");
   const [saveState, setSaveState] = useState("자동 저장 준비");
   const [layoutName, setLayoutName] = useState("최근 자동복구");
   const [toast, setToast] = useState("");
@@ -2792,6 +2839,8 @@ export default function Home() {
   const selectedDisplayName = selectedDirectoryPlace
     ? publicDisplayName(selectedDirectoryPlace.name, selectedDirectoryPlace.featuredRole)
     : selected?.name ?? "";
+  const activeUiTheme = uiThemes.find((theme) => theme.id === uiTheme) ?? uiThemes[0];
+  const selectedHasThemeEasterEgg = UI_THEME_EASTER_EGG_PLACES.has(normalizePlaceName(selectedDirectoryPlace?.name ?? selectedDisplayName));
   const selectedLocationGroupId = selectedDirectoryPlace?.locationGroupId ?? null;
   const selectedLocationGroupPlaces = (() => {
     const groupId = selectedLocationGroupId;
@@ -3167,6 +3216,26 @@ export default function Home() {
       return file ? URL.createObjectURL(file) : null;
     });
     setPlaceEventPhoto(file);
+  }, []);
+
+  const selectUiTheme = useCallback((theme: UiThemeId) => {
+    setUiTheme(theme);
+    try {
+      window.localStorage.setItem(UI_THEME_STORAGE_KEY, theme);
+    } catch {
+      // 테마 선택은 저장소가 차단된 환경에서도 현재 화면에 바로 적용합니다.
+    }
+  }, []);
+
+  useEffect(() => {
+    let restoreFrame = 0;
+    try {
+      const savedTheme = window.localStorage.getItem(UI_THEME_STORAGE_KEY);
+      if (isUiThemeId(savedTheme)) restoreFrame = window.requestAnimationFrame(() => setUiTheme(savedTheme));
+    } catch {
+      // 스토리지 사용이 불가능하면 기본 테마를 유지합니다.
+    }
+    return () => window.cancelAnimationFrame(restoreFrame);
   }, []);
 
   const togglePlaceEventMapSelection = useCallback((elementId: string) => {
@@ -6966,14 +7035,19 @@ export default function Home() {
   </section>;
 
   if (publicLayoutAccess === "loading") {
-    return <main className="app-shell public-loading">{startupLoadingCard}</main>;
+    return <main className="app-shell public-loading" data-ui-theme={uiTheme}>{startupLoadingCard}</main>;
   }
 
   return (
-    <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""}`}>
+    <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""}`} data-ui-theme={uiTheme}>
       {!startupRevealReady && <div className="public-loading public-loading-overlay">{startupLoadingCard}</div>}
       {publicLayoutAccess === "editor" ? <header className="topbar">
-        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div></div>
+        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
+            <summary aria-label={`현재 ${activeUiTheme.name} 테마 · 테마 선택 열기`} title="UI 테마 선택">
+              <span>테마</span><UiThemeSwatch colors={activeUiTheme.colors} />
+            </summary>
+            <div className="admin-theme-popover"><div><strong>UI 테마</strong><span>이 기기에 저장됩니다</span></div><UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} /></div>
+          </details></div>
         <div className="toolbar-group draft-tools">
           <span className={editorSyncClass} title={editorDraftUpdatedAt ? `서버 초안 ${editorDraftRevision}번` : "아직 저장된 서버 초안이 없습니다."}>{editorDraftUpdatedAt ? `초안 ${editorDraftRevision}` : "서버 초안"}</span>
           <button className="draft-save" disabled={editorDraftSaving} onClick={() => void saveEditorDraft()}>{editorDraftSaving ? "저장 중…" : "초안 저장"}</button>
@@ -7430,6 +7504,10 @@ export default function Home() {
                   <div><header><strong>{story.authorName}</strong><time dateTime={story.createdAt}>{storyDateLabel(story.createdAt)}</time></header><p>{story.reviewText}</p></div>
                 </article>)}</div> : <div className="place-story-empty"><strong>아직 남겨진 기록이 없습니다.</strong><span>이 장소의 첫 사진이나 짧은 후기를 남겨보세요.</span></div>}
               </section>
+              {selectedHasThemeEasterEgg && <section className="place-theme-easter-egg" aria-label="숨겨진 화면 테마 선택">
+                <div><span aria-hidden="true">◇</span><div><strong>오늘의 화면 팔레트</strong><p>이 장소까지 내려온 분만 발견하는 작은 선택입니다.</p></div></div>
+                <UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} />
+              </section>}
             </div>
           </aside>}
           {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {visibleElements.length}곳</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 통합 라벨이 개별 장소명으로 바뀝니다.</span></footer>}
