@@ -156,3 +156,13 @@ test("public place rows use four compact columns with one information action", (
   assert.match(cssSource, /\.public-place-primary-category \{[^}]*font-size: 9\.5px/);
   assert.match(cssSource, /\.public-place-additional-category \{[^}]*font-size: 9px/);
 });
+
+test("admin and public functional UI share one bounded responsive type scale", () => {
+  assert.match(cssSource, /\/\*\s*\n \* Shared functional type scale/);
+  assert.match(cssSource, /\.app-shell \{[^}]*--font-ui-meta: 9px[^}]*--font-ui-control: 10px[^}]*--font-ui-body: 11px[^}]*--font-ui-section: 12px[^}]*--font-ui-heading: 13px[^}]*--font-ui-title: 15px/);
+  assert.match(cssSource, /\.app-shell :is\([\s\S]*?\.topbar,[\s\S]*?\.panel,[\s\S]*?\.database-editor,[\s\S]*?\.place-request-dialog,[\s\S]*?\.public-loading-card[\s\S]*?\) :is\(button, select, summary, label, p, span, strong, b, a, output\) \{\s*font-size: var\(--font-ui-control\)/);
+  assert.match(cssSource, /\.app-shell :is\([\s\S]*?\.public-place-sheet,[\s\S]*?\.global-story-panel[\s\S]*?\) :is\(button, select, summary, label\) \{\s*font-size: var\(--font-ui-control\)/);
+  assert.match(cssSource, /\.public-place-category-chips button,[\s\S]*?\.public-place-list-header span,[\s\S]*?\.database-editor-category-filters button span,[\s\S]*?\.database-editor-list b[\s\S]*?font-size: var\(--font-ui-control\)/);
+  assert.match(cssSource, /@media \(max-width: 760px\) \{\s*\.app-shell \{[^}]*--font-ui-meta: 10px[^}]*--font-ui-control: 11px[^}]*--font-ui-body: 12px[^}]*--font-ui-section: 13px[^}]*--font-ui-heading: 14px[^}]*--font-ui-title: 15px/);
+  assert.match(cssSource, /Symbol-only controls retain an optical icon size outside the text scale/);
+});

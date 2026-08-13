@@ -2090,3 +2090,233 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
     border-radius: 0;
   }
 }
+
+/*
+ * Shared functional type scale
+ *
+ * Keep controls, compact lists, helper copy and headings on one predictable
+ * scale in both the editor and the public explorer. Map labels are deliberately
+ * outside these surface scopes so their cartographic sizing is preserved.
+ */
+.app-shell {
+  --font-ui-meta: 9px;
+  --font-ui-control: 10px;
+  --font-ui-body: 11px;
+  --font-ui-section: 12px;
+  --font-ui-heading: 13px;
+  --font-ui-title: 15px;
+}
+
+.app-shell :is(
+  .topbar,
+  .panel,
+  .canvas-toolbar,
+  .statusbar,
+  .database-editor,
+  .admin-login-dialog,
+  .place-request-dialog,
+  .place-event-dialog,
+  .place-request-location-hint,
+  .event-place-selection-hint,
+  .print-preview-badge,
+  .map-scale,
+  .collision-legend,
+  .public-loading-card
+) {
+  font-size: var(--font-ui-control);
+}
+
+.app-shell :is(
+  .topbar,
+  .panel,
+  .canvas-toolbar,
+  .statusbar,
+  .database-editor,
+  .admin-login-dialog,
+  .place-request-dialog,
+  .place-event-dialog,
+  .place-request-location-hint,
+  .event-place-selection-hint,
+  .print-preview-badge,
+  .map-scale,
+  .collision-legend,
+  .public-loading-card
+) :is(button, select, summary, label, p, span, strong, b, a, output) {
+  font-size: var(--font-ui-control);
+}
+
+.app-shell :is(
+  .topbar,
+  .panel,
+  .canvas-toolbar,
+  .database-editor,
+  .admin-login-dialog,
+  .place-request-dialog,
+  .place-event-dialog
+) :is(input, textarea) {
+  font-size: var(--font-ui-body);
+}
+
+.app-shell :is(
+  .topbar,
+  .panel,
+  .canvas-toolbar,
+  .statusbar,
+  .database-editor,
+  .admin-login-dialog,
+  .place-request-dialog,
+  .place-event-dialog,
+  .public-place-sheet,
+  .global-story-panel,
+  .global-story-toggle,
+  .public-loading-card
+) :is(small, em, time, kbd) {
+  font-size: var(--font-ui-meta);
+}
+
+.app-shell :is(
+  .public-place-sheet,
+  .global-story-panel
+) :is(button, select, summary, label) {
+  font-size: var(--font-ui-control);
+}
+
+.app-shell :is(
+  .public-place-sheet,
+  .global-story-panel
+) :is(input, textarea) {
+  font-size: var(--font-ui-body);
+}
+
+.app-shell .global-story-panel :is(span, strong, b, a) {
+  font-size: var(--font-ui-control);
+}
+
+.app-shell .global-story-panel p {
+  font-size: var(--font-ui-body);
+}
+
+.app-shell :is(
+  .global-story-toggle,
+  .panel-reopen,
+  .mobile-readonly,
+  .toast
+) {
+  font-size: var(--font-ui-control);
+}
+
+.app-shell :is(
+  .database-editor-header,
+  .public-place-sheet-head,
+  .global-story-panel-head,
+  .admin-login-dialog > header,
+  .place-request-dialog > header,
+  .place-event-dialog-head
+) strong,
+.app-shell .public-loading-card > strong {
+  font-size: var(--font-ui-title);
+}
+
+.app-shell .brand-block strong,
+.app-shell .panel-heading strong {
+  font-size: var(--font-ui-heading);
+}
+
+.app-shell :is(
+  .section-title,
+  .admin-folder-toggle,
+  .public-place-events-title,
+  .public-place-archive-title,
+  .place-theme-easter-egg,
+  .admin-theme-popover > div:first-child
+) strong,
+.app-shell .global-story-toggle strong,
+.app-shell .global-story-place-link {
+  font-size: var(--font-ui-section);
+}
+
+.app-shell :is(
+  .brand-block,
+  .panel-heading,
+  .database-editor-header,
+  .public-place-sheet-head,
+  .global-story-panel-head,
+  .admin-login-dialog > header,
+  .place-request-dialog > header,
+  .place-event-dialog-head
+) span {
+  font-size: var(--font-ui-control);
+}
+
+.app-shell :is(
+  .panel-tabs button span,
+  .view-control-head span,
+  .admin-folder-meta,
+  .status-pill,
+  .global-content-tabs button span,
+  .global-story-place-link span,
+  .global-event-place-links button span,
+  .public-place-category-chips button em,
+  .public-place-events-title span,
+  .database-editor-category-filters button em,
+  .place-theme-easter-egg p
+) {
+  font-size: var(--font-ui-meta) !important;
+}
+
+.app-shell :is(
+  .public-place-category-chips button,
+  .public-place-list-header span,
+  .public-place-identity > strong,
+  .public-place-primary-category,
+  .public-place-additional-category,
+  .public-place-open-action,
+  .database-editor-category-filters button span,
+  .database-editor-list-columns span,
+  .database-editor-list b
+) {
+  font-size: var(--font-ui-control);
+}
+
+.app-shell .database-editor-list small {
+  font-size: var(--font-ui-meta);
+}
+
+/* Six DB category filters stay dense by stacking their standardized label/count. */
+.app-shell .database-editor-category-filters button {
+  height: 32px;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px;
+  line-height: 1;
+}
+
+.app-shell .database-editor-category-filters button span,
+.app-shell .database-editor-category-filters button em {
+  line-height: 1;
+}
+
+/* Symbol-only controls retain an optical icon size outside the text scale. */
+.app-shell .icon-button { font-size: 18px; }
+.app-shell .database-editor-header > button { font-size: 19px; }
+.app-shell :is(
+  .global-story-panel-head-actions .global-panel-close,
+  .admin-login-dialog > header > button,
+  .place-request-dialog > header > button,
+  .place-event-dialog-head > button
+) { font-size: 20px; }
+.app-shell .public-place-sheet-head .public-place-sheet-actions button:last-child { font-size: 21px; }
+.app-shell .public-place-search > button { font-size: 16px; }
+.app-shell .empty-properties > span { font-size: 28px; }
+.app-shell :is(.admin-folder-arrow, .global-story-toggle > span, .view-label-refresh > span) { font-size: var(--font-ui-body); }
+
+@media (max-width: 760px) {
+  .app-shell {
+    --font-ui-meta: 10px;
+    --font-ui-control: 11px;
+    --font-ui-body: 12px;
+    --font-ui-section: 13px;
+    --font-ui-heading: 14px;
+    --font-ui-title: 15px;
+  }
+}
