@@ -37,6 +37,14 @@ test("left admin panels are grouped into collapsible functional folders", () => 
   }
 });
 
+test("the desktop left admin explorer is wide and uses one edge-to-edge scroll surface", () => {
+  assert.match(cssSource, /\.workspace \{[^}]*--workspace-left: clamp\(340px, 24vw, 380px\)[^}]*grid-template-columns: var\(--workspace-left\) minmax\(0, 1fr\) var\(--workspace-right\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.asset-panel \.side-admin-folder \{[^}]*width: 100%[^}]*margin: 0[^}]*border-radius: 0/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.asset-panel \.marker-visibility-list \{[^}]*max-height: none[^}]*overflow: visible/);
+  assert.match(cssSource, /\.place-directory \.marker-visibility-panel\.unified-place-panel \{[^}]*margin: 0[^}]*border: 0[^}]*background: transparent/);
+  assert.match(cssSource, /\.place-directory \.place-filter \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+});
+
 test("public category controls keep five compact one-row buttons with larger icons while place rows stay extra slim and ruled", () => {
   const categoryBlock = pageSource.match(/const publicListCategories:[\s\S]*?\] as const;/)?.[0] ?? "";
   for (const [id, name] of [
