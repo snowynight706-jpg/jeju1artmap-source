@@ -890,7 +890,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-loading-status b { font-size: 10px; letter-spacing: .06em; }
 .public-loading-card p { margin: 5px 0 0; color: #646464; font-size: 9px; }
 .public-loading-track { width: min(270px, 82%); height: 2px; margin-top: 17px; overflow: hidden; background: #e9e9e9; }
-.public-loading-track span { height: 100%; display: block; background: linear-gradient(90deg, #e45151, #efab27 26%, #ababab 52%, #a6a6a6 78%, #707070); transition: width .2s ease; }
+.public-loading-track span { height: 100%; display: block; background: linear-gradient(90deg, #e45151, #efab27 26%, #79c448 52%, #56b9d8 78%, #8e999e); transition: width .2s ease; }
 .public-loading-card > small { margin-top: 7px; color: #707070; font-size: 7px; font-variant-numeric: tabular-nums; }
 
 .properties-panel { overflow-y: auto; }
@@ -1163,17 +1163,18 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .global-content-tabs button { min-height: 34px; height: 34px; }
   .global-story-panel-scroll { padding: 9px; }
   .public-place-category-chips { gap: 3px; margin-top: 6px; margin-bottom: 7px; }
-  .public-place-category-chips button { height: 48px; grid-template-rows: 31px auto; padding: 1px 1px 3px; font-size: 7px; }
+  .public-place-category-chips button { height: 48px; grid-template-rows: 30px auto; padding: 1px 1px 3px; font-size: 8.5px; }
   .public-place-category-chips button img { width: 30px; height: 30px; }
-  .public-place-category-chips button em { top: 2px; right: 2px; min-width: 12px; padding-right: 2px; padding-left: 2px; font-size: 5px; }
+  .public-place-category-chips button em { top: 2px; right: 2px; min-width: 13px; padding-right: 2px; padding-left: 2px; font-size: 6px; }
+  .public-place-search input { font-size: 11px; }
   .public-place-list-header, .public-place-list article { grid-template-columns: minmax(110px, 1.35fr) 54px minmax(96px, 1fr) 58px; }
-  .public-place-list-header span { padding-right: 2px; padding-left: 2px; font-size: 7px; }
+  .public-place-list-header span { padding-right: 2px; padding-left: 2px; font-size: 8px; }
   .public-place-list-header span:first-child { padding-left: 7px; }
   .public-place-identity { padding-right: 3px; padding-left: 7px; }
-  .public-place-identity > strong { font-size: 9px; }
-  .public-place-primary-category { padding-right: 3px; padding-left: 3px; font-size: 8px; }
-  .public-place-additional-category { padding-right: 3px; padding-left: 3px; font-size: 7.5px; }
-  .public-place-open-action { margin-right: 3px; margin-left: 3px; font-size: 7.5px; }
+  .public-place-identity > strong { font-size: 10px; }
+  .public-place-primary-category { padding-right: 3px; padding-left: 3px; font-size: 9px; }
+  .public-place-additional-category { padding-right: 3px; padding-left: 3px; font-size: 8.5px; }
+  .public-place-open-action { margin-right: 3px; margin-left: 3px; font-size: 8.5px; }
   .public-loading { padding: 14px; }
   .public-loading-card { padding: 30px 20px 25px; }
   .public-loading-symbol { width: min(200px, 68vw); }
