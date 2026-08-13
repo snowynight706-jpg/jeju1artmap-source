@@ -50,6 +50,7 @@ import {
   sanitizeConvenienceAttributes,
   type AdditionalCategoryId,
   type ConvenienceAttributeId,
+  type PrimaryPublicCategoryId,
 } from "./place-taxonomy";
 
 const MAP_ASPECT = 8944 / 7324;
@@ -159,6 +160,16 @@ const publicListCategories: ReadonlyArray<{
 ] as const;
 
 type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "shop" | "convenience";
+type DatabaseEditorCategoryFilter = "all" | PrimaryPublicCategoryId | "other";
+
+const databaseEditorCategoryFilters: ReadonlyArray<{ id: DatabaseEditorCategoryFilter; name: string }> = [
+  { id: "all", name: "전체" },
+  { id: "culture", name: "문화공간" },
+  { id: "food", name: "음식점" },
+  { id: "cafe", name: "카페" },
+  { id: "shop", name: "소품샵" },
+  { id: "other", name: "기타" },
+] as const;
 
 type CategoryId = (typeof categories)[number]["id"];
 type AssetStatus = "approved" | "review" | "unchecked";
@@ -1111,6 +1122,11 @@ function categoryOf(id: CategoryId) {
 
 function directoryCategory(category: CategoryId): CategoryId {
   return normalizeDirectoryCategory(category) as CategoryId;
+}
+
+function databaseEditorCategoryForPlace(place: Pick<DirectoryPlace, "category">): Exclude<DatabaseEditorCategoryFilter, "all"> {
+  const category = directoryCategory(place.category);
+  return isPrimaryPublicCategory(category) ? category : "other";
 }
 
 function mapCategoryForDirectoryPlace(place: Pick<DirectoryPlace, "name" | "category" | "featuredRole">): CategoryId {
@@ -2373,6 +2389,7 @@ export default function Home() {
   const [databaseEditorSaving, setDatabaseEditorSaving] = useState(false);
   const [databaseEditorDirty, setDatabaseEditorDirty] = useState(false);
   const [databaseEditorQuery, setDatabaseEditorQuery] = useState("");
+  const [databaseEditorCategory, setDatabaseEditorCategory] = useState<DatabaseEditorCategoryFilter>("all");
   const [databaseEditorSelectedId, setDatabaseEditorSelectedId] = useState<string | null>(null);
   const [databaseDraftPlaces, setDatabaseDraftPlaces] = useState<DirectoryPlace[]>([]);
   const [directoryTaxonomySync, setDirectoryTaxonomySync] = useState<{
@@ -2945,9 +2962,15 @@ export default function Home() {
     () => databaseDraftPlaces.find((place) => place.id === databaseEditorSelectedId) ?? null,
     [databaseDraftPlaces, databaseEditorSelectedId],
   );
+  const databaseEditorCategoryCounts = useMemo(() => databaseDraftPlaces.reduce<Record<DatabaseEditorCategoryFilter, number>>((counts, place) => {
+    counts.all += 1;
+    counts[databaseEditorCategoryForPlace(place)] += 1;
+    return counts;
+  }, { all: 0, culture: 0, food: 0, cafe: 0, shop: 0, other: 0 }), [databaseDraftPlaces]);
   const filteredDatabaseDraftPlaces = useMemo(() => {
     const query = databaseEditorQuery.trim().toLocaleLowerCase("ko-KR");
     return databaseDraftPlaces
+      .filter((place) => databaseEditorCategory === "all" || databaseEditorCategoryForPlace(place) === databaseEditorCategory)
       .filter((place) => {
         const tagNames = additionalCategoryDefinitions
           .filter((definition) => sanitizeAdditionalCategories(place.additionalCategories).includes(definition.id))
@@ -2960,7 +2983,7 @@ export default function Home() {
         return !query || `${place.name} ${(place.aliases ?? []).join(" ")} ${place.address} ${place.area} ${place.subtype ?? ""} ${tagNames} ${convenienceNames}`.toLocaleLowerCase("ko-KR").includes(query);
       })
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  }, [databaseDraftPlaces, databaseEditorQuery]);
+  }, [databaseDraftPlaces, databaseEditorCategory, databaseEditorQuery]);
 
   const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
     counts[category.id] = elements.filter((element) => element.category === category.id && element.mapVisible).length;
@@ -5361,8 +5384,20 @@ export default function Home() {
     setDatabaseDraftPlaces(draft);
     setDatabaseEditorSelectedId(draft[0]?.id ?? null);
     setDatabaseEditorQuery("");
+    setDatabaseEditorCategory("all");
     setDatabaseEditorDirty(false);
     setDatabaseEditorOpen(true);
+  };
+
+  const selectDatabaseEditorCategory = (category: DatabaseEditorCategoryFilter) => {
+    setDatabaseEditorCategory(category);
+    if (category === "all") return;
+    const selected = databaseDraftPlaces.find((place) => place.id === databaseEditorSelectedId);
+    if (selected && databaseEditorCategoryForPlace(selected) === category) return;
+    const firstMatch = databaseDraftPlaces
+      .filter((place) => databaseEditorCategoryForPlace(place) === category)
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"))[0];
+    setDatabaseEditorSelectedId(firstMatch?.id ?? null);
   };
 
   const closeDatabaseEditor = () => {
@@ -5383,6 +5418,10 @@ export default function Home() {
         ...(isCoreLandmarkName(name) ? { coordinateStatus: "landmark" as const } : {}),
       });
     }));
+    if (patch.category && databaseEditorCategory !== "all") {
+      const nextCategory = directoryCategory(patch.category);
+      setDatabaseEditorCategory(isPrimaryPublicCategory(nextCategory) ? nextCategory : "other");
+    }
     setDatabaseEditorDirty(true);
   };
 
@@ -5442,6 +5481,7 @@ export default function Home() {
     setDatabaseDraftPlaces((current) => [next, ...current]);
     setDatabaseEditorSelectedId(id);
     setDatabaseEditorQuery("");
+    setDatabaseEditorCategory("culture");
     setDatabaseEditorDirty(true);
   };
 
@@ -7711,6 +7751,16 @@ export default function Home() {
                 <input value={databaseEditorQuery} onChange={(event) => setDatabaseEditorQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="DB 장소 검색" />
                 <button onClick={addDatabaseDraftPlace}>＋ 신규</button>
               </div>
+              <div className="database-editor-category-filters" role="group" aria-label="DB 대분류 모아보기">
+                {databaseEditorCategoryFilters.map((filter) => <button
+                  type="button"
+                  className={databaseEditorCategory === filter.id ? "active" : ""}
+                  aria-pressed={databaseEditorCategory === filter.id}
+                  title={`${filter.name} ${databaseEditorCategoryCounts[filter.id]}곳`}
+                  onClick={() => selectDatabaseEditorCategory(filter.id)}
+                  key={filter.id}
+                ><span>{filter.name}</span><em>{databaseEditorCategoryCounts[filter.id]}</em></button>)}
+              </div>
               <div className="database-editor-list-columns" aria-hidden="true"><span /><span>장소명</span><span>분류</span><span>권역</span></div>
               <div className="database-editor-list" role="listbox" aria-label="DB 장소 목록">
                 {filteredDatabaseDraftPlaces.map((place) => {
@@ -7719,7 +7769,7 @@ export default function Home() {
                     <i style={{ background: category.color }} /><b title={place.name || "이름 없음"}>{place.name || "이름 없음"}</b><small title={category.name}>{category.name}</small><small title={place.area || "권역 미입력"}>{place.area || "권역 미입력"}</small>
                   </button>;
                 })}
-                {!filteredDatabaseDraftPlaces.length && <p>검색 결과가 없습니다.</p>}
+                {!filteredDatabaseDraftPlaces.length && <p>{databaseEditorQuery.trim() ? "검색 결과가 없습니다." : "선택한 대분류에 장소가 없습니다."}</p>}
               </div>
             </aside>
             <div className="database-editor-form-pane">
