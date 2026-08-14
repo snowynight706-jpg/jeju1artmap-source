@@ -2327,6 +2327,7 @@ export default function Home() {
   const [publicPlaceExpanded, setPublicPlaceExpanded] = useState(false);
   const [publicPlaceQuery, setPublicPlaceQuery] = useState("");
   const [publicPlaceCategory, setPublicPlaceCategory] = useState<PublicPlaceCategoryFilter>("culture");
+  const [expandedAdditionalCategoryItemId, setExpandedAdditionalCategoryItemId] = useState<string | null>(null);
   const [mapFocusAnimating, setMapFocusAnimating] = useState(false);
   const [globalStories, setGlobalStories] = useState<PlaceStory[]>([]);
   const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
@@ -3355,6 +3356,16 @@ export default function Home() {
       // 테마 선택은 저장소가 차단된 환경에서도 현재 화면에 바로 적용합니다.
     }
   }, []);
+
+  useEffect(() => {
+    if (!expandedAdditionalCategoryItemId) return;
+    const closeAdditionalCategoryPopover = (event: globalThis.PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".public-place-additional-category")) return;
+      setExpandedAdditionalCategoryItemId(null);
+    };
+    document.addEventListener("pointerdown", closeAdditionalCategoryPopover, true);
+    return () => document.removeEventListener("pointerdown", closeAdditionalCategoryPopover, true);
+  }, [expandedAdditionalCategoryItemId]);
 
   useEffect(() => {
     let restoreFrame = 0;
@@ -7823,8 +7834,8 @@ export default function Home() {
               <button type="button" disabled={!globalEventsCanManage} onClick={openUnassignedPlaceEventForm}>{globalEventsCanManage ? "＋ 행사 등록" : "권한 확인 중…"}</button>
             </div>}
             {globalContentTab === "places" ? <section className="public-place-explorer">
-              <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
-              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><img src={category.iconSrc} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
+              <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => { setPublicPlaceQuery(event.target.value); setExpandedAdditionalCategoryItemId(null); }} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => { setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }} aria-label="장소 검색어 지우기">×</button>}</div>
+              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => { setPublicPlaceCategory(category.id); setExpandedAdditionalCategoryItemId(null); }} key={category.id}><img src={category.iconSrc} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
               <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span className="public-place-detail-heading" title="상세보기"><MagnifierIcon /></span></div>
               <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "문화공간"} 목록`}>
                 {filteredPublicPlaceItems.map((item) => {
@@ -7841,16 +7852,22 @@ export default function Home() {
                     <button type="button" className="public-place-row-action" onClick={() => focusPublicPlaceItem(item)} aria-label={`${item.displayName} 지도에서 찾기`} aria-current={selectedItem ? "location" : undefined} />
                     <span className="public-place-identity"><i className="public-place-marker-key" style={{ background: categoryOf(item.anchor.category).color }} aria-hidden="true" /><strong title={item.displayName}>{item.displayName}</strong>{eventListedInCulture && <em className="public-place-event-badge">행사</em>}</span>
                     <span className="public-place-primary-category" title={meta.name}>{meta.name}</span>
-                    <div className={`public-place-additional-category ${remainingTagNames.length ? "has-more" : ""}`} title={remainingTagNames.length ? undefined : tagNames.length ? tagLabel : "추가분류 없음"}>
-                      {remainingTagNames.length > 0 ? <details className="public-place-additional-category-disclosure">
-                        <summary aria-label={`${representativeTagNames.join(", ")} 외 추가분류 ${remainingTagNames.length}개 더 보기`} title={`추가분류 ${remainingTagNames.length}개 더 보기`}>
+                    <div className={`public-place-additional-category ${remainingTagNames.length ? "has-more" : ""} ${expandedAdditionalCategoryItemId === item.id ? "is-expanded" : ""}`} title={remainingTagNames.length ? undefined : tagNames.length ? tagLabel : "추가분류 없음"} onPointerEnter={() => {
+                      setExpandedAdditionalCategoryItemId((current) => current && current !== item.id ? null : current);
+                    }} onPointerLeave={(event) => {
+                      if (event.pointerType === "mouse") setExpandedAdditionalCategoryItemId((current) => current === item.id ? null : current);
+                    }}>
+                      {remainingTagNames.length > 0 ? <>
+                        <button type="button" className="public-place-additional-category-disclosure" aria-expanded={expandedAdditionalCategoryItemId === item.id} aria-label={`${representativeTagNames.join(", ")} 외 추가분류 ${remainingTagNames.length}개 더 보기`} title={`추가분류 ${remainingTagNames.length}개 더 보기`} onClick={() => {
+                          setExpandedAdditionalCategoryItemId((current) => current === item.id ? null : item.id);
+                        }}>
                           <span className="public-place-additional-category-preview">{representativeTagNames.join(" · ")}</span>
                           <span className="public-place-additional-category-count" aria-hidden="true">+{remainingTagNames.length}</span>
-                        </summary>
+                        </button>
                         <div className="public-place-additional-category-popover" role="list" aria-label="나머지 추가분류">
                           {remainingTagNames.map((tagName) => <span role="listitem" key={tagName}>{tagName}</span>)}
                         </div>
-                      </details> : <span className="public-place-additional-category-preview">{representativeTagNames.length ? representativeTagNames.join(" · ") : "—"}</span>}
+                      </> : <span className="public-place-additional-category-preview">{representativeTagNames.length ? representativeTagNames.join(" · ") : "—"}</span>}
                     </div>
                     <button type="button" className="public-place-open-action" onClick={() => focusPublicPlaceItem(item, true)} aria-label={`${item.displayName} 상세보기`} title="상세보기" aria-current={selectedItem ? "true" : undefined}><MagnifierIcon /></button>
                   </article>;
