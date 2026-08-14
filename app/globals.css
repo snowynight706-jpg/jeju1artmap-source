@@ -945,19 +945,23 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .admin-folder-toggle:hover { background: #f3f3f3; color: #5d5d5d; }
 .admin-folder-toggle:focus-visible { outline: 2px solid #bebebe; outline-offset: 1px; }
 .admin-folder-toggle strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.admin-folder-arrow { position: relative; width: 16px; height: 16px; flex: 0 0 16px; display: grid; place-items: center; color: #6f6f6f; }
+.admin-folder-arrow { position: relative; width: 16px; height: 16px; flex: 0 0 16px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 2px; color: #6f6f6f; transition: border-color .18s ease, background-color .18s ease, color .18s ease; }
 .admin-folder-arrow::before { content: ""; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .18s ease, color .18s ease; }
 .admin-folder.open .admin-folder-arrow::before { transform: translateY(2px) rotate(225deg); }
 .admin-folder-meta { flex: 0 0 auto; max-width: 94px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .admin-folder-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }
-.admin-folder-body { padding: 12px 14px 10px; background: #fff; }
+.admin-folder-body { padding: 12px 14px 10px; background: #fff; transition: box-shadow .18s ease; }
 .admin-folder-body[hidden] { display: none; }
 .admin-folder.closed { border-color: #e2e2e2; background: #f2f2f2; }
-.admin-folder.closed > .admin-folder-head { background: #f2f2f2; color: #686868; }
+.admin-folder.closed > .admin-folder-head { background: #f4f4f4; color: #686868; box-shadow: inset 2px 0 0 #d0d0d0; }
+.admin-folder.closed > .admin-folder-head .admin-folder-toggle strong { font-weight: 700; }
+.admin-folder.closed > .admin-folder-head .admin-folder-arrow { border-color: #d2d2d2; background: transparent; }
 .admin-folder.open { border-color: #c8c8c8; background: #fff; }
-.admin-folder.open > .admin-folder-head { border-top: 1px solid #c8c8c8; background: #e5e5e5; color: #303030; box-shadow: inset 3px 0 0 #707070; }
+.admin-folder.open > .admin-folder-head { border-top: 1px solid #bcbcbc; background: linear-gradient(90deg, #d7d7d7, #e8e8e8 76%); color: #303030; box-shadow: inset 4px 0 0 #5d5d5d, inset 0 1px 0 #bcbcbc; }
 .admin-folder.open > .admin-folder-head .admin-folder-toggle { color: #303030; }
-.admin-folder.open > .admin-folder-head .admin-folder-arrow { color: #3f3f3f; }
+.admin-folder.open > .admin-folder-head .admin-folder-toggle strong { font-weight: 850; }
+.admin-folder.open > .admin-folder-head .admin-folder-arrow { border-color: #3f3f3f; background: #3f3f3f; color: #fff; }
+.admin-folder.open > .admin-folder-body { box-shadow: inset 4px 0 0 #c5c5c5; }
 .side-admin-folder { margin: 9px 10px; padding: 0 !important; border: 1px solid #e0e0e0; border-radius: 10px; background: #fdfdfd; }
 .side-admin-folder .admin-folder-head { min-height: 38px; padding: 3px 7px; }
 .side-admin-folder .admin-folder-body { padding: 9px; }
@@ -2381,9 +2385,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 
 .app-shell[data-ui-theme] .admin-folder.closed > .admin-folder-head {
   border-color: var(--line);
-  background: var(--ui-surface-soft);
+  background: color-mix(in srgb, var(--ui-surface-soft) 86%, var(--ui-surface-raised));
   color: var(--muted);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--line-strong) 54%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--line-strong) 68%, transparent);
 }
 
 .app-shell[data-ui-theme] .admin-folder.open {
@@ -2393,14 +2397,15 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 
 .app-shell[data-ui-theme] .admin-folder.open > .admin-folder-head {
   border-color: var(--line-strong);
-  background: var(--ui-active);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ui-active) 78%, var(--ui-accent)), var(--ui-active) 76%);
   color: var(--ink);
-  box-shadow: inset 3px 0 0 var(--ui-accent);
+  box-shadow: inset 4px 0 0 var(--ui-accent-strong), inset 0 1px 0 var(--line-strong);
 }
 
 .app-shell[data-ui-theme] .admin-folder.open > .admin-folder-body {
   background: var(--ui-surface-raised);
   color: var(--ink);
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--ui-accent) 42%, transparent);
 }
 
 .app-shell[data-ui-theme] .admin-folder.closed > .admin-folder-head .admin-folder-toggle {
@@ -2412,11 +2417,15 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 
 .app-shell[data-ui-theme] .admin-folder.closed > .admin-folder-head .admin-folder-arrow {
+  border-color: color-mix(in srgb, var(--line-strong) 72%, transparent);
+  background: transparent;
   color: var(--line-strong);
 }
 
 .app-shell[data-ui-theme] .admin-folder.open > .admin-folder-head .admin-folder-arrow {
-  color: var(--ui-accent-strong);
+  border-color: var(--ui-accent-strong);
+  background: var(--ui-accent-strong);
+  color: var(--ui-on-accent);
 }
 
 .app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).collapsed {
@@ -2429,9 +2438,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .calibration-folder.collapsed > .calibration-folder-toggle
 ) {
   border-color: var(--line) !important;
-  background: var(--ui-surface-soft) !important;
+  background: color-mix(in srgb, var(--ui-surface-soft) 86%, var(--ui-surface-raised)) !important;
   color: var(--muted) !important;
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--line-strong) 54%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--line-strong) 68%, transparent);
 }
 
 .app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).expanded {
@@ -2444,9 +2453,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .calibration-folder.expanded > .calibration-folder-toggle
 ) {
   border-color: var(--line-strong) !important;
-  background: var(--ui-active) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ui-active) 78%, var(--ui-accent)), var(--ui-active) 76%) !important;
   color: var(--ink) !important;
-  box-shadow: inset 3px 0 0 var(--ui-accent);
+  box-shadow: inset 4px 0 0 var(--ui-accent-strong), inset 0 1px 0 var(--line-strong);
+}
+
+.app-shell[data-ui-theme] :is(
+  .marker-visibility-group.expanded > .marker-visibility-group-toggle,
+  .calibration-folder.expanded > .calibration-folder-toggle
+) strong {
+  font-weight: 850;
 }
 
 .app-shell[data-ui-theme] :is(
@@ -2459,11 +2475,17 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 
 .app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).collapsed .marker-folder-icon {
+  border: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent);
+  border-radius: 2px;
+  background: transparent;
   color: var(--line-strong);
 }
 
 .app-shell[data-ui-theme] :is(.marker-visibility-group, .calibration-folder).expanded .marker-folder-icon {
-  color: var(--ui-accent-strong);
+  border: 1px solid var(--ui-accent-strong);
+  border-radius: 2px;
+  background: var(--ui-accent-strong);
+  color: var(--ui-on-accent);
 }
 
 .app-shell[data-ui-theme] .advanced-view-tools:not([open]) {
@@ -2477,9 +2499,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 
 .app-shell[data-ui-theme] .advanced-view-tools:not([open]) > summary {
-  background: var(--ui-surface-soft);
+  background: color-mix(in srgb, var(--ui-surface-soft) 86%, var(--ui-surface-raised));
   color: var(--muted);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--line-strong) 54%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--line-strong) 68%, transparent);
+  font-weight: 700;
 }
 
 .app-shell[data-ui-theme] .advanced-view-tools:not([open]) > summary::before {
@@ -2488,9 +2511,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 
 .app-shell[data-ui-theme] .advanced-view-tools[open] > summary {
   border-color: var(--line-strong);
-  background: var(--ui-active);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ui-active) 78%, var(--ui-accent)), var(--ui-active) 76%);
   color: var(--ink);
-  box-shadow: inset 3px 0 0 var(--ui-accent);
+  box-shadow: inset 4px 0 0 var(--ui-accent-strong), inset 0 1px 0 var(--line-strong);
+  font-weight: 850;
 }
 
 .app-shell[data-ui-theme] .advanced-view-tools[open] > summary::before {

@@ -18,19 +18,25 @@ test("admin functions use reusable folders with clean CSS chevrons and distinct 
   assert.match(pageSource, /title="빠른 작업"/);
   assert.match(pageSource, /setPrintFolderOpenRequest\(\(current\) => current \+ 1\)/);
   assert.match(pageSource, /openSignal=\{printFolderOpenRequest\}/);
-  assert.match(pageSource, /folder\.scrollIntoView\(\{ block: "end", inline: "nearest" \}\)/);
+  assert.match(pageSource, /function slowlyRevealAdminFolder\(folder: HTMLElement\)/);
+  assert.match(pageSource, /findScrollableAdminAncestor\(folder\)/);
+  assert.match(pageSource, /prefers-reduced-motion: reduce/);
+  assert.match(pageSource, /Math\.min\(760, Math\.max\(480, Math\.abs\(distance\) \* 1\.35\)\)/);
+  assert.match(pageSource, /requestAnimationFrame\(\(\) => requestAnimationFrame\(\(\) => slowlyRevealAdminFolder\(folder\)\)\)/);
+  assert.doesNotMatch(pageSource, /folder\.scrollIntoView\(\{ block: "end", inline: "nearest" \}\)/);
   assert.match(cssSource, /\.admin-folder \{[^}]*flex-direction: column-reverse/);
   assert.match(cssSource, /\.admin-folder\.open > \.admin-folder-head \{[^}]*border-top/);
   assert.match(cssSource, /\.admin-folder-arrow::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
   assert.match(cssSource, /\.admin-folder\.open \.admin-folder-arrow::before \{[^}]*rotate\(225deg\)/);
-  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.closed > \.admin-folder-head \{[^}]*background: var\(--ui-surface-soft\)[^}]*color: var\(--muted\)/);
-  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-head \{[^}]*background: var\(--ui-active\)[^}]*color: var\(--ink\)[^}]*box-shadow: inset 3px 0 0 var\(--ui-accent\)/);
-  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-body \{[^}]*background: var\(--ui-surface-raised\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.closed > \.admin-folder-head \{[^}]*background: color-mix\([^}]*color: var\(--muted\)[^}]*box-shadow: inset 2px 0 0/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-head \{[^}]*background: linear-gradient\([^}]*color: var\(--ink\)[^}]*box-shadow: inset 4px 0 0 var\(--ui-accent-strong\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-body \{[^}]*background: var\(--ui-surface-raised\)[^}]*box-shadow: inset 4px 0 0/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-head \.admin-folder-arrow \{[^}]*background: var\(--ui-accent-strong\)[^}]*color: var\(--ui-on-accent\)/);
   assert.match(cssSource, /\.marker-folder-icon::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
   assert.match(cssSource, /:is\(\.marker-visibility-group, \.calibration-folder\)\.expanded \.marker-folder-icon::before \{[^}]*rotate\(225deg\)/);
   assert.match(cssSource, /\.advanced-view-tools summary::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
   assert.match(cssSource, /\.app-shell\[data-ui-theme\] :is\(\.marker-visibility-group, \.calibration-folder\)\.expanded \{[^}]*background: var\(--ui-surface-raised\)/);
-  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.advanced-view-tools\[open\] > summary \{[^}]*background: var\(--ui-active\)[^}]*box-shadow: inset 3px 0 0 var\(--ui-accent\)/);
+  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.advanced-view-tools\[open\] > summary \{[^}]*background: linear-gradient\([^}]*box-shadow: inset 4px 0 0 var\(--ui-accent-strong\)[^}]*font-weight: 850/);
 });
 
 test("left admin panels are grouped into collapsible functional folders", () => {
