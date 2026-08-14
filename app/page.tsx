@@ -28,6 +28,7 @@ import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.mjs";
+import { denseLabelConnections } from "./dense-label-density.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import {
   consolidateMainHubDirectoryPlaces,
@@ -1415,6 +1416,7 @@ function buildDenseLabelClusters(
   positionOverrides: DenseLabelPosition[] = [],
   excludedElementIds: Iterable<string> = [],
   densityScale = 1,
+  persistentOnly = false,
 ): DenseLabelCluster[] {
   // A fixed label still belongs to its ordinary marker and can be represented by a
   // dense-label cluster. The lock protects the saved direction/gap/offset; it must
@@ -1430,26 +1432,9 @@ function buildDenseLabelClusters(
     const rootB = find(b);
     if (rootA !== rootB) parent[rootB] = rootA;
   };
-  const density = clamp(densityScale, 0.24, 1.6);
-  const cellSize = Math.max(1.25, 6.2 * density);
-  const spatialBuckets = new Map<string, number[]>();
-  candidates.forEach((candidate, index) => {
-    const cellX = Math.floor(candidate.x / cellSize);
-    const cellY = Math.floor((candidate.y / MAP_ASPECT) / cellSize);
-    for (let offsetX = -1; offsetX <= 1; offsetX += 1) for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
-      const nearby = spatialBuckets.get(`${cellX + offsetX}:${cellY + offsetY}`) ?? [];
-      nearby.forEach((other) => {
-        const dx = candidate.x - candidates[other].x;
-        const dy = (candidate.y - candidates[other].y) / MAP_ASPECT;
-        const labelReach = Math.min(6.2, 2.4 + (candidate.name.length + candidates[other].name.length) * 0.11) * density;
-        if (Math.hypot(dx, dy) <= labelReach) unite(index, other);
-      });
-    }
-    const key = `${cellX}:${cellY}`;
-    const bucket = spatialBuckets.get(key);
-    if (bucket) bucket.push(index);
-    else spatialBuckets.set(key, [index]);
-  });
+  const connections = denseLabelConnections(candidates, { mapAspect: MAP_ASPECT, densityScale });
+  if (!persistentOnly) connections.adaptiveEdges.forEach(([index, other]: [number, number]) => unite(index, other));
+  connections.persistentGroups.forEach((group: number[]) => group.slice(1).forEach((index) => unite(group[0], index)));
   const groups = new Map<number, MapElement[]>();
   candidates.forEach((element, index) => {
     const root = find(index);
@@ -3257,13 +3242,14 @@ export default function Home() {
     ...(publicLayoutAccess === "viewer" ? editorVisibleElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id) : []),
     ...(selectedId ? [selectedId] : []),
   ])], [denseLabelExcludedIds, editorVisibleElements, publicLayoutAccess, selectedId]);
-  const denseLabelClusters = useMemo(() => mergeDenseLabels && (printPreviewMode || !forceIndividualLabels)
+  const denseLabelClusters = useMemo(() => mergeDenseLabels
     ? buildDenseLabelClusters(
         stageLabelElements,
         stageMarkerElements,
         denseLabelPositions,
         printPreviewMode ? denseLabelExcludedIds : displayDenseLabelExcludedIds,
         printPreviewMode ? 1 : fitZoom / Math.max(settledLabelZoom, 0.22),
+        !printPreviewMode && forceIndividualLabels,
       )
     : [], [denseLabelExcludedIds, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, mergeDenseLabels, printPreviewMode, settledLabelZoom, stageLabelElements, stageMarkerElements]);
   const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
@@ -7285,7 +7271,7 @@ export default function Home() {
             <div className="view-toggle-list">
               <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
               <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
-              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>모든 장소명 표시 · 많은 항목은 여러 열·묶음으로 압축</small></span></label>
+              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
               <label className={scaleLabelLimitEnabled ? "active" : ""}><input type="checkbox" checked={scaleLabelLimitEnabled} onChange={(event) => setScaleLabelLimitEnabled(event.target.checked)} /><span><b>축척별 라벨 자동 제한</b><small>맞춤 30 · 중간 50/80 · 충분히 확대하면 전체 표시</small></span></label>
             </div>
             <div className={`label-scale-status ${scaleHiddenLabelCount > 0 ? "limited" : "all"}`}>
@@ -7577,7 +7563,7 @@ export default function Home() {
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))` }}>
-              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={forceIndividualLabels && !printPreviewMode ? "marker" : denseLabelClusters.length ? "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
+              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
                 {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
@@ -7709,7 +7695,7 @@ export default function Home() {
               </section>}
             </div>
           </aside>}
-          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {visibleElements.length}곳</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 통합 라벨이 개별 장소명으로 바뀝니다.</span></footer>}
+          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {visibleElements.length}곳</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
         </section>
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 

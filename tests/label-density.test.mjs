@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { chooseScaleAwareLabelIds, labelBudgetForScale } from "../app/label-density.mjs";
+import { denseLabelConnections } from "../app/dense-label-density.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
@@ -40,4 +41,38 @@ test("screen limits happen before dense-label clustering and settle heavy zoom w
   assert.match(pageSource, /fitZoom \/ Math\.max\(settledLabelZoom, 0\.22\)/);
   assert.match(pageSource, /setTimeout\(\(\) => setSettledLabelZoom\(zoom\), 140\)/);
   assert.match(pageSource, /축척별 라벨 자동 제한/);
+});
+
+test("four labels around one dense point stay grouped at detailed zoom", () => {
+  const candidates = [
+    { name: "중심점포", x: 10, y: 10 },
+    { name: "인접점포A", x: 10.8, y: 10 },
+    { name: "인접점포B", x: 9.4, y: 10.55 },
+    { name: "인접점포C", x: 10.35, y: 9.3 },
+  ];
+  const connections = denseLabelConnections(candidates, { densityScale: 0.24 });
+  assert.equal(connections.persistentGroups.length, 1);
+  assert.deepEqual(new Set(connections.persistentGroups[0]), new Set([0, 1, 2, 3]));
+});
+
+test("three nearby labels or a loose street chain do not become permanent clusters", () => {
+  const threeNearby = denseLabelConnections([
+    { name: "점포A", x: 10, y: 10 },
+    { name: "점포B", x: 10.7, y: 10 },
+    { name: "점포C", x: 10.3, y: 10.6 },
+  ], { densityScale: 0.24 });
+  assert.equal(threeNearby.persistentGroups.length, 0);
+
+  const streetChain = denseLabelConnections(Array.from({ length: 5 }, (_, index) => ({
+    name: `점포${index}`,
+    x: 10 + index * 1.45,
+    y: 10,
+  })), { densityScale: 0.24 });
+  assert.equal(streetChain.persistentGroups.length, 0);
+});
+
+test("detailed mode keeps only persistent dense groups", () => {
+  assert.match(pageSource, /if \(!persistentOnly\) connections\.adaptiveEdges/);
+  assert.match(pageSource, /!printPreviewMode && forceIndividualLabels/);
+  assert.match(pageSource, /확대해도 주변 4곳 이상 밀집 시 통합 유지/);
 });

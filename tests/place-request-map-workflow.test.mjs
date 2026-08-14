@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const denseLabelSource = await readFile(new URL("../app/dense-label-density.mjs", import.meta.url), "utf8");
 const requestRouteSource = await readFile(new URL("../app/api/place-registration-requests/route.ts", import.meta.url), "utf8");
 const publicLayoutRouteSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const migrationSource = await readFile(new URL("../drizzle/0015_amusing_matthew_murdock.sql", import.meta.url), "utf8");
@@ -39,7 +40,7 @@ test("initial admin state and request list use batched storage reads", () => {
 });
 
 test("map-heavy work avoids full pair scans and defers device recovery writes", () => {
-  assert.match(pageSource, /const spatialBuckets = new Map<string, number\[\]>/);
+  assert.match(denseLabelSource, /const spatialBuckets = new Map\(\)/);
   assert.match(pageSource, /const ordered = \[\.\.\.stageMarkerElements\]\.sort/);
   assert.match(pageSource, /if \(dx >= maximumRelevantDx\) break/);
   assert.match(pageSource, /requestIdleCallback\(save, \{ timeout: 1200 \}\)/);
