@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <title>카페 최종 채용</title>
+  <circle cx="80" cy="80" r="66" fill="none" stroke="#E7C8B2" stroke-width="12"/><circle cx="80" cy="80" r="59" fill="#D49A55" stroke="#343A39" stroke-width="7"/><circle cx="80" cy="80" r="42" fill="#F7F1E4" stroke="#343A39" stroke-width="5"/>
+  <ellipse cx="80" cy="106" rx="33" ry="7" fill="#D8D5CB" stroke="#414746" stroke-width="4"/><ellipse cx="80" cy="105" rx="24" ry="3.5" fill="#F8F5EC"/><path d="M103 70h9c14 0 14 21 0 21h-9v-7h8c5 0 5-7 0-7h-8z" fill="#F7F7F2" stroke="#414746" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M50 62h60l-4 23c-3 17-12 25-26 25S57 102 54 85z" fill="#F7F7F2" stroke="#414746" stroke-width="4" stroke-linejoin="round"/><ellipse cx="80" cy="62" rx="30" ry="9" fill="#4B2B22" stroke="#414746" stroke-width="4"/><ellipse cx="80" cy="62" rx="24" ry="6" fill="#9A6041"/><path d="M80 72c-7-4-12-8-12-12 4-3 9-2 12 2 3-4 8-5 12-2 0 4-5 8-12 12z" fill="#F5E8D3"/>
+</svg>

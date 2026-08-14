@@ -261,6 +261,7 @@ async function syncBundledDirectory(db: D1Database) {
   const existingByName = new Map(
     existingRows.map((row) => [normalizePlaceName(row.name).toLocaleLowerCase("ko-KR"), row]),
   );
+  const retiredIds = new Set<string>(retiredMasterDirectoryIds);
   const sourceRows = bundledRows().map((row) => {
     const isMainHub = normalizePlaceName(row.name) === MAIN_HUB_CANONICAL_NAME;
     const existing = isMainHub
@@ -268,19 +269,16 @@ async function syncBundledDirectory(db: D1Database) {
       : existingByName.get(row.name.toLocaleLowerCase("ko-KR"));
     return existing ? {
       ...row,
-      id: isMainHub ? MAIN_HUB_DIRECTORY_ID : existing.id,
+      id: isMainHub || retiredIds.has(existing.id) ? row.id : existing.id,
       additionalCategories: existing.additionalCategories,
       convenienceAttributes: existing.convenienceAttributes,
       locationGroupId: existing.locationGroupId,
       mapAnchorId: existing.mapAnchorId,
       featuredRole: isMainHub ? MAIN_HUB_ROLE : existing.featuredRole,
-      aliases: isMainHub
-        ? [...new Set([...row.aliases, ...existing.aliases])].slice(0, 12)
-        : existing.aliases,
+      aliases: [...new Set([...row.aliases, ...existing.aliases])].slice(0, 12),
     } : row;
   });
   const sourceNames = new Set(sourceRows.map((row) => row.name.toLocaleLowerCase("ko-KR")));
-  const retiredIds = new Set<string>(retiredMasterDirectoryIds);
   const retainedRows = existingRows.filter((row) => (
     !sourceNames.has(normalizePlaceName(row.name).toLocaleLowerCase("ko-KR")) && !retiredIds.has(row.id)
   ));

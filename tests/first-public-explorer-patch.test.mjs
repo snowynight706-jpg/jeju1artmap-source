@@ -100,7 +100,7 @@ test("communication-center DB aliases converge on one canonical directory row", 
   assert.match(directoryRouteSource, /MAIN_HUB_DIRECTORY_ID = "place-sotong-center"/);
   assert.match(directoryRouteSource, /mainHubDirectoryDrift/);
   assert.match(directoryRouteSource, /mainHubStoredRows\.length !== 1/);
-  assert.match(directoryRouteSource, /id: isMainHub \? MAIN_HUB_DIRECTORY_ID : existing\.id/);
+  assert.match(directoryRouteSource, /id: isMainHub \|\| retiredIds\.has\(existing\.id\) \? row\.id : existing\.id/);
 });
 
 test("directory source sync binds one value for every insert column", () => {

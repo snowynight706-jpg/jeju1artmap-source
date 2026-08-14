@@ -17,7 +17,9 @@ import {
 import { bundledLandmarkAssets } from "./landmark-assets";
 import {
   bundledMarkerAssets,
-  markerAssetId,
+  markerAssetIdForPlace,
+  markerAssetSrc,
+  markerAssetStatus,
   recommendedMarkerStyle,
   type BundledMarkerCategory,
   type BundledMarkerStyle,
@@ -992,7 +994,7 @@ function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: Directo
   }));
 }
 
-const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [place.name, place]));
+const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
 
 const addressByPlace = new Map<string, (typeof landmarkLocations)[number]>(landmarkLocations.map((location) => [location.name, location]));
 const landmarkLocationByName = new Map<string, (typeof landmarkLocations)[number]>(landmarkLocations.map((location) => [normalizePlaceName(location.name), location]));
@@ -1015,7 +1017,9 @@ const builtInLandmarkAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
 const builtInMarkerAssets: MapAsset[] = bundledMarkerAssets.map((asset) => ({
   ...asset,
   fileType: "svg",
-  sourceLabel: `Google Drive · 범용마커 · ${asset.fileName}`,
+  sourceLabel: asset.status === "approved"
+    ? `Google Drive 사용중 자산 · 범용마커 리뉴얼 최종 · ${asset.fileName}`
+    : `Google Drive · 범용마커 시안 · ${asset.fileName}`,
   builtIn: true,
 }));
 
@@ -1027,8 +1031,8 @@ function isBundledMarkerCategory(category: CategoryId): category is BundledMarke
   return category !== "landmark";
 }
 
-function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = recommendedMarkerStyle) {
-  return isBundledMarkerCategory(category) ? markerAssetId(style, category) : null;
+function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = recommendedMarkerStyle, descriptor = "") {
+  return isBundledMarkerCategory(category) ? markerAssetIdForPlace(style, category, descriptor) : null;
 }
 
 function assetIdAfterDirectoryCategoryChange(element: MapElement, category: CategoryId) {
@@ -1038,14 +1042,14 @@ function assetIdAfterDirectoryCategoryChange(element: MapElement, category: Cate
   }
   if (element.category === category) return element.assetId;
   if (element.category === "landmark" || canonicalMarkerAssetIds.has(element.assetId ?? "")) {
-    return defaultMarkerAssetId(category);
+    return defaultMarkerAssetId(category, recommendedMarkerStyle, element.name);
   }
   return element.assetId;
 }
 
 const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, index) => {
   const asset = builtInAssets.find((item) => item.id === location.assetId);
-  const directoryPlace = directoryByName.get(location.name);
+  const directoryPlace = directoryByName.get(normalizePlaceName(location.name));
   const geocoded = geocodedPlaces[location.name];
   const calibrated = calibratedPlaceCoordinates(location.name, geocoded?.latitude, geocoded?.longitude, initialCalibrationPoints);
   const x = calibrated?.x ?? location.x;
@@ -1096,7 +1100,7 @@ function buildStarterMarkers(places: DirectoryPlace[]): MapElement[] {
     const offset = starterOffsets[occurrence % starterOffsets.length];
     const x = place.coordinateStatus === "geocoded" ? place.x : clamp(place.x + offset.x, 3, 97);
     const y = place.coordinateStatus === "geocoded" ? place.y : clamp(place.y + offset.y, 3, 97);
-    const assetId = defaultMarkerAssetId(place.category);
+    const assetId = defaultMarkerAssetId(place.category, recommendedMarkerStyle, `${place.name} ${place.subtype ?? ""}`);
     return {
       ...elementDefaults,
       id: `starter-marker-${index + 1}`,
@@ -1112,7 +1116,7 @@ function buildStarterMarkers(places: DirectoryPlace[]): MapElement[] {
       labelVisible: place.category === "culture" || place.category === "parking",
       labelGap: 4,
       assetId,
-      status: assetId ? "review" : "unchecked",
+      status: assetId ? markerAssetStatus(recommendedMarkerStyle) : "unchecked",
       address: place.address,
       addressSourceUrl: place.sourceUrl ?? "",
       memo: `${place.sourceLabel} · 초기 구성용 시각 배치. 실제 위치 앵커와 화면상 위치를 검수해 주세요.`,
@@ -1845,11 +1849,11 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         ? landmarkAssetId ?? normalized.assetId
         : preferredAssetId;
       const canonical = { ...normalized, name, category, assetId };
-      const defaultAssetId = defaultMarkerAssetId(category);
+      const defaultAssetId = defaultMarkerAssetId(category, recommendedMarkerStyle, name);
       const needsCanonicalMarker = category !== "landmark"
         && (!canonical.assetId || !canonicalMarkerAssetIds.has(canonical.assetId));
       return needsCanonicalMarker && defaultAssetId
-        ? { ...canonical, assetId: defaultAssetId, status: canonical.status === "approved" ? "approved" as AssetStatus : "review" as AssetStatus }
+        ? { ...canonical, assetId: defaultAssetId, status: markerAssetStatus(recommendedMarkerStyle) }
         : canonical;
     });
   const sanitizedDirectoryPlaces = document.directoryPlaces
@@ -1995,7 +1999,7 @@ function applyLockedCoordinateSettings(
     if (deletedKeys.has(settingPlacementKey)) return;
     const place = (setting.directoryId ? placesById.get(setting.directoryId) : undefined) ?? placesByName.get(setting.name);
     const category = place?.category ?? setting.category;
-    const assetId = defaultMarkerAssetId(category);
+    const assetId = defaultMarkerAssetId(category, recommendedMarkerStyle, `${place?.name ?? setting.name} ${place?.subtype ?? ""}`);
     z += 1;
     restored.push({
       ...elementDefaults,
@@ -2012,7 +2016,7 @@ function applyLockedCoordinateSettings(
       locked: true,
       labelVisible: category === "landmark" || category === "culture" || category === "parking",
       assetId,
-      status: assetId ? "review" : "unchecked",
+      status: assetId ? markerAssetStatus(recommendedMarkerStyle) : "unchecked",
       address: place?.address ?? "",
       addressSourceUrl: place?.sourceUrl ?? "",
       memo: "배포 사이트의 고정 좌표에서 동기화됨",
@@ -3788,9 +3792,9 @@ export default function Home() {
               if (restored.name === "탑동해변공연장" && !restored.assetId) {
                 return { ...restored, assetId: "tapdong-seaside-stage-02", status: "approved" as AssetStatus, directoryId: "place-tapdong-seaside-stage" };
               }
-              const markerDefault = defaultMarkerAssetId(restored.category);
+              const markerDefault = defaultMarkerAssetId(restored.category, recommendedMarkerStyle, restored.name);
               if (!restored.assetId && markerDefault) {
-                return { ...restored, assetId: markerDefault, status: "review" as AssetStatus };
+                return { ...restored, assetId: markerDefault, status: markerAssetStatus(recommendedMarkerStyle) };
               }
               return restored;
             });
@@ -5220,7 +5224,9 @@ export default function Home() {
     setPlacementOverride(place, null);
     const mapCategory = mapCategoryForDirectoryPlace(place);
     const preferredLandmarkAssetId = landmarkLocationByName.get(normalizePlaceName(place.name))?.assetId;
-    const placeAssetId = mapCategory === "landmark" ? preferredLandmarkAssetId ?? null : defaultMarkerAssetId(mapCategory);
+    const placeAssetId = mapCategory === "landmark"
+      ? preferredLandmarkAssetId ?? null
+      : defaultMarkerAssetId(mapCategory, recommendedMarkerStyle, `${place.name} ${place.subtype ?? ""}`);
     const next: MapElement = {
       ...elementDefaults,
       id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)),
@@ -5235,7 +5241,7 @@ export default function Home() {
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
       labelVisible: true,
       assetId: placeAssetId,
-      status: placeAssetId ? "review" : "unchecked",
+      status: placeAssetId ? markerAssetStatus(recommendedMarkerStyle) : "unchecked",
       address: place.address,
       memo: `${place.sourceLabel} · ${place.coordinateStatus === "landmark" ? "기본 앵커" : place.coordinateStatus === "geocoded" ? "주소 자동탐색 앵커(검수 필요)" : "권역 기준 임시 좌표"}`,
       addressSourceUrl: place.sourceUrl ?? "",
@@ -6023,11 +6029,14 @@ export default function Home() {
     pushHistory();
     setMarkerStyle(style);
     replaceElements((current) => current.map((item) => {
-      const nextAssetId = defaultMarkerAssetId(item.category, style);
-      return nextAssetId ? { ...item, assetId: nextAssetId, status: "review" as AssetStatus } : item;
+      const place = item.directoryId
+        ? directoryPlaces.find((candidate) => candidate.id === item.directoryId)
+        : directoryPlaces.find((candidate) => normalizePlaceName(candidate.name) === normalizePlaceName(item.name));
+      const nextAssetId = defaultMarkerAssetId(item.category, style, `${item.name} ${place?.subtype ?? ""}`);
+      return nextAssetId ? { ...item, assetId: nextAssetId, status: markerAssetStatus(style) } : item;
     }));
-    const styleName = style === "01" ? "기본 핀형" : style === "02" ? "아치 배지형" : "유기적 원형";
-    setToast(`범용 마커를 ${style}안 ${styleName}으로 통일했습니다.`);
+    const styleName = style === "v2" ? "리뉴얼 최종 원형" : style === "01" ? "기본 핀형" : style === "02" ? "아치 배지형" : "유기적 원형";
+    setToast(`범용 마커를 ${styleName}으로 통일했습니다.`);
   };
 
   const duplicateSelected = () => {
@@ -6850,14 +6859,14 @@ export default function Home() {
     const linked = elementsRef.current.find((element) => element.placeRequestId === id && !element.directoryId);
     if (!linked) return;
     const nextCategory = patch.category ?? linked.category;
-    const nextStyle = patch.markerStyle ?? (linked.assetId?.match(/-(01|02|03)-/)?.[1] as BundledMarkerStyle | undefined) ?? recommendedMarkerStyle;
+    const nextStyle = patch.markerStyle ?? (linked.assetId?.match(/-(01|02|03|v2)-/)?.[1] as BundledMarkerStyle | undefined) ?? recommendedMarkerStyle;
     replaceElements((current) => current.map((element) => element.id === linked.id ? {
       ...element,
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.address !== undefined ? { address: patch.address } : {}),
       ...(patch.category !== undefined || patch.markerStyle !== undefined ? {
         category: nextCategory,
-        assetId: markerAssetId(nextStyle, nextCategory),
+        assetId: markerAssetIdForPlace(nextStyle, nextCategory, `${patch.name ?? linked.name} ${patch.description ?? ""}`),
         size: nextCategory === "culture" || nextCategory === "park" ? 2.5 : 1.65,
       } : {}),
       ...(typeof patch.markerX === "number" ? { x: patch.markerX, anchorX: patch.markerX } : {}),
@@ -6934,7 +6943,7 @@ export default function Home() {
         z: Math.max(0, ...elementsRef.current.map((element) => element.z)) + 1,
         labelVisible: true,
         labelGap: 4,
-        assetId: markerAssetId(reviewing.markerStyle, reviewing.category),
+        assetId: markerAssetIdForPlace(reviewing.markerStyle, reviewing.category, `${reviewing.name} ${reviewing.description}`),
         status: "review",
         address: reviewing.address,
         memo: "장소 등록 요청 검수 중 · 위치·크기·라벨을 조정한 뒤 장소 요청 관리에서 승인하세요.",
@@ -6964,7 +6973,7 @@ export default function Home() {
     }
     if (!window.confirm(`‘${request.name}’을(를) 검수한 위치대로 장소 DB와 지도 편집 초안에 반영할까요?`)) return;
     const reviewedCategory = reviewElement.category === "landmark" ? request.category : reviewElement.category as BundledMarkerCategory;
-    const reviewedMarkerStyle = (reviewElement.assetId?.match(/^generic-marker-(01|02|03)-/)?.[1] as BundledMarkerStyle | undefined) ?? request.markerStyle;
+    const reviewedMarkerStyle = (reviewElement.assetId?.match(/^generic-marker-(01|02|03|v2)-/)?.[1] as BundledMarkerStyle | undefined) ?? request.markerStyle;
     setPlaceRequestActionId(request.id);
     try {
       const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
@@ -7002,7 +7011,7 @@ export default function Home() {
         y,
         anchorX: x,
         anchorY: y,
-        assetId: markerAssetId(approved.markerStyle, approved.category),
+        assetId: markerAssetIdForPlace(approved.markerStyle, approved.category, `${approved.name} ${approved.description}`),
         status: "review",
         address: approved.address,
         memo: "장소 등록 요청 승인 · 최종 표시 상태를 확인한 뒤 공개본을 업데이트하세요.",
@@ -7021,7 +7030,7 @@ export default function Home() {
         z: Math.max(0, ...elementsRef.current.map((element) => element.z)) + 1,
         labelVisible: true,
         labelGap: 4,
-        assetId: markerAssetId(approved.markerStyle, approved.category),
+        assetId: markerAssetIdForPlace(approved.markerStyle, approved.category, `${approved.name} ${approved.description}`),
         status: "review",
         address: approved.address,
         memo: "장소 등록 요청 승인 · 최종 표시 상태를 확인한 뒤 공개본을 업데이트하세요.",
@@ -7430,21 +7439,22 @@ export default function Home() {
               </article>;
             })}
             {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
-            <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·소품샵·주차장·편의시설</strong><small>모든 범용 마커를 SVG로 구성해 확대·출력 시 선명합니다.</small></div>
+            <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·소품샵·주차장·공원·편의시설</strong><small>리뉴얼 최종 9종과 기존 시안을 SVG 자산으로 선택할 수 있습니다.</small></div>
             {generalMarkerAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
           </div>
           </AdminFolder>
           <AdminFolder className="side-admin-folder group-size-panel" title="마커 스타일·크기">
             <div className="marker-style-panel">
-              <div className="review-list-head"><strong>범용 마커 스타일</strong><span>검수 중</span></div>
+              <div className="review-list-head"><strong>범용 마커 스타일</strong><span>리뉴얼 최종 포함</span></div>
               <div className="marker-style-options" role="group" aria-label="범용 마커 스타일 일괄 적용">
                 {([
+                  ["v2", "리뉴얼 최종 원형"],
                   ["01", "기본 핀형"],
                   ["02", "아치 배지형"],
                   ["03", "유기적 원형"],
-                ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={`/markers/범용마커_${style}_culture.svg`} alt="" /><span><b>{style}안</b><small>{label}</small></span></button>)}
+                ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={markerAssetSrc(style, "culture")} alt="" /><span><b>{style === "v2" ? "최종" : `${style}안`}</b><small>{label}</small></span></button>)}
               </div>
-              <p className="marker-style-help">문화시설·카페·음식점·소품샵·주차장·공원·편의시설에 같은 시안을 일괄 적용합니다. 01안은 제작 기준상 우선 추천안이며 아직 최종 승인 전입니다.</p>
+              <p className="marker-style-help">리뉴얼 최종은 승인된 중앙 앵커 원형 자산입니다. 일괄 적용할 때 화장실·안내소는 전용 최종 마커로 자동 배정하며, 기존 01~03안도 계속 선택할 수 있습니다.</p>
             </div>
             <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
@@ -7895,9 +7905,9 @@ export default function Home() {
                       const disabled = closed || placeRequestActionId !== null;
                       const linkedMarker = elements.find((element) => element.placeRequestId === request.id && !element.directoryId);
                       return <article className={`place-request-admin-card ${request.status}`} key={request.id}>
-                        <header><div><span className={`place-request-status ${request.status}`}>{statusLabel}</span><time dateTime={request.createdAt}>{storyDateTimeLabel(request.createdAt)}</time></div><img src={`/markers/범용마커_${request.markerStyle}_${request.category}.svg`} alt="요청 마커 미리보기" loading="lazy" decoding="async" /></header>
+                        <header><div><span className={`place-request-status ${request.status}`}>{statusLabel}</span><time dateTime={request.createdAt}>{storyDateTimeLabel(request.createdAt)}</time></div><img src={markerAssetSrc(request.markerStyle, request.category)} alt="요청 마커 미리보기" loading="lazy" decoding="async" /></header>
                         <label>장소명<input value={request.name} maxLength={120} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { name: event.target.value })} /></label>
-                        <div className="place-request-admin-row"><label>마커 분류<select value={request.category} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { category: event.target.value as BundledMarkerCategory })}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><label>형태<select value={request.markerStyle} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { markerStyle: event.target.value as BundledMarkerStyle })}><option value="01">형태 01</option><option value="02">형태 02</option><option value="03">형태 03</option></select></label></div>
+                        <div className="place-request-admin-row"><label>마커 분류<select value={request.category} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { category: event.target.value as BundledMarkerCategory })}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><label>형태<select value={request.markerStyle} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { markerStyle: event.target.value as BundledMarkerStyle })}><option value="v2">리뉴얼 최종</option><option value="01">형태 01</option><option value="02">형태 02</option><option value="03">형태 03</option></select></label></div>
                         <label>주소<input value={request.address} maxLength={260} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { address: event.target.value })} /></label>
                         <label>설명<textarea value={request.description} maxLength={800} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { description: event.target.value })} /></label>
                         <div className="place-request-coordinate-summary"><span>요청 위치</span><strong>{typeof request.submittedX === "number" && typeof request.submittedY === "number" ? `${request.submittedX.toFixed(2)}, ${request.submittedY.toFixed(2)}` : "기존 요청 · 위치 정보 없음"}</strong>{linkedMarker && <em>현재 검수 위치 {linkedMarker.x.toFixed(2)}, {linkedMarker.y.toFixed(2)}</em>}</div>
@@ -7942,7 +7952,7 @@ export default function Home() {
         <section className="place-request-dialog" role="dialog" aria-modal="true" aria-labelledby="place-request-dialog-title">
           <header><div><strong id="place-request-dialog-title">장소 등록 요청</strong><span>지도에 추가되면 좋을 원도심 장소를 알려주세요.</span></div><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }} aria-label="장소 등록 요청 닫기">×</button></header>
           <div className="place-request-dialog-scroll">
-            <div className="place-request-marker-section"><div><strong>마커 형태</strong><span>장소의 주된 운영 목적에 맞는 기본분류 하나를 선택해 주세요.</span></div><label>기본분류<select value={placeRequestCategory} onChange={(event) => setPlaceRequestCategory(event.target.value as BundledMarkerCategory)}>{categories.filter((category) => (["culture", "cafe", "food", "shop"] as string[]).includes(category.id)).map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><div className="place-request-style-grid" role="radiogroup" aria-label="마커 형태 선택">{(["01", "02", "03"] as BundledMarkerStyle[]).map((style) => <button type="button" role="radio" aria-checked={placeRequestMarkerStyle === style} className={placeRequestMarkerStyle === style ? "active" : ""} key={style} onClick={() => setPlaceRequestMarkerStyle(style)}><img src={`/markers/범용마커_${style}_${placeRequestCategory}.svg`} alt="" /><span>형태 {style}</span></button>)}</div></div>
+            <div className="place-request-marker-section"><div><strong>마커 형태</strong><span>장소의 주된 운영 목적에 맞는 기본분류 하나를 선택해 주세요.</span></div><label>기본분류<select value={placeRequestCategory} onChange={(event) => setPlaceRequestCategory(event.target.value as BundledMarkerCategory)}>{categories.filter((category) => (["culture", "cafe", "food", "shop"] as string[]).includes(category.id)).map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><div className="place-request-style-grid" role="radiogroup" aria-label="마커 형태 선택">{(["v2", "01", "02", "03"] as BundledMarkerStyle[]).map((style) => <button type="button" role="radio" aria-checked={placeRequestMarkerStyle === style} className={placeRequestMarkerStyle === style ? "active" : ""} key={style} onClick={() => setPlaceRequestMarkerStyle(style)}><img src={markerAssetSrc(style, placeRequestCategory)} alt="" /><span>{style === "v2" ? "리뉴얼 최종" : `형태 ${style}`}</span></button>)}</div></div>
             <section className={`place-request-location-field ${placeRequestLocation ? "selected" : ""}`}><div><img src={`/markers/범용마커_${placeRequestMarkerStyle}_${placeRequestCategory}.svg`} alt="" /><span><strong>지도에서 마커 위치 지정 <em>필수</em></strong><small>{placeRequestLocation ? `위치 선택됨 · ${placeRequestLocation.x.toFixed(2)}, ${placeRequestLocation.y.toFixed(2)}` : "실제 장소가 있는 지점을 지도에서 눌러 주세요."}</small></span></div><button type="button" onClick={() => { placeRequestLocationBeforePickingRef.current = placeRequestLocation; setPlaceRequestFormOpen(false); setGlobalStoriesOpen(false); setSelectedId(null); setPlaceRequestPickingLocation(true); }}>{placeRequestLocation ? "위치 다시 지정" : "지도에서 지정"}</button></section>
             <label>장소 이름 <em>필수</em><input value={placeRequestName} maxLength={120} placeholder="예: 카페단단" onChange={(event) => setPlaceRequestName(event.target.value)} /></label>
             <label>주소 <em>필수</em><input value={placeRequestAddress} maxLength={260} placeholder="도로명 주소를 적어주세요." onChange={(event) => setPlaceRequestAddress(event.target.value)} /></label>

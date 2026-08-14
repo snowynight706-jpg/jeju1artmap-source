@@ -1,3 +1,5 @@
+import { CHILSEONG_CANONICAL_NAME, normalizePlaceName } from "./core-landmarks";
+
 export type AdditionalCategoryId =
   | "multi-cultural"
   | "exhibition"
@@ -124,13 +126,7 @@ function cleanText(value: unknown, max = 180) {
 }
 
 function normalizedName(name: string) {
-  const trimmed = cleanText(name);
-  if (["제주특별자치도 소통협력센터", "제주소통협력센터", "제주소통협력센터 메인 오피스"].includes(trimmed)) {
-    return MAIN_HUB_CANONICAL_NAME;
-  }
-  if (trimmed === "아르코 공연 예술센터") return "아르코공연연습센터@제주";
-  if (trimmed === "예술인복지센터") return "제주예술인복지센터";
-  return trimmed;
+  return normalizePlaceName(cleanText(name));
 }
 
 export function sanitizeAdditionalCategories(value: unknown): AdditionalCategoryId[] {
@@ -219,8 +215,10 @@ export function directoryMetadataDefaults(
 ): PlaceDirectoryMetadata {
   const canonicalName = normalizedName(name);
   const isArtPlatformFacility = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).includes(canonicalName);
-  const aliases = canonicalName === MAIN_HUB_CANONICAL_NAME
-    ? ["제주소통협력센터", "제주소통협력센터 메인 오피스", "제주특별자치도 소통협력센터"]
+  const aliases = canonicalName === CHILSEONG_CANONICAL_NAME
+    ? ["제주 칠성로 상점가", "제주칠성로상점가", "제주칠성로 상점가"]
+    : canonicalName === MAIN_HUB_CANONICAL_NAME
+      ? ["제주소통협력센터", "제주소통협력센터 메인 오피스", "제주특별자치도 소통협력센터"]
     : canonicalName === LPP_CANONICAL_NAME
       ? ["LPP", "Local Player Platform", "로컬 플레이어 플랫폼"]
     : canonicalName === "아르코공연연습센터@제주"

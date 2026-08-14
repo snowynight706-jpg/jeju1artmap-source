@@ -16,18 +16,19 @@ export type MasterDirectoryRow = {
 };
 
 export const masterDirectorySource = {
-  "version": "v13-랜드마크DB-정합성",
+  "version": "v14-칠성로상점가-통합",
   "sourceFile": "문화예술_워케이션_제주시_원도심_결과물_v11_추가매장반영.xlsx",
   "sourceSha256": "fd47cfa556429867dea213e15cb1e6a290d3097bd135b91bec0cdf50a3b9fd9c",
   "backupSha256": "75a8506e322a6866cdc7364e7e1522151dc601ab636f0a23524bb3658bbada4f",
   "restoredAtUtc": "2026-08-09T12:21:41+00:00",
   "workbookVersion": "v11",
-  "placeCount": 191
+  "placeCount": 190
 } as const;
 
 export const retiredMasterDirectoryIds = [
   "master-place-7",
-  "master-v10-14477635c584"
+  "master-v10-14477635c584",
+  "master-v10-59b6497db224"
 ] as const;
 
 export const masterDirectoryRows: MasterDirectoryRow[] = [
@@ -36,13 +37,13 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "name": "칠성로",
     "address": "제주특별자치도 제주시 관덕로13길 12 일대",
     "area": "칠성로·탑동",
-    "subtype": "상점가·보행 쇼핑거리",
+    "subtype": "상점가·보행 쇼핑거리·산책",
     "priority": "추천",
-    "description": "제주 원도심의 상점과 골목을 걸으며 쇼핑과 관광을 함께 즐길 수 있는 대표 보행 거리",
+    "description": "탐라시대 칠성단에서 이름이 유래한 제주 대표 전통 상업거리로, 원도심의 상점과 골목을 걸으며 쇼핑·산책·관광을 함께 즐길 수 있다.",
     "operatingInfo": "운영시간: 점포별 상이 · 방문 전 개별 점포 안내 확인",
-    "notes": "핵심 랜드마크 지도 자산과 연결되는 DB 기준 항목",
+    "notes": "핵심 랜드마크 ‘칠성로’의 지도 좌표와 연결되는 통합 DB 기준 항목 · 기존 ‘제주칠성로상점가’ 중복 행 통합",
     "sourceUrl": "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750",
-    "mapUrl": "",
+    "mapUrl": "https://map.kakao.com/?q=%EC%A0%9C%EC%A3%BC%EC%B9%A0%EC%84%B1%EB%A1%9C%EC%83%81%EC%A0%90%EA%B0%80",
     "checkedAt": "2026-08-14",
     "sourceSheet": "역사·산책·관광",
     "category": "culture"
@@ -2350,22 +2351,6 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "checkedAt": "2026-07-24",
     "sourceSheet": "역사·산책·관광",
     "category": "culture"
-  },
-  {
-    "id": "master-v10-59b6497db224",
-    "name": "제주칠성로상점가",
-    "address": "제주특별자치도 제주시 중앙로5길 일대",
-    "area": "칠성로·탑동",
-    "subtype": "상권·산책",
-    "priority": "참고",
-    "description": "탐라시대 칠성단에서 이름이 유래한 제주 대표 전통 상업거리",
-    "operatingInfo": "운영시간: 점포별 상이",
-    "notes": "거리: 주요 · 이용·참고: 공식 관광페이지 사진은 이용조건 확인",
-    "sourceUrl": "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750",
-    "mapUrl": "https://map.kakao.com/?q=%EC%A0%9C%EC%A3%BC%EC%B9%A0%EC%84%B1%EB%A1%9C%EC%83%81%EC%A0%90%EA%B0%80",
-    "checkedAt": "2026-07-24",
-    "sourceSheet": "역사·산책·관광",
-    "category": "park"
   },
   {
     "id": "master-v11-a3b068d52f6b",

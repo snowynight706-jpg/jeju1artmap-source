@@ -68,7 +68,7 @@ test("every formerly missing current landmark has an exact bundled DB row", () =
   for (const name of ["칠성로", "동문시장", "북수구광장", "탑동광장", "탑동해변공연장"]) {
     assert.match(masterDirectorySource, new RegExp(`"name": "${name}"`));
   }
-  assert.match(masterDirectorySource, /"version": "v13-랜드마크DB-정합성"/);
+  assert.match(masterDirectorySource, /"version": "v14-칠성로상점가-통합"/);
   assert.doesNotMatch(masterDirectorySource, /"name": "탑동해변공연장·탑동광장"/);
 });
 

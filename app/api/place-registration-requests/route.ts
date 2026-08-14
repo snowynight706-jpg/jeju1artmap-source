@@ -6,7 +6,7 @@ export const runtime = "edge";
 const PAGE_SIZE = 10;
 const MAX_REQUESTS_PER_DAY = 5;
 const MARKER_CATEGORIES = new Set(["culture", "cafe", "food", "shop", "parking", "park", "utility"]);
-const MARKER_STYLES = new Set(["01", "02", "03"]);
+const MARKER_STYLES = new Set(["01", "02", "03", "v2"]);
 
 type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
