@@ -36,7 +36,7 @@ test("communication center is the persisted and visible workation main hub", () 
   assert.match(taxonomySource, /MAIN_HUB_CANONICAL_NAME = "제주시소통협력센터"/);
   assert.match(taxonomySource, /\? "제주소통협력센터"\s*:\s*name/);
   assert.match(pageSource, /publicElementName = isMainHub \? "제주소통협력센터" : element\.name/);
-  assert.match(pageSource, /className="main-hub-badge" aria-label="주요 거점 ▼"><svg className="main-hub-pointer-icon"/);
+  assert.match(pageSource, /className=\{`map-focus-pointer \$\{isMainHub \? "main-hub-badge" : "located-place-badge"\}/);
   assert.match(pageSource, /<article className=\{`\$\{selectedItem \? "selected" : ""\} \$\{item\.isMainHub \? "main-hub" : ""\} \$\{eventListedInCulture \? "event-linked" : ""\}`\}/);
   assert.doesNotMatch(pageSource, /<img src=\{meta\.iconSrc\}/);
   assert.match(pageSource, /const initialElements: MapElement\[\] = ensureMainHubMapElement/);
@@ -44,9 +44,12 @@ test("communication center is the persisted and visible workation main hub", () 
   assert.match(metadataMigration, /\["creative-startup","event-rental","experience-education"\]/);
 });
 
-test("public marker selection uses a yellow ring only while active", () => {
-  assert.match(cssSource, /\.map-element\.public-active::after[^}]+border: 2px solid #e6a926/);
-  assert.match(cssSource, /\.map-element\.main-hub\.public-active::after/);
+test("public marker selection reuses the red main-hub pointer instead of a yellow ring", () => {
+  assert.match(pageSource, /\(isMainHub \|\| isPublicSelected\)/);
+  assert.match(pageSource, /isPublicSelected \? "현재 찾은 장소 ▼" : "주요 거점 ▼"/);
+  assert.match(cssSource, /\.main-hub-badge, \.located-place-badge \{[^}]*width: 24px[^}]*height: 22px/);
+  assert.match(cssSource, /\.map-focus-pointer\.located \{[^}]*located-place-arrival/);
+  assert.doesNotMatch(cssSource, /\.map-element\.public-active::after|#e6a926/);
   assert.doesNotMatch(cssSource, /\.map-element\.main-hub \.icon-visual::after/);
   assert.match(cssSource, /\.public-place-list article\.selected[^}]+border-color: #d9ad45/);
 });

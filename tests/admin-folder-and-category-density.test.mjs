@@ -159,20 +159,22 @@ test("direct DB editing can collect places by primary category with visible coun
   assert.match(cssSource, /\.database-editor-category-filters button\.active \{[^}]*box-shadow: inset 0 -2px 0 #555/);
 });
 
-test("public place rows use four compact columns with one information action", () => {
+test("public place rows use four compact columns with whole-row map navigation and one details action", () => {
   const explorerBlock = pageSource.match(/<section className="public-place-explorer">[\s\S]*?<\/section> : globalContentTab/)?.[0] ?? "";
-  assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,80}>정보보기</);
+  assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,80}>상세보기</);
   assert.match(explorerBlock, /className="public-place-identity"/);
   assert.doesNotMatch(explorerBlock, /public-place-symbol|<img src=\{meta\.iconSrc\}/);
   assert.match(explorerBlock, /className="public-place-primary-category"[\s\S]{0,100}\{meta\.name\}/);
   assert.match(explorerBlock, /className="public-place-additional-category"/);
-  assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}focusPublicPlaceItem\(item, true\)[\s\S]{0,100}>정보보기<\/button>/);
+  assert.match(explorerBlock, /className="public-place-row-action"[\s\S]{0,100}focusPublicPlaceItem\(item\)[\s\S]{0,140}지도에서 찾기/);
+  assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}focusPublicPlaceItem\(item, true\)[\s\S]{0,140}>상세보기<\/button>/);
   assert.doesNotMatch(explorerBlock, /className="public-place-map-action"|className="public-place-detail-action"/);
   assert.doesNotMatch(explorerBlock, /item\.place\.area|권역 미입력|public-place-meta/);
   assert.match(cssSource, /\.public-place-list-header \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
   assert.match(cssSource, /\.public-place-list article \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
   assert.match(cssSource, /\.public-place-primary-category \{[^}]*font-size: 9\.5px/);
   assert.match(cssSource, /\.public-place-additional-category \{[^}]*font-size: 9px/);
+  assert.match(cssSource, /\.public-place-row-action \{[^}]*position: absolute[^}]*inset: 0[^}]*cursor: pointer/);
 });
 
 test("admin and public functional UI share one bounded responsive type scale", () => {

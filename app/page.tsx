@@ -31,6 +31,7 @@ import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.m
 import { denseLabelConnections } from "./dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
+import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
 import { ensureIndependentMapElementIdentity, sameMapPlaceIdentity } from "./map-element-identity.mjs";
 import {
   consolidateMainHubDirectoryPlaces,
@@ -4891,30 +4892,51 @@ export default function Home() {
     });
   };
 
-  const focusMapPosition = (x: number, y: number, elementId: string) => {
+  const focusMapPosition = (
+    x: number,
+    y: number,
+    elementId: string,
+    focusOptions: { publicNavigation?: boolean; showDetails?: boolean } = {},
+  ) => {
     const stageRect = stageRef.current?.getBoundingClientRect();
     const viewport = viewportRef.current?.getBoundingClientRect();
-    const compact = (viewport?.width ?? viewportDimensions.width) <= 760;
+    const viewportWidth = viewport?.width ?? viewportDimensions.width;
+    const viewportHeight = viewport?.height ?? viewportDimensions.height;
+    const compact = viewportWidth <= 760;
     const currentZoom = zoomRef.current;
-    const targetZoom = compact
-      ? clamp(Math.max(currentZoom, fitZoom * 1.8), fitZoom, 1.16)
-      : clamp(Math.max(currentZoom, fitZoom * 1.38), fitZoom, 1.42);
+    const unscaledWidth = stageRect
+      ? stageRect.width / Math.max(currentZoom, 0.01)
+      : stageDimensions.width;
+    const unscaledHeight = stageRect
+      ? stageRect.height / Math.max(currentZoom, 0.01)
+      : stageDimensions.height;
+    const targetZoom = focusOptions.publicNavigation
+      ? publicPlaceFocusZoom({
+        fitZoom,
+        viewportWidth,
+        viewportHeight,
+        stageWidth: unscaledWidth,
+        stageHeight: unscaledHeight,
+      })
+      : compact
+        ? clamp(Math.max(currentZoom, fitZoom * 1.8), fitZoom, 1.16)
+        : clamp(Math.max(currentZoom, fitZoom * 1.38), fitZoom, 1.42);
     let targetPan = panRef.current;
-    if (stageRect) {
-      const unscaledWidth = stageRect.width / Math.max(currentZoom, 0.01);
-      const unscaledHeight = stageRect.height / Math.max(currentZoom, 0.01);
-      const viewportWidth = viewport?.width ?? viewportDimensions.width;
-      const viewportHeight = viewport?.height ?? viewportDimensions.height;
+    if (unscaledWidth > 0 && unscaledHeight > 0) {
       const horizontalSafeOffset = compact
         ? 0
-        : globalStoriesOpen
-          ? Math.min(215, viewportWidth * 0.22)
-          : selected
-            ? -Math.min(195, viewportWidth * 0.2)
-            : 0;
-      const verticalSafeOffset = compact && (globalStoriesOpen || selected)
-        ? -viewportHeight * (publicPanelExpanded || publicPlaceExpanded ? 0.26 : 0.18)
-        : 0;
+        : focusOptions.publicNavigation
+          ? -Math.min(195, viewportWidth * 0.2)
+          : globalStoriesOpen
+            ? Math.min(215, viewportWidth * 0.22)
+            : selected
+              ? -Math.min(195, viewportWidth * 0.2)
+              : 0;
+      const verticalSafeOffset = compact && focusOptions.publicNavigation
+        ? -viewportHeight * (focusOptions.showDetails ? 0.26 : 0.18)
+        : compact && (globalStoriesOpen || selected)
+          ? -viewportHeight * (publicPanelExpanded || publicPlaceExpanded ? 0.26 : 0.18)
+          : 0;
       const rawPan = {
         x: horizontalSafeOffset - ((x - 50) / 100) * unscaledWidth * targetZoom,
         y: verticalSafeOffset - ((y - 50) / 100) * unscaledHeight * targetZoom,
@@ -7094,7 +7116,10 @@ export default function Home() {
     setPublicPanelExpanded(false);
     setPublicPlaceExpanded(showDetails && viewportDimensions.width <= 760);
     setGlobalStoriesOpen(false);
-    focusMapPosition(item.anchor.x, item.anchor.y, item.anchor.id);
+    focusMapPosition(item.anchor.x, item.anchor.y, item.anchor.id, {
+      publicNavigation: true,
+      showDetails,
+    });
   };
 
   const openGlobalStoryPlace = (story: PlaceStory) => {
@@ -7601,15 +7626,15 @@ export default function Home() {
                     onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : element.id, placeRequestPickingLocation) : undefined}
                     role={keyboardSelectable ? "button" : undefined}
                     tabIndex={keyboardSelectable ? 0 : undefined}
-                    aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${publicElementName} 정보 보기` : undefined}
+                    aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}
                     onKeyDown={keyboardSelectable ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (eventPlaceSelectionMode) togglePlaceEventMapSelection(element.id); else { setSelectedId(element.id); setSelectedFacilityId(null); setPublicPlaceExpanded(false); setSelectedDenseLabelId(null); } } } : undefined}
                   >
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
-                    {publicLayoutAccess === "viewer" && isMainHub && <span className="main-hub-badge" aria-label="주요 거점 ▼"><svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
+                    {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""} ${locationGroupCount > 1 ? "grouped" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}><svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
                     {publicLayoutAccess === "viewer" && locationGroupCount > 1 && <span className="location-group-badge">{locationGroupCount}개 시설</span>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
-                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 정보 보기` : undefined}>{publicElementName}</div>}
+                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}>{publicElementName}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -7782,7 +7807,7 @@ export default function Home() {
             {globalContentTab === "places" ? <section className="public-place-explorer">
               <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => setPublicPlaceQuery(event.target.value)} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => setPublicPlaceQuery("")} aria-label="장소 검색어 지우기">×</button>}</div>
               <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => setPublicPlaceCategory(category.id)} key={category.id}><img src={category.iconSrc} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
-              <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span>정보보기</span></div>
+              <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span>상세보기</span></div>
               <div className="public-place-list" role="list" aria-label={`${publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "문화공간"} 목록`}>
                 {filteredPublicPlaceItems.map((item) => {
                   const meta = publicCategoryMetaForPlace(item.place, item.anchor);
@@ -7793,10 +7818,11 @@ export default function Home() {
                     .map((definition) => definition.name);
                   const tagLabel = tagNames.length ? tagNames.join(" · ") : "—";
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""} ${eventListedInCulture ? "event-linked" : ""}`} key={item.id} role="listitem">
+                    <button type="button" className="public-place-row-action" onClick={() => focusPublicPlaceItem(item)} aria-label={`${item.displayName} 지도에서 찾기`} aria-current={selectedItem ? "location" : undefined} />
                     <span className="public-place-identity"><i className="public-place-marker-key" style={{ background: categoryOf(item.anchor.category).color }} aria-hidden="true" /><strong title={item.displayName}>{item.displayName}</strong>{eventListedInCulture && <em className="public-place-event-badge">행사</em>}</span>
                     <span className="public-place-primary-category" title={meta.name}>{meta.name}</span>
                     <span className="public-place-additional-category" title={tagNames.length ? tagLabel : "추가분류 없음"}>{tagLabel}</span>
-                    <button type="button" className="public-place-open-action" onClick={() => focusPublicPlaceItem(item, true)} aria-current={selectedItem ? "true" : undefined}>정보보기</button>
+                    <button type="button" className="public-place-open-action" onClick={() => focusPublicPlaceItem(item, true)} aria-label={`${item.displayName} 상세보기`} aria-current={selectedItem ? "true" : undefined}>상세보기</button>
                   </article>;
                 })}
                 {!filteredPublicPlaceItems.length && <div className="public-place-empty"><strong>조건에 맞는 장소가 없습니다.</strong><span>검색어나 카테고리를 바꿔보세요.</span></div>}

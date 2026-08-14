@@ -47,8 +47,15 @@ test("mobile public chrome floats only the main-hub return button", () => {
 
 test("the public main-hub pointer is a fixed-size smooth red down marker", () => {
   assert.match(pageSource, /main-hub-pointer-icon/);
-  assert.match(cssSource, /\.main-hub-badge \{[^}]*width: 24px;[^}]*height: 22px/);
+  assert.match(cssSource, /\.main-hub-badge, \.located-place-badge \{[^}]*width: 24px;[^}]*height: 22px/);
   assert.match(cssSource, /\.main-hub-pointer-icon path \{[^}]*fill: #d84a42;[^}]*stroke-linejoin: round/);
+});
+
+test("public directory navigation uses a device-aware close zoom and expected detail-sheet offset", () => {
+  assert.match(pageSource, /publicPlaceFocusZoom\(\{/);
+  assert.match(pageSource, /publicNavigation: true,[\s\S]{0,80}showDetails/);
+  assert.match(pageSource, /focusOptions\.publicNavigation[\s\S]{0,220}-Math\.min\(195, viewportWidth \* 0\.2\)/);
+  assert.match(pageSource, /focusOptions\.showDetails \? 0\.26 : 0\.18/);
 });
 
 test("main hub is folded into culture instead of having a separate list filter", () => {
