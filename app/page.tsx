@@ -595,6 +595,12 @@ const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" |
   addressSourceUrl: "",
 };
 
+const GENERAL_MARKER_DISPLAY_SCALE = 1.25;
+
+function mapElementDisplaySize(element: Pick<MapElement, "category" | "size">) {
+  return element.category === "landmark" ? element.size : element.size * GENERAL_MARKER_DISPLAY_SCALE;
+}
+
 const landmarkLocations = [
   { name: MAIN_HUB_CANONICAL_NAME, address: "제주특별자치도 제주시 관덕로 44", addressSourceUrl: "https://www.jejusotong.kr/", assetId: MAIN_HUB_LANDMARK_ASSET_ID, x: 48, y: 64 },
   { name: "제주아트플랫폼", address: "제주특별자치도 제주시 중앙로14길 18", addressSourceUrl: "https://www.jfac.kr/", assetId: "jeju-art-platform-c01", x: 31, y: 62 },
@@ -1450,13 +1456,14 @@ function buildDenseLabelClusters(
   const clusterGroups = [...groups.values()].filter((group) => group.length >= 2).flatMap((group) => partitionDenseGroup(group));
   const clusteredCandidateIds = new Set(clusterGroups.flatMap((group) => group.map((element) => element.id)));
   const iconRects = iconElements.map((element) => {
-    const height = element.size * MAP_ASPECT / 1.12;
+    const displaySize = mapElementDisplaySize(element);
+    const height = displaySize * MAP_ASPECT / 1.12;
     return {
       id: element.id,
       category: element.category,
       rect: {
-        left: element.x - element.size * 0.48,
-        right: element.x + element.size * 0.48,
+        left: element.x - displaySize * 0.48,
+        right: element.x + displaySize * 0.48,
         top: element.y - height * 0.48,
         bottom: element.y + height * 0.48,
       },
@@ -1465,7 +1472,8 @@ function buildDenseLabelClusters(
   const labelRects = labelElements.filter((element) => !clusteredCandidateIds.has(element.id)).map((element) => {
     const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24);
     const height = 1.34;
-    const elementHeight = element.size * MAP_ASPECT / 1.12;
+    const displaySize = mapElementDisplaySize(element);
+    const elementHeight = displaySize * MAP_ASPECT / 1.12;
     const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
     const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
     const gapX = 0.6 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
@@ -1474,8 +1482,8 @@ function buildDenseLabelClusters(
     let y = element.y + offsetY;
     if (element.labelPosition === "top") y -= elementHeight / 2 + gapY + height / 2;
     if (element.labelPosition === "bottom") y += elementHeight / 2 + gapY + height / 2;
-    if (element.labelPosition === "left") x -= element.size / 2 + gapX + width / 2;
-    if (element.labelPosition === "right") x += element.size / 2 + gapX + width / 2;
+    if (element.labelPosition === "left") x -= displaySize / 2 + gapX + width / 2;
+    if (element.labelPosition === "right") x += displaySize / 2 + gapX + width / 2;
     return { id: element.id, rect: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 } };
   });
   const placed: NormalizedRect[] = [];
@@ -1492,10 +1500,10 @@ function buildDenseLabelClusters(
     const orderedGroup = layout.columns.flat();
     const names = orderedGroup.map((element) => element.name);
     const groupIds = new Set(group.map((element) => element.id));
-    const minX = Math.min(...orderedGroup.map((element) => element.x - element.size / 2));
-    const maxX = Math.max(...orderedGroup.map((element) => element.x + element.size / 2));
-    const minY = Math.min(...orderedGroup.map((element) => element.y - element.size * MAP_ASPECT / 2.24));
-    const maxY = Math.max(...orderedGroup.map((element) => element.y + element.size * MAP_ASPECT / 2.24));
+    const minX = Math.min(...orderedGroup.map((element) => element.x - mapElementDisplaySize(element) / 2));
+    const maxX = Math.max(...orderedGroup.map((element) => element.x + mapElementDisplaySize(element) / 2));
+    const minY = Math.min(...orderedGroup.map((element) => element.y - mapElementDisplaySize(element) * MAP_ASPECT / 2.24));
+    const maxY = Math.max(...orderedGroup.map((element) => element.y + mapElementDisplaySize(element) * MAP_ASPECT / 2.24));
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     const { width, height } = layout;
@@ -1575,10 +1583,11 @@ function buildDenseLabelClusters(
 }
 
 function normalizedIconRect(element: MapElement): NormalizedRect {
-  const height = element.size * MAP_ASPECT / 1.12;
+  const displaySize = mapElementDisplaySize(element);
+  const height = displaySize * MAP_ASPECT / 1.12;
   return {
-    left: element.x - element.size * 0.48,
-    right: element.x + element.size * 0.48,
+    left: element.x - displaySize * 0.48,
+    right: element.x + displaySize * 0.48,
     top: element.y - height * 0.48,
     bottom: element.y + height * 0.48,
   };
@@ -1587,7 +1596,8 @@ function normalizedIconRect(element: MapElement): NormalizedRect {
 function normalizedLabelRect(element: MapElement): NormalizedRect {
   const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24);
   const height = 1.34;
-  const elementHeight = element.size * MAP_ASPECT / 1.12;
+  const displaySize = mapElementDisplaySize(element);
+  const elementHeight = displaySize * MAP_ASPECT / 1.12;
   const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
   const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
   const gapX = 0.6 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
@@ -1596,8 +1606,8 @@ function normalizedLabelRect(element: MapElement): NormalizedRect {
   let y = element.y + offsetY;
   if (element.labelPosition === "top") y -= elementHeight / 2 + gapY + height / 2;
   if (element.labelPosition === "bottom") y += elementHeight / 2 + gapY + height / 2;
-  if (element.labelPosition === "left") x -= element.size / 2 + gapX + width / 2;
-  if (element.labelPosition === "right") x += element.size / 2 + gapX + width / 2;
+  if (element.labelPosition === "left") x -= displaySize / 2 + gapX + width / 2;
+  if (element.labelPosition === "right") x += displaySize / 2 + gapX + width / 2;
   return { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 };
 }
 
@@ -3227,12 +3237,6 @@ export default function Home() {
     });
   }, [eventLinkedPublicPlaceIds, publicPlaceCategory, publicPlaceItems, publicPlaceQuery]);
 
-  const locationGroupCountByAnchorId = useMemo(() => publicPlaceItems.reduce<Map<string, number>>((counts, item) => {
-    if (!item.place.locationGroupId) return counts;
-    counts.set(item.anchor.id, (counts.get(item.anchor.id) ?? 0) + 1);
-    return counts;
-  }, new Map()), [publicPlaceItems]);
-
   const displayDenseLabelExcludedIds = useMemo(() => [...new Set([
     ...denseLabelExcludedIds,
     ...(publicLayoutAccess === "viewer" ? editorVisibleElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id) : []),
@@ -3269,16 +3273,18 @@ export default function Home() {
     const clearance = new Set<string>();
     if (publicLayoutAccess === "viewer") return { hard, clearance };
     const ordered = [...stageMarkerElements].sort((a, b) => a.x - b.x);
-    const maximumSize = ordered.reduce((maximum, element) => Math.max(maximum, element.size), 0);
+    const maximumSize = ordered.reduce((maximum, element) => Math.max(maximum, mapElementDisplaySize(element)), 0);
     for (let index = 0; index < ordered.length; index += 1) {
       const a = ordered[index];
-      const maximumRelevantDx = (a.size + maximumSize) / 2 * 1.3;
+      const aSize = mapElementDisplaySize(a);
+      const maximumRelevantDx = (aSize + maximumSize) / 2 * 1.3;
       for (let other = index + 1; other < ordered.length; other += 1) {
         const b = ordered[other];
+        const bSize = mapElementDisplaySize(b);
         const dx = Math.abs(a.x - b.x);
         if (dx >= maximumRelevantDx) break;
         const dyAsWidth = Math.abs(a.y - b.y) / MAP_ASPECT;
-        const halfWidth = (a.size + b.size) / 2;
+        const halfWidth = (aSize + bSize) / 2;
         const halfHeight = halfWidth / 1.12;
         if (dx < halfWidth && dyAsWidth < halfHeight) {
           hard.add(a.id); hard.add(b.id);
@@ -5819,10 +5825,11 @@ export default function Home() {
       const rightFactor = bounds?.right ?? 0.95;
       const topFactor = bounds?.top ?? 0.05;
       const bottomFactor = bounds?.bottom ?? 0.95;
-      const elementHeight = element.size * MAP_ASPECT / 1.12;
+      const displaySize = mapElementDisplaySize(element);
+      const elementHeight = displaySize * MAP_ASPECT / 1.12;
       return { id: element.id, category: element.category, rect: {
-        left: element.x + (leftFactor - 0.5) * element.size,
-        right: element.x + (rightFactor - 0.5) * element.size,
+        left: element.x + (leftFactor - 0.5) * displaySize,
+        right: element.x + (rightFactor - 0.5) * displaySize,
         top: element.y + (topFactor - 0.5) * elementHeight,
         bottom: element.y + (bottomFactor - 0.5) * elementHeight,
       } };
@@ -5840,10 +5847,11 @@ export default function Home() {
       const measuredLabel = measuredLabelSizes.get(element.id);
       const labelWidth = measuredLabel?.width ?? clamp((characterCount * 0.66 + 0.55) / Math.max(zoom, 0.22), 2, 26);
       const labelHeight = measuredLabel?.height ?? 1.3 / Math.max(zoom, 0.22);
-      const elementHeight = element.size * MAP_ASPECT / 1.12;
+      const displaySize = mapElementDisplaySize(element);
+      const elementHeight = displaySize * MAP_ASPECT / 1.12;
       const visualRect = {
-        left: element.x + (leftFactor - 0.5) * element.size,
-        right: element.x + (rightFactor - 0.5) * element.size,
+        left: element.x + (leftFactor - 0.5) * displaySize,
+        right: element.x + (rightFactor - 0.5) * displaySize,
         top: element.y + (topFactor - 0.5) * elementHeight,
         bottom: element.y + (bottomFactor - 0.5) * elementHeight,
       };
@@ -6093,7 +6101,7 @@ export default function Home() {
         const asset = assetsRef.current.find((item) => item.id === element.assetId);
         const image = asset ? loadedAssets.get(asset.src) : undefined;
         if (!image) return;
-        const boxWidth = exportWidth * element.size / 100;
+        const boxWidth = exportWidth * mapElementDisplaySize(element) / 100;
         const boxHeight = boxWidth / 1.12;
         const centerX = exportWidth * element.x / 100;
         const centerY = outputHeight * element.y / 100;
@@ -6145,7 +6153,7 @@ export default function Home() {
         const offsetY = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelOffsetY;
         const centerX = exportWidth * element.x / 100;
         const centerY = outputHeight * element.y / 100;
-        const boxWidth = exportWidth * element.size / 100;
+        const boxWidth = exportWidth * mapElementDisplaySize(element) / 100;
         const boxHeight = boxWidth / 1.12;
         context.save();
         context.globalAlpha = element.opacity / 100;
@@ -7616,13 +7624,13 @@ export default function Home() {
                   const eventPlacePicked = eventPlaceSelectionMode && eventPlaceKeySet.has(placeContentKey(element));
                   const keyboardSelectable = publicLayoutAccess === "viewer" || eventPlaceSelectionMode;
                   const isMainHub = isPrimaryHubLabel(element.name);
-                  const locationGroupCount = locationGroupCountByAnchorId.get(element.id) ?? 0;
+                  const displaySize = mapElementDisplaySize(element);
                   const publicElementName = isMainHub ? "제주소통협력센터" : element.name;
                   return <div
                     key={element.id}
                     data-element-id={element.id}
-                    className={`map-element ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${isMainHub ? "main-hub" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
-                    style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${element.size}%`, zIndex: isPublicSelected ? Math.max(element.z, 70) : element.z, color: meta.color, opacity: element.opacity / 100 }}
+                    className={`map-element ${element.category !== "landmark" ? "general-marker" : ""} ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${isMainHub ? "main-hub" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
+                    style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${displaySize}%`, zIndex: isPublicSelected ? Math.max(element.z, 70) : element.z, color: meta.color, opacity: element.opacity / 100 }}
                     onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : element.id, placeRequestPickingLocation) : undefined}
                     role={keyboardSelectable ? "button" : undefined}
                     tabIndex={keyboardSelectable ? 0 : undefined}
@@ -7631,8 +7639,7 @@ export default function Home() {
                   >
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
-                    {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""} ${locationGroupCount > 1 ? "grouped" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
-                    {publicLayoutAccess === "viewer" && locationGroupCount > 1 && <span className="location-group-badge">{locationGroupCount}개 시설</span>}
+                    {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
                     {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}>{publicElementName}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}

@@ -476,16 +476,13 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-element.public-active .icon-visual { filter: drop-shadow(0 0 2.5px white) drop-shadow(0 0 11px rgb(200 59 54 / 65%)); }
 .map-element.public-active .label { z-index: 8; padding: 2px 5px 2px 7px; border: 1.5px solid #c83b36; background: rgb(255 255 255 / 98%); color: #2f2928; box-shadow: inset 4px 0 0 #c83b36, 0 0 0 2px rgb(255 255 255 / 94%), 0 6px 15px rgb(84 25 22 / 34%); font-weight: 850; }
 .map-element.focus-pulse::before { content: ""; position: absolute; inset: -15px; border: 3px solid rgb(100 100 100 / 78%); border-radius: 50%; pointer-events: none; animation: focus-ring 1.25s ease-out both; }
-.main-hub-badge, .located-place-badge, .location-group-badge { position: absolute; z-index: 6; display: grid; place-items: center; min-width: max-content; border: 1px solid rgb(255 255 255 / 90%); box-shadow: 0 2px 7px rgb(48 48 48 / 20%); pointer-events: none; font-weight: 900; white-space: nowrap; }
+.main-hub-badge, .located-place-badge { position: absolute; z-index: 6; display: grid; place-items: center; min-width: max-content; border: 1px solid rgb(255 255 255 / 90%); box-shadow: 0 2px 7px rgb(48 48 48 / 20%); pointer-events: none; font-weight: 900; white-space: nowrap; }
 .main-hub-badge, .located-place-badge { left: 50%; top: -27px; min-width: 0; min-height: 0; transform: translateX(-50%); padding: 0; border: 0; background: transparent; box-shadow: none; }
 .main-hub-badge { width: 24px; height: 22px; }
-.map-focus-pointer:not(.located).grouped { top: -42px; }
 .map-focus-pointer.located { top: -36px; width: 30px; height: 28px; animation: located-place-arrival .42s cubic-bezier(.2, .78, .22, 1) both; }
-.map-focus-pointer.located.grouped { top: -50px; }
 .map-focus-pointer-label { position: absolute; left: 50%; bottom: calc(100% + 3px); z-index: 2; transform: translateX(-50%); padding: 3px 6px; border: 2px solid rgb(255 255 255 / 96%); border-radius: 4px; background: #c83b36; box-shadow: 0 4px 12px rgb(84 25 22 / 36%); color: white; font-size: 9px; font-weight: 900; line-height: 1; letter-spacing: -.03em; }
 .main-hub-pointer-icon { position: relative; z-index: 1; width: 100%; height: 100%; display: block; overflow: visible; filter: drop-shadow(0 2px 2px rgb(111 37 31 / 28%)); }
 .main-hub-pointer-icon path { fill: #d84a42; stroke: rgb(255 255 255 / 96%); stroke-width: 1.5; stroke-linejoin: round; }
-.location-group-badge { left: 50%; top: -18px; min-height: 17px; transform: translateX(-50%); padding: 0 6px; border-radius: 9px; background: #436b8e; color: white; font-size: clamp(5px, .52vw, 7px); }
 @keyframes located-target-arrival { from { opacity: 0; transform: scale(1.45); } to { opacity: 1; transform: scale(1); } }
 @keyframes located-place-arrival { from { opacity: 0; transform: translate(-50%, -8px) scale(.84); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
 @keyframes focus-ring { 0% { transform: scale(.72); opacity: 0; } 20% { opacity: 1; } 100% { transform: scale(1.45); opacity: 0; } }
@@ -1828,7 +1825,6 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .marker-group-count,
   .placed-marker-heading span,
   .coordinate-badge,
-  .location-group-badge,
   .public-place-events-title span,
   .place-request-status,
   .review-list-head span,
