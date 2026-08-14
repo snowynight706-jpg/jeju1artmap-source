@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { chooseScaleAwareLabelIds, labelBudgetForScale } from "../app/label-density.mjs";
 import { denseLabelConnections } from "../app/dense-label-density.mjs";
+import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentIntersectsRect } from "../app/dense-label-placement.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
@@ -75,4 +76,47 @@ test("detailed mode keeps only persistent dense groups", () => {
   assert.match(pageSource, /if \(!persistentOnly\) connections\.adaptiveEdges/);
   assert.match(pageSource, /!printPreviewMode && forceIndividualLabels/);
   assert.match(pageSource, /확대해도 주변 4곳 이상 밀집 시 통합 유지/);
+});
+
+test("automatic cluster positions stay close to the marker group", () => {
+  const options = denseLabelPlacementOptions({ minX: 40, maxX: 44, minY: 40, maxY: 44, width: 8, height: 4 });
+  assert.ok(options.length >= 40);
+  assert.equal(Math.max(...options.map((option) => option.gap)), 2.1);
+  assert.ok(options.every((option) => (
+    option.x + 4 <= 40 || option.x - 4 >= 44 || option.y + 2 <= 40 || option.y - 2 >= 44
+  )));
+});
+
+test("a clear nearby position wins and connector paths avoid landmark obstacles", () => {
+  const marker = { x: 10, y: 10 };
+  const connectorSegmentsFor = (option) => [{
+    fromX: marker.x,
+    fromY: marker.y,
+    toX: option.x,
+    toY: option.y,
+    id: "cluster:place",
+    elementId: "place",
+  }];
+  const landmark = { id: "landmark", category: "landmark", rect: { left: 9, right: 11, top: 7, bottom: 8.5 } };
+  assert.equal(segmentIntersectsRect(connectorSegmentsFor({ x: 10, y: 5 })[0], landmark.rect), true);
+  const best = chooseDenseLabelPlacement({
+    options: [{ x: 10, y: 5, gap: 0.55 }, { x: 10, y: 15, gap: 0.55 }, { x: 10, y: 21, gap: 8 }],
+    width: 4,
+    height: 2,
+    centerX: 10,
+    centerY: 10,
+    groupIds: ["place"],
+    connectorSegmentsFor,
+    iconObstacles: [landmark],
+  });
+  assert.equal(best.y, 15);
+  assert.equal(best.hasCollision, false);
+});
+
+test("cluster placement scores labels, landmarks and existing connector lines together", () => {
+  assert.match(pageSource, /denseLabelPlacementOptions\(\{ minX, maxX, minY, maxY, width, height \}\)/);
+  assert.match(pageSource, /placedSegments\.push\(\.\.\.best\.segments\)/);
+  assert.match(pageSource, /iconObstacles: iconRects/);
+  assert.match(pageSource, /\{ id: "landmark", name: "핵심 랜드마크", color: "#4d9a91"/);
+  assert.match(pageSource, /\{ id: "culture", name: "일반 문화시설", color: "#4d9a91"/);
 });

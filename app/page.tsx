@@ -29,6 +29,7 @@ import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.mjs";
 import { denseLabelConnections } from "./dense-label-density.mjs";
+import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import {
   consolidateMainHubDirectoryPlaces,
@@ -139,7 +140,7 @@ function UiThemePicker({ activeTheme, compact = false, onSelect }: {
 }
 
 const categories = [
-  { id: "landmark", name: "핵심 랜드마크", color: "#df745c", glyph: "景" },
+  { id: "landmark", name: "핵심 랜드마크", color: "#4d9a91", glyph: "景" },
   { id: "culture", name: "일반 문화시설", color: "#4d9a91", glyph: "文" },
   { id: "cafe", name: "카페", color: "#b7835b", glyph: "珈" },
   { id: "food", name: "음식점", color: "#d8974f", glyph: "食" },
@@ -1445,6 +1446,7 @@ function buildDenseLabelClusters(
   const iconRects = iconElements.map((element) => {
     const height = element.size * MAP_ASPECT / 1.12;
     return {
+      id: element.id,
       category: element.category,
       rect: {
         left: element.x - element.size * 0.48,
@@ -1471,6 +1473,7 @@ function buildDenseLabelClusters(
     return { id: element.id, rect: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 } };
   });
   const placed: NormalizedRect[] = [];
+  const placedSegments: Segment[] = [];
   return clusterGroups
     .map((group) => {
       const key = denseLabelKey(group);
@@ -1490,53 +1493,61 @@ function buildDenseLabelClusters(
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     const { width, height } = layout;
-    const distance = Math.max(2.2, height / 2 + 1.2);
-    const options = [1, 1.65, 2.4, 3.2, 4.5, 6].flatMap((ring) => [
-      { x: centerX, y: minY - distance * ring },
-      { x: centerX, y: maxY + distance * ring },
-      { x: minX - width / 2 - 1.2 * ring, y: centerY },
-      { x: maxX + width / 2 + 1.2 * ring, y: centerY },
-      { x: minX - width / 2 - ring, y: minY - distance * ring },
-      { x: maxX + width / 2 + ring, y: minY - distance * ring },
-      { x: minX - width / 2 - ring, y: maxY + distance * ring },
-      { x: maxX + width / 2 + ring, y: maxY + distance * ring },
-    ]);
-    const scoreOption = (option: { x: number; y: number }, optionIndex = 0) => {
-      const rect = { left: option.x - width / 2, right: option.x + width / 2, top: option.y - height / 2, bottom: option.y + height / 2 };
-      const iconPenalty = iconRects.reduce((score, icon) => score + (rectsOverlap(rect, icon.rect, 0.65) ? (icon.category === "landmark" ? 50000 : 18000) : 0), 0);
-      const individualLabelPenalty = labelRects.reduce((score, label) => score + (!groupIds.has(label.id) && rectsOverlap(rect, label.rect, 0.45) ? 16000 : 0), 0);
-      const labelPenalty = placed.reduce((score, item) => score + (rectsOverlap(rect, item, 0.45) ? 22000 : 0), 0);
-      const overflow = Math.max(0, -rect.left) + Math.max(0, rect.right - 100) + Math.max(0, -rect.top) + Math.max(0, rect.bottom - 100);
-      return {
-        ...option,
-        rect,
-        hasCollision: iconPenalty > 0 || individualLabelPenalty > 0 || labelPenalty > 0 || overflow > 0,
-        score: iconPenalty + individualLabelPenalty + labelPenalty + overflow * 12000 + optionIndex * 8,
-      };
+    const rowsForPlacement = (placementX: number, placementY: number) => {
+      const rowTop = placementY - height / 2 + 1.17;
+      const rowHeight = 0.9;
+      return layout.columns.flatMap((columnElements, columnIndex) => columnElements.map((element, rowIndex) => {
+        const midpoint = (layout.columnCount - 1) / 2;
+        const targetX = columnIndex < midpoint
+          ? placementX - width / 2
+          : columnIndex > midpoint
+            ? placementX + width / 2
+            : element.x <= placementX ? placementX - width / 2 : placementX + width / 2;
+        return { element, targetX, targetY: rowTop + rowHeight * (rowIndex + 0.5), column: columnIndex, rowIndex };
+      }));
     };
-    const best = override
-      ? scoreOption({
-          x: clamp(override.x, width / 2, 100 - width / 2),
-          y: clamp(override.y, height / 2, 100 - height / 2),
-        })
-      : options.map(scoreOption).sort((a, b) => a.score - b.score)[0];
+    const rawOptions = override
+      ? [{ x: override.x, y: override.y, gap: 0 }]
+      : denseLabelPlacementOptions({ minX, maxX, minY, maxY, width, height });
+    const options = rawOptions.map((option: { x: number; y: number; gap?: number }) => ({
+      ...option,
+      x: clamp(option.x, width / 2, 100 - width / 2),
+      y: clamp(option.y, height / 2, 100 - height / 2),
+    }));
+    const connectorSegmentsFor = (option: { x: number; y: number }) => rowsForPlacement(option.x, option.y).map(({ element, targetX, targetY }) => ({
+      fromX: element.x,
+      fromY: element.y,
+      toX: targetX,
+      toY: targetY,
+      id: `${key}:${element.id}`,
+      elementId: element.id,
+    }));
+    const best = chooseDenseLabelPlacement({
+      options,
+      width,
+      height,
+      centerX,
+      centerY,
+      mapAspect: MAP_ASPECT,
+      groupIds,
+      connectorSegmentsFor,
+      iconObstacles: iconRects,
+      labelObstacles: labelRects,
+      placedRects: placed,
+      placedSegments,
+    });
     placed.push(best.rect);
-    const x = clamp(best.x, width / 2, 100 - width / 2);
-    const y = clamp(best.y, height / 2, 100 - height / 2);
-    const rowTop = y - height / 2 + 1.17;
-    const rowHeight = 0.9;
-    const rows = layout.columns.flatMap((columnElements, columnIndex) => columnElements.map((element, rowIndex): DenseLabelRow => {
-      const midpoint = (layout.columnCount - 1) / 2;
-      const targetX = columnIndex < midpoint ? x - width / 2 : columnIndex > midpoint ? x + width / 2 : element.x <= x ? x - width / 2 : x + width / 2;
-      return {
-        elementId: element.id,
-        name: element.name,
-        category: element.category,
-        targetX,
-        targetY: rowTop + rowHeight * (rowIndex + 0.5),
-        column: columnIndex,
-        rowIndex,
-      };
+    placedSegments.push(...best.segments);
+    const x = best.x;
+    const y = best.y;
+    const rows = rowsForPlacement(x, y).map(({ element, targetX, targetY, column, rowIndex }): DenseLabelRow => ({
+      elementId: element.id,
+      name: element.name,
+      category: element.category,
+      targetX,
+      targetY,
+      column,
+      rowIndex,
     }));
     return {
       id: key,
@@ -1588,18 +1599,7 @@ function rectOutsideMap(rect: NormalizedRect) {
   return rect.left < 0 || rect.top < 0 || rect.right > 100 || rect.bottom > 100;
 }
 
-type Segment = { fromX: number; fromY: number; toX: number; toY: number; id: string };
-
-function segmentsCross(a: Segment, b: Segment) {
-  const orientation = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => (
-    (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
-  );
-  const a1 = orientation(a.fromX, a.fromY, a.toX, a.toY, b.fromX, b.fromY);
-  const a2 = orientation(a.fromX, a.fromY, a.toX, a.toY, b.toX, b.toY);
-  const b1 = orientation(b.fromX, b.fromY, b.toX, b.toY, a.fromX, a.fromY);
-  const b2 = orientation(b.fromX, b.fromY, b.toX, b.toY, a.toX, a.toY);
-  return a1 * a2 < -0.0001 && b1 * b2 < -0.0001;
-}
+type Segment = { fromX: number; fromY: number; toX: number; toY: number; id: string; elementId?: string };
 
 function buildPrintAudit(
   markerElements: MapElement[],
