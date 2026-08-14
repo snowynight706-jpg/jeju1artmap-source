@@ -423,9 +423,13 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-viewport.is-programmatic-focus .map-stage-wrap { transition: transform .3s cubic-bezier(.22, .78, .28, 1); }
 .map-viewport.is-programmatic-focus .map-stage { transition: width .3s cubic-bezier(.22, .78, .28, 1); }
 .base-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.base-map-edge-fade { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.base-map-edge-fade::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 5.5%; background: linear-gradient(90deg, rgb(232 232 232 / 0%) 0%, rgb(232 232 232 / 3%) 22%, rgb(232 232 232 / 12%) 45%, rgb(232 232 232 / 34%) 68%, rgb(232 232 232 / 68%) 86%, #e8e8e8 100%); }
+.base-map-edge-fade::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 3.5%; background: linear-gradient(180deg, rgb(232 232 232 / 0%) 0%, rgb(232 232 232 / 3%) 30%, rgb(232 232 232 / 13%) 58%, rgb(232 232 232 / 35%) 82%, rgb(232 232 232 / 62%) 100%); }
+.base-map-edge-fade[data-south-edge-fade="off"]::after { display: none; }
 .map-stage.map-dim .base-map { filter: brightness(.63); }
 .map-stage.map-gray .base-map { filter: grayscale(1) contrast(.9) brightness(.94); }
-.map-stage.map-hidden .base-map { opacity: 0; }
+.map-stage.map-hidden :is(.base-map, .base-map-edge-fade) { opacity: 0; }
 .calibration-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
 .calibration-mesh-line { stroke: rgb(100 100 100 / 38%); stroke-width: .1; stroke-dasharray: .55 .42; vector-effect: non-scaling-stroke; }
 .calibration-offset-line { stroke: rgb(209 128 54 / 62%); stroke-width: .13; stroke-dasharray: .34 .28; vector-effect: non-scaling-stroke; }
