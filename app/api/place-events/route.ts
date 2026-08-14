@@ -83,8 +83,9 @@ async function ensureStorage(db: D1Database) {
       db.prepare("CREATE INDEX IF NOT EXISTS place_events_status_visibility_created_idx ON place_events (status, visible_from, visible_until, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_event_places_place_event_idx ON place_event_places (place_key, event_id)"),
       db.prepare(`INSERT OR IGNORE INTO place_event_places (event_id, place_key, place_name, position)
-        SELECT id, place_key, place_name, 0 FROM place_events`),
-    ]).then(() => undefined).catch((error) => {
+        SELECT id, place_key, place_name, 0 FROM place_events
+        WHERE place_key <> '' AND place_name <> ''`),
+    ]).then(() => undefined).catch((error: unknown) => {
       storageReady = null;
       throw error;
     });
@@ -121,12 +122,15 @@ function photoFormat(bytes: Uint8Array) {
 }
 
 function parsePlaces(form: FormData) {
-  const raw = cleanMultiline(form.get("places"), 12000);
+  const rawEntry = form.get("places");
+  const raw = cleanMultiline(rawEntry, 12000);
   let candidates: unknown[] = [];
-  if (raw) {
+  if (typeof rawEntry === "string") {
+    if (!raw) return [];
     try {
       const parsed = JSON.parse(raw) as unknown;
-      candidates = Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return null;
+      candidates = parsed;
     } catch {
       return null;
     }
@@ -144,7 +148,7 @@ function parsePlaces(form: FormData) {
     seen.add(placeKey);
     places.push({ placeKey, placeName });
   }
-  return places.length ? places : null;
+  return candidates.length === 0 ? [] : places.length ? places : null;
 }
 
 async function publishedPlacesExist(db: D1Database, places: EventPlace[]) {
@@ -185,12 +189,14 @@ async function placesForRows(db: D1Database, rows: EventRow[]) {
 }
 
 function publicEvent(row: EventRow, places: EventPlace[], now: string) {
-  const normalizedPlaces = places.length ? places : [{ placeKey: row.placeKey, placeName: row.placeName }];
+  const normalizedPlaces = places.length
+    ? places
+    : validPlaceKey(row.placeKey) && row.placeName ? [{ placeKey: row.placeKey, placeName: row.placeName }] : [];
   const isVisible = row.status === "active" && row.visibleFrom <= now && row.visibleUntil > now;
   return {
     id: row.id,
-    placeKey: normalizedPlaces[0].placeKey,
-    placeName: normalizedPlaces[0].placeName,
+    placeKey: normalizedPlaces[0]?.placeKey ?? "",
+    placeName: normalizedPlaces[0]?.placeName ?? "",
     places: normalizedPlaces,
     eventName: row.eventName,
     eventInfo: row.eventInfo,
@@ -279,13 +285,13 @@ export async function POST(request: Request) {
   const eventInfo = cleanMultiline(form.get("eventInfo"), 1200);
   const visibleFrom = validIsoDate(cleanText(form.get("visibleFrom"), 60));
   const visibleUntil = validIsoDate(cleanText(form.get("visibleUntil"), 60));
-  if (!places || eventName.length < 2 || eventInfo.length < 2 || !visibleFrom || !visibleUntil || visibleUntil <= visibleFrom) {
-    return json({ error: "valid places, event, information, and visibility period required" }, 400);
+  if (places === null || eventName.length < 2 || eventInfo.length < 2 || !visibleFrom || !visibleUntil || visibleUntil <= visibleFrom) {
+    return json({ error: "valid event, information, optional places, and visibility period required" }, 400);
   }
   if (Date.parse(visibleUntil) - Date.parse(visibleFrom) > 366 * 24 * 60 * 60 * 1000) return json({ error: "visibility period too long" }, 400);
 
   await ensureStorage(runtime.DB);
-  if (!await publishedPlacesExist(runtime.DB, places)) return json({ error: "published place not found" }, 404);
+  if (places.length && !await publishedPlacesExist(runtime.DB, places)) return json({ error: "published place not found" }, 404);
 
   const photo = form.get("photo");
   if (!(photo instanceof File) || photo.size < 1) return json({ error: "event photo required" }, 400);
@@ -297,9 +303,10 @@ export async function POST(request: Request) {
   const id = crypto.randomUUID();
   const photoKey = `place-events/${id}.${format.extension}`;
   const createdAt = new Date().toISOString();
+  const primaryPlace = places[0] ?? { placeKey: "", placeName: "" };
   await runtime.BUCKET.put(photoKey, buffer, {
     httpMetadata: { contentType: format.contentType },
-    customMetadata: { placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, uploadedAt: createdAt },
+    customMetadata: { placeKey: primaryPlace.placeKey, placeName: primaryPlace.placeName, eventName, uploadedAt: createdAt },
   });
   try {
     await runtime.DB.batch([
@@ -308,7 +315,7 @@ export async function POST(request: Request) {
           (id, place_key, place_name, event_name, event_info, photo_key, photo_content_type,
            photo_size, visible_from, visible_until, status, created_at, updated_at, updated_by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-      ).bind(id, places[0].placeKey, places[0].placeName, eventName, eventInfo, photoKey, format.contentType, buffer.byteLength, visibleFrom, visibleUntil, createdAt, createdAt, currentEmail),
+      ).bind(id, primaryPlace.placeKey, primaryPlace.placeName, eventName, eventInfo, photoKey, format.contentType, buffer.byteLength, visibleFrom, visibleUntil, createdAt, createdAt, currentEmail),
       ...places.map((place, index) => runtime.DB!.prepare(
         "INSERT INTO place_event_places (event_id, place_key, place_name, position) VALUES (?, ?, ?, ?)",
       ).bind(id, place.placeKey, place.placeName, index)),
@@ -317,7 +324,7 @@ export async function POST(request: Request) {
     await runtime.BUCKET.delete(photoKey).catch(() => undefined);
     throw error;
   }
-  const row: EventRow = { id, placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, eventInfo, photoKey, photoContentType: format.contentType, photoSize: buffer.byteLength, visibleFrom, visibleUntil, status: "active", createdAt, updatedAt: createdAt };
+  const row: EventRow = { id, placeKey: primaryPlace.placeKey, placeName: primaryPlace.placeName, eventName, eventInfo, photoKey, photoContentType: format.contentType, photoSize: buffer.byteLength, visibleFrom, visibleUntil, status: "active", createdAt, updatedAt: createdAt };
   return json({ event: publicEvent(row, places, createdAt), persistent: true }, 201);
 }
 
@@ -352,11 +359,11 @@ export async function PATCH(request: Request) {
   const eventInfo = cleanMultiline(form.get("eventInfo"), 1200);
   const visibleFrom = validIsoDate(cleanText(form.get("visibleFrom"), 60));
   const visibleUntil = validIsoDate(cleanText(form.get("visibleUntil"), 60));
-  if (!id || !places || eventName.length < 2 || eventInfo.length < 2 || !visibleFrom || !visibleUntil || visibleUntil <= visibleFrom) {
+  if (!id || places === null || eventName.length < 2 || eventInfo.length < 2 || !visibleFrom || !visibleUntil || visibleUntil <= visibleFrom) {
     return json({ error: "valid event edit required" }, 400);
   }
   if (Date.parse(visibleUntil) - Date.parse(visibleFrom) > 366 * 24 * 60 * 60 * 1000) return json({ error: "visibility period too long" }, 400);
-  if (!await publishedPlacesExist(runtime.DB, places)) return json({ error: "published place not found" }, 404);
+  if (places.length && !await publishedPlacesExist(runtime.DB, places)) return json({ error: "published place not found" }, 404);
 
   const existing = await runtime.DB.prepare(`${EVENT_SELECT} WHERE e.id = ?`).bind(id).first() as EventRow | null;
   if (!existing) return json({ error: "event not found" }, 404);
@@ -365,6 +372,7 @@ export async function PATCH(request: Request) {
   let nextPhotoContentType = existing.photoContentType;
   let nextPhotoSize = existing.photoSize;
   let uploadedPhotoKey: string | null = null;
+  const primaryPlace = places[0] ?? { placeKey: "", placeName: "" };
   if (photo instanceof File && photo.size > 0) {
     if (photo.size > MAX_PHOTO_BYTES) return json({ error: "photo too large" }, 413);
     const buffer = await photo.arrayBuffer();
@@ -373,7 +381,7 @@ export async function PATCH(request: Request) {
     uploadedPhotoKey = `place-events/${id}-${crypto.randomUUID()}.${format.extension}`;
     await runtime.BUCKET.put(uploadedPhotoKey, buffer, {
       httpMetadata: { contentType: format.contentType },
-      customMetadata: { placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, uploadedAt: new Date().toISOString() },
+      customMetadata: { placeKey: primaryPlace.placeKey, placeName: primaryPlace.placeName, eventName, uploadedAt: new Date().toISOString() },
     });
     nextPhotoKey = uploadedPhotoKey;
     nextPhotoContentType = format.contentType;
@@ -387,7 +395,7 @@ export async function PATCH(request: Request) {
         `UPDATE place_events SET place_key = ?, place_name = ?, event_name = ?, event_info = ?,
           photo_key = ?, photo_content_type = ?, photo_size = ?, visible_from = ?, visible_until = ?,
           updated_at = ?, updated_by = ? WHERE id = ?`,
-      ).bind(places[0].placeKey, places[0].placeName, eventName, eventInfo, nextPhotoKey, nextPhotoContentType, nextPhotoSize, visibleFrom, visibleUntil, updatedAt, currentEmail, id),
+      ).bind(primaryPlace.placeKey, primaryPlace.placeName, eventName, eventInfo, nextPhotoKey, nextPhotoContentType, nextPhotoSize, visibleFrom, visibleUntil, updatedAt, currentEmail, id),
       runtime.DB.prepare("DELETE FROM place_event_places WHERE event_id = ?").bind(id),
       ...places.map((place, index) => runtime.DB!.prepare(
         "INSERT INTO place_event_places (event_id, place_key, place_name, position) VALUES (?, ?, ?, ?)",
@@ -398,7 +406,7 @@ export async function PATCH(request: Request) {
     throw error;
   }
   if (uploadedPhotoKey && existing.photoKey !== uploadedPhotoKey) await runtime.BUCKET.delete(existing.photoKey).catch(() => undefined);
-  const row: EventRow = { ...existing, placeKey: places[0].placeKey, placeName: places[0].placeName, eventName, eventInfo, photoKey: nextPhotoKey, photoContentType: nextPhotoContentType, photoSize: nextPhotoSize, visibleFrom, visibleUntil, updatedAt };
+  const row: EventRow = { ...existing, placeKey: primaryPlace.placeKey, placeName: primaryPlace.placeName, eventName, eventInfo, photoKey: nextPhotoKey, photoContentType: nextPhotoContentType, photoSize: nextPhotoSize, visibleFrom, visibleUntil, updatedAt };
   return json({ event: publicEvent(row, places, updatedAt), persistent: true });
 }
 
