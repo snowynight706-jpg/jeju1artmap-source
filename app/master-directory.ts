@@ -16,20 +16,69 @@ export type MasterDirectoryRow = {
 };
 
 export const masterDirectorySource = {
-  "version": "v12-2차패치-lpp-소통센터-a02",
+  "version": "v13-랜드마크DB-정합성",
   "sourceFile": "문화예술_워케이션_제주시_원도심_결과물_v11_추가매장반영.xlsx",
   "sourceSha256": "fd47cfa556429867dea213e15cb1e6a290d3097bd135b91bec0cdf50a3b9fd9c",
   "backupSha256": "75a8506e322a6866cdc7364e7e1522151dc601ab636f0a23524bb3658bbada4f",
   "restoredAtUtc": "2026-08-09T12:21:41+00:00",
   "workbookVersion": "v11",
-  "placeCount": 187
+  "placeCount": 191
 } as const;
 
 export const retiredMasterDirectoryIds = [
-  "master-place-7"
+  "master-place-7",
+  "master-v10-14477635c584"
 ] as const;
 
 export const masterDirectoryRows: MasterDirectoryRow[] = [
+  {
+    "id": "master-v13-chilseong-ro",
+    "name": "칠성로",
+    "address": "제주특별자치도 제주시 관덕로13길 12 일대",
+    "area": "칠성로·탑동",
+    "subtype": "상점가·보행 쇼핑거리",
+    "priority": "추천",
+    "description": "제주 원도심의 상점과 골목을 걸으며 쇼핑과 관광을 함께 즐길 수 있는 대표 보행 거리",
+    "operatingInfo": "운영시간: 점포별 상이 · 방문 전 개별 점포 안내 확인",
+    "notes": "핵심 랜드마크 지도 자산과 연결되는 DB 기준 항목",
+    "sourceUrl": "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750",
+    "mapUrl": "",
+    "checkedAt": "2026-08-14",
+    "sourceSheet": "역사·산책·관광",
+    "category": "culture"
+  },
+  {
+    "id": "master-v13-dongmun-market",
+    "name": "동문시장",
+    "address": "제주특별자치도 제주시 관덕로14길 20",
+    "area": "동문시장·동문로",
+    "subtype": "전통시장·상가·관광",
+    "priority": "추천",
+    "description": "제주 식재료와 먹거리, 생활 상점을 함께 둘러볼 수 있는 원도심 대표 전통시장",
+    "operatingInfo": "운영시간: 점포별 상이 · 야시장과 휴무 일정은 공식 안내 확인",
+    "notes": "핵심 랜드마크 지도 자산과 연결되는 DB 기준 항목",
+    "sourceUrl": "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745",
+    "mapUrl": "",
+    "checkedAt": "2026-08-14",
+    "sourceSheet": "역사·산책·관광",
+    "category": "culture"
+  },
+  {
+    "id": "master-v13-buksugu-square",
+    "name": "북수구광장",
+    "address": "제주특별자치도 제주시 일도일동 1232",
+    "area": "산지천·탐라문화광장·서부두",
+    "subtype": "도심 광장·행사·휴식 공간",
+    "priority": "추천",
+    "description": "산지천과 동문시장 사이에서 행사와 산책, 잠시 머무는 휴식을 연결하는 원도심 광장",
+    "operatingInfo": "운영시간: 상시 개방 · 행사는 일정별 확인",
+    "notes": "핵심 랜드마크 지도 자산과 연결되는 DB 기준 항목",
+    "sourceUrl": "https://www.facebook.com/wowjejusi/",
+    "mapUrl": "",
+    "checkedAt": "2026-08-14",
+    "sourceSheet": "역사·산책·관광",
+    "category": "culture"
+  },
   {
     "id": "master-v12-lpp-local-player-platform",
     "name": "LPP (Local Player Platform)",
@@ -2655,20 +2704,36 @@ export const masterDirectoryRows: MasterDirectoryRow[] = [
     "category": "culture"
   },
   {
-    "id": "master-v10-14477635c584",
-    "name": "탑동해변공연장·탑동광장",
-    "address": "제주특별자치도 제주시 중앙로 2 일대",
+    "id": "master-v13-tapdong-square",
+    "name": "탑동광장",
+    "address": "제주특별자치도 제주시 중앙로 1",
     "area": "칠성로·탑동",
-    "subtype": "해안산책",
-    "priority": "참고",
-    "description": "바다와 맞닿은 원도심 야간 산책지로 야외공연이 있을 때 연계 가치가 높음",
-    "operatingInfo": "운영시간: 상시 / 공연별 확인",
-    "notes": "거리: 주요 · 이용·참고: 공연 일정은 제주인놀다에서 별도 확인",
-    "sourceUrl": "https://www.visitjeju.net/",
-    "mapUrl": "https://map.kakao.com/?q=%EC%A0%9C%EC%A3%BC%20%ED%83%91%EB%8F%99%ED%95%B4%EB%B3%80%EA%B3%B5%EC%97%B0%EC%9E%A5",
-    "checkedAt": "2026-07-24",
+    "subtype": "해변 광장·산책·휴식 공간",
+    "priority": "추천",
+    "description": "바다와 맞닿은 원도심의 산책과 휴식, 야외 활동을 위한 대표 해변 광장",
+    "operatingInfo": "운영시간: 상시 개방 · 현장 행사와 시설 이용 안내 확인",
+    "notes": "핵심 랜드마크 지도 자산과 연결되는 DB 기준 항목",
+    "sourceUrl": "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea",
+    "mapUrl": "",
+    "checkedAt": "2026-08-14",
     "sourceSheet": "역사·산책·관광",
-    "category": "park"
+    "category": "culture"
+  },
+  {
+    "id": "place-tapdong-seaside-stage",
+    "name": "탑동해변공연장",
+    "address": "제주특별자치도 제주시 중앙로 2",
+    "area": "칠성로·탑동",
+    "subtype": "야외 공연장·행사 공간",
+    "priority": "추천",
+    "description": "탑동 해변에서 공연과 문화행사가 열리는 원도심 대표 야외 공연장",
+    "operatingInfo": "운영시간: 상시 접근 가능 · 공연과 행사는 일정별 확인",
+    "notes": "핵심 랜드마크 지도 자산과 연결되는 DB 기준 항목",
+    "sourceUrl": "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e",
+    "mapUrl": "https://map.kakao.com/?q=%EC%A0%9C%EC%A3%BC%20%ED%83%91%EB%8F%99%ED%95%B4%EB%B3%80%EA%B3%B5%EC%97%B0%EC%9E%A5",
+    "checkedAt": "2026-08-14",
+    "sourceSheet": "역사·산책·관광",
+    "category": "culture"
   },
   {
     "id": "master-v10-85f8597d7089",

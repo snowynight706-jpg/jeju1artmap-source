@@ -31,6 +31,7 @@ import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.m
 import { denseLabelConnections } from "./dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
+import { ensureIndependentMapElementIdentity, sameMapPlaceIdentity } from "./map-element-identity.mjs";
 import {
   consolidateMainHubDirectoryPlaces,
   isMainHubPersistenceTarget,
@@ -794,9 +795,13 @@ const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-kim-manduk-memorial", name: "김만덕기념관", category: "culture", area: "산지천", address: "제주특별자치도 제주시 산지로 7", x: 74, y: 31, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-arario-tapdong", name: "아라리오뮤지엄 탑동시네마", category: "culture", area: "탑동", address: "제주특별자치도 제주시 탑동로 14", x: 18, y: 24, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-tapdong-seaside-stage", name: "탑동해변공연장", category: "culture", area: "탑동", address: "제주특별자치도 제주시 중앙로 2", x: 37, y: 20, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB · 최종 자산 02" },
+  { id: "master-v13-tapdong-square", name: "탑동광장", category: "culture", area: "칠성로·탑동", address: "제주특별자치도 제주시 중앙로 1", x: 28, y: 20, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-mokgwana", name: "제주목 관아", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 25", x: 39, y: 60, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-gwandeokjeong", name: "관덕정", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 19", x: 37, y: 58, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-kim-manduk-guesthouse", name: "김만덕객주", category: "culture", area: "산지천", address: "제주특별자치도 제주시 임항로 68", x: 75, y: 25, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "master-v13-chilseong-ro", name: "칠성로", category: "culture", area: "칠성로·탑동", address: "제주특별자치도 제주시 관덕로13길 12 일대", x: 58, y: 50, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "master-v13-dongmun-market", name: "동문시장", category: "culture", area: "동문시장·동문로", address: "제주특별자치도 제주시 관덕로14길 20", x: 66, y: 55, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
+  { id: "master-v13-buksugu-square", name: "북수구광장", category: "culture", area: "산지천·탐라문화광장·서부두", address: "제주특별자치도 제주시 일도일동 1232", x: 62, y: 45, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
   { id: "place-sotong-center", name: "제주특별자치도 소통협력센터", category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로 44", x: 45, y: 59, coordinateStatus: "review", sourceLabel: "원도심 조사본 · 공식 주소 확인" },
   { id: "master-v12-lpp-local-player-platform", name: LPP_CANONICAL_NAME, category: "culture", area: "관덕로·목관아", address: "제주특별자치도 제주시 관덕로8길 15-3", x: 44.61417391305452, y: 42.09463302752, coordinateStatus: "geocoded", latitude: 33.51162337, longitude: 126.52376126, sourceLabel: "카카오맵 좌표 · 개관 보도 교차확인", sourceUrl: "https://www.headlinejeju.co.kr/news/articleView.html?idxno=596237", subtype: "로컬 브랜드·창업 복합공간", priority: "추천", description: "제주 로컬 브랜드와 청년 창업가의 팝업·테스트베드·교육·교류를 지원하는 3층 복합 창업·문화공간", operatingInfo: "운영시간: 프로그램·팝업별 상이 · 방문 전 공식 채널 확인", notes: "1층 로컬 식음·농산물 팝업과 교육, 2층 로컬 상품 전시·판매, 3층 세미나·포럼 공간 · 정규 운영시간은 공식 채널 확인", mapUrl: "https://place.map.kakao.com/1316005169", checkedAt: "2026-08-12" },
   { id: "place-jeju-arts-center", name: "제주특별자치도 문예회관", category: "culture", area: "이도동", address: "제주특별자치도 제주시 동광로 69", x: 74, y: 84, coordinateStatus: "review", sourceLabel: "원도심 정보 v02" },
@@ -1689,24 +1694,11 @@ function recoveredElementId(element: MapElement, index: number, used: Set<string
 }
 
 function ensureIndependentElementIdentity(elements: MapElement[]) {
-  const usedIds = new Set<string>();
-  const usedDirectoryIds = new Set<string>();
-  return elements.map((element, index) => {
-    const requestedId = typeof element.id === "string" ? element.id.trim() : "";
-    const id = requestedId && !usedIds.has(requestedId)
-      ? requestedId
-      : recoveredElementId(element, index, usedIds);
-    usedIds.add(id);
+  return ensureIndependentMapElementIdentity(elements, { recoverId: recoveredElementId }) as MapElement[];
+}
 
-    const directoryId = element.directoryId?.trim();
-    const hasIndependentDirectoryBinding = Boolean(directoryId) && !usedDirectoryIds.has(directoryId!);
-    if (hasIndependentDirectoryBinding) usedDirectoryIds.add(directoryId!);
-    return {
-      ...element,
-      id,
-      directoryId: hasIndependentDirectoryBinding ? directoryId : undefined,
-    };
-  });
+function isSameMapPlace(left: Pick<MapElement, "directoryId" | "name">, right: Pick<MapElement, "directoryId" | "name">) {
+  return sameMapPlaceIdentity(left, right, normalizePlaceName);
 }
 
 function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[]) {
@@ -3016,6 +3008,9 @@ export default function Home() {
     () => databaseDraftPlaces.find((place) => place.id === databaseEditorSelectedId) ?? null,
     [databaseDraftPlaces, databaseEditorSelectedId],
   );
+  const databaseAreaOptions = useMemo(() => [...new Set(databaseDraftPlaces
+    .map((place) => place.area.trim())
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")), [databaseDraftPlaces]);
   const databaseEditorCategoryCounts = useMemo(() => databaseDraftPlaces.reduce<Record<DatabaseEditorCategoryFilter, number>>((counts, place) => {
     counts.all += 1;
     counts[databaseEditorCategoryForPlace(place)] += 1;
@@ -3778,7 +3773,7 @@ export default function Home() {
                     .filter((item) => item.mapVisible === false)
                     .map((item) => ({ key: placementKey(item), ...(item.directoryId ? { directoryId: item.directoryId } : {}), name: item.name, state: "unplaced" as const })),
                   ...initialElements
-                    .filter((defaultItem) => !parsedElements.some((item) => placementKey(item) === placementKey(defaultItem)))
+                    .filter((defaultItem) => !parsedElements.some((item) => isSameMapPlace(item, defaultItem)))
                     .map((item) => ({ key: placementKey(item), ...(item.directoryId ? { directoryId: item.directoryId } : {}), name: item.name, state: "deleted" as const })),
                   ...(persistentLockedCoordinates?.settings ?? [])
                     .filter((setting) => !parsedElements.some((item) => lockedCoordinateKey(item) === setting.key))
@@ -3799,7 +3794,7 @@ export default function Home() {
               ...parsedElements,
               ...initialElements.filter((defaultItem) => (
                 !deletedPlacementKeys.has(placementKey(defaultItem))
-                && !parsedElements.some((item) => placementKey(item) === placementKey(defaultItem))
+                && !parsedElements.some((item) => isSameMapPlace(item, defaultItem))
               )),
             ];
             const parsedAssets = Array.isArray(parsed.assets) ? parsed.assets : [];
@@ -5453,23 +5448,26 @@ export default function Home() {
         )),
         createdPlace,
       ]);
-      replaceElements((current) => ensureMainHubMapElement(current.map((item) => {
-        if (item.id !== element.id) return item;
-        const directoryMapCategory = mapCategoryForDirectoryPlace(createdPlace);
-        const keepsCustomLandmarkResource = item.category === "landmark"
-          && Boolean(item.assetId)
-          && !canonicalMarkerAssetIds.has(item.assetId ?? "");
-        const mapCategory = keepsCustomLandmarkResource ? "landmark" : directoryMapCategory;
-        return {
-          ...item,
-          directoryId: createdPlace.id,
-          name: createdPlace.name,
-          category: mapCategory,
-          assetId: assetIdAfterDirectoryCategoryChange(item, mapCategory),
-          address: createdPlace.address || item.address,
-          addressSourceUrl: createdPlace.sourceUrl || item.addressSourceUrl,
-        };
-      }), nextPlaces));
+      const directoryMapCategory = mapCategoryForDirectoryPlace(createdPlace);
+      const keepsCustomLandmarkResource = element.category === "landmark"
+        && Boolean(element.assetId)
+        && !canonicalMarkerAssetIds.has(element.assetId ?? "");
+      const mapCategory = keepsCustomLandmarkResource ? "landmark" : directoryMapCategory;
+      const linkedElement: MapElement = {
+        ...element,
+        directoryId: createdPlace.id,
+        name: createdPlace.name,
+        category: mapCategory,
+        assetId: assetIdAfterDirectoryCategoryChange(element, mapCategory),
+        address: createdPlace.address || element.address,
+        addressSourceUrl: createdPlace.sourceUrl || element.addressSourceUrl,
+      };
+      replaceElements((current) => ensureMainHubMapElement(
+        current
+          .filter((item) => item.id === element.id || !isSameMapPlace(item, linkedElement))
+          .map((item) => item.id === element.id ? linkedElement : item),
+        nextPlaces,
+      ));
       setSelectedFacilityId(null);
       setPlaceDirectoryUpdatedAt(payload.updatedAt ?? null);
       setPlaceDirectoryStorage("persistent");
@@ -7915,7 +7913,7 @@ export default function Home() {
                   key={filter.id}
                 ><span>{filter.name}</span><em>{databaseEditorCategoryCounts[filter.id]}</em></button>)}
               </div>
-              <div className="database-editor-list-columns" aria-hidden="true"><span /><span>장소명</span><span>분류</span><span>권역</span></div>
+              <div className="database-editor-list-columns" aria-hidden="true"><span /><span>장소명</span><span>분류</span><span>권역·세부지역</span></div>
               <div className="database-editor-list" role="listbox" aria-label="DB 장소 목록">
                 {filteredDatabaseDraftPlaces.map((place) => {
                   const category = categoryOf(place.category);
@@ -7933,7 +7931,7 @@ export default function Home() {
                   <label>기본분류 <em>{isCoreLandmarkName(selectedDatabasePlace.name) ? "핵심 랜드마크 고정" : "1개 필수"}</em><select value={selectedDatabasePlace.category} disabled={isCoreLandmarkName(selectedDatabasePlace.name)} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { category: event.target.value as CategoryId })}>{categories.filter((category) => isCoreLandmarkName(selectedDatabasePlace.name) ? category.id === selectedDatabasePlace.category : (["culture", "cafe", "food", "shop"] as string[]).includes(category.id) || category.id === selectedDatabasePlace.category).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
                 </div>
                 <div className="database-form-row">
-                  <label>세부 지역<input value={selectedDatabasePlace.area} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { area: event.target.value })} /></label>
+                  <label>권역·세부지역 <em>기존 값 선택</em><select value={selectedDatabasePlace.area} aria-label="권역·세부지역 선택" onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { area: event.target.value })}><option value="">미입력</option>{databaseAreaOptions.map((area) => <option key={area} value={area}>{area}</option>)}</select></label>
                   <label>기존 세부유형 <em>설명용</em><input value={selectedDatabasePlace.subtype ?? ""} maxLength={160} onChange={(event) => updateDatabaseDraftPlace(selectedDatabasePlace.id, { subtype: event.target.value })} /></label>
                 </div>
                 <section className="database-additional-categories" aria-label="추가분류 복수 선택">
