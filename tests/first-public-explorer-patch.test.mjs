@@ -50,9 +50,10 @@ test("public marker selection reuses the red main-hub pointer instead of a yello
   assert.match(pageSource, /className="map-focus-pointer-label">찾은 장소<\/span>/);
   assert.match(pageSource, /zIndex: isPublicSelected \? Math\.max\(element\.z, 70\) : element\.z/);
   assert.match(cssSource, /\.main-hub-badge \{[^}]*width: 24px[^}]*height: 22px/);
-  assert.match(cssSource, /\.map-focus-pointer\.located \{[^}]*width: 30px[^}]*height: 28px[^}]*located-place-arrival/);
-  assert.match(cssSource, /\.map-element\.public-active::after \{[^}]*linear-gradient\(#d84a42[^}]*located-target-arrival/);
-  assert.match(cssSource, /\.map-element\.public-active \.label \{[^}]*border-color: #d84a42[^}]*font-weight: 850/);
+  assert.match(cssSource, /\.map-focus-pointer\.located \{[^}]*top: -36px[^}]*width: 30px[^}]*height: 28px[^}]*located-place-arrival/);
+  assert.match(cssSource, /\.map-element\.public-active::after \{[^}]*linear-gradient\(#c83b36, #c83b36\)[^}]*12px 4px[^}]*drop-shadow\(0 4px 9px[^}]*located-target-arrival/);
+  assert.match(cssSource, /\.map-element\.public-active \.label \{[^}]*border: 1\.5px solid #c83b36[^}]*0 6px 15px[^}]*font-weight: 850/);
+  assert.doesNotMatch(cssSource, /\.map-focus-pointer\.located::after/);
   assert.doesNotMatch(cssSource, /#e6a926|border-radius: 50%[^\n]*public-active/);
   assert.doesNotMatch(cssSource, /\.map-element\.main-hub \.icon-visual::after/);
   assert.match(cssSource, /\.public-place-list article\.selected[^}]+border-color: #d9ad45/);
