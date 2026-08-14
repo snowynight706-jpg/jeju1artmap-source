@@ -19,6 +19,7 @@ export const runtime = "edge";
 const CATEGORIES = new Set(["landmark", "culture", "cafe", "food", "shop", "parking", "park", "utility"]);
 const MAX_ROWS = 600;
 const MAIN_HUB_DIRECTORY_ID = "place-sotong-center";
+const DIRECTORY_SYNC_BATCH_SIZE = 50;
 
 type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
@@ -198,7 +199,28 @@ function insertDirectoryStatement(db: D1Database, row: PlaceDirectoryInput, upda
       (id, name, category, area, address, subtype, priority, description, operating_info,
        notes, source_url, map_url, checked_at, additional_categories_json, convenience_attributes_json, location_group_id,
        map_anchor_id, featured_role, aliases_json, updated_at, updated_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       category = excluded.category,
+       area = excluded.area,
+       address = excluded.address,
+       subtype = excluded.subtype,
+       priority = excluded.priority,
+       description = excluded.description,
+       operating_info = excluded.operating_info,
+       notes = excluded.notes,
+       source_url = excluded.source_url,
+       map_url = excluded.map_url,
+       checked_at = excluded.checked_at,
+       additional_categories_json = excluded.additional_categories_json,
+       convenience_attributes_json = excluded.convenience_attributes_json,
+       location_group_id = excluded.location_group_id,
+       map_anchor_id = excluded.map_anchor_id,
+       featured_role = excluded.featured_role,
+       aliases_json = excluded.aliases_json,
+       updated_at = excluded.updated_at,
+       updated_by = excluded.updated_by`,
   ).bind(
     row.id, row.name, row.category, row.area, row.address, row.subtype, row.priority,
     row.description, row.operatingInfo, row.notes, row.sourceUrl, row.mapUrl, row.checkedAt,
@@ -264,21 +286,31 @@ async function syncBundledDirectory(db: D1Database) {
   ));
   const updatedAt = new Date().toISOString();
   const updatedBy = `source:${masterDirectorySource.version}`;
-  const statements = [db.prepare("DELETE FROM place_directory")];
-  [...sourceRows, ...retainedRows].forEach((row) => {
-    statements.push(insertDirectoryStatement(db, row, updatedAt, updatedBy));
-  });
-  statements.push(db.prepare(
+  const desiredRows = [...sourceRows, ...retainedRows];
+  for (let offset = 0; offset < desiredRows.length; offset += DIRECTORY_SYNC_BATCH_SIZE) {
+    await db.batch(desiredRows
+      .slice(offset, offset + DIRECTORY_SYNC_BATCH_SIZE)
+      .map((row) => insertDirectoryStatement(db, row, updatedAt, updatedBy)));
+  }
+
+  const desiredIds = new Set(desiredRows.map((row) => row.id));
+  const staleIds = existingRows.map((row) => row.id).filter((id) => !desiredIds.has(id));
+  for (let offset = 0; offset < staleIds.length; offset += DIRECTORY_SYNC_BATCH_SIZE) {
+    await db.batch(staleIds
+      .slice(offset, offset + DIRECTORY_SYNC_BATCH_SIZE)
+      .map((id) => db.prepare("DELETE FROM place_directory WHERE id = ?").bind(id)));
+  }
+
+  await db.batch([db.prepare(
     `INSERT INTO place_directory_revision (id, updated_at, updated_by)
      VALUES (1, ?, ?)
      ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-  ).bind(updatedAt, updatedBy));
-  statements.push(db.prepare(
+  ).bind(updatedAt, updatedBy),
+  db.prepare(
     `INSERT INTO place_directory_source_state (id, source_version, imported_at)
      VALUES (1, ?, ?)
      ON CONFLICT(id) DO UPDATE SET source_version = excluded.source_version, imported_at = excluded.imported_at`,
-  ).bind(masterDirectorySource.version, updatedAt));
-  await db.batch(statements);
+  ).bind(masterDirectorySource.version, updatedAt)]);
 }
 
 export async function GET(request: Request) {

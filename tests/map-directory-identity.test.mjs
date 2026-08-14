@@ -9,6 +9,7 @@ import {
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const masterDirectorySource = await readFile(new URL("../app/master-directory.ts", import.meta.url), "utf8");
+const directoryRouteSource = await readFile(new URL("../app/api/place-directory/route.ts", import.meta.url), "utf8");
 
 test("a persisted DB binding and its former name-only marker are the same map place", () => {
   const normalizeName = (name) => name.trim().replace("제주해변공연장", "탑동해변공연장");
@@ -76,4 +77,12 @@ test("DB area editing selects an existing region value from a visible dropdown",
   assert.match(pageSource, /<label>권역·세부지역 <em>기존 값 선택<\/em><select/);
   assert.match(pageSource, /aria-label="권역·세부지역 선택"/);
   assert.match(pageSource, /databaseAreaOptions\.map/);
+});
+
+test("bundled DB refresh upserts in bounded batches before removing stale rows", () => {
+  assert.match(directoryRouteSource, /DIRECTORY_SYNC_BATCH_SIZE = 50/);
+  assert.match(directoryRouteSource, /ON CONFLICT\(id\) DO UPDATE SET/);
+  assert.match(directoryRouteSource, /for \(let offset = 0; offset < desiredRows\.length; offset \+= DIRECTORY_SYNC_BATCH_SIZE\)/);
+  assert.match(directoryRouteSource, /const staleIds = existingRows\.map/);
+  assert.doesNotMatch(directoryRouteSource, /const statements = \[db\.prepare\("DELETE FROM place_directory"\)\]/);
 });
