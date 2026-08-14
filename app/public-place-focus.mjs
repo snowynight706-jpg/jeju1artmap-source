@@ -1,6 +1,7 @@
 const finitePositive = (value, fallback) => (
   Number.isFinite(value) && value > 0 ? value : fallback
 );
+const PUBLIC_PLACE_FOCUS_BOOST = 1.3;
 
 /**
  * Returns a consistent, device-aware close zoom for moving from a directory
@@ -24,9 +25,13 @@ export function publicPlaceFocusZoom({
     safeViewportWidth / safeStageWidth,
     safeViewportHeight / safeStageHeight,
   );
-  const desiredZoom = compact
+  const baselineZoom = compact
     ? Math.max(safeFitZoom * 2.45, viewportFillZoom * 1.36)
     : Math.max(safeFitZoom * 1.9, viewportFillZoom * 1.16);
-  const ceiling = Math.max(safeFitZoom, compact ? 1.62 : 1.72);
+  const desiredZoom = baselineZoom * PUBLIC_PLACE_FOCUS_BOOST;
+  const ceiling = Math.max(
+    safeFitZoom,
+    (compact ? 1.62 : 1.72) * PUBLIC_PLACE_FOCUS_BOOST,
+  );
   return Math.min(ceiling, Math.max(safeFitZoom, desiredZoom));
 }

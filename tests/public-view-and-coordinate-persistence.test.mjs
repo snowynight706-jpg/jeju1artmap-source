@@ -4,6 +4,7 @@ import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const focusSource = await readFile(new URL("../app/public-place-focus.mjs", import.meta.url), "utf8");
 const signatureB = await readFile(new URL("../public/jfac-signature-b.png", import.meta.url));
 
 test("the first screen uses only Korean signature B until assets, initial focus, and settling are complete", () => {
@@ -47,7 +48,7 @@ test("mobile public chrome floats only the main-hub return button", () => {
 
 test("the public main-hub pointer is a fixed-size smooth red down marker", () => {
   assert.match(pageSource, /main-hub-pointer-icon/);
-  assert.match(cssSource, /\.main-hub-badge, \.located-place-badge \{[^}]*width: 24px;[^}]*height: 22px/);
+  assert.match(cssSource, /\.main-hub-badge \{[^}]*width: 24px;[^}]*height: 22px/);
   assert.match(cssSource, /\.main-hub-pointer-icon path \{[^}]*fill: #d84a42;[^}]*stroke-linejoin: round/);
 });
 
@@ -56,6 +57,12 @@ test("public directory navigation uses a device-aware close zoom and expected de
   assert.match(pageSource, /publicNavigation: true,[\s\S]{0,80}showDetails/);
   assert.match(pageSource, /focusOptions\.publicNavigation[\s\S]{0,220}-Math\.min\(195, viewportWidth \* 0\.2\)/);
   assert.match(pageSource, /focusOptions\.showDetails \? 0\.26 : 0\.18/);
+});
+
+test("public place lookup zoom is boosted thirty percent beyond its previous fitted target", () => {
+  assert.match(focusSource, /PUBLIC_PLACE_FOCUS_BOOST = 1\.3/);
+  assert.match(focusSource, /const desiredZoom = baselineZoom \* PUBLIC_PLACE_FOCUS_BOOST/);
+  assert.match(focusSource, /\(compact \? 1\.62 : 1\.72\) \* PUBLIC_PLACE_FOCUS_BOOST/);
 });
 
 test("main hub is folded into culture instead of having a separate list filter", () => {

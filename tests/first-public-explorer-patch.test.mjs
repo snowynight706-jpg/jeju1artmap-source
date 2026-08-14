@@ -47,9 +47,13 @@ test("communication center is the persisted and visible workation main hub", () 
 test("public marker selection reuses the red main-hub pointer instead of a yellow ring", () => {
   assert.match(pageSource, /\(isMainHub \|\| isPublicSelected\)/);
   assert.match(pageSource, /isPublicSelected \? "현재 찾은 장소 ▼" : "주요 거점 ▼"/);
-  assert.match(cssSource, /\.main-hub-badge, \.located-place-badge \{[^}]*width: 24px[^}]*height: 22px/);
-  assert.match(cssSource, /\.map-focus-pointer\.located \{[^}]*located-place-arrival/);
-  assert.doesNotMatch(cssSource, /\.map-element\.public-active::after|#e6a926/);
+  assert.match(pageSource, /className="map-focus-pointer-label">찾은 장소<\/span>/);
+  assert.match(pageSource, /zIndex: isPublicSelected \? Math\.max\(element\.z, 70\) : element\.z/);
+  assert.match(cssSource, /\.main-hub-badge \{[^}]*width: 24px[^}]*height: 22px/);
+  assert.match(cssSource, /\.map-focus-pointer\.located \{[^}]*width: 30px[^}]*height: 28px[^}]*located-place-arrival/);
+  assert.match(cssSource, /\.map-element\.public-active::after \{[^}]*linear-gradient\(#d84a42[^}]*located-target-arrival/);
+  assert.match(cssSource, /\.map-element\.public-active \.label \{[^}]*border-color: #d84a42[^}]*font-weight: 850/);
+  assert.doesNotMatch(cssSource, /#e6a926|border-radius: 50%[^\n]*public-active/);
   assert.doesNotMatch(cssSource, /\.map-element\.main-hub \.icon-visual::after/);
   assert.match(cssSource, /\.public-place-list article\.selected[^}]+border-color: #d9ad45/);
 });

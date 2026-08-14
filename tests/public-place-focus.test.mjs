@@ -26,9 +26,9 @@ test("public place focus zoom is close, bounded, and based on the device fit", (
     stageHeight: 1049,
   });
 
-  assert.equal(mobilePortrait, 1.62);
-  assert.ok(mobileLandscape >= 1.5 && mobileLandscape <= 1.62);
-  assert.ok(desktop >= 1.35 && desktop <= 1.72);
+  assert.equal(mobilePortrait, 1.62 * 1.3);
+  assert.ok(mobileLandscape >= 1.95 && mobileLandscape <= 1.62 * 1.3);
+  assert.ok(desktop >= 1.75 && desktop <= 1.72 * 1.3);
 });
 
 test("public place focus zoom safely handles incomplete early layout measurements", () => {
@@ -41,5 +41,5 @@ test("public place focus zoom safely handles incomplete early layout measurement
   });
 
   assert.ok(Number.isFinite(zoom));
-  assert.ok(zoom >= 0.72 && zoom <= 1.62);
+  assert.ok(zoom >= 0.72 && zoom <= 1.62 * 1.3);
 });
