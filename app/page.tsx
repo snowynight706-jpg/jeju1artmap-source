@@ -28,6 +28,7 @@ import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.mjs";
+import { placesForPublicCategory } from "./public-place-category.mjs";
 import {
   consolidateMainHubDirectoryPlaces,
   isMainHubPersistenceTarget,
@@ -522,6 +523,7 @@ type PlaceEvent = {
 type PlaceEventsPayload = {
   events?: PlaceEvent[];
   event?: PlaceEvent;
+  linkedPlaces?: PlaceEventPlace[];
   canManage?: boolean;
   persistent?: boolean;
   page?: number;
@@ -2350,6 +2352,7 @@ export default function Home() {
   const [placeEventsLoading, setPlaceEventsLoading] = useState(false);
   const [placeEventsCanManage, setPlaceEventsCanManage] = useState(false);
   const [placeEventsRefreshKey, setPlaceEventsRefreshKey] = useState(0);
+  const [eventLinkedPlaces, setEventLinkedPlaces] = useState<PlaceEventPlace[]>([]);
   const [placeEventFormOpen, setPlaceEventFormOpen] = useState(false);
   const [placeEventEditingId, setPlaceEventEditingId] = useState<string | null>(null);
   const [placeEventNoPlace, setPlaceEventNoPlace] = useState(false);
@@ -3204,15 +3207,32 @@ export default function Home() {
     ));
   }, [directoryPlaces, visibleElements]);
 
+  const eventLinkedPublicPlaceIds = useMemo(() => {
+    if (!eventLinkedPlaces.length) return new Set<string>();
+    const linkedKeys = new Set(eventLinkedPlaces.map((place) => place.placeKey));
+    const linkedNames = new Set(eventLinkedPlaces.map((place) => normalizePlaceName(place.placeName)));
+    return new Set(publicPlaceItems.flatMap((item) => {
+      const directKey = `directory:${item.place.id}`;
+      const anchorKey = placeContentKey(item.anchor);
+      const referenceKeys = item.place.id === item.anchor.directoryId || !item.anchor.directoryId
+        ? [directKey, anchorKey]
+        : [directKey];
+      const referenceNames = [item.place.name, item.displayName, ...(item.place.aliases ?? [])]
+        .map((name) => normalizePlaceName(name));
+      return referenceKeys.some((key) => linkedKeys.has(key)) || referenceNames.some((name) => linkedNames.has(name))
+        ? [item.id]
+        : [];
+    }));
+  }, [eventLinkedPlaces, publicPlaceItems]);
+
   const publicPlaceCategoryCounts = useMemo(() => publicListCategories.reduce<Record<PublicPlaceCategoryFilter, number>>((counts, category) => {
-    counts[category.id] = publicPlaceItems.filter((item) => item.categoryId === category.id).length;
+    counts[category.id] = placesForPublicCategory(publicPlaceItems, category.id, eventLinkedPublicPlaceIds).length;
     return counts;
-  }, Object.fromEntries(publicListCategories.map((category) => [category.id, 0])) as Record<PublicPlaceCategoryFilter, number>), [publicPlaceItems]);
+  }, Object.fromEntries(publicListCategories.map((category) => [category.id, 0])) as Record<PublicPlaceCategoryFilter, number>), [eventLinkedPublicPlaceIds, publicPlaceItems]);
 
   const filteredPublicPlaceItems = useMemo(() => {
     const query = publicPlaceQuery.trim().toLocaleLowerCase("ko-KR");
-    return publicPlaceItems.filter((item) => {
-      if (item.categoryId !== publicPlaceCategory) return false;
+    return placesForPublicCategory(publicPlaceItems, publicPlaceCategory, eventLinkedPublicPlaceIds).filter((item) => {
       if (!query) return true;
       const tags = additionalCategoryDefinitions
         .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
@@ -3224,7 +3244,7 @@ export default function Home() {
         .join(" ");
       return `${item.displayName} ${item.place.name} ${(item.place.aliases ?? []).join(" ")} ${item.place.address} ${item.place.area} ${tags} ${conveniences}`.toLocaleLowerCase("ko-KR").includes(query);
     });
-  }, [publicPlaceCategory, publicPlaceItems, publicPlaceQuery]);
+  }, [eventLinkedPublicPlaceIds, publicPlaceCategory, publicPlaceItems, publicPlaceQuery]);
 
   const locationGroupCountByAnchorId = useMemo(() => publicPlaceItems.reduce<Map<string, number>>((counts, item) => {
     if (!item.place.locationGroupId) return counts;
@@ -3441,6 +3461,25 @@ export default function Home() {
     });
     return () => controller.abort();
   }, [placeEventsRefreshKey, publicLayoutAccess, selectedStoryKey, updatePlaceEventPhoto]);
+
+  useEffect(() => {
+    if (publicLayoutAccess === "loading") return;
+    const controller = new AbortController();
+    void fetch(`${PLACE_EVENTS_API}?scope=place-index`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as PlaceEventsPayload | null;
+        if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "event place index load failed");
+        return payload;
+      })
+      .then((payload) => {
+        if (!controller.signal.aborted) setEventLinkedPlaces(Array.isArray(payload?.linkedPlaces) ? payload.linkedPlaces : []);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+        setEventLinkedPlaces([]);
+      });
+    return () => controller.abort();
+  }, [globalEventsRefreshKey, publicLayoutAccess]);
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !globalStoriesOpen || globalContentTab !== "reviews") return;
@@ -7764,12 +7803,13 @@ export default function Home() {
                 {filteredPublicPlaceItems.map((item) => {
                   const meta = publicCategoryMetaForPlace(item.place, item.anchor);
                   const selectedItem = selectedId === item.anchor.id && selectedDirectoryPlace?.id === item.place.id;
+                  const eventListedInCulture = publicPlaceCategory === "culture" && item.categoryId !== "culture" && eventLinkedPublicPlaceIds.has(item.id);
                   const tagNames = additionalCategoryDefinitions
                     .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
                     .map((definition) => definition.name);
                   const tagLabel = tagNames.length ? tagNames.join(" · ") : "—";
-                  return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""}`} key={item.id} role="listitem">
-                    <span className="public-place-identity"><strong title={item.displayName}>{item.displayName}</strong></span>
+                  return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""} ${eventListedInCulture ? "event-linked" : ""}`} key={item.id} role="listitem">
+                    <span className="public-place-identity"><i className="public-place-marker-key" style={{ background: categoryOf(item.anchor.category).color }} aria-hidden="true" /><strong title={item.displayName}>{item.displayName}</strong>{eventListedInCulture && <em className="public-place-event-badge">행사</em>}</span>
                     <span className="public-place-primary-category" title={meta.name}>{meta.name}</span>
                     <span className="public-place-additional-category" title={tagNames.length ? tagLabel : "추가분류 없음"}>{tagLabel}</span>
                     <button type="button" className="public-place-open-action" onClick={() => focusPublicPlaceItem(item, true)} aria-current={selectedItem ? "true" : undefined}>정보보기</button>

@@ -232,6 +232,19 @@ export async function GET(request: Request) {
   const placeKey = searchParams.get("placeKey")?.trim() ?? "";
   const now = new Date().toISOString();
 
+  if (scope === "place-index") {
+    const where = canManage ? "1 = 1" : "e.status = 'active' AND e.visible_from <= ? AND e.visible_until > ?";
+    const query = runtime.DB.prepare(
+      `SELECT DISTINCT ep.place_key AS placeKey, ep.place_name AS placeName
+       FROM place_event_places ep
+       INNER JOIN place_events e ON e.id = ep.event_id
+       WHERE ${where}
+       ORDER BY ep.place_name, ep.place_key`,
+    );
+    const result = (canManage ? await query.all() : await query.bind(now, now).all()) as { results?: EventPlace[] };
+    return json({ linkedPlaces: result.results ?? [], canManage, persistent: true });
+  }
+
   if (scope === "all") {
     const where = canManage ? "1 = 1" : "e.status = 'active' AND e.visible_from <= ? AND e.visible_until > ?";
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);

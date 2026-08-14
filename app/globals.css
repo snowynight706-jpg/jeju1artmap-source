@@ -668,8 +668,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-place-list article:not(:last-child)::after { content: ""; position: absolute; left: 7px; right: 7px; bottom: -1px; z-index: 2; height: 1px; background: #e3e3e3; pointer-events: none; }
 .public-place-list article.selected { border-color: #d9ad45; background: #fffaf0; box-shadow: inset 3px 0 0 #d9ad45; }
 .public-place-list article.main-hub { background: linear-gradient(135deg, #fffaf0, #fff); }
-.public-place-identity { min-width: 0; display: flex; align-items: center; padding: 2px 5px 2px 9px; }
+.public-place-identity { min-width: 0; display: flex; align-items: center; gap: 5px; padding: 2px 5px 2px 9px; }
+.public-place-marker-key { width: 6px; height: 6px; flex: 0 0 6px; border: 1px solid rgb(35 35 35 / 18%); border-radius: 50%; box-shadow: 0 1px 2px rgb(35 35 35 / 12%); }
 .public-place-identity > strong { min-width: 0; display: block; overflow: hidden; color: #414141; font-size: 9.5px; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.public-place-event-badge { flex: 0 0 auto; padding: 1px 3px; border: 1px solid #b9c7c5; border-radius: 3px; background: #edf2f1; color: #49645f; font-size: 7px; font-style: normal; font-weight: 850; line-height: 1.1; }
 .public-place-primary-category, .public-place-additional-category { min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px 5px; border-left: 1px solid #ebebeb; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .public-place-primary-category { color: #646464; font-size: 9.5px; font-weight: 800; }
 .public-place-additional-category { color: #646464; font-size: 9px; font-weight: 700; }
@@ -1658,6 +1660,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .app-shell[data-ui-theme] :is(.public-place-primary-category, .public-place-additional-category) { border-color: var(--line); color: var(--muted); }
 .app-shell[data-ui-theme] .public-place-list article:not(.selected):not(.main-hub) { background: var(--ui-surface-raised); }
 .app-shell[data-ui-theme] .public-place-list article:not(:last-child)::after { background: var(--line); }
+.app-shell[data-ui-theme] .public-place-event-badge { border-color: color-mix(in srgb, var(--palette-3) 58%, var(--line)); background: color-mix(in srgb, var(--palette-2) 70%, var(--ui-surface-raised)); color: var(--ui-deep); }
 .app-shell[data-ui-theme="harbor-morning"] .public-place-list article.main-hub:not(.selected) {
   border-color: color-mix(in srgb, var(--palette-3) 44%, transparent);
   background: linear-gradient(110deg, var(--ui-mid), var(--ui-surface-raised) 72%);
