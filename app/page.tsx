@@ -3145,6 +3145,10 @@ export default function Home() {
   const stageLabelIds = useMemo(() => new Set(stageLabelElements.map((element) => element.id)), [stageLabelElements]);
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
   const visibleElementsById = useMemo(() => new Map(visibleElements.map((element) => [element.id, element])), [visibleElements]);
+  const publicSelectedMarkerZIndex = useMemo(
+    () => visibleElements.reduce((highest, element) => Math.max(highest, element.z), 0) + 1,
+    [visibleElements],
+  );
 
   const publicPlaceItems = useMemo<PublicPlaceListItem[]>(() => {
     const placesById = new Map(directoryPlaces.map((place) => [place.id, place]));
@@ -7630,7 +7634,7 @@ export default function Home() {
                     key={element.id}
                     data-element-id={element.id}
                     className={`map-element ${element.category !== "landmark" ? "general-marker" : ""} ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${isMainHub ? "main-hub" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
-                    style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${displaySize}%`, zIndex: isPublicSelected ? Math.max(element.z, 70) : element.z, color: meta.color, opacity: element.opacity / 100 }}
+                    style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${displaySize}%`, zIndex: isPublicSelected ? publicSelectedMarkerZIndex : element.z, color: meta.color, opacity: element.opacity / 100 }}
                     onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : element.id, placeRequestPickingLocation) : undefined}
                     role={keyboardSelectable ? "button" : undefined}
                     tabIndex={keyboardSelectable ? 0 : undefined}

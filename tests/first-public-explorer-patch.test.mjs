@@ -58,7 +58,8 @@ test("public marker selection reuses the red main-hub pointer instead of a yello
   assert.match(pageSource, /\(isMainHub \|\| isPublicSelected\)/);
   assert.match(pageSource, /isPublicSelected \? "현재 찾은 장소 ▼" : "주요 거점 ▼"/);
   assert.match(pageSource, /className="map-focus-pointer-label">찾은 장소<\/span>/);
-  assert.match(pageSource, /zIndex: isPublicSelected \? Math\.max\(element\.z, 70\) : element\.z/);
+  assert.match(pageSource, /publicSelectedMarkerZIndex = useMemo\([\s\S]+visibleElements\.reduce\(\(highest, element\) => Math\.max\(highest, element\.z\), 0\) \+ 1/);
+  assert.match(pageSource, /zIndex: isPublicSelected \? publicSelectedMarkerZIndex : element\.z/);
   assert.match(cssSource, /\.main-hub-badge \{[^}]*width: 24px[^}]*height: 22px/);
   assert.match(cssSource, /\.map-focus-pointer\.located \{[^}]*top: -36px[^}]*width: 30px[^}]*height: 28px[^}]*located-place-arrival/);
   assert.match(cssSource, /\.map-element\.public-active::after \{[^}]*linear-gradient\(#c83b36, #c83b36\)[^}]*12px 4px[^}]*drop-shadow\(0 4px 9px[^}]*located-target-arrival/);
