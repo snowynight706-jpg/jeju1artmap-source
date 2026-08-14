@@ -159,21 +159,30 @@ test("direct DB editing can collect places by primary category with visible coun
   assert.match(cssSource, /\.database-editor-category-filters button\.active \{[^}]*box-shadow: inset 0 -2px 0 #555/);
 });
 
-test("public place rows use four compact columns with whole-row map navigation and one details action", () => {
+test("public place rows show two representative tags, disclose the rest, and use an icon details action", () => {
   const explorerBlock = pageSource.match(/<section className="public-place-explorer">[\s\S]*?<\/section> : globalContentTab/)?.[0] ?? "";
-  assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,80}>상세보기</);
+  assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,160}className="public-place-detail-heading"/);
   assert.match(explorerBlock, /className="public-place-identity"/);
   assert.doesNotMatch(explorerBlock, /public-place-symbol|<img src=\{meta\.iconSrc\}/);
   assert.match(explorerBlock, /className="public-place-primary-category"[\s\S]{0,100}\{meta\.name\}/);
-  assert.match(explorerBlock, /className="public-place-additional-category"/);
+  assert.match(explorerBlock, /className=\{`public-place-additional-category \$\{remainingTagNames\.length \? "has-more" : ""\}`\}/);
+  assert.match(explorerBlock, /representativeTagNames = tagNames\.slice\(0, 2\)/);
+  assert.match(explorerBlock, /remainingTagNames = tagNames\.slice\(2\)/);
+  assert.match(explorerBlock, /className="public-place-additional-category-disclosure"[\s\S]{0,180}<summary aria-label=\{`\$\{representativeTagNames\.join\(", "\)\} 외 추가분류 \$\{remainingTagNames\.length\}개 더 보기`\}/);
+  assert.match(explorerBlock, /className="public-place-additional-category-count" aria-hidden="true">\+\{remainingTagNames\.length\}/);
+  assert.match(explorerBlock, /className="public-place-additional-category-popover" role="list" aria-label="나머지 추가분류"/);
   assert.match(explorerBlock, /className="public-place-row-action"[\s\S]{0,100}focusPublicPlaceItem\(item\)[\s\S]{0,140}지도에서 찾기/);
-  assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}focusPublicPlaceItem\(item, true\)[\s\S]{0,140}>상세보기<\/button>/);
+  assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}focusPublicPlaceItem\(item, true\)[\s\S]{0,180}aria-label=\{`\$\{item\.displayName\} 상세보기`\}[\s\S]{0,140}<MagnifierIcon \/><\/button>/);
+  assert.doesNotMatch(explorerBlock, />상세보기<\/button>/);
   assert.doesNotMatch(explorerBlock, /className="public-place-map-action"|className="public-place-detail-action"/);
   assert.doesNotMatch(explorerBlock, /item\.place\.area|권역 미입력|public-place-meta/);
-  assert.match(cssSource, /\.public-place-list-header \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
-  assert.match(cssSource, /\.public-place-list article \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(112px, 1\.15fr\) 64px/);
+  assert.match(cssSource, /\.public-place-list-header \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(132px, 1\.2fr\) 40px/);
+  assert.match(cssSource, /\.public-place-list article \{[^}]*grid-template-columns: minmax\(124px, 1\.45fr\) 60px minmax\(132px, 1\.2fr\) 40px/);
   assert.match(cssSource, /\.public-place-primary-category \{[^}]*font-size: 9\.5px/);
   assert.match(cssSource, /\.public-place-additional-category \{[^}]*font-size: 9px/);
+  assert.match(cssSource, /\.public-place-additional-category-disclosure\[open\] > \.public-place-additional-category-popover,[\s\S]{0,180}display: flex/);
+  assert.match(cssSource, /@media \(hover: hover\) \{[\s\S]{0,180}\.public-place-additional-category:hover \.public-place-additional-category-popover \{ display: flex; \}/);
+  assert.match(cssSource, /\.public-place-open-action \{[^}]*width: 28px[^}]*display: grid[^}]*border-radius: 4px/);
   assert.match(cssSource, /\.public-place-row-action \{[^}]*position: absolute[^}]*inset: 0[^}]*cursor: pointer/);
 });
 
