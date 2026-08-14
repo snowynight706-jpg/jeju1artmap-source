@@ -27,6 +27,7 @@ import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places"
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
+import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.mjs";
 import {
   consolidateMainHubDirectoryPlaces,
   isMainHubPersistenceTarget,
@@ -2273,6 +2274,7 @@ export default function Home() {
   const [adminLoginError, setAdminLoginError] = useState("");
   const [adminAccessMethod, setAdminAccessMethod] = useState<"owner" | "shared" | null>(null);
   const [zoom, setZoom] = useState(0.72);
+  const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
     width: EXPORT_CANONICAL_WIDTH,
     height: EXPORT_CANONICAL_WIDTH / MAP_ASPECT,
@@ -2290,6 +2292,7 @@ export default function Home() {
   const [screenRecommendedOnly, setScreenRecommendedOnly] = useState(false);
   const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
   const [mergeDenseLabels, setMergeDenseLabels] = useState(true);
+  const [scaleLabelLimitEnabled, setScaleLabelLimitEnabled] = useState(true);
   const [printRecommendedOnly, setPrintRecommendedOnly] = useState(true);
   const [printLandmarks, setPrintLandmarks] = useState(true);
   const [printMarkers, setPrintMarkers] = useState(true);
@@ -3114,10 +3117,29 @@ export default function Home() {
     .sort((a, b) => a.z - b.z), [activeCategory, elements, printPolicyFor, screenRecommendedOnly, viewMode]);
   const printMarkerElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).marker).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
   const printLabelElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).label).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
-  const editorLabelElements = useMemo(() => editorVisibleElements.filter((element) => (
-    (element.labelVisible || (publicLayoutAccess === "viewer" && isPrimaryHubLabel(element.name)))
-    && (element.category === "landmark" || markerLabelsVisible || isPrimaryHubLabel(element.name))
-  )), [editorVisibleElements, markerLabelsVisible, publicLayoutAccess]);
+  const editorLabelCandidates = useMemo(() => editorVisibleElements.filter((element) => {
+    const selectedLabel = selectedId === element.id;
+    const primaryHub = isPrimaryHubLabel(element.name);
+    return (element.labelVisible || selectedLabel || (publicLayoutAccess === "viewer" && primaryHub))
+      && (element.category === "landmark" || markerLabelsVisible || primaryHub || selectedLabel);
+  }), [editorVisibleElements, markerLabelsVisible, publicLayoutAccess, selectedId]);
+  const scaleLabelLimitActive = publicLayoutAccess === "viewer" || scaleLabelLimitEnabled;
+  const scaleLabelBudget = useMemo(
+    () => labelBudgetForScale(zoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive),
+    [editorLabelCandidates.length, fitZoom, scaleLabelLimitActive, zoom],
+  );
+  const scaleAwareLabelSelection = useMemo(() => chooseScaleAwareLabelIds(editorLabelCandidates, {
+    limit: scaleLabelBudget,
+    selectedId,
+    mainHubIds: editorLabelCandidates.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
+    recommendedIds: editorLabelCandidates.filter((element) => printPolicyFor(element).recommended).map((element) => element.id),
+  }), [editorLabelCandidates, printPolicyFor, scaleLabelBudget, selectedId]);
+  const editorLabelElements = useMemo(() => {
+    if (!scaleAwareLabelSelection.limited) return editorLabelCandidates;
+    const selectedLabelIds = new Set(scaleAwareLabelSelection.ids);
+    return editorLabelCandidates.filter((element) => selectedLabelIds.has(element.id));
+  }, [editorLabelCandidates, scaleAwareLabelSelection]);
+  const scaleHiddenLabelCount = Math.max(0, editorLabelCandidates.length - editorLabelElements.length);
   const visibleElements = useMemo(() => {
     if (!printPreviewMode) return editorVisibleElements;
     const byId = new Map([...printMarkerElements, ...printLabelElements].map((element) => [element.id, element]));
@@ -3210,18 +3232,20 @@ export default function Home() {
     return counts;
   }, new Map()), [publicPlaceItems]);
 
-  const displayDenseLabelExcludedIds = useMemo(() => publicLayoutAccess === "viewer"
-    ? [...new Set([...denseLabelExcludedIds, ...editorVisibleElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id)])]
-    : denseLabelExcludedIds, [denseLabelExcludedIds, editorVisibleElements, publicLayoutAccess]);
+  const displayDenseLabelExcludedIds = useMemo(() => [...new Set([
+    ...denseLabelExcludedIds,
+    ...(publicLayoutAccess === "viewer" ? editorVisibleElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id) : []),
+    ...(selectedId ? [selectedId] : []),
+  ])], [denseLabelExcludedIds, editorVisibleElements, publicLayoutAccess, selectedId]);
   const denseLabelClusters = useMemo(() => mergeDenseLabels && (printPreviewMode || !forceIndividualLabels)
     ? buildDenseLabelClusters(
         stageLabelElements,
         stageMarkerElements,
         denseLabelPositions,
         printPreviewMode ? denseLabelExcludedIds : displayDenseLabelExcludedIds,
-        printPreviewMode ? 1 : fitZoom / Math.max(zoom, 0.22),
+        printPreviewMode ? 1 : fitZoom / Math.max(settledLabelZoom, 0.22),
       )
-    : [], [denseLabelExcludedIds, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements, zoom]);
+    : [], [denseLabelExcludedIds, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, mergeDenseLabels, printPreviewMode, settledLabelZoom, stageLabelElements, stageMarkerElements]);
   const clusteredLabelElementIds = useMemo(() => new Set(denseLabelClusters.flatMap((cluster) => cluster.elementIds)), [denseLabelClusters]);
   const selectedDenseLabel = useMemo(
     () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
@@ -3636,11 +3660,13 @@ export default function Home() {
           const savedMapView = JSON.parse(localStorage.getItem(MAP_VIEW_SETTINGS_KEY) ?? "null") as {
             markerLabelsVisible?: boolean;
             mergeDenseLabels?: boolean;
+            scaleLabelLimitEnabled?: boolean;
             expandedPlacedMarkerGroups?: Partial<Record<CategoryId, boolean>>;
           } | null;
           if (savedMapView) {
             if (typeof savedMapView.markerLabelsVisible === "boolean") setMarkerLabelsVisible(savedMapView.markerLabelsVisible);
             if (typeof savedMapView.mergeDenseLabels === "boolean") setMergeDenseLabels(savedMapView.mergeDenseLabels);
+            if (typeof savedMapView.scaleLabelLimitEnabled === "boolean") setScaleLabelLimitEnabled(savedMapView.scaleLabelLimitEnabled);
             if (savedMapView.expandedPlacedMarkerGroups) {
               setExpandedPlacedMarkerGroups((current) => categories.reduce<Record<CategoryId, boolean>>((next, category) => {
                 const saved = savedMapView.expandedPlacedMarkerGroups?.[category.id];
@@ -3868,10 +3894,11 @@ export default function Home() {
       localStorage.setItem(MAP_VIEW_SETTINGS_KEY, JSON.stringify({
         markerLabelsVisible,
         mergeDenseLabels,
+        scaleLabelLimitEnabled,
         expandedPlacedMarkerGroups,
       }));
     } catch {}
-  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels, publicLayoutAccess]);
+  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels, publicLayoutAccess, scaleLabelLimitEnabled]);
 
   useEffect(() => {
     if (!hydrated || publicLayoutAccess !== "editor" || placeDirectoryLoadedRef.current) return;
@@ -4445,6 +4472,11 @@ export default function Home() {
     }, 90);
     return () => window.clearTimeout(timer);
   }, [labelDetailRatio, printPreviewMode]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettledLabelZoom(zoom), 140);
+    return () => window.clearTimeout(timer);
+  }, [zoom]);
 
   useEffect(() => {
     calibrationLiveApplyRef.current = calibrationLiveApply;
@@ -7215,6 +7247,11 @@ export default function Home() {
               <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
               <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
               <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>모든 장소명 표시 · 많은 항목은 여러 열·묶음으로 압축</small></span></label>
+              <label className={scaleLabelLimitEnabled ? "active" : ""}><input type="checkbox" checked={scaleLabelLimitEnabled} onChange={(event) => setScaleLabelLimitEnabled(event.target.checked)} /><span><b>축척별 라벨 자동 제한</b><small>맞춤 30 · 중간 50/80 · 충분히 확대하면 전체 표시</small></span></label>
+            </div>
+            <div className={`label-scale-status ${scaleHiddenLabelCount > 0 ? "limited" : "all"}`}>
+              <span><b>현재 라벨</b><em>{editorLabelElements.length}/{editorLabelCandidates.length}</em></span>
+              <small>{scaleHiddenLabelCount > 0 ? `축척에 따라 ${scaleHiddenLabelCount}개를 계산·표시에서 제외` : scaleLabelLimitActive ? "현재 배율에서는 설정된 라벨 전체 표시" : "자동 제한 꺼짐"}</small>
             </div>
             <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button>
             {selectedDenseLabel && <div className={`dense-label-control ${selectedDenseLabel.hasCollision ? "collision" : ""}`}>

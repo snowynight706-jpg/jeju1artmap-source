@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import { chooseScaleAwareLabelIds, labelBudgetForScale } from "../app/label-density.mjs";
+
+const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+test("label budgets grow from the fitted map to the full detailed view", () => {
+  assert.equal(labelBudgetForScale(0.28, 0.28, 149), 30);
+  assert.equal(labelBudgetForScale(0.4, 0.28, 149), 50);
+  assert.equal(labelBudgetForScale(0.58, 0.28, 149), 80);
+  assert.equal(labelBudgetForScale(0.7, 0.28, 149), 149);
+  assert.equal(labelBudgetForScale(0.28, 0.28, 18), 18);
+  assert.equal(labelBudgetForScale(0.28, 0.28, 149, false), 149);
+});
+
+test("selected, main-hub and landmark labels survive every automatic cap", () => {
+  const candidates = [
+    { id: "selected", name: "선택 장소", category: "cafe", z: 1 },
+    { id: "hub", name: "주요 거점", category: "culture", z: 1 },
+    { id: "landmark", name: "랜드마크", category: "landmark", z: 1 },
+    { id: "recommended", name: "추천 장소", category: "food", z: 1 },
+    { id: "locked", name: "고정 라벨", category: "shop", labelLocked: true, z: 1 },
+    { id: "ordinary", name: "일반 장소", category: "park", z: 99 },
+  ];
+  const result = chooseScaleAwareLabelIds(candidates, {
+    limit: 5,
+    selectedId: "selected",
+    mainHubIds: ["hub"],
+    recommendedIds: ["recommended"],
+  });
+  assert.deepEqual(new Set(result.ids), new Set(["selected", "hub", "landmark", "recommended", "locked"]));
+  assert.equal(result.limited, true);
+});
+
+test("screen limits happen before dense-label clustering and settle heavy zoom work", () => {
+  assert.match(pageSource, /const editorLabelCandidates = useMemo/);
+  assert.match(pageSource, /const scaleAwareLabelSelection = useMemo/);
+  assert.match(pageSource, /const stageLabelElements = printPreviewMode \? printLabelElements : editorLabelElements/);
+  assert.match(pageSource, /fitZoom \/ Math\.max\(settledLabelZoom, 0\.22\)/);
+  assert.match(pageSource, /setTimeout\(\(\) => setSettledLabelZoom\(zoom\), 140\)/);
+  assert.match(pageSource, /축척별 라벨 자동 제한/);
+});

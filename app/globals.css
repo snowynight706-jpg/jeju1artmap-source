@@ -96,6 +96,12 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .view-toggle-list b, .view-toggle-list small, .print-recommended-toggle b, .print-recommended-toggle small { display: block; }
 .view-toggle-list b, .print-recommended-toggle b { color: #616161; font-size: 8px; }
 .view-toggle-list small, .print-recommended-toggle small { margin-top: 2px; color: #707070; font-size: 7px; line-height: 1.35; }
+.label-scale-status { min-height: 34px; display: grid; gap: 3px; margin-top: 6px; padding: 6px 7px; border: 1px solid #dddddd; border-left: 3px solid #bdbdbd; border-radius: 3px; background: #f7f7f7; color: #646464; }
+.label-scale-status > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.label-scale-status b { color: #555; font-size: 8px; }
+.label-scale-status em { color: #5f5f5f; font-size: 8px; font-style: normal; font-weight: 850; font-variant-numeric: tabular-nums; }
+.label-scale-status small { color: #707070; font-size: 7px; line-height: 1.35; }
+.label-scale-status.limited { border-color: #c8c8c8; border-left-color: #666; background: #ececec; }
 .view-label-refresh { width: 100%; min-height: 30px; display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 6px; border: 1px solid #c0c0c0; border-radius: 7px; background: #f5f5f5; color: #5f5f5f; cursor: pointer; font-size: 8px; font-weight: 700; }
 .view-label-refresh span { display: inline-block; font-size: 12px; line-height: 1; }
 .view-label-refresh.refreshing span { animation: spin .65s linear infinite; }
@@ -2524,4 +2530,25 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .app-shell[data-ui-theme] .advanced-view-tools[open] > .advanced-view-tools-body {
   border-color: var(--line);
   background: var(--ui-surface-raised);
+}
+
+.app-shell[data-ui-theme] .label-scale-status {
+  border-color: var(--line);
+  border-left-color: var(--line-strong);
+  background: var(--ui-surface-soft);
+  color: var(--muted);
+}
+
+.app-shell[data-ui-theme] .label-scale-status :is(b, em) {
+  color: var(--ink);
+}
+
+.app-shell[data-ui-theme] .label-scale-status small {
+  color: var(--muted);
+}
+
+.app-shell[data-ui-theme] .label-scale-status.limited {
+  border-color: var(--line-strong);
+  border-left-color: var(--ui-accent-strong);
+  background: color-mix(in srgb, var(--ui-active) 78%, var(--ui-surface-soft));
 }
