@@ -173,7 +173,7 @@ test("public place rows show two representative tags, disclose the rest, and use
   assert.match(explorerBlock, /setExpandedAdditionalCategoryItemId\(\(current\) => current === item\.id \? null : item\.id\)/);
   assert.match(explorerBlock, /onPointerLeave=\{\(event\) => \{[\s\S]{0,180}event\.pointerType === "mouse"[\s\S]{0,180}current === item\.id \? null : current/);
   assert.match(explorerBlock, /className="public-place-additional-category-count" aria-hidden="true">\+\{remainingTagNames\.length\}/);
-  assert.match(explorerBlock, /className="public-place-additional-category-popover" role="list" aria-label="나머지 추가분류"/);
+  assert.match(explorerBlock, /className="public-place-additional-category-popover" data-density=\{remainingTagNames\.length <= 2 \? "compact" : "adaptive"\} role="list" aria-label="나머지 추가분류"/);
   assert.match(explorerBlock, /className="public-place-row-action"[\s\S]{0,100}focusPublicPlaceItem\(item\)[\s\S]{0,140}지도에서 찾기/);
   assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}focusPublicPlaceItem\(item, true\)[\s\S]{0,180}aria-label=\{`\$\{item\.displayName\} 상세보기`\}[\s\S]{0,140}<MagnifierIcon \/><\/button>/);
   assert.doesNotMatch(explorerBlock, />상세보기<\/button>/);
@@ -186,8 +186,10 @@ test("public place rows show two representative tags, disclose the rest, and use
   assert.match(pageSource, /event\.target instanceof Element && event\.target\.closest\("\.public-place-additional-category"\)/);
   assert.match(cssSource, /\.public-place-additional-category\.is-expanded \.public-place-additional-category-popover \{ display: flex; \}/);
   assert.match(cssSource, /\.public-place-additional-category\.is-expanded \.public-place-additional-category-count \{[^}]*visibility: hidden[^}]*opacity: 0/);
-  assert.match(cssSource, /\.public-place-additional-category-popover \{[^}]*width: max-content[^}]*min-width: 126px[^}]*max-width: min\(360px, calc\(100vw - 48px\)\)/);
+  assert.match(cssSource, /\.public-place-additional-category-popover \{[^}]*width: max-content[^}]*min-width: 0[^}]*max-width: min\(360px, calc\(100vw - 48px\)\)/);
   assert.match(cssSource, /\.public-place-additional-category-popover span \{[^}]*white-space: nowrap/);
+  assert.match(cssSource, /\.public-place-additional-category-popover\[data-density="compact"\] \{[^}]*gap: 3px[^}]*padding: 4px/);
+  assert.match(cssSource, /\.public-place-additional-category-popover\[data-density="compact"\] span \{[^}]*padding: 2px 4px/);
   assert.doesNotMatch(cssSource, /public-place-additional-category-disclosure:focus-within/);
   assert.match(cssSource, /@media \(hover: hover\) \{[\s\S]{0,180}\.public-place-additional-category:hover \.public-place-additional-category-popover \{ display: flex; \}/);
   assert.match(cssSource, /@media \(hover: hover\) \{[\s\S]{0,320}\.public-place-additional-category:hover \.public-place-additional-category-count \{[^}]*visibility: hidden[^}]*opacity: 0/);

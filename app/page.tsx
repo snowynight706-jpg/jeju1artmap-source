@@ -8684,7 +8684,7 @@ export default function Home() {
                           <span className="public-place-additional-category-preview">{representativeTagNames.join(" · ")}</span>
                           <span className="public-place-additional-category-count" aria-hidden="true">+{remainingTagNames.length}</span>
                         </button>
-                        <div className="public-place-additional-category-popover" role="list" aria-label="나머지 추가분류">
+                        <div className="public-place-additional-category-popover" data-density={remainingTagNames.length <= 2 ? "compact" : "adaptive"} role="list" aria-label="나머지 추가분류">
                           {remainingTagNames.map((tagName) => <span role="listitem" key={tagName}>{tagName}</span>)}
                         </div>
                       </> : <span className="public-place-additional-category-preview">{representativeTagNames.length ? representativeTagNames.join(" · ") : "—"}</span>}
