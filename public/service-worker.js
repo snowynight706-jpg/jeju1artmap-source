@@ -1,7 +1,8 @@
 const CACHE_PREFIX = "wonartmap-pwa-";
-const CACHE_VERSION = "2026-08-18-v1";
+const CACHE_VERSION = "2026-08-18-v2";
 const CORE_CACHE = `${CACHE_PREFIX}core-${CACHE_VERSION}`;
 const IMAGE_CACHE = `${CACHE_PREFIX}images-${CACHE_VERSION}`;
+const BASE_MAP_CACHE = `${CACHE_PREFIX}base-map-${CACHE_VERSION}`;
 const CORE_ASSETS = [
   "/offline.html",
   "/manifest.webmanifest",
@@ -10,6 +11,7 @@ const CORE_ASSETS = [
   "/icons/icon-maskable-512.png",
 ];
 const MAX_CACHED_IMAGES = 140;
+const MAX_CACHED_BASE_MAPS = 6;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -23,7 +25,7 @@ self.addEventListener("activate", (event) => {
       [
         caches.keys().then((keys) => Promise.all(
           keys
-            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CORE_CACHE && key !== IMAGE_CACHE)
+            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CORE_CACHE && key !== IMAGE_CACHE && key !== BASE_MAP_CACHE)
             .map((key) => caches.delete(key)),
         )),
         self.clients.claim(),
@@ -77,12 +79,35 @@ async function staleWhileRevalidateImage(event) {
   return refresh;
 }
 
+async function cacheFirstVersionedBaseMap(request) {
+  const cache = await caches.open(BASE_MAP_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response.ok) {
+    try {
+      await cache.put(request, response.clone());
+      await trimCache(BASE_MAP_CACHE, MAX_CACHED_BASE_MAPS);
+    } catch {
+      // 저장 공간이 부족하면 네트워크 응답만 사용한다.
+    }
+  }
+  return response;
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // 메타데이터는 최신 서버값을 확인하되, 버전이 고정된 베이스맵 본문만 재사용한다.
+  const baseMapVersion = url.pathname === "/api/base-map" ? url.searchParams.get("v") : null;
+  if (baseMapVersion && baseMapVersion !== "current" && url.searchParams.get("meta") !== "1") {
+    event.respondWith(cacheFirstVersionedBaseMap(request));
+    return;
+  }
 
   // 장소 DB, 좌표, 관리자 설정, 리뷰·사진 등 모든 서버 API는 캐시하지 않는다.
   if (url.pathname.startsWith("/api/")) return;

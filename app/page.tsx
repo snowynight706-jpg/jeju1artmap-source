@@ -208,6 +208,9 @@ type UploadedBaseMap = {
   uploadedAt: string;
   size: number;
   contentType: string;
+  originalUrl?: string;
+  screen2048Url?: string;
+  screen4096Url?: string;
 };
 
 type MapAsset = {
@@ -216,6 +219,7 @@ type MapAsset = {
   category: CategoryId;
   status: AssetStatus;
   src: string;
+  screenSrc?: string;
   fileType: "png" | "svg" | "image";
   placeName?: string;
   address?: string;
@@ -478,6 +482,8 @@ type PublicLayoutPayload = {
     placeRequests: number;
     refreshedAt: string;
   } | null;
+  eventLinkedPlaces?: PlaceEventPlace[];
+  uploadedBaseMap?: UploadedBaseMap | null;
   error?: string;
 };
 
@@ -1304,6 +1310,35 @@ function loadImage(src: string) {
     image.onerror = () => reject(new Error(`image load failed: ${src}`));
     image.src = src;
   });
+}
+
+function uploadedBaseMapOriginalSource(metadata: UploadedBaseMap | null) {
+  if (!metadata?.available) return "";
+  return metadata.originalUrl ?? `${UPLOADED_MAP_API}?v=${encodeURIComponent(metadata.uploadedAt)}`;
+}
+
+function uploadedBaseMapDisplaySource(metadata: UploadedBaseMap | null, compact = false, detailRatio = 1) {
+  if (!metadata?.available) return "";
+  if (compact && detailRatio < 2.7 && metadata.screen2048Url) return metadata.screen2048Url;
+  return metadata.screen4096Url ?? metadata.screen2048Url ?? uploadedBaseMapOriginalSource(metadata);
+}
+
+async function prepareBaseMapScreenVariant(image: HTMLImageElement, maximumWidth: 2048 | 4096, quality: number) {
+  const scale = Math.min(1, maximumWidth / Math.max(image.naturalWidth, 1));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) return null;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, 0, 0, width, height);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
+  canvas.width = 1;
+  canvas.height = 1;
+  return blob?.type === "image/webp" ? { blob, width, height } : null;
 }
 
 async function prepareStoryPhoto(file: File) {
@@ -2219,6 +2254,7 @@ export default function Home() {
   const geocodeRunRef = useRef(0);
   const storyRequestRunRef = useRef(0);
   const eventRequestRunRef = useRef(0);
+  const eventPlaceIndexBootstrappedRef = useRef(false);
   const elementsRef = useRef<MapElement[]>(initialElements);
   const assetsRef = useRef<MapAsset[]>(builtInAssets);
   const notesRef = useRef<ReviewNote[]>([]);
@@ -3478,6 +3514,7 @@ export default function Home() {
 
   useEffect(() => {
     if (publicLayoutAccess === "loading") return;
+    if (globalEventsRefreshKey === 0 && eventPlaceIndexBootstrappedRef.current) return;
     const controller = new AbortController();
     void fetch(`${PLACE_EVENTS_API}?scope=place-index`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -3603,7 +3640,7 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(PUBLIC_LAYOUT_API, { cache: "no-store" })
+    fetch(PUBLIC_LAYOUT_API, { cache: "no-cache" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
         if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "public layout load failed");
@@ -3638,6 +3675,14 @@ export default function Home() {
           setGlobalStoriesTotal(Math.max(0, Number(payload.contentSummary.reviews ?? 0)));
           setGlobalEventsTotal(Math.max(0, Number(payload.contentSummary.events ?? 0)));
           setPlaceRequestsTotal(Math.max(0, Number(payload.contentSummary.placeRequests ?? 0)));
+        }
+        if (Array.isArray(payload?.eventLinkedPlaces)) {
+          eventPlaceIndexBootstrappedRef.current = true;
+          setEventLinkedPlaces(payload.eventLinkedPlaces);
+        }
+        if (payload?.uploadedBaseMap?.available) {
+          setUploadedBaseMap(payload.uploadedBaseMap);
+          setBaseMapCanUpload(Boolean(payload.uploadedBaseMap.canUpload));
         }
         if (canEdit) {
           setPublicLayoutAccess("editor");
@@ -4350,22 +4395,25 @@ export default function Home() {
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !hydrated || startupLoadCompletedRef.current) return;
     let cancelled = false;
+    const compact = viewportDimensions.width > 0 && viewportDimensions.width <= 760;
     const mapSource = baseMap === "svg"
       ? MAP_SVG
       : baseMap === "png"
         ? MAP_PNG
-        : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
+        : uploadedBaseMapDisplaySource(uploadedBaseMap, compact, 1);
+    if (!mapSource) return;
+    const primaryHub = visibleElements.find((element) => isPrimaryHubLabel(element.name));
+    const primaryHubAsset = primaryHub?.assetId ? assetsById.get(primaryHub.assetId) : undefined;
     const sources = [...new Set([
       "/jfac-signature-b.png",
-      ...publicListCategories.map((category) => category.iconSrc),
       mapSource,
-      ...visibleElements.flatMap((element) => {
-        const asset = element.assetId ? assetsById.get(element.assetId) : undefined;
-        return asset?.src ? [asset.src] : [];
-      }),
-    ])];
-    setStartupLoadDone(0);
-    setStartupLoadTotal(sources.length);
+      primaryHubAsset?.screenSrc ?? primaryHubAsset?.src,
+    ].filter((source): source is string => Boolean(source)))];
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setStartupLoadDone(0);
+      setStartupLoadTotal(sources.length);
+    });
 
     const preload = (source: string) => new Promise<void>((resolve) => {
       const image = new Image();
@@ -4396,7 +4444,7 @@ export default function Home() {
       });
     });
     return () => { cancelled = true; };
-  }, [assetsById, baseMap, hydrated, publicLayoutAccess, uploadedBaseMap?.uploadedAt, visibleElements]);
+  }, [assetsById, baseMap, hydrated, publicLayoutAccess, uploadedBaseMap, viewportDimensions.width, visibleElements]);
 
   useEffect(() => {
     const stageWrap = stageWrapRef.current;
@@ -4514,7 +4562,7 @@ export default function Home() {
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !startupAssetsReady || !startupInitialViewReady) return;
-    const timer = window.setTimeout(() => setStartupRevealReady(true), 1600);
+    const timer = window.setTimeout(() => setStartupRevealReady(true), 320);
     return () => window.clearTimeout(timer);
   }, [publicLayoutAccess, startupAssetsReady, startupInitialViewReady]);
 
@@ -4570,6 +4618,7 @@ export default function Home() {
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || (publicLayoutAccess === "viewer" && baseMap !== "uploaded")) return;
+    if (uploadedBaseMap?.available) return;
     let cancelled = false;
     fetch(`${UPLOADED_MAP_API}?meta=1`, { cache: "no-store" })
       .then(async (response) => response.ok ? await response.json() as UploadedBaseMap : null)
@@ -4580,7 +4629,7 @@ export default function Home() {
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [baseMap, publicLayoutAccess]);
+  }, [baseMap, publicLayoutAccess, uploadedBaseMap?.available]);
 
   useEffect(() => {
     let moveFrame: number | null = null;
@@ -5803,6 +5852,8 @@ export default function Home() {
         setToast(`지도 비율이 기준(${Math.round(MAP_ASPECT * 1000) / 1000})과 달라 업로드하지 않았습니다. 같은 영역·비율의 지도를 사용해 주세요.`);
         return;
       }
+      const screen2048 = await prepareBaseMapScreenVariant(image, 2048, 0.86).catch(() => null);
+      const screen4096 = await prepareBaseMapScreenVariant(image, 4096, 0.88).catch(() => null);
       const params = new URLSearchParams({ name: file.name, width: String(width), height: String(height) });
       const response = await fetch(`${UPLOADED_MAP_API}?${params.toString()}`, {
         method: "POST",
@@ -5810,12 +5861,35 @@ export default function Home() {
         body: file,
       });
       if (!response.ok) throw new Error(`upload ${response.status}`);
-      const metadata = await response.json() as UploadedBaseMap;
+      let metadata = await response.json() as UploadedBaseMap;
+      const uploadScreenVariant = async (variant: "screen-2048" | "screen-4096", prepared: { blob: Blob; width: number; height: number } | null) => {
+        if (!prepared) return false;
+        const variantParams = new URLSearchParams({
+          variant,
+          sourceVersion: metadata.uploadedAt,
+          width: String(prepared.width),
+          height: String(prepared.height),
+        });
+        const variantResponse = await fetch(`${UPLOADED_MAP_API}?${variantParams.toString()}`, {
+          method: "POST",
+          headers: { "content-type": "image/webp" },
+          body: prepared.blob,
+        });
+        return variantResponse.ok;
+      };
+      const variantResults = await Promise.allSettled([
+        uploadScreenVariant("screen-2048", screen2048),
+        uploadScreenVariant("screen-4096", screen4096),
+      ]);
+      if (variantResults.some((result) => result.status === "fulfilled" && result.value)) {
+        const metadataResponse = await fetch(`${UPLOADED_MAP_API}?meta=1`, { cache: "no-store" });
+        if (metadataResponse.ok) metadata = await metadataResponse.json() as UploadedBaseMap;
+      }
       setUploadedBaseMap(metadata);
       setBaseMapCanUpload(Boolean(metadata.canUpload));
       setMapLoaded(false);
       setBaseMap("uploaded");
-      setToast(`${file.name}을(를) 사이트 베이스 지도로 저장했습니다.`);
+      setToast(`${file.name}을(를) 저장하고 화면용 경량 지도를 함께 준비했습니다.`);
     } catch {
       setToast("베이스 지도를 저장하지 못했습니다. 소유자 로그인과 파일 형식을 확인해 주세요.");
     } finally {
@@ -6110,7 +6184,7 @@ export default function Home() {
       context.fillStyle = "#f4f2ed";
       context.fillRect(0, 0, exportWidth, outputHeight);
 
-      const mapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
+      const mapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : uploadedBaseMapOriginalSource(uploadedBaseMap) || MAP_SVG;
       const baseImage = await loadImage(mapSrc);
       context.drawImage(baseImage, 0, 0, exportWidth, outputHeight);
 
@@ -7232,7 +7306,11 @@ export default function Home() {
         : placeRequestsTotal;
   const eventPlaceSelectionMode = editingEnabled && placeEventFormOpen && !placeEventNoPlace && placeEventMultiPlace;
   const eventPlaceKeySet = useMemo(() => new Set(placeEventPlaces.map((place) => place.placeKey)), [placeEventPlaces]);
-  const activeBaseMapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : `${UPLOADED_MAP_API}?v=${encodeURIComponent(uploadedBaseMap?.uploadedAt ?? "current")}`;
+  const activeBaseMapSrc = baseMap === "svg"
+    ? MAP_SVG
+    : baseMap === "png"
+      ? MAP_PNG
+      : uploadedBaseMapDisplaySource(uploadedBaseMap, viewportDimensions.width > 0 && viewportDimensions.width <= 760, zoom / Math.max(fitZoom, 0.22)) || MAP_SVG;
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
   const editorSyncLabel = editorDraftSyncState === "saving"
     ? "서버 저장 중"
@@ -7435,7 +7513,7 @@ export default function Home() {
               const activeAssetId = elements.find((element) => normalizePlaceName(element.name) === normalizePlaceName(placeName))?.assetId;
               return <article className="landmark-resource-group" key={placeName}>
                 <div><strong>{placeName}</strong><small>{candidates.length}개 후보 · 1024px</small></div>
-                <div className="landmark-candidate-row">{candidates.map((asset) => <button key={asset.id} className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.src} alt="" loading="lazy" decoding="async" /><span>{asset.name}</span></button>)}</div>
+                <div className="landmark-candidate-row">{candidates.map((asset) => <button key={asset.id} className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.screenSrc ?? asset.src} alt="" loading="lazy" decoding="async" /><span>{asset.name}</span></button>)}</div>
               </article>;
             })}
             {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
@@ -7624,7 +7702,7 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))` }}>
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
@@ -7671,7 +7749,7 @@ export default function Home() {
                     onKeyDown={keyboardSelectable ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (eventPlaceSelectionMode) togglePlaceEventMapSelection(element.id); else { setSelectedId(element.id); setSelectedFacilityId(null); setPublicPlaceExpanded(false); setSelectedDenseLabelId(null); } } } : undefined}
                   >
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
-                    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
+                    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
                     {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
                     {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}>{publicElementName}</div>}
@@ -7784,7 +7862,7 @@ export default function Home() {
               {selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}
               {selectedDirectoryPlace ? <label>지도 표현 <em>DB 기본분류와 랜드마크 역할에 따라 자동 적용</em><select value={selected.category} disabled>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label> : <label>지도 요소 유형<select value={selected.category} disabled={isCoreLandmarkName(selected.name) || isPrimaryHubLabel(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
               <label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
-              {selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}
+              {selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.screenSrc ?? asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}
               {selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}
               <label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label>
               <label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label>

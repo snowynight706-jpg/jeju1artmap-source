@@ -4,17 +4,20 @@ export type BundledLandmarkAsset = {
   placeName: string;
   status: "approved" | "review";
   src: string;
+  screenSrc: string;
   fileName: string;
   sourceUrl: string;
 };
 
 const drive = (id: string) => `https://drive.google.com/file/d/${id}/view?usp=drivesdk`;
+const SCREEN_REVISION = "20260818-v1";
 const asset = (id: string, name: string, placeName: string, sourceId: string, status: "approved" | "review" = "review", revision?: string): BundledLandmarkAsset => ({
   id,
   name,
   placeName,
   status,
   src: `/landmarks-hq/${id}.webp${revision ? `?v=${revision}` : ""}`,
+  screenSrc: `/landmarks-screen/${id}.webp?v=${SCREEN_REVISION}`,
   fileName: `${id}.webp`,
   sourceUrl: drive(sourceId),
 });

@@ -32,6 +32,7 @@ test("manifest keeps the existing site root and exposes standalone install metad
 
 test("the service worker never caches mutable APIs and keeps HTML network-first", () => {
   assert.match(serviceWorkerSource, /url\.pathname\.startsWith\("\/api\/"\)\) return/);
+  assert.match(serviceWorkerSource, /baseMapVersion && baseMapVersion !== "current"[\s\S]{0,180}cacheFirstVersionedBaseMap/);
   assert.match(serviceWorkerSource, /request\.mode === "navigate"[\s\S]{0,140}fetch\(request, \{ cache: "no-store" \}\)\.catch\(offlineResponse\)/);
   assert.match(serviceWorkerSource, /request\.destination === "script" \|\| request\.destination === "style"/);
   assert.match(serviceWorkerSource, /request\.destination === "image"[\s\S]{0,120}staleWhileRevalidateImage/);
@@ -47,6 +48,8 @@ test("production registration checks for updates without blocking development", 
   assert.match(lifecycleSource, /controllerchange/);
   assert.match(lifecycleSource, /standaloneStatusBarColors/);
   assert.match(lifecycleSource, /new MutationObserver\(syncStatusBarTheme\)/);
+  assert.match(lifecycleSource, /themeObserver\?\.observe\(appShell![\s\S]{0,100}attributeFilter: \["data-ui-theme"\]/);
+  assert.doesNotMatch(lifecycleSource, /themeObserver\.observe\(document\.body[\s\S]{0,180}subtree: true/);
   assert.match(lifecycleSource, /themeMeta\?\.setAttribute\("content", isStandaloneDisplay\(\) \? statusBarColor : defaultBrowserThemeColor\)/);
   assert.match(lifecycleSource, /getMobilePlatform/);
   assert.match(lifecycleSource, /process\.env\.NODE_ENV === "production" && !standalone/);

@@ -34,5 +34,9 @@ export async function GET(request: Request) {
   headers.set("cache-control", isPublic ? "public, max-age=300" : "private, no-store");
   headers.set("etag", object.httpEtag);
   headers.set("x-content-type-options", "nosniff");
+  const requestedEtag = request.headers.get("if-none-match");
+  if (requestedEtag?.split(",").some((value) => value.trim().replace(/^W\//, "") === object.httpEtag)) {
+    return new Response(null, { status: 304, headers });
+  }
   return new Response(object.body, { headers });
 }

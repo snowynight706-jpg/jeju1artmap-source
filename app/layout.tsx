@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import PwaLifecycle from "./pwa-lifecycle";
 
@@ -14,16 +13,6 @@ const pwaHeadScript = `(() => {
   document.documentElement.style.setProperty('--app-status-bar-color', color);
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', color);
 })();`;
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "제주 원도심 아트맵",
@@ -59,9 +48,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="원도심 아트맵" />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body>
         {children}
         <PwaLifecycle />
       </body>

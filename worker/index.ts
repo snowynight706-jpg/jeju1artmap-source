@@ -29,6 +29,18 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    const immutableBuildAsset = url.pathname.startsWith("/assets/");
+    const immutableVersionedImage = Boolean(url.searchParams.get("v"))
+      && (url.pathname.startsWith("/landmarks-screen/") || url.pathname.startsWith("/maps/wondosim-base-map-v20-screen-"));
+    if ((request.method === "GET" || request.method === "HEAD") && (immutableBuildAsset || immutableVersionedImage)) {
+      const asset = await env.ASSETS.fetch(request);
+      if (!asset.ok) return asset;
+      const headers = new Headers(asset.headers);
+      headers.set("cache-control", "public, max-age=31536000, immutable");
+      if (url.pathname.endsWith(".webp")) headers.set("content-type", "image/webp");
+      return new Response(asset.body, { status: asset.status, statusText: asset.statusText, headers });
+    }
+
     if (url.pathname === "/service-worker.js" || url.pathname === "/manifest.webmanifest") {
       const asset = await env.ASSETS.fetch(request);
       if (!asset.ok) return asset;

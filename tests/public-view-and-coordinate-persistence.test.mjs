@@ -7,15 +7,16 @@ const cssSource = await readFile(new URL("../app/globals.css", import.meta.url),
 const focusSource = await readFile(new URL("../app/public-place-focus.mjs", import.meta.url), "utf8");
 const signatureB = await readFile(new URL("../public/jfac-signature-b.png", import.meta.url));
 
-test("the first screen uses only Korean signature B until assets, initial focus, and settling are complete", () => {
+test("the first screen waits only for the critical map and main-hub assets before settling", () => {
   const loaderBlock = pageSource.match(/const startupLoadingCard =[\s\S]*?<\/section>;/)?.[0] ?? "";
   assert.match(pageSource, /const startupLoadCompletedRef = useRef\(false\)/);
-  assert.match(pageSource, /visibleElements\.flatMap\(\(element\) =>/);
+  assert.doesNotMatch(pageSource, /visibleElements\.flatMap\(\(element\) =>/);
+  assert.match(pageSource, /primaryHubAsset\?\.screenSrc \?\? primaryHubAsset\?\.src/);
   assert.match(pageSource, /Promise\.all\(sources\.map\(preload\)\)/);
   assert.match(pageSource, /const \[startupInitialViewReady, setStartupInitialViewReady\] = useState\(false\)/);
-  assert.match(pageSource, /setStartupRevealReady\(true\), 1600/);
+  assert.match(pageSource, /setStartupRevealReady\(true\), 320/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
-  assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.png"/);
+  assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.png",\s*mapSource/);
   assert.match(loaderBlock, /src="\/jfac-signature-b\.png" alt="제주문화예술재단 국문 시그니처 B"/);
   assert.doesNotMatch(loaderBlock, /jfac-symbol\.png|jfac-signature-c\.png|제주 원도심 아트맵/);
   assert.match(loaderBlock, />로딩 중</);

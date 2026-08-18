@@ -74,36 +74,36 @@ export default function PwaLifecycle() {
       themeMeta?.setAttribute("content", isStandaloneDisplay() ? statusBarColor : defaultBrowserThemeColor);
     };
 
-    const themeObserver = new MutationObserver(syncStatusBarTheme);
     syncStatusBarTheme();
-    themeObserver.observe(document.body, {
-      attributes: true,
-      attributeFilter: ["data-ui-theme"],
-      childList: true,
-      subtree: true,
-    });
+    const appShell = document.querySelector<HTMLElement>(".app-shell[data-ui-theme]");
+    const themeObserver = appShell ? new MutationObserver(syncStatusBarTheme) : null;
+    themeObserver?.observe(appShell!, { attributes: true, attributeFilter: ["data-ui-theme"] });
     standaloneQuery.addEventListener("change", syncStatusBarTheme);
 
     return () => {
-      themeObserver.disconnect();
+      themeObserver?.disconnect();
       standaloneQuery.removeEventListener("change", syncStatusBarTheme);
     };
   }, []);
 
   useEffect(() => {
+    let disposed = false;
     const viewportTags = Array.from(document.head.querySelectorAll<HTMLMetaElement>('meta[name="viewport"]'));
     const activeViewport = viewportTags.at(-1);
     activeViewport?.setAttribute("content", "width=device-width, initial-scale=1, viewport-fit=cover");
     viewportTags.slice(0, -1).forEach((tag) => tag.remove());
 
     const standalone = isStandaloneDisplay();
-    setAppInstalled(standalone);
-    if (process.env.NODE_ENV === "production" && !standalone) {
-      setMobilePlatform(getMobilePlatform());
-    }
+    queueMicrotask(() => {
+      if (disposed) return;
+      setAppInstalled(standalone);
+      if (process.env.NODE_ENV === "production" && !standalone) {
+        setMobilePlatform(getMobilePlatform());
+      }
+    });
 
     if (!("serviceWorker" in navigator)) {
-      return;
+      return () => { disposed = true; };
     }
 
     if (process.env.NODE_ENV !== "production") {
@@ -112,10 +112,9 @@ export default function PwaLifecycle() {
           .filter((registration) => registration.scope.startsWith(window.location.origin))
           .map((registration) => registration.unregister()),
       ));
-      return;
+      return () => { disposed = true; };
     }
 
-    let disposed = false;
     let loadListenerAttached = false;
 
     const handleBeforeInstall = (event: Event) => {

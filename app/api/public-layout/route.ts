@@ -1,4 +1,5 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import { readUploadedBaseMapMetadata } from "../../base-map-storage";
 import { contentSummaryFromBatchResults } from "../../content-summary.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
 import { stabilizeMainHubDocument } from "../../main-hub-persistence.mjs";
@@ -11,6 +12,7 @@ const MAX_ASSETS = 900;
 
 type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
+  BUCKET?: R2Bucket;
 };
 
 type PublicViewSettings = {
@@ -45,6 +47,23 @@ async function runtimeEnv() {
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
+}
+
+async function cacheableJson(request: Request, body: unknown, status = 200) {
+  const serialized = JSON.stringify(body);
+  const stableSerialized = serialized.replace(/"refreshedAt":"[^"]*"/, '"refreshedAt":""');
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(stableSerialized));
+  const hash = [...new Uint8Array(digest)].slice(0, 12).map((value) => value.toString(16).padStart(2, "0")).join("");
+  const etag = `"public-layout-${hash}"`;
+  const headers = new Headers({
+    "cache-control": "private, no-cache",
+    "content-type": "application/json; charset=utf-8",
+    etag,
+    vary: "Cookie",
+  });
+  const candidate = request.headers.get("if-none-match");
+  const matches = candidate?.split(",").some((value) => value.trim().replace(/^W\//, "") === etag) ?? false;
+  return matches ? new Response(null, { status: 304, headers }) : new Response(serialized, { status, headers });
 }
 
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
@@ -160,6 +179,20 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
   const placeRequestCount = canEdit
     ? db.prepare("SELECT COUNT(*) AS count FROM place_registration_requests")
     : db.prepare("SELECT 0 AS count");
+  const eventPlaceIndex = canEdit
+    ? db.prepare(
+      `SELECT DISTINCT ep.place_key AS placeKey, ep.place_name AS placeName
+       FROM place_event_places ep
+       INNER JOIN place_events e ON e.id = ep.event_id
+       ORDER BY ep.place_name, ep.place_key`,
+    )
+    : db.prepare(
+      `SELECT DISTINCT ep.place_key AS placeKey, ep.place_name AS placeName
+       FROM place_event_places ep
+       INNER JOIN place_events e ON e.id = ep.event_id
+       WHERE e.status = 'active' AND e.visible_from <= ? AND e.visible_until > ?
+       ORDER BY ep.place_name, ep.place_key`,
+    ).bind(now, now);
   const statements = [
     db.prepare(
       `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
@@ -170,6 +203,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
     db.prepare(`SELECT COUNT(*) AS count FROM place_stories WHERE ${reviewWhere}`),
     eventCount,
     placeRequestCount,
+    eventPlaceIndex,
     ...(canEdit ? [db.prepare(
       `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
         previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
@@ -177,12 +211,13 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
        FROM map_editor_draft WHERE id = 1`,
     )] : []),
   ];
-  const [layoutResult, reviewResult, eventResult, placeRequestResult, draftResult] = await db.batch(statements);
+  const [layoutResult, reviewResult, eventResult, placeRequestResult, eventPlaceResult, draftResult] = await db.batch(statements);
   const contentSummary = contentSummaryFromBatchResults(reviewResult, eventResult, placeRequestResult, now);
   return {
     row: batchRow(layoutResult) as StoredLayout | null,
     draftRow: canEdit && draftResult ? batchRow(draftResult) as StoredDraft | null : null,
     contentSummary,
+    eventLinkedPlaces: (eventPlaceResult.results ?? []) as Array<{ placeKey: string; placeName: string }>,
   };
 }
 
@@ -212,19 +247,25 @@ function parseDraft(row: StoredDraft) {
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit, accessMethod } = ownerAccess(request, runtime);
-  if (!runtime.DB) return json({ document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null }, 503);
-  const { row, draftRow, contentSummary } = await readInitialState(runtime.DB, canEdit);
+  if (!runtime.DB) {
+    const uploadedBaseMap = await readUploadedBaseMapMetadata(runtime.BUCKET, canEdit);
+    return cacheableJson(request, { document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null, eventLinkedPlaces: [], uploadedBaseMap }, 503);
+  }
+  const [{ row, draftRow, contentSummary, eventLinkedPlaces }, uploadedBaseMap] = await Promise.all([
+    readInitialState(runtime.DB, canEdit),
+    readUploadedBaseMapMetadata(runtime.BUCKET, canEdit),
+  ]);
   let draft = null;
   try {
     draft = draftRow ? parseDraft(draftRow) : null;
   } catch {
     draft = null;
   }
-  if (!row) return json({ document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary });
+  if (!row) return cacheableJson(request, { document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, uploadedBaseMap });
   try {
-    return json({ ...parseStored(row, canEdit), draft, canEdit, accessMethod, persistent: true, contentSummary });
+    return cacheableJson(request, { ...parseStored(row, canEdit), draft, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, uploadedBaseMap });
   } catch {
-    return json({ document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary }, 500);
+    return cacheableJson(request, { document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, uploadedBaseMap }, 500);
   }
 }
 
