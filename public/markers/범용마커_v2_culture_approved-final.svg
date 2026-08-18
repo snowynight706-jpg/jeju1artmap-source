@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
   <title>문화시설 최종 채용</title>
-  <circle cx="80" cy="80" r="66" fill="none" stroke="#BDE2E2" stroke-width="12"/><circle cx="80" cy="80" r="59" fill="#58AEB0" stroke="#343A39" stroke-width="7"/><circle cx="80" cy="80" r="42" fill="#F7F1E4" stroke="#343A39" stroke-width="5"/>
+  <circle cx="80" cy="80" r="59" fill="#58AEB0" stroke="#343A39" stroke-width="7"/><circle cx="80" cy="80" r="42" fill="#F7F1E4" stroke="#343A39" stroke-width="5"/>
   <path d="M51 51h58v61H51z" fill="#FDFBF5" stroke="#3C4140" stroke-width="4"/><path d="M57 57h20v49H57z" fill="#CFE3DF"/><path d="M80 57h23v21H80z" fill="#E2D3BE"/><path d="M80 81h23v25H80z" fill="#78BABB"/>
   <circle cx="91" cy="69" r="8" fill="#C95F4D"/><path d="M60 98c7-21 14-31 30-39-7 12-11 24-12 42" fill="none" stroke="#252A29" stroke-width="7" stroke-linecap="round"/><path d="M86 87l12 11M98 87L86 98" stroke="#F7F1E4" stroke-width="3.5" stroke-linecap="round"/><path d="M47 115h66" stroke="#3C4140" stroke-width="4" stroke-linecap="round"/>
 </svg>

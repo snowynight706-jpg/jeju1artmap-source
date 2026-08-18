@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
   <title>음식점 최종 채용</title>
   <defs><linearGradient id="steel-final" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#727A7C"/><stop offset=".38" stop-color="#E2E6E4"/><stop offset=".62" stop-color="#FAFBF7"/><stop offset="1" stop-color="#7E8789"/></linearGradient></defs>
-  <circle cx="80" cy="80" r="66" fill="none" stroke="#F6C2B9" stroke-width="12"/><circle cx="80" cy="80" r="59" fill="#E36B58" stroke="#343A39" stroke-width="7"/><circle cx="80" cy="80" r="42" fill="#F7F1E4" stroke="#343A39" stroke-width="5"/>
+  <circle cx="80" cy="80" r="59" fill="#E36B58" stroke="#343A39" stroke-width="7"/><circle cx="80" cy="80" r="42" fill="#F7F1E4" stroke="#343A39" stroke-width="5"/>
   <path d="M67 45c-11 0-17 9-17 21 0 10 5 17 12 21l-2 30c0 5 3 8 7 8s7-3 7-8l-2-30c7-4 12-11 12-21 0-12-6-21-17-21z" fill="url(#steel-final)" stroke="#4A5152" stroke-width="3.5"/><ellipse cx="67" cy="66" rx="11" ry="15" fill="none" stroke="#D6DCDA" stroke-width="2"/>
   <path d="M92 46h6l-2 37-1 38c0 4-8 4-8 0l3-38z" fill="#626A6C"/><path d="M103 46h6l-1 37v38c0 4-8 4-8 0l2-38z" fill="#626A6C"/><path d="M94 49h2l-2 65" fill="none" stroke="#E8EBE8" stroke-width="2" stroke-linecap="round"/><path d="M105 49h2l-1 65" fill="none" stroke="#E8EBE8" stroke-width="2" stroke-linecap="round"/>
 </svg>

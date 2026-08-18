@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
   <title>소품샵 최종 채용</title>
-  <circle cx="80" cy="80" r="66" fill="none" stroke="#D9C6E2" stroke-width="12"/><circle cx="80" cy="80" r="59" fill="#9A6DAE" stroke="#343A39" stroke-width="7"/><circle cx="80" cy="80" r="42" fill="#F7F1E4" stroke="#343A39" stroke-width="5"/>
+  <circle cx="80" cy="80" r="59" fill="#9A6DAE" stroke="#343A39" stroke-width="7"/><circle cx="80" cy="80" r="42" fill="#F7F1E4" stroke="#343A39" stroke-width="5"/>
   <path d="M58 64h44l8 52H50z" fill="#DCC7A9" stroke="#3F4443" stroke-width="4.5" stroke-linejoin="round"/><path d="M65 66c0-15 6-23 15-23s15 8 15 23" fill="none" stroke="#3F4443" stroke-width="4.5" stroke-linecap="round"/><path d="M59 70h42l2 12H57z" fill="#EFE3D0"/><path d="M57 84h46l2 15H55z" fill="#B59AC1"/><path d="M55 100h50l2 11H53z" fill="#8B6E97"/><path d="M70 84h15l2 27H66z" fill="#E8D9C2"/><path d="M86 84h17l2 10H88z" fill="#9A6DAE"/><path d="M76 50h8" stroke="#F7F1E4" stroke-width="2"/>
 </svg>

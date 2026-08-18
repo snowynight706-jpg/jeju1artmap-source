@@ -30,13 +30,14 @@ test("retired duplicate IDs cannot replace the canonical bundled ID during D1 sy
   assert.match(directoryRouteSource, /aliases: \[\.\.\.new Set\(\[\.\.\.row\.aliases, \.\.\.existing\.aliases\]\)\]\.slice\(0, 12\)/);
 });
 
-test("the approved v2 marker set registers all nine final SVG assets and remains selectable", async () => {
+test("the approved v2 marker set registers all nine borderless final SVG assets and remains selectable", async () => {
   const variants = ["culture", "food", "cafe", "shop", "park", "parking", "utility", "restroom", "information"];
   for (const variant of variants) {
     assert.match(markerAssetSource, new RegExp(`v2-${variant}`));
     const svg = await readFile(new URL(`../public/markers/범용마커_v2_${variant}_approved-final.svg`, import.meta.url), "utf8");
     assert.match(svg, /width="160" height="160" viewBox="0 0 160 160"/);
-    assert.match(svg, /<circle cx="80" cy="80" r="66"/);
+    assert.match(svg, /<circle cx="80" cy="80" r="59" fill="#[0-9A-F]{6}" stroke="#343A39" stroke-width="7"/);
+    assert.doesNotMatch(svg, /r="66"|stroke-width="12"/);
   }
   assert.match(markerAssetSource, /recommendedMarkerStyle: BundledMarkerStyle = "v2"/);
   assert.match(markerAssetSource, /status: approved \? "approved" : "review"/);
@@ -46,4 +47,5 @@ test("the approved v2 marker set registers all nine final SVG assets and remains
   assert.match(pageSource, /\["v2", "리뉴얼 최종 원형"\]/);
   assert.match(pageSource, /\["v2", "01", "02", "03"\]/);
   assert.match(pageSource, /markerAssetSrc\(request\.markerStyle, request\.category\)/);
+  assert.equal((pageSource.match(/markerAssetSrc\(placeRequestMarkerStyle, placeRequestCategory\)/g) ?? []).length, 2);
 });
