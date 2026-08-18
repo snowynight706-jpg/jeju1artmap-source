@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("admin functions use reusable folders with clean CSS chevrons and distinct states", () => {
@@ -139,21 +140,22 @@ test("five persisted palettes include a hidden picker, full tonal hierarchy, and
 });
 
 test("direct DB editing uses a dense details list and compact category selections", () => {
-  assert.match(pageSource, /className="database-editor-list-columns"[^>]*><span \/><span>장소명<\/span><span>분류<\/span><span>권역·세부지역<\/span>/);
+  assert.match(pageSource, /const AdminDatabaseEditor = lazy\(\(\) => import\("\.\/admin-database-editor"\)\)/);
+  assert.match(adminDatabaseSource, /className="database-editor-list-columns"[^>]*><span \/><span>장소명<\/span><span>분류<\/span><span>권역·세부지역<\/span>/);
   assert.match(cssSource, /\.database-editor-list-pane \{[^}]*grid-template-rows: auto auto 24px minmax\(0, 1fr\)/);
   assert.match(cssSource, /\.database-editor-list > button \{[^}]*min-height: 27px[^}]*border-radius: 0/);
   assert.match(cssSource, /:is\(\.database-additional-categories, \.database-convenience-attributes\) > div \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
   assert.match(cssSource, /:is\(\.database-additional-categories, \.database-convenience-attributes\) label \{[^}]*min-height: 28px/);
-  assert.doesNotMatch(pageSource, /공개 상세 태그/);
+  assert.doesNotMatch(adminDatabaseSource, /공개 상세 태그/);
 });
 
 test("direct DB editing can collect places by primary category with visible counts", () => {
   for (const [id, name] of [["all", "전체"], ["culture", "문화공간"], ["food", "음식점"], ["cafe", "카페"], ["shop", "소품샵"], ["other", "기타"]]) {
-    assert.match(pageSource, new RegExp(`id: "${id}", name: "${name}"`));
+    assert.match(adminDatabaseSource, new RegExp(`id: "${id}", name: "${name}"`));
   }
-  assert.match(pageSource, /className="database-editor-category-filters" role="group" aria-label="DB 대분류 모아보기"/);
-  assert.match(pageSource, /aria-pressed=\{databaseEditorCategory === filter\.id\}/);
-  assert.match(pageSource, /databaseEditorCategoryCounts\[filter\.id\]/);
+  assert.match(adminDatabaseSource, /className="database-editor-category-filters" role="group" aria-label="DB 대분류 모아보기"/);
+  assert.match(adminDatabaseSource, /aria-pressed=\{categoryFilter === filter\.id\}/);
+  assert.match(adminDatabaseSource, /categoryCounts\[filter\.id\]/);
   assert.match(pageSource, /databaseEditorCategory === "all" \|\| databaseEditorCategoryForPlace\(place\) === databaseEditorCategory/);
   assert.match(cssSource, /\.database-editor-category-filters \{[^}]*grid-template-columns: repeat\(6, minmax\(0, 1fr\)\)/);
   assert.match(cssSource, /\.database-editor-category-filters button\.active \{[^}]*box-shadow: inset 0 -2px 0 #555/);

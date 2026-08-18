@@ -1,4 +1,4 @@
-import { index, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const primaryCalibrationSettings = sqliteTable("primary_calibration_settings", {
   name: text("name").primaryKey(),
@@ -141,6 +141,22 @@ export const placeStories = sqliteTable("place_stories", {
   index("place_stories_status_created_idx").on(table.status, table.createdAt),
 ]);
 
+export const placeStoryReports = sqliteTable("place_story_reports", {
+  id: text("id").primaryKey(),
+  storyId: text("story_id").notNull(),
+  reason: text("reason").notNull(),
+  detail: text("detail").notNull(),
+  actorHash: text("actor_hash").notNull(),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+  resolvedAt: text("resolved_at"),
+  resolvedBy: text("resolved_by"),
+}, (table) => [
+  uniqueIndex("place_story_reports_story_actor_idx").on(table.storyId, table.actorHash),
+  index("place_story_reports_story_status_idx").on(table.storyId, table.status, table.createdAt),
+  index("place_story_reports_actor_created_idx").on(table.actorHash, table.createdAt),
+]);
+
 export const placeEvents = sqliteTable("place_events", {
   id: text("id").primaryKey(),
   placeKey: text("place_key").notNull(),
@@ -150,6 +166,8 @@ export const placeEvents = sqliteTable("place_events", {
   photoKey: text("photo_key").notNull(),
   photoContentType: text("photo_content_type").notNull(),
   photoSize: integer("photo_size").notNull(),
+  startsAt: text("starts_at").notNull().default(""),
+  endsAt: text("ends_at").notNull().default(""),
   visibleFrom: text("visible_from").notNull(),
   visibleUntil: text("visible_until").notNull(),
   status: text("status").notNull(),

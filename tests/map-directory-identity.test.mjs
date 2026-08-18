@@ -8,6 +8,7 @@ import {
 } from "../app/map-element-identity.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const masterDirectorySource = await readFile(new URL("../app/master-directory.ts", import.meta.url), "utf8");
 const directoryRouteSource = await readFile(new URL("../app/api/place-directory/route.ts", import.meta.url), "utf8");
 
@@ -74,9 +75,9 @@ test("every formerly missing current landmark has an exact bundled DB row", () =
 
 test("DB area editing selects an existing region value from a visible dropdown", () => {
   assert.match(pageSource, /const databaseAreaOptions = useMemo/);
-  assert.match(pageSource, /<label>권역·세부지역 <em>기존 값 선택<\/em><select/);
-  assert.match(pageSource, /aria-label="권역·세부지역 선택"/);
-  assert.match(pageSource, /databaseAreaOptions\.map/);
+  assert.match(adminDatabaseSource, /<label>권역·세부지역 <em>기존 값 선택<\/em><select/);
+  assert.match(adminDatabaseSource, /aria-label="권역·세부지역 선택"/);
+  assert.match(adminDatabaseSource, /areaOptions\.map/);
 });
 
 test("bundled DB refresh upserts in bounded batches before removing stale rows", () => {

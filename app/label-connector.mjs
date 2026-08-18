@@ -16,5 +16,5 @@ export function distanceAwareConnectorOpacity(fromX, fromY, toX, toY, mapAspect 
 
 export function distanceAwareConnectorWidth(fromX, fromY, toX, toY, mapAspect = 1) {
   const eased = distanceProgress(fromX, fromY, toX, toY, mapAspect);
-  return Math.round((1.1 + eased * 0.4) * 1000) / 1000;
+  return Math.round((1.1 + eased * 1.4) * 1000) / 1000;
 }

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const taxonomySource = await readFile(new URL("../app/place-taxonomy.ts", import.meta.url), "utf8");
 const directoryRouteSource = await readFile(new URL("../app/api/place-directory/route.ts", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -21,7 +22,7 @@ test("place taxonomy keeps four primary categories and granular unlimited additi
   assert.match(taxonomySource, /"exhibition-performance": \["exhibition", "performance"\]/);
   assert.match(taxonomySource, /"experience-education": \["experience", "education"\]/);
   assert.match(taxonomySource, /"walk-rest": \["walk", "rest"\]/);
-  assert.match(pageSource, /추가분류 · 선택 제한 없음/);
+  assert.match(adminDatabaseSource, /추가분류 · 선택 제한 없음/);
 });
 
 test("same-building facilities share one anchor but remain separate selectable records", () => {
@@ -72,7 +73,7 @@ test("public marker selection reuses the red main-hub pointer instead of a yello
 
 test("convenience information is stored independently from category tags", () => {
   assert.match(taxonomySource, /export type ConvenienceAttributeId/);
-  assert.match(pageSource, /className="database-convenience-attributes"/);
+  assert.match(adminDatabaseSource, /className="database-convenience-attributes"/);
   assert.match(directoryRouteSource, /convenience_attributes_json AS convenienceAttributesJson/);
   assert.match(convenienceMigration, /ADD `convenience_attributes_json`/);
 });

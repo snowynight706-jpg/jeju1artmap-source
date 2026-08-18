@@ -7,6 +7,9 @@ const MAX_STORIES_PER_PLACE = 80;
 const GLOBAL_PAGE_SIZE = 10;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_COUNT = 3;
+const REPORT_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const REPORT_RATE_LIMIT_COUNT = 6;
+const REPORT_REASONS = new Set(["inappropriate", "privacy", "copyright", "spam", "other"]);
 
 type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
@@ -22,6 +25,8 @@ type StoryRow = {
   photoKey: string | null;
   photoContentType: string | null;
   status: "published" | "hidden";
+  reportCount: number;
+  reportSummary: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -40,6 +45,18 @@ const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_stories (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   moderated_by TEXT
+)`;
+
+const REPORTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_story_reports (
+  id TEXT PRIMARY KEY NOT NULL,
+  story_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  detail TEXT NOT NULL,
+  actor_hash TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  resolved_at TEXT,
+  resolved_by TEXT
 )`;
 
 let storageReady: Promise<void> | null = null;
@@ -62,9 +79,13 @@ async function ensureStorage(db: D1Database) {
   if (!storageReady) {
     storageReady = db.batch([
       db.prepare(TABLE_SQL),
+      db.prepare(REPORTS_TABLE_SQL),
       db.prepare("CREATE INDEX IF NOT EXISTS place_stories_place_status_created_idx ON place_stories (place_key, status, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_stories_actor_created_idx ON place_stories (actor_hash, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_stories_status_created_idx ON place_stories (status, created_at)"),
+      db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS place_story_reports_story_actor_idx ON place_story_reports (story_id, actor_hash)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_story_reports_story_status_idx ON place_story_reports (story_id, status, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_story_reports_actor_created_idx ON place_story_reports (actor_hash, created_at)"),
     ]).then(() => undefined).catch((error) => {
       storageReady = null;
       throw error;
@@ -90,9 +111,9 @@ function photoFormat(bytes: Uint8Array) {
   return null;
 }
 
-async function actorHash(request: Request, visitorId: string) {
+async function actorHash(request: Request, visitorId: string, purpose: "story" | "report" = "story") {
   const source = [
-    "jeju-wondosim-place-story-v1",
+    purpose === "report" ? "jeju-wondosim-place-story-report-v1" : "jeju-wondosim-place-story-v1",
     visitorId,
     request.headers.get("cf-connecting-ip") ?? "unknown-ip",
     request.headers.get("user-agent") ?? "unknown-agent",
@@ -117,7 +138,7 @@ async function publishedPlaceExists(db: D1Database, placeKey: string, placeName:
   }
 }
 
-function publicStory(row: StoryRow) {
+function publicStory(row: StoryRow, canModerate = false) {
   return {
     id: row.id,
     placeKey: row.placeKey,
@@ -126,10 +147,29 @@ function publicStory(row: StoryRow) {
     reviewText: row.reviewText,
     photoUrl: row.photoKey ? `/api/place-story-photo?id=${encodeURIComponent(row.id)}` : null,
     status: row.status,
+    reportCount: Number(row.reportCount ?? 0),
+    ...(canModerate && row.reportSummary ? { reportSummary: row.reportSummary } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
+
+const STORY_SELECT = `SELECT s.id, s.place_key AS placeKey, s.place_name AS placeName,
+  s.author_name AS authorName, s.review_text AS reviewText, s.photo_key AS photoKey,
+  s.photo_content_type AS photoContentType, s.status, s.created_at AS createdAt,
+  s.updated_at AS updatedAt,
+  (SELECT COUNT(*) FROM place_story_reports r WHERE r.story_id = s.id AND r.status = 'open') AS reportCount,
+  (SELECT GROUP_CONCAT(
+    CASE r.reason
+      WHEN 'inappropriate' THEN '부적절한 내용'
+      WHEN 'privacy' THEN '개인정보 노출'
+      WHEN 'copyright' THEN '사진·저작권 문제'
+      WHEN 'spam' THEN '광고·도배'
+      ELSE '기타'
+    END || CASE WHEN r.detail <> '' THEN ': ' || r.detail ELSE '' END,
+    char(10)
+  ) FROM place_story_reports r WHERE r.story_id = s.id AND r.status = 'open') AS reportSummary
+ FROM place_stories s`;
 
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
@@ -140,24 +180,21 @@ export async function GET(request: Request) {
   const placeKey = searchParams.get("placeKey")?.trim() ?? "";
   await ensureStorage(runtime.DB);
   if (scope === "all") {
-    const visibleStatuses = canModerate ? "status IN ('published', 'hidden')" : "status = 'published'";
+    const visibleStatuses = canModerate ? "s.status IN ('published', 'hidden')" : "s.status = 'published'";
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
     const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const countRow = await runtime.DB.prepare(
-      `SELECT COUNT(*) AS count FROM place_stories WHERE ${visibleStatuses}`,
+      `SELECT COUNT(*) AS count FROM place_stories s WHERE ${visibleStatuses}`,
     ).first() as { count?: number } | null;
     const total = Number(countRow?.count ?? 0);
     const pageCount = Math.ceil(total / GLOBAL_PAGE_SIZE);
     const normalizedPage = pageCount > 0 ? Math.min(page, pageCount) : 1;
     const result = await runtime.DB.prepare(
-      `SELECT id, place_key AS placeKey, place_name AS placeName, author_name AS authorName,
-        review_text AS reviewText, photo_key AS photoKey, photo_content_type AS photoContentType,
-        status, created_at AS createdAt, updated_at AS updatedAt
-       FROM place_stories WHERE ${visibleStatuses}
-       ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+      `${STORY_SELECT} WHERE ${visibleStatuses}
+       ORDER BY s.created_at DESC, s.id DESC LIMIT ? OFFSET ?`,
     ).bind(GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all() as { results?: StoryRow[] };
     return json({
-      stories: (result.results ?? []).map(publicStory),
+      stories: (result.results ?? []).map((row) => publicStory(row, canModerate)),
       canModerate,
       persistent: true,
       page: normalizedPage,
@@ -168,23 +205,53 @@ export async function GET(request: Request) {
   }
   if (!validPlaceKey(placeKey)) return json({ error: "valid place key required" }, 400);
   const query = canModerate
-    ? `SELECT id, place_key AS placeKey, place_name AS placeName, author_name AS authorName,
-        review_text AS reviewText, photo_key AS photoKey, photo_content_type AS photoContentType,
-        status, created_at AS createdAt, updated_at AS updatedAt
-       FROM place_stories WHERE place_key = ? AND status IN ('published', 'hidden')
-       ORDER BY created_at DESC LIMIT ?`
-    : `SELECT id, place_key AS placeKey, place_name AS placeName, author_name AS authorName,
-        review_text AS reviewText, photo_key AS photoKey, photo_content_type AS photoContentType,
-        status, created_at AS createdAt, updated_at AS updatedAt
-       FROM place_stories WHERE place_key = ? AND status = 'published'
-       ORDER BY created_at DESC LIMIT ?`;
+    ? `${STORY_SELECT} WHERE s.place_key = ? AND s.status IN ('published', 'hidden')
+       ORDER BY s.created_at DESC LIMIT ?`
+    : `${STORY_SELECT} WHERE s.place_key = ? AND s.status = 'published'
+       ORDER BY s.created_at DESC LIMIT ?`;
   const result = await runtime.DB.prepare(query).bind(placeKey, MAX_STORIES_PER_PLACE).all() as { results?: StoryRow[] };
-  return json({ stories: (result.results ?? []).map(publicStory), canModerate, persistent: true });
+  return json({ stories: (result.results ?? []).map((row) => publicStory(row, canModerate)), canModerate, persistent: true });
 }
 
 export async function POST(request: Request) {
   const runtime = await runtimeEnv();
-  if (!runtime.DB || !runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
+  if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
+  await ensureStorage(runtime.DB);
+
+  if (request.headers.get("content-type")?.includes("application/json")) {
+    const payload = await request.json().catch(() => null) as { action?: unknown; storyId?: unknown; reason?: unknown; detail?: unknown; visitorId?: unknown } | null;
+    const storyId = typeof payload?.storyId === "string" ? payload.storyId.trim().slice(0, 120) : "";
+    const reason = typeof payload?.reason === "string" ? payload.reason.trim() : "";
+    const detail = typeof payload?.detail === "string" ? payload.detail.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) : "";
+    const visitorId = typeof payload?.visitorId === "string" ? payload.visitorId.trim().slice(0, 100) : "";
+    if (payload?.action !== "report" || !storyId || !REPORT_REASONS.has(reason) || !/^[a-zA-Z0-9_-]{24,100}$/.test(visitorId)) {
+      return json({ error: "valid story report required" }, 400);
+    }
+    const story = await runtime.DB.prepare("SELECT id FROM place_stories WHERE id = ? AND status = 'published'").bind(storyId).first();
+    if (!story) return json({ error: "published story not found" }, 404);
+    const hash = await actorHash(request, visitorId, "report");
+    const existing = await runtime.DB.prepare("SELECT id FROM place_story_reports WHERE story_id = ? AND actor_hash = ?").bind(storyId, hash).first();
+    if (existing) return json({ error: "already reported" }, 409);
+    const windowStart = new Date(Date.now() - REPORT_RATE_LIMIT_WINDOW_MS).toISOString();
+    const recent = await runtime.DB.prepare(
+      "SELECT COUNT(*) AS count FROM place_story_reports WHERE actor_hash = ? AND created_at >= ?",
+    ).bind(hash, windowStart).first() as { count?: number } | null;
+    if (Number(recent?.count ?? 0) >= REPORT_RATE_LIMIT_COUNT) return json({ error: "too many recent reports" }, 429);
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    try {
+      await runtime.DB.prepare(
+        `INSERT INTO place_story_reports
+          (id, story_id, reason, detail, actor_hash, status, created_at, resolved_at, resolved_by)
+         VALUES (?, ?, ?, ?, ?, 'open', ?, NULL, NULL)`,
+      ).bind(id, storyId, reason, detail, hash, createdAt).run();
+    } catch {
+      return json({ error: "already reported" }, 409);
+    }
+    return json({ reported: true, storyId }, 201);
+  }
+
+  if (!runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
   const declaredLength = Number(request.headers.get("content-length") ?? 0);
   if (declaredLength > MAX_PHOTO_BYTES + 64 * 1024) return json({ error: "upload too large" }, 413);
   const form = await request.formData().catch(() => null);
@@ -199,7 +266,6 @@ export async function POST(request: Request) {
     return json({ error: "valid place, nickname, review, and visitor id required" }, 400);
   }
 
-  await ensureStorage(runtime.DB);
   if (!await publishedPlaceExists(runtime.DB, placeKey, placeName)) return json({ error: "published place not found" }, 404);
   const hash = await actorHash(request, visitorId);
   const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
@@ -239,7 +305,7 @@ export async function POST(request: Request) {
     if (photoKey) await runtime.BUCKET.delete(photoKey).catch(() => undefined);
     throw error;
   }
-  const row: StoryRow = { id, placeKey, placeName, authorName, reviewText, photoKey, photoContentType, status: "published", createdAt, updatedAt: createdAt };
+  const row: StoryRow = { id, placeKey, placeName, authorName, reviewText, photoKey, photoContentType, status: "published", reportCount: 0, reportSummary: null, createdAt, updatedAt: createdAt };
   return json({ story: publicStory(row), persistent: true }, 201);
 }
 
@@ -258,6 +324,11 @@ export async function PATCH(request: Request) {
     "UPDATE place_stories SET status = ?, updated_at = ?, moderated_by = ? WHERE id = ?",
   ).bind(status, updatedAt, currentEmail, id).run();
   if (!result.meta.changes) return json({ error: "story not found" }, 404);
+  if (status === "hidden") {
+    await runtime.DB.prepare(
+      "UPDATE place_story_reports SET status = 'resolved', resolved_at = ?, resolved_by = ? WHERE story_id = ? AND status = 'open'",
+    ).bind(updatedAt, currentEmail, id).run();
+  }
   return json({ id, status, updatedAt });
 }
 
@@ -277,7 +348,10 @@ export async function DELETE(request: Request) {
   ).bind(moderatedAt, currentEmail, id).run();
   try {
     if (row.photoKey) await runtime.BUCKET.delete(row.photoKey);
-    await runtime.DB.prepare("DELETE FROM place_stories WHERE id = ?").bind(id).run();
+    await runtime.DB.batch([
+      runtime.DB.prepare("DELETE FROM place_story_reports WHERE story_id = ?").bind(id),
+      runtime.DB.prepare("DELETE FROM place_stories WHERE id = ?").bind(id),
+    ]);
   } catch {
     return json({ error: "story cleanup failed", hidden: true, id }, 500);
   }
