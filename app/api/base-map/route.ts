@@ -1,5 +1,6 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 import {
+  BUNDLED_V20_SCREEN_REVISION,
   CURRENT_MAP_KEY,
   readUploadedBaseMapMetadata,
   SCREEN_2048_MAP_KEY,
@@ -15,6 +16,7 @@ const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
 const MAX_SCREEN_UPLOAD_BYTES = 12 * 1024 * 1024;
 
 type RuntimeEnv = AdminRuntimeEnv & {
+  ASSETS?: Fetcher;
   BUCKET?: R2Bucket;
 };
 
@@ -53,12 +55,34 @@ function imageHeaders(object: R2Object, immutable: boolean, mapName: string, ver
   return headers;
 }
 
+async function bundledScreenResponse(request: Request, assets: Fetcher | undefined, variant: BaseMapScreenVariant) {
+  if (!assets) return json({ error: "static asset storage unavailable" }, 503);
+  const requestedRevision = new URL(request.url).searchParams.get("v")?.trim() ?? "";
+  if (requestedRevision !== BUNDLED_V20_SCREEN_REVISION) return json({ error: "base map screen revision unavailable" }, 404);
+  const fileName = variant === "screen-2048"
+    ? "wondosim-base-map-v20-screen-2048.webp"
+    : "wondosim-base-map-v20-screen-4096.webp";
+  const assetUrl = new URL(`/maps/${fileName}`, request.url);
+  const asset = await assets.fetch(new Request(assetUrl, { method: "GET" }));
+  if (!asset.ok) return json({ error: "base map screen asset unavailable" }, 404);
+  const headers = new Headers(asset.headers);
+  const etag = headers.get("etag") ?? `"${BUNDLED_V20_SCREEN_REVISION}-${variant}"`;
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  headers.set("content-type", "image/webp");
+  headers.set("etag", etag);
+  headers.set("x-content-type-options", "nosniff");
+  if (etagMatches(request, etag)) return new Response(null, { status: 304, headers });
+  return new Response(asset.body, { headers });
+}
+
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
-  const bucket = runtime.BUCKET;
   const canUpload = adminAccess(request, runtime).allowed;
-  if (!bucket) return json({ available: false, canUpload }, 404);
   const url = new URL(request.url);
+  const bundledVariant = url.searchParams.get("bundled");
+  if (isScreenVariant(bundledVariant)) return bundledScreenResponse(request, runtime.ASSETS, bundledVariant);
+  const bucket = runtime.BUCKET;
+  if (!bucket) return json({ available: false, canUpload }, 404);
   if (url.searchParams.get("meta") === "1") {
     const metadata = await readUploadedBaseMapMetadata(bucket, canUpload);
     return json(metadata ?? { available: false, canUpload });

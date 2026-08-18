@@ -18,8 +18,8 @@ export type UploadedBaseMapMetadata = {
   screen4096Url?: string;
 };
 
-const BUNDLED_V20_SOURCE_VERSION = "2026-08-11T08:17:08.055Z";
-const BUNDLED_V20_SCREEN_REVISION = "20260818-v1";
+export const BUNDLED_V20_SOURCE_VERSION = "2026-08-11T08:17:08.055Z";
+export const BUNDLED_V20_SCREEN_REVISION = "20260818-v1";
 
 export function uploadedMapVersion(object: Pick<R2Object, "customMetadata" | "uploaded">) {
   return object.customMetadata?.uploadedAt ?? object.uploaded.toISOString();
@@ -38,8 +38,8 @@ function versionedMapUrl(version: string, variant?: BaseMapScreenVariant) {
 function bundledScreenUrls(version: string) {
   if (version !== BUNDLED_V20_SOURCE_VERSION) return null;
   return {
-    screen2048Url: `/maps/wondosim-base-map-v20-screen-2048.webp?v=${BUNDLED_V20_SCREEN_REVISION}`,
-    screen4096Url: `/maps/wondosim-base-map-v20-screen-4096.webp?v=${BUNDLED_V20_SCREEN_REVISION}`,
+    screen2048Url: `/api/base-map?bundled=screen-2048&v=${BUNDLED_V20_SCREEN_REVISION}`,
+    screen4096Url: `/api/base-map?bundled=screen-4096&v=${BUNDLED_V20_SCREEN_REVISION}`,
   };
 }
 

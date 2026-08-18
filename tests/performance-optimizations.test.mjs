@@ -13,6 +13,8 @@ test("uploaded base maps use versioned screen derivatives while exports retain t
   assert.match(pageSource, /uploadedBaseMapOriginalSource\(uploadedBaseMap\) \|\| MAP_SVG/);
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 2048, 0\.86\)/);
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 4096, 0\.88\)/);
+  assert.match(baseMapRoute, /bundledScreenResponse/);
+  assert.match(baseMapRoute, /headers\.set\("content-type", "image\/webp"\)/);
   assert.match(baseMapRoute, /max-age=31536000, immutable/);
   assert.match(baseMapRoute, /if \(etagMatches\(request, object\.httpEtag\)\) return new Response\(null, \{ status: 304/);
 });
