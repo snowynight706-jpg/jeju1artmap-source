@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 type InstallChoice = { outcome: "accepted" | "dismissed"; platform: string };
+type MobilePlatform = "ios" | "other";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -12,6 +13,21 @@ interface BeforeInstallPromptEvent extends Event {
 function isStandaloneDisplay() {
   return window.matchMedia("(display-mode: standalone)").matches
     || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+}
+
+function getMobilePlatform(): MobilePlatform | null {
+  const browserNavigator = navigator as Navigator & {
+    userAgentData?: { mobile?: boolean };
+  };
+  const ipadDesktopMode = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  const iosDevice = /iPhone|iPad|iPod/i.test(navigator.userAgent) || ipadDesktopMode;
+  const mobileUserAgent = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+  const mobileDevice = typeof browserNavigator.userAgentData?.mobile === "boolean"
+    ? browserNavigator.userAgentData.mobile
+    : mobileUserAgent || ipadDesktopMode;
+
+  if (!mobileDevice) return null;
+  return iosDevice ? "ios" : "other";
 }
 
 function subscribeToOnlineStatus(callback: () => void) {
@@ -29,6 +45,9 @@ function onlineSnapshot() {
 
 export default function PwaLifecycle() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [mobilePlatform, setMobilePlatform] = useState<MobilePlatform | null>(null);
+  const [installGuideOpen, setInstallGuideOpen] = useState(false);
+  const [appInstalled, setAppInstalled] = useState(false);
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const online = useSyncExternalStore(subscribeToOnlineStatus, onlineSnapshot, () => true);
@@ -39,6 +58,12 @@ export default function PwaLifecycle() {
     const activeViewport = viewportTags.at(-1);
     activeViewport?.setAttribute("content", "width=device-width, initial-scale=1, viewport-fit=cover");
     viewportTags.slice(0, -1).forEach((tag) => tag.remove());
+
+    const standalone = isStandaloneDisplay();
+    setAppInstalled(standalone);
+    if (process.env.NODE_ENV === "production" && !standalone) {
+      setMobilePlatform(getMobilePlatform());
+    }
 
     if (!("serviceWorker" in navigator)) {
       return;
@@ -61,7 +86,11 @@ export default function PwaLifecycle() {
       promptEvent.preventDefault();
       if (!isStandaloneDisplay()) setInstallPrompt(promptEvent);
     };
-    const handleInstalled = () => setInstallPrompt(null);
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+      setInstallGuideOpen(false);
+      setAppInstalled(true);
+    };
     const handleControllerChange = () => {
       if (!updateRequestedRef.current) return;
       updateRequestedRef.current = false;
@@ -121,10 +150,20 @@ export default function PwaLifecycle() {
   }, []);
 
   const installApp = async () => {
-    if (!installPrompt) return;
-    await installPrompt.prompt();
-    await installPrompt.userChoice;
-    setInstallPrompt(null);
+    if (!installPrompt) {
+      setInstallGuideOpen(true);
+      return;
+    }
+
+    try {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      setInstallPrompt(null);
+      if (choice.outcome === "accepted") setAppInstalled(true);
+    } catch {
+      setInstallPrompt(null);
+      setInstallGuideOpen(true);
+    }
   };
 
   const applyUpdate = () => {
@@ -134,12 +173,43 @@ export default function PwaLifecycle() {
     waitingWorker.postMessage({ type: "SKIP_WAITING" });
   };
 
+  const showMobileInstall = Boolean(mobilePlatform) && !appInstalled;
+
   return (
     <>
-      {installPrompt && (
-        <button type="button" className="pwa-install-button" onClick={installApp}>
-          <span aria-hidden="true">↓</span> 앱 설치
+      {showMobileInstall && (
+        <button
+          type="button"
+          className="pwa-install-button"
+          onClick={installApp}
+          aria-haspopup={installPrompt ? undefined : "dialog"}
+          aria-expanded={installGuideOpen}
+          aria-controls="pwa-install-guide"
+        >
+          <img src="/icons/icon-192.png" alt="" aria-hidden="true" />
+          앱 설치
         </button>
+      )}
+      {showMobileInstall && installGuideOpen && (
+        <aside
+          id="pwa-install-guide"
+          className="pwa-install-guide"
+          role="dialog"
+          aria-label="원도심 아트맵 앱 설치 안내"
+        >
+          <img src="/icons/icon-192.png" alt="" aria-hidden="true" />
+          <span>
+            <strong>원도심 아트맵 앱 설치</strong>
+            <small>
+              {mobilePlatform === "ios"
+                ? "Safari에서 공유 버튼을 누른 뒤 ‘홈 화면에 추가’를 선택하세요."
+                : "브라우저 메뉴에서 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 선택하세요."}
+            </small>
+          </span>
+          <button type="button" onClick={() => setInstallGuideOpen(false)} aria-label="설치 안내 닫기">
+            닫기
+          </button>
+        </aside>
       )}
       {waitingWorker && (
         <aside className="pwa-update-notice" role="status" aria-live="polite">

@@ -34,8 +34,52 @@ button { color: inherit; }
   font-size: 11px;
   font-weight: 800;
   backdrop-filter: blur(10px);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
-.pwa-install-button span { margin-right: 4px; font-size: 14px; }
+.pwa-install-button img {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgb(43 45 51 / 14%);
+}
+.pwa-install-guide {
+  position: fixed;
+  right: max(9px, env(safe-area-inset-right));
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  z-index: 241;
+  width: min(360px, calc(100vw - 18px));
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #c7c9cd;
+  border-radius: 11px;
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 12px 32px rgb(43 45 51 / 20%);
+  color: #34363b;
+  backdrop-filter: blur(12px);
+}
+.pwa-install-guide > img { width: 40px; height: 40px; border-radius: 10px; }
+.pwa-install-guide span,
+.pwa-install-guide strong,
+.pwa-install-guide small { display: block; }
+.pwa-install-guide strong { font-size: 12px; }
+.pwa-install-guide small { margin-top: 4px; color: #686a70; font-size: 11px; line-height: 1.45; word-break: keep-all; }
+.pwa-install-guide > button {
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid #d1d3d7;
+  border-radius: 7px;
+  background: #f4f4f5;
+  color: #4b4d52;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
 .pwa-update-notice,
 .pwa-offline-notice {
   position: fixed;
@@ -1294,9 +1338,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
     right: max(9px, env(safe-area-inset-right));
     bottom: calc(9px + env(safe-area-inset-bottom));
     min-height: 36px;
-    padding: 0 10px;
-    font-size: 10px;
+    padding: 0 11px 0 7px;
+    font-size: 11px;
   }
+  .pwa-install-button img { width: 23px; height: 23px; }
   .pwa-update-notice { top: calc(8px + env(safe-area-inset-top)); }
   .pwa-offline-notice { bottom: calc(8px + env(safe-area-inset-bottom)); }
   .brand-block strong { font-size: 12px; }.brand-mark { width: 40px; height: 28px; flex-basis: 40px; }

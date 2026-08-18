@@ -44,6 +44,11 @@ test("production registration checks for updates without blocking development", 
   assert.match(lifecycleSource, /await registration\.update\(\)/);
   assert.match(lifecycleSource, /SKIP_WAITING/);
   assert.match(lifecycleSource, /controllerchange/);
+  assert.match(lifecycleSource, /getMobilePlatform/);
+  assert.match(lifecycleSource, /process\.env\.NODE_ENV === "production" && !standalone/);
+  assert.match(lifecycleSource, /const showMobileInstall = Boolean\(mobilePlatform\) && !appInstalled/);
+  assert.match(lifecycleSource, /Safari에서 공유 버튼을 누른 뒤 ‘홈 화면에 추가’를 선택하세요/);
+  assert.match(lifecycleSource, /브라우저 메뉴에서 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 선택하세요/);
   assert.match(lifecycleSource, /querySelectorAll<HTMLMetaElement>\('meta\[name="viewport"\]'\)/);
   assert.match(lifecycleSource, /viewportTags\.slice\(0, -1\)\.forEach\(\(tag\) => tag\.remove\(\)\)/);
   assert.match(layoutSource, /manifest: "\/manifest\.webmanifest"/);
@@ -58,4 +63,5 @@ test("PWA control files bypass stale HTTP caches and mobile chrome respects safe
   assert.match(workerSource, /service-worker-allowed/);
   assert.match(cssSource, /\.app-shell:not\(\.public-readonly-shell\) > \.topbar[\s\S]{0,220}env\(safe-area-inset-top\)/);
   assert.match(cssSource, /\.pwa-offline-notice/);
+  assert.match(cssSource, /\.pwa-install-guide/);
 });
