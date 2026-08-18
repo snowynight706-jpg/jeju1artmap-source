@@ -29,6 +29,26 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    if (url.pathname === "/service-worker.js" || url.pathname === "/manifest.webmanifest") {
+      const asset = await env.ASSETS.fetch(request);
+      if (!asset.ok) return asset;
+
+      const headers = new Headers(asset.headers);
+      headers.set("cache-control", "no-cache, no-store, must-revalidate");
+      if (url.pathname === "/service-worker.js") {
+        headers.set("content-type", "application/javascript; charset=utf-8");
+        headers.set("service-worker-allowed", "/");
+      } else {
+        headers.set("content-type", "application/manifest+json; charset=utf-8");
+      }
+
+      return new Response(asset.body, {
+        status: asset.status,
+        statusText: asset.statusText,
+        headers,
+      });
+    }
+
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
       return handleImageOptimization(request, {

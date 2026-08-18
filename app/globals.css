@@ -18,6 +18,75 @@ body { font-family: Arial, "Noto Sans KR", sans-serif; overflow: hidden; }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
 
+.pwa-install-button {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 240;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #c7c9cd;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 8px 24px rgb(43 45 51 / 16%);
+  color: #3d3f44;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  backdrop-filter: blur(10px);
+}
+.pwa-install-button span { margin-right: 4px; font-size: 14px; }
+.pwa-update-notice,
+.pwa-offline-notice {
+  position: fixed;
+  left: 50%;
+  z-index: 250;
+  width: min(420px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  border: 1px solid #c9cbd0;
+  border-radius: 11px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 10px 30px rgb(43 45 51 / 18%);
+  color: #34363b;
+  backdrop-filter: blur(12px);
+}
+.pwa-update-notice {
+  top: max(12px, env(safe-area-inset-top));
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 9px 8px 14px;
+}
+.pwa-update-notice span,
+.pwa-update-notice strong,
+.pwa-update-notice small { display: block; }
+.pwa-update-notice strong { font-size: 12px; }
+.pwa-update-notice small { margin-top: 3px; color: #686a70; font-size: 10px; }
+.pwa-update-notice button {
+  min-width: 74px;
+  height: 34px;
+  border: 1px solid #2b2d33;
+  border-radius: 8px;
+  background: #2b2d33;
+  color: white;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+.pwa-update-notice button:disabled { cursor: wait; opacity: .62; }
+.pwa-offline-notice {
+  bottom: max(12px, env(safe-area-inset-bottom));
+  padding: 11px 14px;
+  border-color: #b8b9bc;
+  background: rgb(45 45 45 / 94%);
+  color: white;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .app-shell { height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: var(--paper); }
 .topbar {
   height: 66px; flex: 0 0 66px; display: flex; align-items: center; gap: 12px; padding: 0 16px;
@@ -1216,6 +1285,20 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 @media (max-width: 760px) {
   body { overflow: hidden; }
   .topbar { height: 54px; flex-basis: 54px; padding: 0 9px; }
+  .app-shell:not(.public-readonly-shell) > .topbar {
+    height: calc(54px + env(safe-area-inset-top));
+    flex-basis: calc(54px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+  .pwa-install-button {
+    right: max(9px, env(safe-area-inset-right));
+    bottom: calc(9px + env(safe-area-inset-bottom));
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 10px;
+  }
+  .pwa-update-notice { top: calc(8px + env(safe-area-inset-top)); }
+  .pwa-offline-notice { bottom: calc(8px + env(safe-area-inset-bottom)); }
   .brand-block strong { font-size: 12px; }.brand-mark { width: 40px; height: 28px; flex-basis: 40px; }
   .app-shell:not(.public-readonly-shell) .draft-tools, .app-shell:not(.public-readonly-shell) .export-tools, .app-shell:not(.public-readonly-shell) .public-layout-tools, .app-shell:not(.public-readonly-shell) .shared-admin-signout { display: none; }
   .select-control, .asset-panel, .properties-panel, .panel-reopen, .canvas-toolbar { display: none; }
