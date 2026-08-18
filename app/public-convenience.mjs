@@ -1,0 +1,25 @@
+const PLACE_QUERY_KEY = "place";
+
+export const publicPanelIsPlace = (panel) => panel === "place" || panel === "place-expanded";
+export const publicPanelIsExplorer = (panel) => panel === "explorer" || panel === "explorer-expanded";
+export const publicPanelIsExpanded = (panel) => panel === "place-expanded" || panel === "explorer-expanded";
+
+export function publicPanelAfterDrag(target, startExpanded, deltaY, threshold = 44) {
+  if (deltaY <= -Math.abs(threshold)) return `${target}-expanded`;
+  if (deltaY >= Math.abs(threshold)) return target;
+  return startExpanded ? `${target}-expanded` : target;
+}
+
+export function publicUrlWithPlace(href, placeId) {
+  const url = new URL(href, "https://local.invalid");
+  if (placeId) url.searchParams.set(PLACE_QUERY_KEY, placeId);
+  else url.searchParams.delete(PLACE_QUERY_KEY);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function publicPlaceDirectionsUrl(name, address, mapUrl) {
+  const directUrl = typeof mapUrl === "string" ? mapUrl.trim() : "";
+  if (directUrl) return directUrl;
+  const query = [name, address].filter(Boolean).join(" ").trim();
+  return `https://map.kakao.com/?q=${encodeURIComponent(query)}`;
+}
