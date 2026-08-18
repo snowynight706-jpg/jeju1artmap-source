@@ -93,7 +93,7 @@ test("admin shortcuts stay limited to safe editing actions", () => {
   assert.match(shortcutHandler, /event\.key === "\?"[\s\S]+setShortcutHelpOpen/);
   assert.doesNotMatch(shortcutHandler, /publishCurrentLayout|delete|remove/);
   assert.match(pageSource, /saveDraft: \(\) => \{ void saveEditorDraft\(\); \}/);
-  assert.match(pageSource, /공개본 업데이트와 삭제에는 단축키를 두지 않았습니다/);
+  assert.match(pageSource, /공개본 업데이트와 DB 영구 삭제에는 단축키를 두지 않았습니다/);
   assert.match(pageSource, /Ctrl \/ ⌘ \+ S/);
 });
 

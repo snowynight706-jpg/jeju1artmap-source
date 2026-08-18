@@ -32,6 +32,7 @@ import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.mjs";
 import { denseLabelConnections } from "./dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
+import { distanceAwareConnectorOpacity } from "./label-connector.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
 import {
@@ -5010,12 +5011,36 @@ export default function Home() {
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (publicLayoutAccess !== "editor" || databaseEditorOpen || !selectedId || ["INPUT", "SELECT", "TEXTAREA"].includes((event.target as HTMLElement)?.tagName)) return;
+      const target = event.target as HTMLElement | null;
+      const interactiveControl = Boolean(target?.closest("input, textarea, select, button, a, [contenteditable='true']"));
+      if (publicLayoutAccess !== "editor" || databaseEditorOpen || shortcutHelpOpen || placeEventFormOpen || !selectedId || interactiveControl) return;
+      const element = elementsRef.current.find((item) => item.id === selectedId);
+      if (!element) return;
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        if (event.repeat) return;
+        if (element.locked) {
+          updateElement(element.id, { locked: false });
+          setCalibrationDirty(true);
+          setToast(`${element.name} 좌표 고정을 해제했습니다. 지도에서 삭제하려면 한 번 더 누르세요.`);
+          return;
+        }
+        if (isMainHubPersistenceTarget(element)) {
+          setToast("제주소통협력센터는 주요 거점이므로 지도에서 삭제할 수 없습니다.");
+          return;
+        }
+        pushHistory();
+        setPlacementOverride(element, "deleted");
+        replaceElements((current) => current.filter((item) => item.id !== element.id));
+        setSelectedId(null);
+        setToast(`${element.name} 마커를 지도 배치에서 삭제했습니다. 통합 장소 DB는 보존됩니다.`);
+        return;
+      }
+
       const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       const direction = directions[event.key];
       if (!direction) return;
-      const element = elementsRef.current.find((item) => item.id === selectedId);
-      if (!element) return;
       event.preventDefault();
       const step = event.shiftKey ? 0.5 : 0.08;
       const calibrationPoint = !resourceOutputDragMode
@@ -5037,7 +5062,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [databaseEditorOpen, publicLayoutAccess, resourceOutputDragMode, selectedId, updateCalibrationPoint, updateElement, updateElementAnchor]);
+  }, [databaseEditorOpen, placeEventFormOpen, publicLayoutAccess, pushHistory, replaceElements, resourceOutputDragMode, selectedId, setPlacementOverride, shortcutHelpOpen, updateCalibrationPoint, updateElement, updateElementAnchor]);
 
   const undo = () => {
     if (!undoStack.length) return;
@@ -8307,7 +8332,11 @@ export default function Home() {
                   const element = visibleElementsById.get(row.elementId);
                   const color = categoryOf(row.category).color;
                   const target = denseLabelScreenTarget(cluster, row, zoom, stageDimensions);
-                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedDenseLabelId === cluster.id ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
+                  const connectorOpacity = element
+                    ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
+                    : 0.34;
+                  const selectedConnector = selectedDenseLabelId === cluster.id;
+                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedConnector ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" style={{ opacity: selectedConnector ? Math.max(0.9, connectorOpacity) : connectorOpacity }} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
                   const meta = categoryOf(element.category); const isSelected = editingEnabled && selectedId === element.id; const asset = element.assetId ? assetsById.get(element.assetId) : undefined;
@@ -8657,11 +8686,12 @@ export default function Home() {
             <div><kbd>Ctrl / ⌘ + Shift + Z</kbd><span>다시 실행</span></div>
             <div><kbd>↑ ↓ ← →</kbd><span>선택 항목 미세 이동</span></div>
             <div><kbd>Shift + 방향키</kbd><span>선택 항목 크게 이동</span></div>
+            <div><kbd>Delete / Backspace</kbd><span>고정 해제 → 지도 배치 삭제</span></div>
             <div><kbd>/</kbd><span>현재 장소 목록 검색</span></div>
             <div><kbd>Esc</kbd><span>가장 위의 창 닫기</span></div>
             <div><kbd>?</kbd><span>이 단축키 안내 열기</span></div>
           </div>
-          <p id="admin-shortcut-note">공개본 업데이트와 삭제에는 단축키를 두지 않았습니다.</p>
+          <p id="admin-shortcut-note">삭제 단축키는 지도 배치만 제거하며 통합 장소 DB는 보존합니다. 공개본 업데이트와 DB 영구 삭제에는 단축키를 두지 않았습니다.</p>
         </section>
       </div>}
       {databaseEditorOpen && <div className="database-editor-backdrop" role="presentation">
