@@ -97,6 +97,32 @@ test("admin shortcuts stay limited to safe editing actions", () => {
   assert.match(pageSource, /Ctrl \/ ⌘ \+ S/);
 });
 
+test("public place details wait for events and records before revealing all content", () => {
+  assert.match(pageSource, /const \[placeStoriesLoadedKey, setPlaceStoriesLoadedKey\] = useState<string \| null>\(null\)/);
+  assert.match(pageSource, /const \[placeEventsLoadedKey, setPlaceEventsLoadedKey\] = useState<string \| null>\(null\)/);
+  assert.match(pageSource, /publicPlaceDetailLoading = publicLayoutAccess === "viewer"[\s\S]{0,220}placeStoriesLoadedKey !== selectedStoryKey \|\| placeEventsLoadedKey !== selectedStoryKey/);
+  assert.match(pageSource, /setPlaceStoriesLoadedKey\(requestKey\)/);
+  assert.match(pageSource, /setPlaceEventsLoadedKey\(requestKey\)/);
+  assert.match(pageSource, /aria-busy=\{publicPlaceDetailLoading\}/);
+  assert.match(pageSource, /publicPlaceDetailLoading \? <div className="public-place-detail-loading"[\s\S]{0,320}행사와 장소 기록을 함께 준비한 뒤 한 번에 보여드립니다/);
+  assert.match(cssSource, /\.public-place-detail-loading \{[^}]*min-height: 100%[^}]*place-content: center/);
+});
+
+test("PC shortcut help and viewer shortcuts are available in both modes", () => {
+  const viewerShortcutHandler = pageSource.match(/const handleViewerShortcut = \(event: KeyboardEvent\) => \{[\s\S]+?window\.addEventListener\("keydown", handleViewerShortcut\);/)?.[0] ?? "";
+  assert.ok(viewerShortcutHandler);
+  assert.match(viewerShortcutHandler, /event\.key === "\?"[\s\S]+setShortcutHelpOpen/);
+  assert.match(viewerShortcutHandler, /event\.key === "\/"[\s\S]+openPublicPlaceList\(\)[\s\S]+publicPlaceQueryInputRef\.current\?\.focus/);
+  assert.match(viewerShortcutHandler, /event\.key === "\+" \|\| event\.key === "="[\s\S]+value \* 1\.16/);
+  assert.match(viewerShortcutHandler, /event\.key === "-"[\s\S]+value \/ 1\.16/);
+  assert.match(viewerShortcutHandler, /event\.key === "0"[\s\S]+setZoom\(fitZoom\)[\s\S]+setPan\(\{ x: 0, y: 0 \}\)/);
+  assert.match(pageSource, /className="public-shortcut-trigger shortcut-trigger"[\s\S]{0,180}>단축키<\/button>/);
+  assert.match(pageSource, /\{shortcutHelpOpen && <div className="admin-shortcut-backdrop"/);
+  assert.match(pageSource, /공개본 단축키/);
+  assert.match(pageSource, /원도심 탐색을 열고 장소 검색/);
+  assert.match(cssSource, /@media \(max-width: 760px\) \{[\s\S]+\.public-topbar \.public-shortcut-trigger[\s\S]+display: none/);
+});
+
 test("review text drafts and mobile photo discard protection are session scoped", () => {
   assert.match(pageSource, /PLACE_STORY_DRAFTS_KEY/);
   assert.match(pageSource, /sessionStorage\.setItem\(PLACE_STORY_DRAFTS_KEY/);

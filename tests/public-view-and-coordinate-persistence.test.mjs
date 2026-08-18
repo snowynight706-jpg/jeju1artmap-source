@@ -47,7 +47,7 @@ test("mobile public chrome floats only the main-hub return button", () => {
   assert.match(pageSource, /<img src="\/jfac-symbol\.png" alt="" aria-hidden="true" \/>/);
   assert.doesNotMatch(pageSource, /<div className="brand-mark">W<\/div>/);
   assert.match(cssSource, /\.public-topbar \{[^}]*position: absolute;[^}]*right: 9px;[^}]*background: transparent/);
-  assert.match(cssSource, /\.public-topbar \.brand-block, \.public-topbar \.zoom-tools, \.public-topbar \.readonly-badge, \.public-topbar \.owner-signin \{ display: none; \}/);
+  assert.match(cssSource, /\.public-topbar \.brand-block, \.public-topbar \.zoom-tools, \.public-topbar \.readonly-badge, \.public-topbar \.public-shortcut-trigger, \.public-topbar \.owner-signin \{ display: none; \}/);
   assert.match(pageSource, /className="main-hub-quick"/);
 });
 

@@ -2292,6 +2292,7 @@ export default function Home() {
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const dbInputRef = useRef<HTMLInputElement>(null);
   const placeQueryInputRef = useRef<HTMLInputElement>(null);
+  const publicPlaceQueryInputRef = useRef<HTMLInputElement>(null);
   const databaseEditorQueryInputRef = useRef<HTMLInputElement>(null);
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const storyPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -2434,6 +2435,7 @@ export default function Home() {
   const [editorDraftSyncState, setEditorDraftSyncState] = useState<"ready" | "saving" | "saved" | "error" | "conflict">("ready");
   const [placeStories, setPlaceStories] = useState<PlaceStory[]>([]);
   const [placeStoriesLoading, setPlaceStoriesLoading] = useState(false);
+  const [placeStoriesLoadedKey, setPlaceStoriesLoadedKey] = useState<string | null>(null);
   const [, setPlaceStoriesCanModerate] = useState(false);
   const [globalStoriesOpen, setGlobalStoriesOpen] = useState(false);
   const [publicPanelExpanded, setPublicPanelExpanded] = useState(false);
@@ -2460,6 +2462,7 @@ export default function Home() {
   const [placeStorySubmitting, setPlaceStorySubmitting] = useState(false);
   const [placeEvents, setPlaceEvents] = useState<PlaceEvent[]>([]);
   const [placeEventsLoading, setPlaceEventsLoading] = useState(false);
+  const [placeEventsLoadedKey, setPlaceEventsLoadedKey] = useState<string | null>(null);
   const [placeEventsCanManage, setPlaceEventsCanManage] = useState(false);
   const [placeEventsRefreshKey, setPlaceEventsRefreshKey] = useState(0);
   const [eventLinkedPlaces, setEventLinkedPlaces] = useState<PlaceEventPlace[]>([]);
@@ -3033,6 +3036,9 @@ export default function Home() {
     : selected
       ? placeContentKey(selected)
       : null;
+  const publicPlaceDetailLoading = publicLayoutAccess === "viewer"
+    && Boolean(selectedStoryKey)
+    && (placeStoriesLoadedKey !== selectedStoryKey || placeEventsLoadedKey !== selectedStoryKey);
   const selectedDisplayName = selectedDirectoryPlace
     ? publicDisplayName(selectedDirectoryPlace.name, selectedDirectoryPlace.featuredRole)
     : selected?.name ?? "";
@@ -3671,9 +3677,13 @@ export default function Home() {
       if (!selectedStoryKey || publicLayoutAccess === "loading") {
         setPlaceStories([]);
         setPlaceStoriesCanModerate(false);
+        setPlaceStoriesLoading(false);
+        setPlaceStoriesLoadedKey(null);
         return null;
       }
+      const requestKey = selectedStoryKey;
       setPlaceStoriesLoading(true);
+      setPlaceStoriesLoadedKey(null);
       setPlaceStories([]);
       setPlaceStoryFormOpen(false);
       updatePlaceStoryPhoto(null);
@@ -3694,7 +3704,10 @@ export default function Home() {
           setPlaceStoriesCanModerate(false);
         })
         .finally(() => {
-          if (!controller.signal.aborted && storyRequestRunRef.current === run) setPlaceStoriesLoading(false);
+          if (!controller.signal.aborted && storyRequestRunRef.current === run) {
+            setPlaceStoriesLoading(false);
+            setPlaceStoriesLoadedKey(requestKey);
+          }
         });
     });
     return () => controller.abort();
@@ -3707,9 +3720,13 @@ export default function Home() {
       if (!selectedStoryKey || publicLayoutAccess === "loading") {
         setPlaceEvents([]);
         setPlaceEventsCanManage(false);
+        setPlaceEventsLoading(false);
+        setPlaceEventsLoadedKey(null);
         return null;
       }
+      const requestKey = selectedStoryKey;
       setPlaceEventsLoading(true);
+      setPlaceEventsLoadedKey(null);
       setPlaceEvents([]);
       setPlaceEventFormOpen(false);
       setPlaceEventEditingId(null);
@@ -3737,7 +3754,10 @@ export default function Home() {
           setPlaceEventsCanManage(false);
         })
         .finally(() => {
-          if (!controller.signal.aborted && eventRequestRunRef.current === run) setPlaceEventsLoading(false);
+          if (!controller.signal.aborted && eventRequestRunRef.current === run) {
+            setPlaceEventsLoading(false);
+            setPlaceEventsLoadedKey(requestKey);
+          }
         });
     });
     return () => controller.abort();
@@ -7669,6 +7689,52 @@ export default function Home() {
     setToast("전체 지도로 돌아왔습니다.");
   };
 
+  useEffect(() => {
+    if (publicLayoutAccess !== "viewer") return;
+
+    const handleViewerShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const editingText = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
+      const modifier = event.ctrlKey || event.metaKey || event.altKey;
+      const blockingDialogOpen = adminLoginOpen || placeRequestFormOpen || placeRequestPickingLocation;
+
+      if (!editingText && !modifier && event.key === "?" && !blockingDialogOpen) {
+        event.preventDefault();
+        setShortcutHelpOpen((current) => !current);
+        return;
+      }
+      if (editingText || modifier || blockingDialogOpen || shortcutHelpOpen) return;
+
+      if (event.key === "/") {
+        event.preventDefault();
+        if (globalStoriesOpen) setGlobalContentTab("places");
+        else openPublicPlaceList();
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => publicPlaceQueryInputRef.current?.focus());
+        });
+        return;
+      }
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        setZoom((value) => clamp(value * 1.16, 0.22, 4));
+        return;
+      }
+      if (event.key === "-") {
+        event.preventDefault();
+        setZoom((value) => clamp(value / 1.16, 0.22, 4));
+        return;
+      }
+      if (event.key === "0") {
+        event.preventDefault();
+        setZoom(fitZoom);
+        setPan({ x: 0, y: 0 });
+      }
+    };
+
+    window.addEventListener("keydown", handleViewerShortcut);
+    return () => window.removeEventListener("keydown", handleViewerShortcut);
+  }, [adminLoginOpen, fitZoom, globalStoriesOpen, openPublicPlaceList, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, shortcutHelpOpen]);
+
   const copyPublicPlaceAddress = async () => {
     const address = selectedDirectoryPlace?.address || selected?.address || "";
     if (!address) return;
@@ -8014,7 +8080,7 @@ export default function Home() {
         <div className="toolbar-group muted-actions">
           <button onClick={undo} disabled={!undoStack.length} aria-label="실행 취소">↶</button>
           <button onClick={redo} disabled={!redoStack.length} aria-label="다시 실행">↷</button>
-          <button type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="admin-shortcut-dialog">단축키</button>
+          <button type="button" className="shortcut-trigger" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
           <button className={calibrationMode ? "active-tool" : ""} onClick={() => switchLeftPanel(calibrationMode ? "assets" : "calibration")}>◎ 기준점 보정</button>
         </div>
         <div className="toolbar-group zoom-tools">
@@ -8029,6 +8095,7 @@ export default function Home() {
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
+        <button className="public-shortcut-trigger shortcut-trigger" type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
         <button className="owner-signin admin-login-trigger" type="button" onClick={() => { setAdminPassword(""); setAdminLoginError(""); setAdminLoginOpen(true); }}>관리자 로그인</button>
       </header>}
 
@@ -8437,13 +8504,18 @@ export default function Home() {
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <aside className={`public-place-sheet ${publicPlaceExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "place" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "place" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={`${selectedDisplayName} 장소 정보`}>
+          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <aside className={`public-place-sheet ${publicPlaceExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "place" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "place" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={`${selectedDisplayName} 장소 정보`} aria-busy={publicPlaceDetailLoading}>
             <button type="button" className="public-panel-drag-handle" aria-label={publicPlaceExpanded ? "아래로 끌어 장소 정보 접기" : "위로 끌어 장소 정보 펼치기"} onPointerDown={(event) => startPublicPanelDrag(event, "place", publicPlaceExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></button>
             <header className="public-place-sheet-head">
               <div><span style={{ color: selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).color : categoryOf(selected.category).color }}>{selectedDirectoryPlace?.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).name : categoryOf(selected.category).name}</span><strong>{selectedDisplayName}</strong></div>
               <div className="public-place-sheet-actions"><button type="button" className="public-place-list-back" onClick={openPublicPlaceList} aria-label="장소 목록으로 돌아가기">목록</button><button type="button" className="public-place-expand" onClick={() => setPublicPanelExpansion("place", !publicPlaceExpanded)} aria-label={publicPlaceExpanded ? "장소 정보 접기" : "장소 정보 펼치기"}>{publicPlaceExpanded ? "접기" : "펼치기"}</button><button type="button" onClick={closePublicPlacePanel} aria-label="장소 정보 닫기">×</button></div>
             </header>
             <div className="public-place-sheet-scroll">
+              {publicPlaceDetailLoading ? <div className="public-place-detail-loading" role="status" aria-live="polite">
+                <span aria-hidden="true" />
+                <strong>장소 정보를 확인하는 중입니다.</strong>
+                <p>행사와 장소 기록을 함께 준비한 뒤 한 번에 보여드립니다.</p>
+              </div> : <>
               {selectedLocationGroupPlaces.length > 1 && <section className="public-location-group" aria-label="이 건물의 시설">
                 <div><strong>제주아트플랫폼 건물</strong><span>{selectedLocationGroupPlaces.length}개 시설</span></div>
                 <div>{selectedLocationGroupPlaces.map((place) => <button type="button" className={place.id === selectedDirectoryPlace?.id ? "active" : ""} key={place.id} onClick={() => { const item = publicPlaceItems.find((candidate) => candidate.place.id === place.id); if (item) focusPublicPlaceItem(item); }}>{place.name}</button>)}</div>
@@ -8486,6 +8558,7 @@ export default function Home() {
                 <div><span aria-hidden="true">◇</span><div><strong>오늘의 화면 팔레트</strong><p>이 장소까지 내려온 분만 발견하는 작은 선택입니다.</p></div></div>
                 <UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} />
               </section>}
+              </>}
             </div>
           </aside>}
           {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {publicPlaceItems.length} · 마커 {visibleElements.length}</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
@@ -8576,7 +8649,7 @@ export default function Home() {
               <button type="button" disabled={!globalEventsCanManage} onClick={openUnassignedPlaceEventForm}>{globalEventsCanManage ? "＋ 행사 등록" : "권한 확인 중…"}</button>
             </div>}
             {globalContentTab === "places" ? <section className="public-place-explorer">
-              <div className="public-place-search"><span aria-hidden="true">⌕</span><input value={publicPlaceQuery} onChange={(event) => { setPublicPlaceQuery(event.target.value); setExpandedAdditionalCategoryItemId(null); }} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => { setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }} aria-label="장소 검색어 지우기">×</button>}</div>
+              <div className="public-place-search"><span aria-hidden="true">⌕</span><input ref={publicPlaceQueryInputRef} value={publicPlaceQuery} onChange={(event) => { setPublicPlaceQuery(event.target.value); setExpandedAdditionalCategoryItemId(null); }} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => { setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }} aria-label="장소 검색어 지우기">×</button>}</div>
               <div className="public-place-filter-summary">
                 <button type="button" className={publicPlaceCategory === "all" ? "active" : ""} onClick={() => { setPublicPlaceCategory("all"); setExpandedAdditionalCategoryItemId(null); }} aria-pressed={publicPlaceCategory === "all"}>전체 <em>{publicPlaceItems.length}</em></button>
                 <span role="status">검색 결과 <strong>{filteredPublicPlaceItems.length}</strong>곳</span>
@@ -8713,21 +8786,30 @@ export default function Home() {
           <footer><span>사이트 소유자는 기존 계정으로도 들어갈 수 있습니다.</span><a href="/signin-with-chatgpt?return_to=/">소유자 계정 로그인</a></footer>
         </section>
       </div>}
-      {publicLayoutAccess === "editor" && shortcutHelpOpen && <div className="admin-shortcut-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutHelpOpen(false); }}>
-        <section id="admin-shortcut-dialog" className="admin-shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-shortcut-title" aria-describedby="admin-shortcut-note">
-          <header><div><strong id="admin-shortcut-title">관리자 단축키</strong><span>편집 작업을 빠르게 이어가는 안전 단축키</span></div><button type="button" autoFocus onClick={() => setShortcutHelpOpen(false)} aria-label="단축키 안내 닫기">×</button></header>
+      {shortcutHelpOpen && <div className="admin-shortcut-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutHelpOpen(false); }}>
+        <section id="shortcut-dialog" className="admin-shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-title" aria-describedby="shortcut-note">
+          <header><div><strong id="shortcut-title">{publicLayoutAccess === "editor" ? "관리자 단축키" : "공개본 단축키"}</strong><span>{publicLayoutAccess === "editor" ? "편집 작업을 빠르게 이어가는 안전 단축키" : "키보드로 지도 탐색을 빠르게 이어갈 수 있습니다."}</span></div><button type="button" autoFocus onClick={() => setShortcutHelpOpen(false)} aria-label="단축키 안내 닫기">×</button></header>
           <div className="admin-shortcut-list">
-            <div><kbd>Ctrl / ⌘ + S</kbd><span>서버 초안 저장</span></div>
-            <div><kbd>Ctrl / ⌘ + Z</kbd><span>실행 취소</span></div>
-            <div><kbd>Ctrl / ⌘ + Shift + Z</kbd><span>다시 실행</span></div>
-            <div><kbd>↑ ↓ ← →</kbd><span>선택 항목 미세 이동</span></div>
-            <div><kbd>Shift + 방향키</kbd><span>선택 항목 크게 이동</span></div>
-            <div><kbd>Delete / Backspace</kbd><span>고정 해제 → 지도 배치 삭제</span></div>
-            <div><kbd>/</kbd><span>현재 장소 목록 검색</span></div>
-            <div><kbd>Esc</kbd><span>가장 위의 창 닫기</span></div>
-            <div><kbd>?</kbd><span>이 단축키 안내 열기</span></div>
+            {publicLayoutAccess === "editor" ? <>
+              <div><kbd>Ctrl / ⌘ + S</kbd><span>서버 초안 저장</span></div>
+              <div><kbd>Ctrl / ⌘ + Z</kbd><span>실행 취소</span></div>
+              <div><kbd>Ctrl / ⌘ + Shift + Z</kbd><span>다시 실행</span></div>
+              <div><kbd>↑ ↓ ← →</kbd><span>선택 항목 미세 이동</span></div>
+              <div><kbd>Shift + 방향키</kbd><span>선택 항목 크게 이동</span></div>
+              <div><kbd>Delete / Backspace</kbd><span>고정 해제 → 지도 배치 삭제</span></div>
+              <div><kbd>/</kbd><span>현재 장소 목록 검색</span></div>
+              <div><kbd>Esc</kbd><span>가장 위의 창 닫기</span></div>
+              <div><kbd>?</kbd><span>이 단축키 안내 열기</span></div>
+            </> : <>
+              <div><kbd>/</kbd><span>원도심 탐색을 열고 장소 검색</span></div>
+              <div><kbd>+ / −</kbd><span>지도 확대·축소</span></div>
+              <div><kbd>0</kbd><span>전체 지도를 화면에 맞춤</span></div>
+              <div><kbd>Enter / Space</kbd><span>선택한 마커·버튼 실행</span></div>
+              <div><kbd>Esc</kbd><span>현재 상세정보·탐색창 닫기</span></div>
+              <div><kbd>?</kbd><span>이 단축키 안내 열기</span></div>
+            </>}
           </div>
-          <p id="admin-shortcut-note">삭제 단축키는 지도 배치만 제거하며 통합 장소 DB는 보존합니다. 공개본 업데이트와 DB 영구 삭제에는 단축키를 두지 않았습니다.</p>
+          <p id="shortcut-note">{publicLayoutAccess === "editor" ? "삭제 단축키는 지도 배치만 제거하며 통합 장소 DB는 보존합니다. 공개본 업데이트와 DB 영구 삭제에는 단축키를 두지 않았습니다." : "단축키는 PC 키보드 환경에서 동작하며, 입력란을 작성하는 동안에는 실행되지 않습니다."}</p>
         </section>
       </div>}
       {databaseEditorOpen && <div className="database-editor-backdrop" role="presentation">
