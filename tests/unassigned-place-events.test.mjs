@@ -28,5 +28,5 @@ test("event API accepts an explicit empty place list without adding a place rela
   assert.match(apiSource, /const primaryPlace = places\[0\] \?\? \{ placeKey: "", placeName: "" \}/);
   assert.match(apiSource, /\.\.\.places\.map\(\(place, index\) => runtime\.DB!\.prepare/);
   assert.match(apiSource, /validPlaceKey\(row\.placeKey\) && row\.placeName \? \[\{ placeKey: row\.placeKey, placeName: row\.placeName \}\] : \[\]/);
-  assert.match(apiSource, /WHERE place_key <> '' AND place_name <> ''/);
+  assert.doesNotMatch(apiSource, /INSERT OR IGNORE INTO place_event_places/);
 });

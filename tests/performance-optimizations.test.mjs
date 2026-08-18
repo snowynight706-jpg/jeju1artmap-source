@@ -6,6 +6,7 @@ const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "
 const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const publicLayoutRoute = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const baseMapRoute = await readFile(new URL("../app/api/base-map/route.ts", import.meta.url), "utf8");
+const placeEventsRoute = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
 test("uploaded base maps use versioned screen derivatives while exports retain the original", () => {
@@ -26,6 +27,13 @@ test("public bootstrap includes map metadata and event-linked places with condit
   assert.match(publicLayoutRoute, /status: 304/);
   assert.match(pageSource, /fetch\(PUBLIC_LAYOUT_API, \{ cache: "no-cache" \}\)/);
   assert.match(pageSource, /eventPlaceIndexBootstrappedRef\.current = true/);
+});
+
+test("event list reads skip runtime schema maintenance and batch page metadata with rows", () => {
+  assert.doesNotMatch(placeEventsRoute, /ensureStorage|PRAGMA table_info\(place_events\)|CREATE TABLE IF NOT EXISTS place_events/);
+  assert.doesNotMatch(placeEventsRoute, /INSERT OR IGNORE INTO place_event_places/);
+  assert.match(placeEventsRoute, /await runtime\.DB\.batch\(canManage/);
+  assert.match(placeEventsRoute, /\[countStatement, pageStatement\.bind\(GLOBAL_PAGE_SIZE, requestedOffset\)\]/);
 });
 
 test("screen landmarks and build assets use lightweight, immutable delivery paths", async () => {

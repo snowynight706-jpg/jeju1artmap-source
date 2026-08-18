@@ -36,35 +36,6 @@ type EventRow = {
   updatedAt: string;
 };
 
-const EVENTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_events (
-  id TEXT PRIMARY KEY NOT NULL,
-  place_key TEXT NOT NULL,
-  place_name TEXT NOT NULL,
-  event_name TEXT NOT NULL,
-  event_info TEXT NOT NULL,
-  photo_key TEXT NOT NULL,
-  photo_content_type TEXT NOT NULL,
-  photo_size INTEGER NOT NULL,
-  starts_at TEXT NOT NULL DEFAULT '',
-  ends_at TEXT NOT NULL DEFAULT '',
-  visible_from TEXT NOT NULL,
-  visible_until TEXT NOT NULL,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  updated_by TEXT NOT NULL
-)`;
-
-const EVENT_PLACES_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_event_places (
-  event_id TEXT NOT NULL,
-  place_key TEXT NOT NULL,
-  place_name TEXT NOT NULL,
-  position INTEGER NOT NULL,
-  PRIMARY KEY (event_id, place_key)
-)`;
-
-let storageReady: Promise<void> | null = null;
-
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
   return workers.env as unknown as RuntimeEnv;
@@ -77,36 +48,6 @@ function json(body: unknown, status = 200) {
 function ownerAccess(request: Request, runtime: RuntimeEnv) {
   const access = adminAccess(request, runtime);
   return { canManage: access.allowed, currentEmail: access.actor };
-}
-
-async function ensureStorage(db: D1Database) {
-  if (!storageReady) {
-    storageReady = (async () => {
-      await db.batch([
-        db.prepare(EVENTS_TABLE_SQL),
-        db.prepare(EVENT_PLACES_TABLE_SQL),
-        db.prepare("CREATE INDEX IF NOT EXISTS place_events_place_status_visibility_idx ON place_events (place_key, status, visible_from, visible_until)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS place_events_status_visibility_created_idx ON place_events (status, visible_from, visible_until, created_at)"),
-        db.prepare("CREATE INDEX IF NOT EXISTS place_event_places_place_event_idx ON place_event_places (place_key, event_id)"),
-        db.prepare(`INSERT OR IGNORE INTO place_event_places (event_id, place_key, place_name, position)
-          SELECT id, place_key, place_name, 0 FROM place_events
-          WHERE place_key <> '' AND place_name <> ''`),
-      ]);
-      const tableInfo = await db.prepare("PRAGMA table_info(place_events)").all() as { results?: Array<{ name?: string }> };
-      const columns = new Set((tableInfo.results ?? []).map((column) => column.name));
-      const additiveMigrations: D1PreparedStatement[] = [];
-      if (!columns.has("starts_at")) additiveMigrations.push(db.prepare("ALTER TABLE place_events ADD COLUMN starts_at TEXT NOT NULL DEFAULT ''"));
-      if (!columns.has("ends_at")) additiveMigrations.push(db.prepare("ALTER TABLE place_events ADD COLUMN ends_at TEXT NOT NULL DEFAULT ''"));
-      if (additiveMigrations.length) {
-        additiveMigrations.push(db.prepare("UPDATE place_events SET starts_at = visible_from, ends_at = visible_until WHERE starts_at = '' OR ends_at = ''"));
-        await db.batch(additiveMigrations);
-      }
-    })().catch((error: unknown) => {
-      storageReady = null;
-      throw error;
-    });
-  }
-  await storageReady;
 }
 
 function cleanText(value: FormDataEntryValue | null, maximum: number) {
@@ -246,7 +187,6 @@ export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canManage } = ownerAccess(request, runtime);
   if (!runtime.DB) return json({ events: [], canManage, persistent: false }, 503);
-  await ensureStorage(runtime.DB);
   const searchParams = new URL(request.url).searchParams;
   const scope = searchParams.get("scope")?.trim();
   const placeKey = searchParams.get("placeKey")?.trim() ?? "";
@@ -270,15 +210,26 @@ export async function GET(request: Request) {
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
     const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const countStatement = runtime.DB.prepare(`SELECT COUNT(*) AS count FROM place_events e WHERE ${where}`);
-    const countRow = (canManage ? await countStatement.first() : await countStatement.bind(now, now).first()) as { count?: number } | null;
+    const pageStatement = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`);
+    const requestedOffset = (page - 1) * GLOBAL_PAGE_SIZE;
+    const [countResult, pageResult] = await runtime.DB.batch(canManage
+      ? [countStatement, pageStatement.bind(GLOBAL_PAGE_SIZE, requestedOffset)]
+      : [countStatement.bind(now, now), pageStatement.bind(now, now, GLOBAL_PAGE_SIZE, requestedOffset)]) as unknown as [
+        { results?: Array<{ count?: number }> },
+        { results?: EventRow[] },
+      ];
+    const countRow = countResult.results?.[0] ?? null;
     const total = Number(countRow?.count ?? 0);
     const pageCount = Math.ceil(total / GLOBAL_PAGE_SIZE);
     const normalizedPage = pageCount > 0 ? Math.min(page, pageCount) : 1;
-    const query = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`);
-    const result = (canManage
-      ? await query.bind(GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()
-      : await query.bind(now, now, GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()) as { results?: EventRow[] };
-    const rows = result.results ?? [];
+    let rows = pageResult.results ?? [];
+    if (normalizedPage !== page) {
+      const normalizedStatement = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`);
+      const normalizedResult = (canManage
+        ? await normalizedStatement.bind(GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()
+        : await normalizedStatement.bind(now, now, GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()) as { results?: EventRow[] };
+      rows = normalizedResult.results ?? [];
+    }
     return json({
       events: await eventPayload(runtime.DB, rows, now),
       canManage,
@@ -326,7 +277,6 @@ export async function POST(request: Request) {
   if (Date.parse(endsAt) - Date.parse(startsAt) > MAX_PERIOD_MS) return json({ error: "event period too long" }, 400);
   if (Date.parse(visibleUntil) - Date.parse(visibleFrom) > MAX_PERIOD_MS) return json({ error: "visibility period too long" }, 400);
 
-  await ensureStorage(runtime.DB);
   if (places.length && !await publishedPlacesExist(runtime.DB, places)) return json({ error: "published place not found" }, 404);
 
   const photo = form.get("photo");
@@ -369,8 +319,6 @@ export async function PATCH(request: Request) {
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
   const { canManage, currentEmail } = ownerAccess(request, runtime);
   if (!canManage || !currentEmail) return json({ error: "owner authentication required" }, 403);
-  await ensureStorage(runtime.DB);
-
   if (!request.headers.get("content-type")?.includes("multipart/form-data")) {
     const payload = await request.json().catch(() => null) as { id?: unknown; status?: unknown } | null;
     const id = typeof payload?.id === "string" ? payload.id : "";
@@ -456,7 +404,6 @@ export async function DELETE(request: Request) {
   if (!canManage) return json({ error: "owner authentication required" }, 403);
   const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
   if (!id) return json({ error: "event id required" }, 400);
-  await ensureStorage(runtime.DB);
   const row = await runtime.DB.prepare("SELECT photo_key AS photoKey FROM place_events WHERE id = ?").bind(id).first() as { photoKey: string } | null;
   if (!row) return json({ error: "event not found" }, 404);
   await runtime.BUCKET.delete(row.photoKey).catch(() => undefined);
