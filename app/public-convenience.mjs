@@ -19,7 +19,14 @@ export function publicUrlWithPlace(href, placeId) {
 
 export function publicPlaceDirectionsUrl(name, address, mapUrl) {
   const directUrl = typeof mapUrl === "string" ? mapUrl.trim() : "";
-  if (directUrl) return directUrl;
-  const query = [name, address].filter(Boolean).join(" ").trim();
+  try {
+    const parsed = new URL(directUrl);
+    if (parsed.protocol === "https:" && parsed.hostname === "place.map.kakao.com" && /^\/\d+\/?$/.test(parsed.pathname)) {
+      return directUrl;
+    }
+  } catch {
+    // Old search links and non-map URLs are intentionally replaced below.
+  }
+  const query = String(address ?? "").trim() || String(name ?? "").trim();
   return `https://map.kakao.com/?q=${encodeURIComponent(query)}`;
 }

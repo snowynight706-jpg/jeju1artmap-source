@@ -935,6 +935,18 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .admin-login-dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 19px; border-top: 1px solid #e6e6e6; background: #f7f7f7; }
 .admin-login-dialog > footer span { color: #646464; font-size: 8px; line-height: 1.4; }
 .admin-login-dialog > footer a { flex: 0 0 auto; color: #646464; font-size: 9px; font-weight: 800; }
+.admin-shortcut-backdrop { position: fixed; inset: 0; z-index: 210; display: grid; place-items: center; padding: 18px; background: rgb(41 41 41 / 52%); backdrop-filter: blur(5px); }
+.admin-shortcut-dialog { width: min(560px, 100%); overflow: hidden; border: 1px solid var(--line, #cecece); border-radius: var(--radius-window, 14px); background: var(--ui-surface, #fdfdfd); box-shadow: var(--ui-shadow-strong, 0 24px 76px rgb(44 44 44 / 32%)); color: var(--ink, #404040); }
+.admin-shortcut-dialog > header { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 15px 12px 18px; border-bottom: 1px solid var(--line, #e2e2e2); background: var(--ui-surface-soft, #f8f8f8); }
+.admin-shortcut-dialog > header strong, .admin-shortcut-dialog > header span { display: block; }
+.admin-shortcut-dialog > header strong { font-size: 16px; }
+.admin-shortcut-dialog > header span { margin-top: 4px; color: var(--muted, #686868); font-size: 9px; }
+.admin-shortcut-dialog > header button { width: 34px; height: 34px; flex: 0 0 auto; padding: 0; border: 1px solid var(--line, #dcdcdc); border-radius: 50%; background: var(--ui-control, white); color: var(--muted, #646464); cursor: pointer; font-size: 20px; }
+.admin-shortcut-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 16px 18px 14px; }
+.admin-shortcut-list > div { min-width: 0; display: grid; grid-template-columns: minmax(112px, auto) 1fr; align-items: center; gap: 9px; padding: 8px 9px; border: 1px solid var(--line, #e2e2e2); border-radius: 8px; background: var(--ui-surface-raised, white); }
+.admin-shortcut-list kbd { min-width: 0; padding: 5px 7px; overflow: hidden; border: 1px solid var(--line-strong, #c8c8c8); border-radius: 5px; background: var(--ui-control, #f4f4f4); color: var(--ink, #444); font-family: inherit; font-size: 8px; font-weight: 800; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.admin-shortcut-list span { min-width: 0; color: var(--muted, #626262); font-size: 9px; line-height: 1.4; }
+.admin-shortcut-dialog > p { margin: 0; padding: 11px 18px 13px; border-top: 1px solid var(--line, #e2e2e2); background: var(--ui-surface-soft, #f8f8f8); color: var(--muted, #686868); font-size: 8px; line-height: 1.5; }
 .place-request-dialog { width: min(520px, 100%); max-height: min(760px, calc(100vh - 36px)); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; border: 1px solid #cecece; border-radius: 17px; background: #fdfdfd; box-shadow: 0 24px 76px rgb(44 44 44 / 30%); }
 .place-request-dialog > header { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 15px 13px 19px; border-bottom: 1px solid #e6e6e6; }
 .place-request-dialog > header strong, .place-request-dialog > header span { display: block; }
@@ -1430,6 +1442,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .place-request-backdrop { padding: 8px; }
   .admin-login-backdrop { padding: 8px; }
   .admin-login-dialog { border-radius: 14px; }
+  .admin-shortcut-backdrop { padding: 8px; }
+  .admin-shortcut-list { grid-template-columns: 1fr; max-height: calc(100dvh - 160px); overflow-y: auto; }
   .place-event-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); border-radius: 14px; }
   .place-event-dialog-head { min-height: 62px; padding: 10px 11px 9px 15px; }
   .place-event-dialog-scroll { padding: 12px; }

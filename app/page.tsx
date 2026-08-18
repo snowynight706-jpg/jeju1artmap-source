@@ -2274,9 +2274,12 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const dbInputRef = useRef<HTMLInputElement>(null);
+  const placeQueryInputRef = useRef<HTMLInputElement>(null);
+  const databaseEditorQueryInputRef = useRef<HTMLInputElement>(null);
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const storyPhotoInputRef = useRef<HTMLInputElement>(null);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
+  const adminShortcutActionsRef = useRef({ saveDraft: () => {}, undo: () => {}, redo: () => {} });
   const placeRequestLocationBeforePickingRef = useRef<{ x: number; y: number } | null>(null);
   const eventDialogDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const activeTouchPointersRef = useRef(new Map<number, { clientX: number; clientY: number }>());
@@ -2357,6 +2360,7 @@ export default function Home() {
   const [saveState, setSaveState] = useState("자동 저장 준비");
   const [layoutName, setLayoutName] = useState("최근 자동복구");
   const [toast, setToast] = useState("");
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [adminLoginOpen, setAdminLoginOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminLoginSubmitting, setAdminLoginSubmitting] = useState(false);
@@ -6655,6 +6659,71 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    adminShortcutActionsRef.current = {
+      saveDraft: () => { void saveEditorDraft(); },
+      undo,
+      redo,
+    };
+  });
+
+  useEffect(() => {
+    const handleAdminShortcut = (event: KeyboardEvent) => {
+      if (publicLayoutAccess !== "editor") return;
+
+      const target = event.target as HTMLElement | null;
+      const editingText = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
+      const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      const blockingDialogOpen = adminLoginOpen || placeRequestFormOpen || placeEventFormOpen || databaseEditorOpen;
+
+      if (modifier && !event.altKey && !event.shiftKey && key === "s") {
+        event.preventDefault();
+        if (!editorDraftSaving) adminShortcutActionsRef.current.saveDraft();
+        return;
+      }
+
+      if (!editingText && !modifier && !event.altKey && event.key === "?" && !blockingDialogOpen) {
+        event.preventDefault();
+        setShortcutHelpOpen((current) => !current);
+        return;
+      }
+
+      if (shortcutHelpOpen) return;
+
+      if (databaseEditorOpen) {
+        if (!editingText && !modifier && !event.altKey && !event.shiftKey && event.key === "/") {
+          event.preventDefault();
+          databaseEditorQueryInputRef.current?.focus();
+        }
+        return;
+      }
+
+      if (adminLoginOpen || placeRequestFormOpen || placeEventFormOpen) return;
+
+      if (modifier && !event.altKey && key === "z" && !editingText) {
+        event.preventDefault();
+        if (event.shiftKey) adminShortcutActionsRef.current.redo();
+        else adminShortcutActionsRef.current.undo();
+        return;
+      }
+
+      if (!editingText && !modifier && !event.altKey && !event.shiftKey && event.key === "/") {
+        event.preventDefault();
+        setLeftOpen(true);
+        setLeftPanelMode("places");
+        setCalibrationMode(false);
+        window.requestAnimationFrame(() => {
+          leftPanelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+          window.requestAnimationFrame(() => placeQueryInputRef.current?.focus());
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleAdminShortcut);
+    return () => window.removeEventListener("keydown", handleAdminShortcut);
+  }, [adminLoginOpen, databaseEditorOpen, editorDraftSaving, placeEventFormOpen, placeRequestFormOpen, publicLayoutAccess, shortcutHelpOpen]);
+
   const loadEditorDraft = () => {
     const draft = editorDraftDocumentRef.current;
     if (!draft) {
@@ -7690,6 +7759,10 @@ export default function Home() {
         action();
       };
 
+      if (shortcutHelpOpen) {
+        dismiss(() => setShortcutHelpOpen(false));
+        return;
+      }
       if (adminLoginOpen) {
         dismiss(() => {
           setAdminLoginOpen(false);
@@ -7742,7 +7815,7 @@ export default function Home() {
 
     window.addEventListener("keydown", handleEscape, true);
     return () => window.removeEventListener("keydown", handleEscape, true);
-  }, [adminLoginOpen, closeDatabaseEditor, closePlaceEventForm, closePublicExplorerPanel, closePublicPlacePanel, databaseEditorOpen, globalStoriesOpen, placeEventFormOpen, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, publicPanelExpanded, publicPlaceExpanded, selectedId, setPublicPanelExpansion]);
+  }, [adminLoginOpen, closeDatabaseEditor, closePlaceEventForm, closePublicExplorerPanel, closePublicPlacePanel, databaseEditorOpen, globalStoriesOpen, placeEventFormOpen, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, publicPanelExpanded, publicPlaceExpanded, selectedId, setPublicPanelExpansion, shortcutHelpOpen]);
 
   const openGlobalStoryPlace = (story: PlaceStory) => {
     const item = publicPlaceItemForReference(story.placeKey, story.placeName);
@@ -7886,6 +7959,7 @@ export default function Home() {
         <div className="toolbar-group muted-actions">
           <button onClick={undo} disabled={!undoStack.length} aria-label="실행 취소">↶</button>
           <button onClick={redo} disabled={!redoStack.length} aria-label="다시 실행">↷</button>
+          <button type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="admin-shortcut-dialog">단축키</button>
           <button className={calibrationMode ? "active-tool" : ""} onClick={() => switchLeftPanel(calibrationMode ? "assets" : "calibration")}>◎ 기준점 보정</button>
         </div>
         <div className="toolbar-group zoom-tools">
@@ -8082,7 +8156,7 @@ export default function Home() {
             </div>
             </AdminFolder>
             <AdminFolder className="side-admin-folder" title="장소 배치 목록" meta={`미고정 ${coordinateLockCounts.unlocked} · 고정 ${coordinateLockCounts.locked}`} defaultOpen>
-            <div className="place-search-wrap"><input value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
+            <div className="place-search-wrap"><input ref={placeQueryInputRef} value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
               {([
                 ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["shop", "소품샵"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
@@ -8574,6 +8648,22 @@ export default function Home() {
           <footer><span>사이트 소유자는 기존 계정으로도 들어갈 수 있습니다.</span><a href="/signin-with-chatgpt?return_to=/">소유자 계정 로그인</a></footer>
         </section>
       </div>}
+      {publicLayoutAccess === "editor" && shortcutHelpOpen && <div className="admin-shortcut-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutHelpOpen(false); }}>
+        <section id="admin-shortcut-dialog" className="admin-shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-shortcut-title" aria-describedby="admin-shortcut-note">
+          <header><div><strong id="admin-shortcut-title">관리자 단축키</strong><span>편집 작업을 빠르게 이어가는 안전 단축키</span></div><button type="button" autoFocus onClick={() => setShortcutHelpOpen(false)} aria-label="단축키 안내 닫기">×</button></header>
+          <div className="admin-shortcut-list">
+            <div><kbd>Ctrl / ⌘ + S</kbd><span>서버 초안 저장</span></div>
+            <div><kbd>Ctrl / ⌘ + Z</kbd><span>실행 취소</span></div>
+            <div><kbd>Ctrl / ⌘ + Shift + Z</kbd><span>다시 실행</span></div>
+            <div><kbd>↑ ↓ ← →</kbd><span>선택 항목 미세 이동</span></div>
+            <div><kbd>Shift + 방향키</kbd><span>선택 항목 크게 이동</span></div>
+            <div><kbd>/</kbd><span>현재 장소 목록 검색</span></div>
+            <div><kbd>Esc</kbd><span>가장 위의 창 닫기</span></div>
+            <div><kbd>?</kbd><span>이 단축키 안내 열기</span></div>
+          </div>
+          <p id="admin-shortcut-note">공개본 업데이트와 삭제에는 단축키를 두지 않았습니다.</p>
+        </section>
+      </div>}
       {databaseEditorOpen && <div className="database-editor-backdrop" role="presentation">
         <section className="database-editor" role="dialog" aria-modal="true" aria-labelledby="database-editor-title">
           <header className="database-editor-header">
@@ -8583,7 +8673,7 @@ export default function Home() {
           <div className="database-editor-body">
             <aside className="database-editor-list-pane">
               <div className="database-editor-list-tools">
-                <input value={databaseEditorQuery} onChange={(event) => setDatabaseEditorQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="DB 장소 검색" />
+                <input ref={databaseEditorQueryInputRef} value={databaseEditorQuery} onChange={(event) => setDatabaseEditorQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="DB 장소 검색" />
                 <button onClick={addDatabaseDraftPlace}>＋ 신규</button>
               </div>
               <div className="database-editor-category-filters" role="group" aria-label="DB 대분류 모아보기">

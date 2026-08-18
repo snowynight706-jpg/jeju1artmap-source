@@ -22,14 +22,27 @@ test("stable place links preserve unrelated query parameters and hashes", () => 
   );
 });
 
-test("directions use a stored map URL and otherwise fall back to a Kakao place search", () => {
+test("directions preserve exact Kakao place links and otherwise search the address alone", () => {
+  const address = "제주특별자치도 제주시 관덕로 8";
   assert.equal(
-    publicPlaceDirectionsUrl("제주소통협력센터", "제주시 관덕로", "https://place.map.kakao.com/123"),
+    publicPlaceDirectionsUrl("제주소통협력센터", address, "https://place.map.kakao.com/123"),
     "https://place.map.kakao.com/123",
   );
-  assert.match(
-    publicPlaceDirectionsUrl("제주소통협력센터", "제주시 관덕로", ""),
-    /^https:\/\/map\.kakao\.com\/\?q=.+/,
+  assert.equal(
+    new URL(publicPlaceDirectionsUrl("제주소통협력센터", address, "")).searchParams.get("q"),
+    address,
+  );
+  assert.equal(
+    new URL(publicPlaceDirectionsUrl("제주소통협력센터", address, "https://map.kakao.com/?q=old-place-name")).searchParams.get("q"),
+    address,
+  );
+  assert.equal(
+    new URL(publicPlaceDirectionsUrl("제주소통협력센터", address, "https://www.example.com/place")).searchParams.get("q"),
+    address,
+  );
+  assert.equal(
+    new URL(publicPlaceDirectionsUrl("제주소통협력센터", "", "")).searchParams.get("q"),
+    "제주소통협력센터",
   );
 });
 
@@ -60,6 +73,7 @@ test("Escape closes the topmost PC panel even while an input has focus", () => {
   assert.ok(escapeHandler);
   assert.doesNotMatch(escapeHandler, /\["INPUT", "SELECT", "TEXTAREA"\]/);
   assert.match(escapeHandler, /document\.activeElement instanceof HTMLElement/);
+  assert.match(escapeHandler, /if \(shortcutHelpOpen\)/);
   assert.match(escapeHandler, /if \(adminLoginOpen\)/);
   assert.match(escapeHandler, /if \(placeRequestFormOpen\)/);
   assert.match(escapeHandler, /if \(databaseEditorOpen\)/);
@@ -67,6 +81,20 @@ test("Escape closes the topmost PC panel even while an input has focus", () => {
   assert.match(escapeHandler, /selectedId[\s\S]+publicPlaceExpanded[\s\S]+globalStoriesOpen[\s\S]+publicPanelExpanded/);
   assert.match(pageSource, /if \(publicPanelIsPlace\(current\.wondosimPanel\)\) \{[\s\S]+setSelectedId\(null\);[\s\S]+window\.history\.go/);
   assert.match(pageSource, /if \(publicPanelIsExplorer\(current\.wondosimPanel\)\) \{[\s\S]+setGlobalStoriesOpen\(false\);[\s\S]+window\.history\.go/);
+});
+
+test("admin shortcuts stay limited to safe editing actions", () => {
+  const shortcutHandler = pageSource.match(/const handleAdminShortcut = \(event: KeyboardEvent\) => \{[\s\S]+?window\.addEventListener\("keydown", handleAdminShortcut\);/)?.[0] ?? "";
+  assert.ok(shortcutHandler);
+  assert.match(shortcutHandler, /event\.ctrlKey \|\| event\.metaKey/);
+  assert.match(shortcutHandler, /key === "s"[\s\S]+adminShortcutActionsRef\.current\.saveDraft\(\)/);
+  assert.match(shortcutHandler, /key === "z"[\s\S]+event\.shiftKey[\s\S]+adminShortcutActionsRef\.current\.redo\(\)[\s\S]+adminShortcutActionsRef\.current\.undo\(\)/);
+  assert.match(shortcutHandler, /event\.key === "\/"[\s\S]+placeQueryInputRef\.current\?\.focus/);
+  assert.match(shortcutHandler, /event\.key === "\?"[\s\S]+setShortcutHelpOpen/);
+  assert.doesNotMatch(shortcutHandler, /publishCurrentLayout|delete|remove/);
+  assert.match(pageSource, /saveDraft: \(\) => \{ void saveEditorDraft\(\); \}/);
+  assert.match(pageSource, /공개본 업데이트와 삭제에는 단축키를 두지 않았습니다/);
+  assert.match(pageSource, /Ctrl \/ ⌘ \+ S/);
 });
 
 test("review text drafts and mobile photo discard protection are session scoped", () => {
