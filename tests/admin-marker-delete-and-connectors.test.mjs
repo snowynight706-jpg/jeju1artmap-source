@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { distanceAwareConnectorOpacity } from "../app/label-connector.mjs";
+import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "../app/label-connector.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -20,10 +20,22 @@ test("label connector opacity becomes stronger as the label moves farther away",
 });
 
 test("dense label connector lines use the distance-aware opacity", () => {
-  assert.match(pageSource, /import \{ distanceAwareConnectorOpacity \} from "\.\/label-connector\.mjs"/);
+  assert.match(pageSource, /import \{ distanceAwareConnectorOpacity, distanceAwareConnectorWidth \} from "\.\/label-connector\.mjs"/);
   assert.match(pageSource, /distanceAwareConnectorOpacity\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
-  assert.match(pageSource, /style=\{\{ opacity: selectedConnector \? Math\.max\(0\.9, connectorOpacity\) : connectorOpacity \}\}/);
-  assert.match(cssSource, /\.dense-label-connector line \{[^}]*transition: opacity \.16s ease/);
+  assert.match(pageSource, /distanceAwareConnectorWidth\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
+  assert.match(pageSource, /strokeWidth: selectedConnector \? 1\.5 : connectorWidth/);
+  assert.match(cssSource, /\.dense-label-connector line \{[^}]*transition: opacity \.16s ease, stroke-width \.16s ease/);
+});
+
+test("label connector width grows smoothly from 1.1 to 1.5", () => {
+  const near = distanceAwareConnectorWidth(20, 20, 21, 20, 1.2);
+  const medium = distanceAwareConnectorWidth(20, 20, 26, 20, 1.2);
+  const far = distanceAwareConnectorWidth(20, 20, 34, 20, 1.2);
+
+  assert.equal(near, 1.1);
+  assert.ok(near < medium);
+  assert.ok(medium < far);
+  assert.equal(far, 1.5);
 });
 
 test("Delete and Backspace unlock first, then remove only the map placement", () => {

@@ -32,7 +32,7 @@ import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.mjs";
 import { denseLabelConnections } from "./dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
-import { distanceAwareConnectorOpacity } from "./label-connector.mjs";
+import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./label-connector.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
 import {
@@ -85,13 +85,24 @@ const PLACE_STORIES_API = "/api/place-stories";
 const PLACE_EVENTS_API = "/api/place-events";
 const PLACE_REGISTRATION_REQUESTS_API = "/api/place-registration-requests";
 const ADMIN_SESSION_API = "/api/admin-session";
-const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v04";
+const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06";
+const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04";
+const LATEST_DONGMUN_ASSET_ID = "dongmun-v08";
 const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
 const LANDMARK_RESOURCE_SIZE = 6.2;
 const LANDMARK_LABEL_GAP = 8;
 const LEGACY_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 우측계단 전용 랜드마크";
 const STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 외곽선보강 최종검수안 · 표준 랜드마크 이미지·라벨 처리";
-const SUPERSEDED_SANJICHEON_ASSET_IDS = new Set(["sanjicheon-01", "sanjicheon-02", "sanjicheon-03"]);
+const latestRedesignedLandmarkAssets = new Map<string, string>([
+  ["산지천갤러리", LATEST_SANJICHEON_ASSET_ID],
+  ["동문시장", LATEST_DONGMUN_ASSET_ID],
+  ["예술공간 이아", LATEST_ARTSPACE_IA_ASSET_ID],
+]);
+const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
+  ["산지천갤러리", new Set(["sanjicheon-v04", "sanjicheon-01", "sanjicheon-02", "sanjicheon-03"])],
+  ["동문시장", new Set(["dongmun-01", "dongmun-02", "dongmun-03"])],
+  ["예술공간 이아", new Set(["artspace-ia-01", "artspace-ia-02", "artspace-ia-03"])],
+]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
 const CALIBRATION_SETTINGS_KEY = "jeju-wondosim-map-review:calibration-settings:v1";
@@ -473,6 +484,7 @@ type PublicViewSettings = {
   markerLabelsVisible: boolean;
   mergeDenseLabels: boolean;
   screenRecommendedOnly: boolean;
+  defaultMarkerSize: number;
 };
 
 type EditorDraftPayload = {
@@ -573,6 +585,7 @@ type PlaceEventsPayload = {
 type PlaceRegistrationRequest = {
   id: string;
   submittedName: string;
+  submittedArea: string;
   submittedAddress: string;
   submittedDescription: string;
   submittedCategory: BundledMarkerCategory;
@@ -580,6 +593,7 @@ type PlaceRegistrationRequest = {
   submittedX: number | null;
   submittedY: number | null;
   name: string;
+  area: string;
   address: string;
   description: string;
   category: BundledMarkerCategory;
@@ -638,14 +652,14 @@ const landmarkLocations = [
   { name: MAIN_HUB_CANONICAL_NAME, address: "제주특별자치도 제주시 관덕로 44", addressSourceUrl: "https://www.jejusotong.kr/", assetId: MAIN_HUB_LANDMARK_ASSET_ID, x: 48, y: 64 },
   { name: "제주아트플랫폼", address: "제주특별자치도 제주시 중앙로14길 18", addressSourceUrl: "https://www.jfac.kr/", assetId: "jeju-art-platform-c01", x: 31, y: 62 },
   { name: "김만덕기념관", address: "제주특별자치도 제주시 산지로 7", addressSourceUrl: "https://www.mandukmuseum.or.kr/", assetId: "kim-memorial-front03", x: 74, y: 31 },
-  { name: "예술공간 이아", address: "제주특별자치도 제주시 중앙로14길 21", addressSourceUrl: "https://www.jfac.kr/operatingSpace/artSpaceIAa/iAaGuide", assetId: "artspace-ia-01", x: 34, y: 57 },
+  { name: "예술공간 이아", address: "제주특별자치도 제주시 중앙로14길 21", addressSourceUrl: "https://www.jfac.kr/operatingSpace/artSpaceIAa/iAaGuide", assetId: LATEST_ARTSPACE_IA_ASSET_ID, x: 34, y: 57 },
   { name: "아라리오뮤지엄 탑동시네마", address: "제주특별자치도 제주시 탑동로 14", addressSourceUrl: "https://www.arariomuseum.org/", assetId: "arario-01", x: 18, y: 24 },
   { name: "김만덕객주", address: "제주특별자치도 제주시 임항로 68", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CNTS_000000000019652", assetId: "guesthouse-01", x: 75, y: 25 },
   { name: "산지천갤러리", address: "제주특별자치도 제주시 중앙로3길 36", addressSourceUrl: "https://www.jfac.kr/operatingSpace/sjcGallery/sjcGuide", assetId: LATEST_SANJICHEON_ASSET_ID, x: 64, y: 40 },
   { name: "제주목 관아", address: "제주특별자치도 제주시 관덕로 25", addressSourceUrl: "https://www.jeju.go.kr/mokkwana/", assetId: "mokgwana-01", x: 39, y: 60 },
   { name: "관덕정", address: "제주특별자치도 제주시 관덕로 19", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500057", assetId: "gwandeokjeong-01", x: 37, y: 58 },
   { name: "칠성로", address: "제주특별자치도 제주시 관덕로13길 12 일대", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750", assetId: "chilsungro", x: 58, y: 50 },
-  { name: "동문시장", address: "제주특별자치도 제주시 관덕로14길 20", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745", assetId: "dongmun-01", x: 66, y: 55 },
+  { name: "동문시장", address: "제주특별자치도 제주시 관덕로14길 20", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745", assetId: LATEST_DONGMUN_ASSET_ID, x: 66, y: 55 },
   { name: "북수구광장", address: "제주특별자치도 제주시 일도일동 1232", addressSourceUrl: "https://www.facebook.com/wowjejusi/", assetId: "buksugu-01", x: 62, y: 45 },
   { name: "탑동광장", address: "제주특별자치도 제주시 중앙로 1", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", assetId: "tapdong-square-03", x: 28, y: 20 },
   { name: "탑동해변공연장", address: "제주특별자치도 제주시 중앙로 2", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e", assetId: "tapdong-seaside-stage-02", x: 37, y: 20 },
@@ -1917,9 +1931,11 @@ function sanitizeDocument(document: DocumentState): DocumentState {
       const name = normalizePlaceName(normalized.name);
       const category = isPrimaryHubLabel(name) ? "landmark" : categoryForPlace(name, normalized.category) as CategoryId;
       const landmarkAssetId = landmarkLocationByName.get(name)?.assetId;
-      const preferredAssetId = category === "landmark" && name === "산지천갤러리"
-        && (!normalized.assetId || SUPERSEDED_SANJICHEON_ASSET_IDS.has(normalized.assetId))
-        ? LATEST_SANJICHEON_ASSET_ID
+      const redesignedAssetId = latestRedesignedLandmarkAssets.get(name);
+      const supersededAssetIds = supersededRedesignedLandmarkAssets.get(name);
+      const preferredAssetId = category === "landmark" && redesignedAssetId
+        && (!normalized.assetId || supersededAssetIds?.has(normalized.assetId))
+        ? redesignedAssetId
         : normalized.assetId;
       const assetId = category === "landmark" && (!preferredAssetId || canonicalMarkerAssetIds.has(preferredAssetId))
         ? landmarkAssetId ?? normalized.assetId
@@ -2473,6 +2489,7 @@ export default function Home() {
   const [globalEventsRefreshKey, setGlobalEventsRefreshKey] = useState(0);
   const [placeRequestFormOpen, setPlaceRequestFormOpen] = useState(false);
   const [placeRequestName, setPlaceRequestName] = useState("");
+  const [placeRequestArea, setPlaceRequestArea] = useState("");
   const [placeRequestAddress, setPlaceRequestAddress] = useState("");
   const [placeRequestDescription, setPlaceRequestDescription] = useState("");
   const [placeRequestCategory, setPlaceRequestCategory] = useState<BundledMarkerCategory>("culture");
@@ -3128,6 +3145,10 @@ export default function Home() {
   const databaseAreaOptions = useMemo(() => [...new Set(databaseDraftPlaces
     .map((place) => place.area.trim())
     .filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")), [databaseDraftPlaces]);
+  const placeRequestAreaOptions = useMemo(() => [...new Set(directoryPlaces
+    .map((place) => place.area.trim())
+    .filter((area) => Boolean(area) && area !== "등록 요청"))]
+    .sort((a, b) => a.localeCompare(b, "ko")), [directoryPlaces]);
   const databaseEditorCategoryCounts = useMemo(() => databaseDraftPlaces.reduce<Record<DatabaseEditorCategoryFilter, number>>((counts, place) => {
     counts.all += 1;
     counts[databaseEditorCategoryForPlace(place)] += 1;
@@ -3906,6 +3927,7 @@ export default function Home() {
             setMarkerLabelsVisible(payload.view.markerLabelsVisible);
             setMergeDenseLabels(payload.view.mergeDenseLabels);
             setScreenRecommendedOnly(payload.view.screenRecommendedOnly);
+            setMarkerGroupSize(clamp(payload.view.defaultMarkerSize, 0.8, 15));
           }
           setSaveState("공개 배치본");
         } else {
@@ -4116,6 +4138,7 @@ export default function Home() {
                 setMarkerLabelsVisible(draftView.markerLabelsVisible);
                 setMergeDenseLabels(draftView.mergeDenseLabels);
                 setScreenRecommendedOnly(draftView.screenRecommendedOnly);
+                setMarkerGroupSize(clamp(draftView.defaultMarkerSize, 0.8, 15));
               }
               setSaveState("서버 초안에서 편집 시작");
             } else {
@@ -4129,6 +4152,7 @@ export default function Home() {
             setMarkerLabelsVisible(publishedView.markerLabelsVisible);
             setMergeDenseLabels(publishedView.mergeDenseLabels);
             setScreenRecommendedOnly(publishedView.screenRecommendedOnly);
+            setMarkerGroupSize(clamp(publishedView.defaultMarkerSize, 0.8, 15));
           }
           setSaveState("공개 배치본에서 편집 시작");
         } else if (persistentCalibration?.calibrationPoints?.length || persistentDenseLabels || persistentPlacement?.settings?.length) {
@@ -5525,7 +5549,7 @@ export default function Home() {
       y: place.y,
       anchorX: place.x,
       anchorY: place.y,
-      size: mapCategory === "landmark" ? 6.2 : mapCategory === "culture" ? 3 : 1.7,
+      size: mapCategory === "landmark" ? LANDMARK_RESOURCE_SIZE : markerGroupSize,
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
       labelVisible: true,
       assetId: placeAssetId,
@@ -6023,7 +6047,7 @@ export default function Home() {
   const addAssetElement = (asset: MapAsset) => {
     pushHistory();
     const count = elementsRef.current.filter((item) => item.assetId === asset.id).length + 1;
-    const size = asset.category === "landmark" ? 6.4 : asset.category === "culture" || asset.category === "park" ? 3 : 1.7;
+    const size = asset.category === "landmark" ? 6.4 : markerGroupSize;
     const next: MapElement = {
       ...elementDefaults, id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)), name: asset.placeName ?? (count > 1 ? `${asset.name} ${count}` : asset.name),
       category: asset.category, x: 50, y: 50, anchorX: 50, anchorY: 50, size,
@@ -6629,6 +6653,7 @@ export default function Home() {
     markerLabelsVisible,
     mergeDenseLabels,
     screenRecommendedOnly,
+    defaultMarkerSize: markerGroupSize,
   });
 
   const applyPublicViewSettings = (view: PublicViewSettings | null | undefined) => {
@@ -6637,6 +6662,7 @@ export default function Home() {
     setMarkerLabelsVisible(view.markerLabelsVisible);
     setMergeDenseLabels(view.mergeDenseLabels);
     setScreenRecommendedOnly(view.screenRecommendedOnly);
+    setMarkerGroupSize(clamp(view.defaultMarkerSize, 0.8, 15));
   };
 
   const rememberEditorDraft = (draft: EditorDraftPayload) => {
@@ -7184,8 +7210,8 @@ export default function Home() {
 
   const submitPlaceRegistrationRequest = async () => {
     if (placeRequestSubmitting) return;
-    if (placeRequestName.trim().length < 2 || placeRequestAddress.trim().length < 5 || placeRequestDescription.trim().length < 10) {
-      setToast("장소명·주소·설명을 조금 더 자세히 적어 주세요.");
+    if (placeRequestName.trim().length < 2 || !placeRequestArea || placeRequestAddress.trim().length < 5 || placeRequestDescription.trim().length < 10) {
+      setToast("권역·세부지역을 선택하고 장소명·주소·설명을 조금 더 자세히 적어 주세요.");
       return;
     }
     if (!placeRequestLocation) {
@@ -7199,6 +7225,7 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: placeRequestName,
+          area: placeRequestArea,
           address: placeRequestAddress,
           description: placeRequestDescription,
           category: placeRequestCategory,
@@ -7215,6 +7242,7 @@ export default function Home() {
         throw new Error(payload?.error ?? "request failed");
       }
       setPlaceRequestName("");
+      setPlaceRequestArea("");
       setPlaceRequestAddress("");
       setPlaceRequestDescription("");
       setPlaceRequestCategory("culture");
@@ -7234,7 +7262,7 @@ export default function Home() {
     }
   };
 
-  const updatePlaceRequestDraft = (id: string, patch: Partial<Pick<PlaceRegistrationRequest, "name" | "address" | "description" | "category" | "markerStyle" | "markerX" | "markerY">>) => {
+  const updatePlaceRequestDraft = (id: string, patch: Partial<Pick<PlaceRegistrationRequest, "name" | "area" | "address" | "description" | "category" | "markerStyle" | "markerX" | "markerY">>) => {
     setPlaceRequests((current) => current.map((request) => request.id === id ? { ...request, ...patch } : request));
     const linked = elementsRef.current.find((element) => element.placeRequestId === id && !element.directoryId);
     if (!linked) return;
@@ -7247,7 +7275,7 @@ export default function Home() {
       ...(patch.category !== undefined || patch.markerStyle !== undefined ? {
         category: nextCategory,
         assetId: markerAssetIdForPlace(nextStyle, nextCategory, `${patch.name ?? linked.name} ${patch.description ?? ""}`),
-        size: nextCategory === "culture" || nextCategory === "park" ? 2.5 : 1.65,
+        size: markerGroupSize,
       } : {}),
       ...(typeof patch.markerX === "number" ? { x: patch.markerX, anchorX: patch.markerX } : {}),
       ...(typeof patch.markerY === "number" ? { y: patch.markerY, anchorY: patch.markerY } : {}),
@@ -7261,7 +7289,7 @@ export default function Home() {
       const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: request.id, action: "edit", name: request.name, address: request.address, description: request.description, category: request.category, markerStyle: request.markerStyle, markerX: request.markerX, markerY: request.markerY }),
+        body: JSON.stringify({ id: request.id, action: "edit", name: request.name, area: request.area, address: request.address, description: request.description, category: request.category, markerStyle: request.markerStyle, markerX: request.markerX, markerY: request.markerY }),
       });
       const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
       if (!response.ok || !payload?.request) throw new Error(payload?.error ?? "save failed");
@@ -7296,6 +7324,7 @@ export default function Home() {
           id: request.id,
           action: "start-review",
           name: request.name,
+          area: request.area,
           address: request.address,
           description: request.description,
           category: request.category,
@@ -7319,7 +7348,7 @@ export default function Home() {
         y,
         anchorX: x,
         anchorY: y,
-        size: reviewing.category === "culture" || reviewing.category === "park" ? 2.5 : 1.65,
+        size: markerGroupSize,
         z: Math.max(0, ...elementsRef.current.map((element) => element.z)) + 1,
         labelVisible: true,
         labelGap: 4,
@@ -7363,6 +7392,7 @@ export default function Home() {
           id: request.id,
           action: "approve",
           name: reviewElement.name,
+          area: request.area,
           address: reviewElement.address,
           description: request.description,
           category: reviewedCategory,
@@ -7406,7 +7436,7 @@ export default function Home() {
         y,
         anchorX: x,
         anchorY: y,
-        size: approved.category === "culture" || approved.category === "park" ? 2.5 : 1.65,
+        size: markerGroupSize,
         z: Math.max(0, ...elementsRef.current.map((element) => element.z)) + 1,
         labelVisible: true,
         labelGap: 4,
@@ -8145,6 +8175,7 @@ export default function Home() {
             <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
             <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
             <div className="group-size-row"><label>일반 마커<input type="number" min="0.8" max="15" step="0.1" value={markerGroupSize} onChange={(event) => setMarkerGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("marker", markerGroupSize)}>전체 적용</button></div>
+            <p className="group-size-help">일반 마커 값은 공개본 업데이트 시 저장되며, 이후 새로 만드는 마커의 공통 기본 크기로 사용됩니다.</p>
             <div className="landmark-default-actions">
               <button onClick={saveAllLandmarksAsDefault}>현재 앵커를 기본 위치로 저장</button>
               <button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 저장된 기본 위치로 초기화</button>
@@ -8335,8 +8366,11 @@ export default function Home() {
                   const connectorOpacity = element
                     ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
                     : 0.34;
+                  const connectorWidth = element
+                    ? distanceAwareConnectorWidth(element.x, element.y, target.x, target.y, MAP_ASPECT)
+                    : 1.1;
                   const selectedConnector = selectedDenseLabelId === cluster.id;
-                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedConnector ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" style={{ opacity: selectedConnector ? Math.max(0.9, connectorOpacity) : connectorOpacity }} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
+                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedConnector ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" style={{ opacity: selectedConnector ? Math.max(0.9, connectorOpacity) : connectorOpacity, strokeWidth: selectedConnector ? 1.5 : connectorWidth }} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
                 }))}</svg>
                 <div className="element-layer">{visibleElements.map((element) => {
                   const meta = categoryOf(element.category); const isSelected = editingEnabled && selectedId === element.id; const asset = element.assetId ? assetsById.get(element.assetId) : undefined;
@@ -8611,10 +8645,11 @@ export default function Home() {
                         <header><div><span className={`place-request-status ${request.status}`}>{statusLabel}</span><time dateTime={request.createdAt}>{storyDateTimeLabel(request.createdAt)}</time></div><img src={markerAssetSrc(request.markerStyle, request.category)} alt="요청 마커 미리보기" loading="lazy" decoding="async" /></header>
                         <label>장소명<input value={request.name} maxLength={120} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { name: event.target.value })} /></label>
                         <div className="place-request-admin-row"><label>마커 분류<select value={request.category} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { category: event.target.value as BundledMarkerCategory })}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><label>형태<select value={request.markerStyle} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { markerStyle: event.target.value as BundledMarkerStyle })}><option value="v2">리뉴얼 최종</option><option value="01">형태 01</option><option value="02">형태 02</option><option value="03">형태 03</option></select></label></div>
+                        <label>권역·세부지역<select value={request.area} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { area: event.target.value })}><option value="">선택해 주세요</option>{[...new Set([request.area, ...placeRequestAreaOptions])].filter(Boolean).map((area) => <option value={area} key={area}>{area}</option>)}</select></label>
                         <label>주소<input value={request.address} maxLength={260} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { address: event.target.value })} /></label>
                         <label>설명<textarea value={request.description} maxLength={800} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { description: event.target.value })} /></label>
                         <div className="place-request-coordinate-summary"><span>요청 위치</span><strong>{typeof request.submittedX === "number" && typeof request.submittedY === "number" ? `${request.submittedX.toFixed(2)}, ${request.submittedY.toFixed(2)}` : "기존 요청 · 위치 정보 없음"}</strong>{linkedMarker && <em>현재 검수 위치 {linkedMarker.x.toFixed(2)}, {linkedMarker.y.toFixed(2)}</em>}</div>
-                        {(request.submittedName !== request.name || request.submittedAddress !== request.address || request.submittedDescription !== request.description || request.submittedCategory !== request.category || request.submittedMarkerStyle !== request.markerStyle) && <details><summary>요청자가 보낸 원문 보기</summary><p><b>{request.submittedName}</b><br />{request.submittedAddress}<br />{request.submittedDescription}</p></details>}
+                        {(request.submittedName !== request.name || request.submittedArea !== request.area || request.submittedAddress !== request.address || request.submittedDescription !== request.description || request.submittedCategory !== request.category || request.submittedMarkerStyle !== request.markerStyle) && <details><summary>요청자가 보낸 원문 보기</summary><p><b>{request.submittedName}</b><br />{request.submittedArea || "권역 미선택"}<br />{request.submittedAddress}<br />{request.submittedDescription}</p></details>}
                         {request.rejectionNote && <p className="place-request-rejection-note"><b>반려 메모</b>{request.rejectionNote}</p>}
                         {request.status === "approved" && <p className="place-request-approved-note">장소 DB와 검수한 지도 위치 반영 완료</p>}
                         <footer><button type="button" className="review-start" disabled={disabled} onClick={() => void startPlaceRequestReview(request)}>{placeRequestActionId === request.id ? "처리 중…" : request.status === "reviewing" ? "지도 검수 계속" : "검수 시작"}</button><button type="button" disabled={disabled} onClick={() => void savePlaceRequestEdits(request)}>수정 저장</button><button type="button" className="approve" disabled={disabled || request.status !== "reviewing" || !linkedMarker} onClick={() => void approvePlaceRequest(request)}>검수 완료·DB 반영</button><button type="button" disabled={disabled} onClick={() => void rejectPlaceRequest(request)}>반려</button><button type="button" className="danger" disabled={placeRequestActionId !== null} onClick={() => void deletePlaceRequest(request)}>기록 삭제</button></footer>
@@ -8658,11 +8693,12 @@ export default function Home() {
             <div className="place-request-marker-section"><div><strong>마커 형태</strong><span>장소의 주된 운영 목적에 맞는 기본분류 하나를 선택해 주세요.</span></div><label>기본분류<select value={placeRequestCategory} onChange={(event) => setPlaceRequestCategory(event.target.value as BundledMarkerCategory)}>{categories.filter((category) => (["culture", "cafe", "food", "shop"] as string[]).includes(category.id)).map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><div className="place-request-style-grid" role="radiogroup" aria-label="마커 형태 선택">{(["v2", "01", "02", "03"] as BundledMarkerStyle[]).map((style) => <button type="button" role="radio" aria-checked={placeRequestMarkerStyle === style} className={placeRequestMarkerStyle === style ? "active" : ""} key={style} onClick={() => setPlaceRequestMarkerStyle(style)}><img src={markerAssetSrc(style, placeRequestCategory)} alt="" /><span>{style === "v2" ? "리뉴얼 최종" : `형태 ${style}`}</span></button>)}</div></div>
             <section className={`place-request-location-field ${placeRequestLocation ? "selected" : ""}`}><div><img src={markerAssetSrc(placeRequestMarkerStyle, placeRequestCategory)} alt="" /><span><strong>지도에서 마커 위치 지정 <em>필수</em></strong><small>{placeRequestLocation ? `위치 선택됨 · ${placeRequestLocation.x.toFixed(2)}, ${placeRequestLocation.y.toFixed(2)}` : "실제 장소가 있는 지점을 지도에서 눌러 주세요."}</small></span></div><button type="button" onClick={() => { placeRequestLocationBeforePickingRef.current = placeRequestLocation; setPlaceRequestFormOpen(false); setGlobalStoriesOpen(false); setSelectedId(null); setPlaceRequestPickingLocation(true); }}>{placeRequestLocation ? "위치 다시 지정" : "지도에서 지정"}</button></section>
             <label>장소 이름 <em>필수</em><input value={placeRequestName} maxLength={120} placeholder="예: 카페단단" onChange={(event) => setPlaceRequestName(event.target.value)} /></label>
+            <label>권역·세부지역 <em>필수 · 기존 값 선택</em><select value={placeRequestArea} aria-label="장소 등록 요청 권역·세부지역 선택" onChange={(event) => setPlaceRequestArea(event.target.value)}><option value="">선택해 주세요</option>{placeRequestAreaOptions.map((area) => <option value={area} key={area}>{area}</option>)}</select></label>
             <label>주소 <em>필수</em><input value={placeRequestAddress} maxLength={260} placeholder="도로명 주소를 적어주세요." onChange={(event) => setPlaceRequestAddress(event.target.value)} /></label>
             <label>장소 설명 <em>필수</em><textarea value={placeRequestDescription} maxLength={800} placeholder="어떤 장소인지, 지도에 소개할 핵심 내용을 짧게 적어주세요." onChange={(event) => setPlaceRequestDescription(event.target.value)} /><small>{placeRequestDescription.length}/800</small></label>
             <p>요청은 곧바로 공개되지 않습니다. 관리자가 장소 정보와 마커를 수정·검수한 뒤 지도 편집 초안에 반영합니다.</p>
           </div>
-          <footer><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }}>취소</button><button type="button" className="primary" disabled={placeRequestSubmitting || !placeRequestLocation || placeRequestName.trim().length < 2 || placeRequestAddress.trim().length < 5 || placeRequestDescription.trim().length < 10} onClick={() => void submitPlaceRegistrationRequest()}>{placeRequestSubmitting ? "요청 저장 중…" : "등록 요청 보내기"}</button></footer>
+          <footer><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }}>취소</button><button type="button" className="primary" disabled={placeRequestSubmitting || !placeRequestLocation || !placeRequestArea || placeRequestName.trim().length < 2 || placeRequestAddress.trim().length < 5 || placeRequestDescription.trim().length < 10} onClick={() => void submitPlaceRegistrationRequest()}>{placeRequestSubmitting ? "요청 저장 중…" : "등록 요청 보내기"}</button></footer>
         </section>
       </div>}
       {publicLayoutAccess === "viewer" && adminLoginOpen && <div className="admin-login-backdrop" role="presentation">

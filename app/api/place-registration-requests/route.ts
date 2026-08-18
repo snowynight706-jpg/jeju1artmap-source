@@ -17,6 +17,7 @@ type RequestStatus = "pending" | "reviewing" | "approved" | "rejected";
 type RegistrationRow = {
   id: string;
   submittedName: string;
+  submittedArea: string;
   submittedAddress: string;
   submittedDescription: string;
   submittedCategory: string;
@@ -24,6 +25,7 @@ type RegistrationRow = {
   submittedX: number | null;
   submittedY: number | null;
   name: string;
+  area: string;
   address: string;
   description: string;
   category: string;
@@ -42,6 +44,7 @@ type RegistrationRow = {
 const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_registration_requests (
   id TEXT PRIMARY KEY NOT NULL,
   submitted_name TEXT NOT NULL,
+  submitted_area TEXT NOT NULL DEFAULT '',
   submitted_address TEXT NOT NULL,
   submitted_description TEXT NOT NULL,
   submitted_category TEXT NOT NULL,
@@ -49,6 +52,7 @@ const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_registration_requests (
   submitted_x REAL,
   submitted_y REAL,
   name TEXT NOT NULL,
+  area TEXT NOT NULL DEFAULT '',
   address TEXT NOT NULL,
   description TEXT NOT NULL,
   category TEXT NOT NULL,
@@ -68,10 +72,10 @@ const TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_registration_requests (
 )`;
 
 const REQUEST_SELECT = `SELECT id,
-  submitted_name AS submittedName, submitted_address AS submittedAddress,
+  submitted_name AS submittedName, submitted_area AS submittedArea, submitted_address AS submittedAddress,
   submitted_description AS submittedDescription, submitted_category AS submittedCategory,
   submitted_marker_style AS submittedMarkerStyle, submitted_x AS submittedX, submitted_y AS submittedY,
-  name, address, description, category, marker_style AS markerStyle,
+  name, area, address, description, category, marker_style AS markerStyle,
   marker_x AS markerX, marker_y AS markerY, status, directory_id AS directoryId,
   rejection_note AS rejectionNote, created_at AS createdAt, updated_at AS updatedAt,
   review_started_at AS reviewStartedAt, reviewed_at AS reviewedAt
@@ -121,12 +125,13 @@ function cleanMultiline(value: unknown, maximum: number) {
 
 function validatedFields(payload: Record<string, unknown>) {
   const name = normalizePlaceName(cleanText(payload.name, 120));
+  const area = cleanText(payload.area, 160);
   const address = cleanText(payload.address, 260);
   const description = cleanMultiline(payload.description, 800);
   const category = cleanText(payload.category, 24);
   const markerStyle = cleanText(payload.markerStyle, 4);
-  if (name.length < 2 || address.length < 5 || description.length < 10 || !MARKER_CATEGORIES.has(category) || !MARKER_STYLES.has(markerStyle)) return null;
-  return { name, address, description, category, markerStyle };
+  if (name.length < 2 || !area || address.length < 5 || description.length < 10 || !MARKER_CATEGORIES.has(category) || !MARKER_STYLES.has(markerStyle)) return null;
+  return { name, area, address, description, category, markerStyle };
 }
 
 function validatedLocation(payload: Record<string, unknown>, required = false) {
@@ -207,19 +212,33 @@ export async function POST(request: Request) {
   const createdAt = new Date().toISOString();
   await runtime.DB.prepare(
     `INSERT INTO place_registration_requests
-      (id, submitted_name, submitted_address, submitted_description, submitted_category,
-       submitted_marker_style, submitted_x, submitted_y, name, address, description, category,
+      (id, submitted_name, submitted_area, submitted_address, submitted_description, submitted_category,
+       submitted_marker_style, submitted_x, submitted_y, name, area, address, description, category,
        marker_style, marker_x, marker_y, status, actor_hash, directory_id, rejection_note,
        created_at, updated_at, review_started_at, review_started_by, reviewed_at, reviewed_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, '', ?, ?, NULL, NULL, NULL, NULL)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, '', ?, ?, NULL, NULL, NULL, NULL)`,
   ).bind(
-    id, fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+    id, fields.name, fields.area, fields.address, fields.description, fields.category, fields.markerStyle,
     location.markerX, location.markerY,
-    fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+    fields.name, fields.area, fields.address, fields.description, fields.category, fields.markerStyle,
     location.markerX, location.markerY,
     hash, createdAt, createdAt,
   ).run();
-  return json({ request: { id, ...fields, ...location, submittedX: location.markerX, submittedY: location.markerY, status: "pending", createdAt }, persistent: true }, 201);
+  return json({ request: {
+    id,
+    ...fields,
+    ...location,
+    submittedName: fields.name,
+    submittedArea: fields.area,
+    submittedAddress: fields.address,
+    submittedDescription: fields.description,
+    submittedCategory: fields.category,
+    submittedMarkerStyle: fields.markerStyle,
+    submittedX: location.markerX,
+    submittedY: location.markerY,
+    status: "pending",
+    createdAt,
+  }, persistent: true }, 201);
 }
 
 export async function PATCH(request: Request) {
@@ -242,10 +261,10 @@ export async function PATCH(request: Request) {
     const location = payload ? validatedLocation(payload) : undefined;
     const updatedAt = new Date().toISOString();
     await runtime.DB.prepare(
-      `UPDATE place_registration_requests SET name = ?, address = ?, description = ?, category = ?,
+      `UPDATE place_registration_requests SET name = ?, area = ?, address = ?, description = ?, category = ?,
        marker_style = ?, marker_x = ?, marker_y = ?, updated_at = ?, reviewed_by = ? WHERE id = ?`,
     ).bind(
-      fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+      fields.name, fields.area, fields.address, fields.description, fields.category, fields.markerStyle,
       location?.markerX ?? existing.markerX, location?.markerY ?? existing.markerY,
       updatedAt, currentEmail, id,
     ).run();
@@ -262,10 +281,10 @@ export async function PATCH(request: Request) {
     const reviewStartedAt = existing.reviewStartedAt ?? new Date().toISOString();
     const updatedAt = new Date().toISOString();
     await runtime.DB.prepare(
-      `UPDATE place_registration_requests SET name = ?, address = ?, description = ?, category = ?, marker_style = ?,
+      `UPDATE place_registration_requests SET name = ?, area = ?, address = ?, description = ?, category = ?, marker_style = ?,
        marker_x = ?, marker_y = ?, status = 'reviewing', updated_at = ?, review_started_at = ?, review_started_by = ?, reviewed_by = ? WHERE id = ?`,
     ).bind(
-      fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+      fields.name, fields.area, fields.address, fields.description, fields.category, fields.markerStyle,
       location.markerX, location.markerY, updatedAt, reviewStartedAt, currentEmail, currentEmail, id,
     ).run();
     return json({ request: { ...existing, ...fields, ...location, status: "reviewing", reviewStartedAt, updatedAt } });
@@ -310,9 +329,9 @@ export async function PATCH(request: Request) {
       `INSERT INTO place_directory
         (id, name, category, area, address, subtype, priority, description, operating_info,
          notes, source_url, map_url, checked_at, updated_at, updated_by)
-       VALUES (?, ?, ?, '등록 요청', ?, ?, '관리자 검수 승인', ?, '', ?, '', '', ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, '관리자 검수 승인', ?, '', ?, '', '', ?, ?, ?)`,
     ).bind(
-      directoryId, fields.name, fields.category, fields.address, categorySubtype(fields.category),
+      directoryId, fields.name, fields.category, fields.area, fields.address, categorySubtype(fields.category),
       fields.description, "공개 지도 장소 등록 요청에서 승인됨", reviewedAt.slice(0, 10), reviewedAt, currentEmail,
     ),
     runtime.DB.prepare(
@@ -320,18 +339,18 @@ export async function PATCH(request: Request) {
        ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
     ).bind(reviewedAt, currentEmail),
     runtime.DB.prepare(
-      `UPDATE place_registration_requests SET name = ?, address = ?, description = ?, category = ?, marker_style = ?,
+      `UPDATE place_registration_requests SET name = ?, area = ?, address = ?, description = ?, category = ?, marker_style = ?,
        marker_x = ?, marker_y = ?, status = 'approved', directory_id = ?, rejection_note = '',
        updated_at = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?`,
     ).bind(
-      fields.name, fields.address, fields.description, fields.category, fields.markerStyle,
+      fields.name, fields.area, fields.address, fields.description, fields.category, fields.markerStyle,
       location.markerX, location.markerY, directoryId, reviewedAt, reviewedAt, currentEmail, id,
     ),
   ]);
   return json({
     request: { ...existing, ...fields, ...location, status: "approved", directoryId, rejectionNote: "", updatedAt: reviewedAt, reviewedAt },
     directory: {
-      id: directoryId, name: fields.name, category: fields.category, area: "등록 요청", address: fields.address,
+      id: directoryId, name: fields.name, category: fields.category, area: fields.area, address: fields.address,
       subtype: categorySubtype(fields.category), priority: "관리자 검수 승인", description: fields.description,
       operatingInfo: "", notes: "공개 지도 장소 등록 요청에서 승인됨", sourceUrl: "", mapUrl: "", checkedAt: reviewedAt.slice(0, 10),
     },

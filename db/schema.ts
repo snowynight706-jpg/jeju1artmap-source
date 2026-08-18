@@ -174,6 +174,7 @@ export const placeEventPlaces = sqliteTable("place_event_places", {
 export const placeRegistrationRequests = sqliteTable("place_registration_requests", {
   id: text("id").primaryKey(),
   submittedName: text("submitted_name").notNull(),
+  submittedArea: text("submitted_area").notNull().default(""),
   submittedAddress: text("submitted_address").notNull(),
   submittedDescription: text("submitted_description").notNull(),
   submittedCategory: text("submitted_category").notNull(),
@@ -181,6 +182,7 @@ export const placeRegistrationRequests = sqliteTable("place_registration_request
   submittedX: real("submitted_x"),
   submittedY: real("submitted_y"),
   name: text("name").notNull(),
+  area: text("area").notNull().default(""),
   address: text("address").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),

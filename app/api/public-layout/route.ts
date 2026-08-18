@@ -20,6 +20,7 @@ type PublicViewSettings = {
   markerLabelsVisible: boolean;
   mergeDenseLabels: boolean;
   screenRecommendedOnly: boolean;
+  defaultMarkerSize: number;
 };
 
 type StoredLayout = {
@@ -111,6 +112,7 @@ function normalizeViewSettings(value: unknown): PublicViewSettings {
     markerLabelsVisible: raw.markerLabelsVisible !== false,
     mergeDenseLabels: raw.mergeDenseLabels !== false,
     screenRecommendedOnly: raw.screenRecommendedOnly === true,
+    defaultMarkerSize: finiteNumber(raw.defaultMarkerSize, 0.8, 15) ? Number(raw.defaultMarkerSize) : 1.7,
   };
 }
 
