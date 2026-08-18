@@ -10,6 +10,15 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<InstallChoice>;
 }
 
+const defaultBrowserThemeColor = "#F6F6F6";
+const standaloneStatusBarColors: Record<string, string> = {
+  "stormy": "#2B2D33",
+  "nordic-sand": "#3A3835",
+  "lilac": "#26222F",
+  "urban-blush": "#6E5B63",
+  "harbor-morning": "#26313B",
+};
+
 function isStandaloneDisplay() {
   return window.matchMedia("(display-mode: standalone)").matches
     || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
@@ -52,6 +61,34 @@ export default function PwaLifecycle() {
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const online = useSyncExternalStore(subscribeToOnlineStatus, onlineSnapshot, () => true);
   const updateRequestedRef = useRef(false);
+
+  useEffect(() => {
+    const standaloneQuery = window.matchMedia("(display-mode: standalone)");
+    const syncStatusBarTheme = () => {
+      const appShell = document.querySelector<HTMLElement>(".app-shell[data-ui-theme]");
+      const themeId = appShell?.dataset.uiTheme ?? "stormy";
+      const statusBarColor = standaloneStatusBarColors[themeId] ?? standaloneStatusBarColors.stormy;
+      const themeMeta = document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+
+      document.documentElement.style.setProperty("--app-status-bar-color", statusBarColor);
+      themeMeta?.setAttribute("content", isStandaloneDisplay() ? statusBarColor : defaultBrowserThemeColor);
+    };
+
+    const themeObserver = new MutationObserver(syncStatusBarTheme);
+    syncStatusBarTheme();
+    themeObserver.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["data-ui-theme"],
+      childList: true,
+      subtree: true,
+    });
+    standaloneQuery.addEventListener("change", syncStatusBarTheme);
+
+    return () => {
+      themeObserver.disconnect();
+      standaloneQuery.removeEventListener("change", syncStatusBarTheme);
+    };
+  }, []);
 
   useEffect(() => {
     const viewportTags = Array.from(document.head.querySelectorAll<HTMLMetaElement>('meta[name="viewport"]'));

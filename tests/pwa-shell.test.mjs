@@ -45,6 +45,9 @@ test("production registration checks for updates without blocking development", 
   assert.match(lifecycleSource, /await registration\.update\(\)/);
   assert.match(lifecycleSource, /SKIP_WAITING/);
   assert.match(lifecycleSource, /controllerchange/);
+  assert.match(lifecycleSource, /standaloneStatusBarColors/);
+  assert.match(lifecycleSource, /new MutationObserver\(syncStatusBarTheme\)/);
+  assert.match(lifecycleSource, /themeMeta\?\.setAttribute\("content", isStandaloneDisplay\(\) \? statusBarColor : defaultBrowserThemeColor\)/);
   assert.match(lifecycleSource, /getMobilePlatform/);
   assert.match(lifecycleSource, /process\.env\.NODE_ENV === "production" && !standalone/);
   assert.match(lifecycleSource, /const showMobileInstall = Boolean\(mobilePlatform\) && !appInstalled/);
@@ -55,6 +58,8 @@ test("production registration checks for updates without blocking development", 
   assert.match(layoutSource, /manifest: "\/manifest\.webmanifest"/);
   assert.match(layoutSource, /viewport-fit=cover/);
   assert.match(layoutSource, /apple-mobile-web-app-capable" content="yes"/);
+  assert.match(layoutSource, /apple-mobile-web-app-status-bar-style" content="black-translucent"/);
+  assert.match(layoutSource, /jeju-wondosim-map-review:ui-theme:v1/);
   assert.match(layoutSource, /<PwaLifecycle \/>/);
 });
 
@@ -65,6 +70,7 @@ test("PWA control files bypass stale HTTP caches and mobile chrome respects safe
   assert.match(cssSource, /\.app-shell:not\(\.public-readonly-shell\) > \.topbar[\s\S]{0,220}env\(safe-area-inset-top\)/);
   assert.match(cssSource, /\.pwa-offline-notice/);
   assert.match(cssSource, /\.pwa-install-guide/);
+  assert.match(cssSource, /@media \(display-mode: standalone\) \{[\s\S]{0,320}body::before[\s\S]{0,240}background: var\(--app-status-bar-color\)/);
 });
 
 test("mobile map details clear competing bottom controls", () => {

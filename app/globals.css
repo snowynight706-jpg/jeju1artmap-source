@@ -10,6 +10,7 @@
   --emerald: #646464;
   --emerald-soft: #ededed;
   --shadow: 0 10px 30px rgb(54 54 54 / 8%);
+  --app-status-bar-color: #2b2d33;
 }
 
 * { box-sizing: border-box; }
@@ -17,6 +18,21 @@ html, body { margin: 0; min-height: 100%; background: var(--paper); color: var(-
 body { font-family: Arial, "Noto Sans KR", sans-serif; overflow: hidden; }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
+
+@media (display-mode: standalone) {
+  html { background: var(--app-status-bar-color); }
+  body::before {
+    content: "";
+    position: fixed;
+    z-index: 1100;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: env(safe-area-inset-top);
+    background: var(--app-status-bar-color);
+    pointer-events: none;
+  }
+}
 
 .pwa-install-button {
   position: fixed;
@@ -1074,9 +1090,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .editor-place-event-list button { height: 21px; padding: 0 5px; border: 1px solid #cdbb99; border-radius: 5px; background: #fffaf1; color: #765f39; cursor: pointer; font-size: 7px; }
 .editor-place-event-list button.danger { border-color: #dec6c0; background: #fff7f5; color: #a05e4e; }
 .editor-place-event-list button:disabled { cursor: wait; opacity: .5; }
-.public-loading { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: repeating-linear-gradient(0deg, rgb(100 100 100 / 3%) 0 1px, transparent 1px 28px), #f5f3ed; }
+.public-loading { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: #fff; }
 .public-loading-overlay { position: fixed; inset: 0; z-index: 1000; min-height: 0; }
-.public-loading-card { width: min(450px, 100%); display: grid; justify-items: center; padding: 38px 34px 30px; border: 1px solid #e1e1e1; border-radius: 3px; background: rgb(255 255 255 / 94%); box-shadow: 0 18px 55px rgb(53 53 53 / 13%); text-align: center; }
+.public-loading-card { width: min(450px, 100%); display: grid; justify-items: center; padding: 38px 34px 30px; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: center; }
 .public-loading-symbol { width: min(230px, 72vw); height: auto; display: block; }
 .public-loading-rule { width: 44px; height: 1px; display: block; margin: 24px 0 15px; background: #acacac; }
 .public-loading-card > strong { display: block; color: #3f3f3f; font-size: 18px; letter-spacing: -.035em; }

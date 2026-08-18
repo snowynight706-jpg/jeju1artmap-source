@@ -20,6 +20,10 @@ test("the first screen uses only Korean signature B until assets, initial focus,
   assert.doesNotMatch(loaderBlock, /jfac-symbol\.png|jfac-signature-c\.png|제주 원도심 아트맵/);
   assert.match(loaderBlock, />로딩 중</);
   assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
+  assert.match(cssSource, /\.public-loading \{[^}]*min-height: 100dvh[^}]*background: #fff/);
+  assert.match(cssSource, /\.public-loading-card \{[^}]*width: min\(450px, 100%\)[^}]*border: 0[^}]*border-radius: 0[^}]*background: transparent[^}]*box-shadow: none/);
+  assert.match(cssSource, /\.public-loading-symbol \{ width: min\(230px, 72vw\)/);
+  assert.match(cssSource, /\.public-loading-track \{ width: min\(270px, 82%\)/);
   assert.equal(signatureB.readUInt32BE(16), 1182);
   assert.equal(signatureB.readUInt32BE(20), 626);
 });
