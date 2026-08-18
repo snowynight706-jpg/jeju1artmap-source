@@ -13,6 +13,8 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
     ["sanjicheon-v06", "산지천갤러리"],
     ["dongmun-v08", "동문시장"],
     ["artspace-ia-v04", "예술공간 이아"],
+    ["mokgwana-v06", "제주목 관아"],
+    ["gwandeokjeong-v07", "관덕정"],
   ];
 
   for (const [id, placeName] of latest) {
@@ -26,6 +28,10 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
   assert.match(pageSource, /const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06"/);
   assert.match(pageSource, /const LATEST_DONGMUN_ASSET_ID = "dongmun-v08"/);
   assert.match(pageSource, /const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04"/);
+  assert.match(pageSource, /const LATEST_MOKGWANA_ASSET_ID = "mokgwana-v06"/);
+  assert.match(pageSource, /const LATEST_GWANDEOKJEONG_ASSET_ID = "gwandeokjeong-v07"/);
+  assert.match(pageSource, /\["제주목 관아", LATEST_MOKGWANA_ASSET_ID\]/);
+  assert.match(pageSource, /\["관덕정", LATEST_GWANDEOKJEONG_ASSET_ID\]/);
   assert.match(pageSource, /supersededRedesignedLandmarkAssets/);
   assert.match(pageSource, /supersededAssetIds\?\.has\(normalized\.assetId\)/);
 });

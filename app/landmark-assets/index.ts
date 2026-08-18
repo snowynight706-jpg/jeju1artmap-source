@@ -19,7 +19,7 @@ const asset = (id: string, name: string, placeName: string, sourceId: string, st
   src: `/landmarks-hq/${id}.webp${revision ? `?v=${revision}` : ""}`,
   screenSrc: `/landmarks-screen/${id}.webp?v=${SCREEN_REVISION}`,
   fileName: `${id}.webp`,
-  sourceUrl: drive(sourceId),
+  sourceUrl: sourceId ? drive(sourceId) : "",
 });
 
 export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
@@ -54,9 +54,11 @@ export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
   asset("mokgwana-01", "01", "제주목 관아", "1tG7KM7sXw4R4-74yGbFyfNJuIlrKxP8V"),
   asset("mokgwana-02", "02", "제주목 관아", "1ToM4JNnqgDEPruCl5DcKh3-mteiPPQq_"),
   asset("mokgwana-03", "03", "제주목 관아", "1MPY-AiEONI4xeqak-jmVl64NX6jEd0ZU"),
+  asset("mokgwana-v06", "v06 화강암 바닥 타일 · 하단 투명 그라데이션 최신", "제주목 관아", "", "approved"),
   asset("gwandeokjeong-01", "01", "관덕정", "16NrEyRrLjfBAImyMZoMz2BIxoSPd6bX8"),
   asset("gwandeokjeong-02", "02", "관덕정", "1wbEOAFrHcNDd2uofLkaUMPGTqdS03jkG"),
   asset("gwandeokjeong-03", "03", "관덕정", "1BAwJbmSCauZ55GAhl4nmiA5BhR_YbSn-"),
+  asset("gwandeokjeong-v07", "v07 목재 앉음단 · 석재 기단 · 잔디 디테일 최신", "관덕정", "", "approved"),
   asset("chilsungro", "아치프레임 두께보강 v2", "칠성로", "1qQO5eaUSUgdw1BxHpl9fXymBFgLjN5zW", "approved"),
   asset("dongmun-v08", "v08 아치형 게이트 · 현최종", "동문시장", "1v5ECHOlpAJasRl7ltQre8zln0ZNOsXft", "approved"),
   asset("dongmun-01", "01 컴팩트본체", "동문시장", "1DXNEpcJSaJNcd34W8QJ8uP7qyfi6I26x"),

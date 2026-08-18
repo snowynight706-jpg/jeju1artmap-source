@@ -92,6 +92,8 @@ const ADMIN_SESSION_API = "/api/admin-session";
 const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06";
 const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04";
 const LATEST_DONGMUN_ASSET_ID = "dongmun-v08";
+const LATEST_MOKGWANA_ASSET_ID = "mokgwana-v06";
+const LATEST_GWANDEOKJEONG_ASSET_ID = "gwandeokjeong-v07";
 const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
 const LANDMARK_RESOURCE_SIZE = 6.2;
 const LANDMARK_LABEL_GAP = 8;
@@ -101,11 +103,15 @@ const latestRedesignedLandmarkAssets = new Map<string, string>([
   ["산지천갤러리", LATEST_SANJICHEON_ASSET_ID],
   ["동문시장", LATEST_DONGMUN_ASSET_ID],
   ["예술공간 이아", LATEST_ARTSPACE_IA_ASSET_ID],
+  ["제주목 관아", LATEST_MOKGWANA_ASSET_ID],
+  ["관덕정", LATEST_GWANDEOKJEONG_ASSET_ID],
 ]);
 const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["산지천갤러리", new Set(["sanjicheon-v04", "sanjicheon-01", "sanjicheon-02", "sanjicheon-03"])],
   ["동문시장", new Set(["dongmun-01", "dongmun-02", "dongmun-03"])],
   ["예술공간 이아", new Set(["artspace-ia-01", "artspace-ia-02", "artspace-ia-03"])],
+  ["제주목 관아", new Set(["mokgwana-01", "mokgwana-02", "mokgwana-03"])],
+  ["관덕정", new Set(["gwandeokjeong-01", "gwandeokjeong-02", "gwandeokjeong-03"])],
 ]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
@@ -662,8 +668,8 @@ const landmarkLocations = [
   { name: "아라리오뮤지엄 탑동시네마", address: "제주특별자치도 제주시 탑동로 14", addressSourceUrl: "https://www.arariomuseum.org/", assetId: "arario-01", x: 18, y: 24 },
   { name: "김만덕객주", address: "제주특별자치도 제주시 임항로 68", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CNTS_000000000019652", assetId: "guesthouse-01", x: 75, y: 25 },
   { name: "산지천갤러리", address: "제주특별자치도 제주시 중앙로3길 36", addressSourceUrl: "https://www.jfac.kr/operatingSpace/sjcGallery/sjcGuide", assetId: LATEST_SANJICHEON_ASSET_ID, x: 64, y: 40 },
-  { name: "제주목 관아", address: "제주특별자치도 제주시 관덕로 25", addressSourceUrl: "https://www.jeju.go.kr/mokkwana/", assetId: "mokgwana-01", x: 39, y: 60 },
-  { name: "관덕정", address: "제주특별자치도 제주시 관덕로 19", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500057", assetId: "gwandeokjeong-01", x: 37, y: 58 },
+  { name: "제주목 관아", address: "제주특별자치도 제주시 관덕로 25", addressSourceUrl: "https://www.jeju.go.kr/mokkwana/", assetId: LATEST_MOKGWANA_ASSET_ID, x: 39, y: 60 },
+  { name: "관덕정", address: "제주특별자치도 제주시 관덕로 19", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500057", assetId: LATEST_GWANDEOKJEONG_ASSET_ID, x: 37, y: 58 },
   { name: "칠성로", address: "제주특별자치도 제주시 관덕로13길 12 일대", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750", assetId: "chilsungro", x: 58, y: 50 },
   { name: "동문시장", address: "제주특별자치도 제주시 관덕로14길 20", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745", assetId: LATEST_DONGMUN_ASSET_ID, x: 66, y: 55 },
   { name: "북수구광장", address: "제주특별자치도 제주시 일도일동 1232", addressSourceUrl: "https://www.facebook.com/wowjejusi/", assetId: "buksugu-01", x: 62, y: 45 },
@@ -1053,7 +1059,9 @@ const builtInLandmarkAssets: MapAsset[] = bundledLandmarkAssets.map((asset) => {
     addressSourceUrl: location?.addressSourceUrl ?? "",
     sourceLabel: asset.id === MAIN_HUB_LANDMARK_ASSET_ID
       ? `Google Drive A-02 외곽선보강 최종검수안 · 투명 배경 정리 · 1024px WebP 최적화 · ${asset.fileName}`
-      : `Google Drive 원본 · 1024px WebP 최적화 · ${asset.fileName}`,
+      : asset.sourceUrl
+        ? `Google Drive 원본 · 1024px WebP 최적화 · ${asset.fileName}`
+        : `사이트 내장 최신 승인 자산 · 투명 배경 · 1024px WebP 최적화 · ${asset.fileName}`,
     builtIn: true,
   };
 });
