@@ -7281,7 +7281,7 @@ export default function Home() {
   }
 
   return (
-    <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""}`} data-ui-theme={uiTheme}>
+    <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""} ${publicLayoutAccess === "viewer" && selected ? "public-place-selected" : ""}`} data-ui-theme={uiTheme}>
       {!startupRevealReady && <div className="public-loading public-loading-overlay">{startupLoadingCard}</div>}
       {publicLayoutAccess === "editor" ? <header className="topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
@@ -7821,7 +7821,7 @@ export default function Home() {
         </aside>}
       </section>
       <>
-        {publicLayoutAccess === "viewer" && <button type="button" className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel">
+        {publicLayoutAccess === "viewer" && !selected && <button type="button" className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel">
           <span aria-hidden="true">⌖</span><strong>{globalStoriesOpen ? "탐색 닫기" : "장소 · 리뷰 · 행사"}</strong>{publicPlaceItems.length > 0 && <em>{publicPlaceItems.length}</em>}
         </button>}
         {globalStoriesOpen && <aside id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : "public-explorer-panel"} ${publicLayoutAccess === "viewer" && publicPanelExpanded ? "expanded" : ""}`} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "원도심 장소·리뷰·행사 탐색"}>
