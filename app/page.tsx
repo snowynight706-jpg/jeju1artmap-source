@@ -99,6 +99,8 @@ const LATEST_KIM_MEMORIAL_ASSET_ID = "kim-memorial-front03";
 const LATEST_ARARIO_ASSET_ID = "arario-01";
 const LATEST_BUKSUGU_ASSET_ID = "buksugu-02";
 const LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID = "tapdong-seaside-stage-02";
+const LATEST_JEJU_ART_PLATFORM_ASSET_ID = "jeju-art-platform-c01-v05";
+const LATEST_CHILSUNGRO_ASSET_ID = "chilsungro-20260819";
 const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
 const LANDMARK_RESOURCE_SIZE = 6.2;
 const LANDMARK_LABEL_GAP = 8;
@@ -114,6 +116,8 @@ const latestRedesignedLandmarkAssets = new Map<string, string>([
   ["아라리오뮤지엄 탑동시네마", LATEST_ARARIO_ASSET_ID],
   ["북수구광장", LATEST_BUKSUGU_ASSET_ID],
   ["탑동해변공연장", LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID],
+  ["제주아트플랫폼", LATEST_JEJU_ART_PLATFORM_ASSET_ID],
+  ["칠성로", LATEST_CHILSUNGRO_ASSET_ID],
 ]);
 const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["산지천갤러리", new Set(["sanjicheon-v04", "sanjicheon-01", "sanjicheon-02", "sanjicheon-03"])],
@@ -125,6 +129,8 @@ const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["아라리오뮤지엄 탑동시네마", new Set(["arario-02", "arario-03"])],
   ["북수구광장", new Set(["buksugu-01", "buksugu-03"])],
   ["탑동해변공연장", new Set(["tapdong-seaside-stage-03"])],
+  ["제주아트플랫폼", new Set(["jeju-art-platform-c01"])],
+  ["칠성로", new Set(["chilsungro"])],
 ]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
@@ -694,7 +700,7 @@ function mapElementDisplaySize(element: Pick<MapElement, "category" | "size">) {
 
 const landmarkLocations = [
   { name: MAIN_HUB_CANONICAL_NAME, address: "제주특별자치도 제주시 관덕로 44", addressSourceUrl: "https://www.jejusotong.kr/", assetId: MAIN_HUB_LANDMARK_ASSET_ID, x: 48, y: 64 },
-  { name: "제주아트플랫폼", address: "제주특별자치도 제주시 중앙로14길 18", addressSourceUrl: "https://www.jfac.kr/", assetId: "jeju-art-platform-c01", x: 31, y: 62 },
+  { name: "제주아트플랫폼", address: "제주특별자치도 제주시 중앙로14길 18", addressSourceUrl: "https://www.jfac.kr/", assetId: LATEST_JEJU_ART_PLATFORM_ASSET_ID, x: 31, y: 62 },
   { name: "김만덕기념관", address: "제주특별자치도 제주시 산지로 7", addressSourceUrl: "https://www.mandukmuseum.or.kr/", assetId: LATEST_KIM_MEMORIAL_ASSET_ID, x: 74, y: 31 },
   { name: "예술공간 이아", address: "제주특별자치도 제주시 중앙로14길 21", addressSourceUrl: "https://www.jfac.kr/operatingSpace/artSpaceIAa/iAaGuide", assetId: LATEST_ARTSPACE_IA_ASSET_ID, x: 34, y: 57 },
   { name: "아라리오뮤지엄 탑동시네마", address: "제주특별자치도 제주시 탑동로 14", addressSourceUrl: "https://www.arariomuseum.org/", assetId: LATEST_ARARIO_ASSET_ID, x: 18, y: 24 },
@@ -702,7 +708,7 @@ const landmarkLocations = [
   { name: "산지천갤러리", address: "제주특별자치도 제주시 중앙로3길 36", addressSourceUrl: "https://www.jfac.kr/operatingSpace/sjcGallery/sjcGuide", assetId: LATEST_SANJICHEON_ASSET_ID, x: 64, y: 40 },
   { name: "제주목 관아", address: "제주특별자치도 제주시 관덕로 25", addressSourceUrl: "https://www.jeju.go.kr/mokkwana/", assetId: LATEST_MOKGWANA_ASSET_ID, x: 39, y: 60 },
   { name: "관덕정", address: "제주특별자치도 제주시 관덕로 19", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500057", assetId: LATEST_GWANDEOKJEONG_ASSET_ID, x: 37, y: 58 },
-  { name: "칠성로", address: "제주특별자치도 제주시 관덕로13길 12 일대", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750", assetId: "chilsungro", x: 58, y: 50 },
+  { name: "칠성로", address: "제주특별자치도 제주시 관덕로13길 12 일대", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750", assetId: LATEST_CHILSUNGRO_ASSET_ID, x: 58, y: 50 },
   { name: "동문시장", address: "제주특별자치도 제주시 관덕로14길 20", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745", assetId: LATEST_DONGMUN_ASSET_ID, x: 66, y: 55 },
   { name: "북수구광장", address: "제주특별자치도 제주시 일도일동 1232", addressSourceUrl: "https://www.facebook.com/wowjejusi/", assetId: LATEST_BUKSUGU_ASSET_ID, x: 62, y: 45 },
   { name: "탑동광장", address: "제주특별자치도 제주시 중앙로 1", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", assetId: "tapdong-square-03", x: 28, y: 20 },

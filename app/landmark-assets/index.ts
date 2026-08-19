@@ -24,6 +24,7 @@ const asset = (id: string, name: string, placeName: string, sourceId: string, st
 
 export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
   asset("jeju-communication-center-a02", "A-02 외곽선보강 최종", "제주시소통협력센터", "1n1G-0HbAOv9FavuBo54SdxDZWY276b3j", "approved", "20260812-091129"),
+  asset("jeju-art-platform-c01-v05", "C-01 v05 · 현채용 중저톤 유리", "제주아트플랫폼", "19CdVISSH8iijgkbsG87-FrIjHObWMiOI", "approved", "20260819-selected-v1"),
   asset("jeju-art-platform-c01", "C-01", "제주아트플랫폼", "1wtaceoB3q7UL9KUfwkLu-6SjT52zLW-j", "approved"),
   asset("jeju-art-platform-a01", "A-01", "제주아트플랫폼", "15pl0qSHrJEMqcKHaR9lr9k0lA-BJKaJz"),
   asset("jeju-art-platform-a02", "A-02", "제주아트플랫폼", "1hUxtGB9PSRNjNMoAtHdEaEz4vJ2YWEp5"),
@@ -61,6 +62,7 @@ export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
   asset("gwandeokjeong-03", "03", "관덕정", "1BAwJbmSCauZ55GAhl4nmiA5BhR_YbSn-"),
   asset("gwandeokjeong-v07", "v07 목재 앉음단 · 석재 기단 · 잔디 디테일 최신", "관덕정", "1-6UaFKFZOWcuFa57IIXP-8xNWUkLOI-L", "approved"),
   asset("gwandeokjeong-v09", "v09 내부 그늘 · 후면 기둥 · 공통 재질 채용안", "관덕정", "1SVdDv5bLdjk9Hm6xiGfehlQrTwjtUZHt", "approved", "20260819-selected-v2"),
+  asset("chilsungro-20260819", "실사 교정 최종 채용안 · 비대칭 아치", "칠성로", "1P06b_cBlFIFg2xWEQv8Z9sTzhDIEzrbj", "approved", "20260819-selected-v1"),
   asset("chilsungro", "아치프레임 두께보강 v2", "칠성로", "1qQO5eaUSUgdw1BxHpl9fXymBFgLjN5zW", "approved"),
   asset("dongmun-v08", "v08 아치형 게이트 · 현최종", "동문시장", "1v5ECHOlpAJasRl7ltQre8zln0ZNOsXft", "approved"),
   asset("dongmun-01", "01 컴팩트본체", "동문시장", "1DXNEpcJSaJNcd34W8QJ8uP7qyfi6I26x"),

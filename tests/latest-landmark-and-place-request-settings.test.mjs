@@ -19,6 +19,8 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
     ["arario-01", "아라리오뮤지엄 탑동시네마"],
     ["buksugu-02", "북수구광장"],
     ["tapdong-seaside-stage-02", "탑동해변공연장"],
+    ["jeju-art-platform-c01-v05", "제주아트플랫폼"],
+    ["chilsungro-20260819", "칠성로"],
   ];
 
   for (const [id, placeName] of latest) {
@@ -38,15 +40,21 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
   assert.match(pageSource, /const LATEST_ARARIO_ASSET_ID = "arario-01"/);
   assert.match(pageSource, /const LATEST_BUKSUGU_ASSET_ID = "buksugu-02"/);
   assert.match(pageSource, /const LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID = "tapdong-seaside-stage-02"/);
+  assert.match(pageSource, /const LATEST_JEJU_ART_PLATFORM_ASSET_ID = "jeju-art-platform-c01-v05"/);
+  assert.match(pageSource, /const LATEST_CHILSUNGRO_ASSET_ID = "chilsungro-20260819"/);
   assert.match(pageSource, /\["제주목 관아", LATEST_MOKGWANA_ASSET_ID\]/);
   assert.match(pageSource, /\["관덕정", LATEST_GWANDEOKJEONG_ASSET_ID\]/);
   assert.match(pageSource, /\["김만덕기념관", LATEST_KIM_MEMORIAL_ASSET_ID\]/);
   assert.match(pageSource, /\["아라리오뮤지엄 탑동시네마", LATEST_ARARIO_ASSET_ID\]/);
   assert.match(pageSource, /\["북수구광장", LATEST_BUKSUGU_ASSET_ID\]/);
   assert.match(pageSource, /\["탑동해변공연장", LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID\]/);
+  assert.match(pageSource, /\["제주아트플랫폼", LATEST_JEJU_ART_PLATFORM_ASSET_ID\]/);
+  assert.match(pageSource, /\["칠성로", LATEST_CHILSUNGRO_ASSET_ID\]/);
   assert.match(pageSource, /supersededRedesignedLandmarkAssets/);
   assert.match(pageSource, /"mokgwana-v06"/);
   assert.match(pageSource, /"gwandeokjeong-v07"/);
+  assert.match(pageSource, /new Set\(\["jeju-art-platform-c01"\]\)/);
+  assert.match(pageSource, /new Set\(\["chilsungro"\]\)/);
   assert.match(pageSource, /supersededAssetIds\?\.has\(normalized\.assetId\)/);
 });
 
