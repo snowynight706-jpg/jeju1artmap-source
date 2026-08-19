@@ -16,8 +16,10 @@ test("print preview is controlled from the output panel and PNG map is advanced-
 });
 
 test("place-specific content panels route moderation to the unified manager", () => {
-  assert.match(pageSource, /전체 행사 관리/);
-  assert.match(pageSource, /전체 리뷰 관리/);
+  assert.equal(pageSource.match(/리뷰·행사 통합 관리 열기/g)?.length ?? 0, 1);
+  assert.match(pageSource, /const openUnifiedContentManagement = \(\) =>/);
+  assert.match(pageSource, /openGlobalManagement\(globalContentTab === "events" \? "events" : "reviews"\)/);
+  assert.doesNotMatch(pageSource, /title="장소 행사"|title="공개 사진·후기"/);
   assert.equal(pageSource.match(/editor-place-event-list/g)?.length ?? 0, 0);
   assert.equal(pageSource.match(/editor-place-story-list/g)?.length ?? 0, 0);
 });

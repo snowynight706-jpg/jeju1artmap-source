@@ -485,11 +485,16 @@ export async function PATCH(request: Request) {
   } catch {
     return json({ error: "invalid json" }, 400);
   }
-  const body = payload as { id?: unknown; category?: unknown; additionalCategories?: unknown };
+  const body = payload as { id?: unknown; category?: unknown; additionalCategories?: unknown; address?: unknown };
   const id = cleanText(body.id, 180);
+  const updatesTaxonomy = body.category !== undefined || body.additionalCategories !== undefined;
+  const updatesAddress = typeof body.address === "string";
   const category = normalizeDirectoryCategory(cleanText(body.category, 32));
   const additionalCategories = sanitizeAdditionalCategories(body.additionalCategories);
-  if (!id || !isPrimaryPublicCategory(category) || !Array.isArray(body.additionalCategories)) {
+  if (!id || (!updatesTaxonomy && !updatesAddress)) {
+    return json({ error: "place update required" }, 400);
+  }
+  if (updatesTaxonomy && (!isPrimaryPublicCategory(category) || !Array.isArray(body.additionalCategories))) {
     return json({ error: "valid place taxonomy required" }, 400);
   }
 
@@ -505,18 +510,23 @@ export async function PATCH(request: Request) {
   if (!stored) return json({ error: "place not found" }, 404);
 
   const current = storedRowToInput(stored);
-  const next = normalizeRow({ ...current, category, additionalCategories });
-  if (!next) return json({ error: "invalid place taxonomy" }, 400);
+  const next = normalizeRow({
+    ...current,
+    ...(updatesTaxonomy ? { category, additionalCategories } : {}),
+    ...(updatesAddress ? { address: cleanText(body.address, 260) } : {}),
+  });
+  if (!next) return json({ error: "invalid place update" }, 400);
 
   const updatedAt = new Date().toISOString();
   await runtime.DB.batch([
     runtime.DB.prepare(
       `UPDATE place_directory
-       SET category = ?, additional_categories_json = ?, updated_at = ?, updated_by = ?
+       SET category = ?, additional_categories_json = ?, address = ?, updated_at = ?, updated_by = ?
        WHERE id = ?`,
     ).bind(
       next.category,
       JSON.stringify({ values: next.additionalCategories }),
+      next.address,
       updatedAt,
       currentEmail,
       next.id,

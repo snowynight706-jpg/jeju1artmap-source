@@ -79,7 +79,8 @@ test("convenience information is stored independently from category tags", () =>
 });
 
 test("right marker properties update the linked directory taxonomy", () => {
-  assert.match(pageSource, /className="marker-taxonomy-section" aria-label="DB 연동 장소 분류"/);
+  assert.match(pageSource, /className="compact-basic-information" title="기본 정보"/);
+  assert.match(pageSource, /분류 <em>연결 DB 즉시 반영<\/em>/);
   assert.match(pageSource, /updateSelectedDirectoryTaxonomy\(selectedDirectoryPlace/);
   assert.match(pageSource, /toggleSelectedDirectoryAdditionalCategory\(selectedDirectoryPlace/);
   assert.match(pageSource, /method: "PATCH"/);
@@ -88,10 +89,10 @@ test("right marker properties update the linked directory taxonomy", () => {
 });
 
 test("right properties can create and classify a DB record for an unlinked map asset", () => {
-  assert.match(pageSource, /aria-label="DB 미연결 자산 분류"/);
+  assert.match(pageSource, /첫 변경 시 DB 항목 생성/);
   assert.match(pageSource, /connectUnlinkedElementTaxonomy\(selected/);
   assert.match(pageSource, /method: "POST"/);
-  assert.match(pageSource, /현재 분류로 DB 항목 생성·연결/);
+  assert.match(pageSource, /DB 연결 후 선택/);
   assert.match(directoryRouteSource, /export async function POST/);
   assert.match(directoryRouteSource, /id: `map-\$\{crypto\.randomUUID\(\)\}`/);
   assert.match(directoryRouteSource, /지도 자산 연결/);

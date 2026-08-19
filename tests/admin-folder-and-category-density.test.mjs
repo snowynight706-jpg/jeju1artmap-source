@@ -11,11 +11,11 @@ test("admin functions use reusable folders with clean CSS chevrons and distinct 
   assert.match(pageSource, /<span className="admin-folder-arrow" aria-hidden="true" \/>/);
   assert.doesNotMatch(pageSource, /△|▽/);
   assert.doesNotMatch(cssSource, /△|▽/);
-  assert.match(pageSource, /title="기본 정보"[\s\S]{0,120}defaultOpen/);
-  assert.match(pageSource, /title="장소 분류 · DB 연동"[\s\S]{0,160}defaultOpen/);
-  assert.match(pageSource, /title="리소스 출력 오프셋"/);
-  assert.match(pageSource, /title="실제 위치 앵커"/);
-  assert.match(pageSource, /title="라벨"/);
+  assert.match(pageSource, /className="compact-basic-information" title="기본 정보"[\s\S]{0,120}defaultOpen/);
+  assert.match(pageSource, /고화질 출력 세부/);
+  assert.match(pageSource, /title="위치 앵커 · 리소스 출력"/);
+  assert.match(pageSource, /title="라벨 · 연결선"/);
+  assert.doesNotMatch(pageSource, /title="장소 분류 · DB 연동"|title="리소스 출력 오프셋"|title="실제 위치 앵커"|title="연결선"|title="라벨"/);
   assert.match(pageSource, /title="빠른 작업"/);
   assert.match(pageSource, /setPrintFolderOpenRequest\(\(current\) => current \+ 1\)/);
   assert.match(pageSource, /openSignal=\{printFolderOpenRequest\}/);

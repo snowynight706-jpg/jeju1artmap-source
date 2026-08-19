@@ -1100,7 +1100,6 @@ function assetIdAfterDirectoryCategoryChange(element: MapElement, category: Cate
 }
 
 const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, index) => {
-  const asset = builtInAssets.find((item) => item.id === location.assetId);
   const directoryPlace = directoryByName.get(normalizePlaceName(location.name));
   const geocoded = geocodedPlaces[location.name];
   const calibrated = calibratedPlaceCoordinates(location.name, geocoded?.latitude, geocoded?.longitude, initialCalibrationPoints);
@@ -1119,7 +1118,7 @@ const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, i
     z: index + 1,
     labelVisible: true,
     assetId: location.assetId,
-    status: asset?.status ?? "unchecked",
+    status: "unchecked",
     address: location.address,
     addressSourceUrl: location.addressSourceUrl,
     memo: geocoded ? "주소·장소명 검색 결과를 6개 기준점 보정망으로 v15 지도에 반영한 기본 위치. 필요하면 화면상 위치를 직접 보정하세요." : "주소 검색 미확정 · 직접 위치 검수 필요",
@@ -1168,7 +1167,7 @@ function buildStarterMarkers(places: DirectoryPlace[]): MapElement[] {
       labelVisible: place.category === "culture" || place.category === "parking",
       labelGap: 4,
       assetId,
-      status: assetId ? markerAssetStatus(recommendedMarkerStyle) : "unchecked",
+      status: "unchecked",
       address: place.address,
       addressSourceUrl: place.sourceUrl ?? "",
       memo: `${place.sourceLabel} · 초기 구성용 시각 배치. 실제 위치 앵커와 화면상 위치를 검수해 주세요.`,
@@ -1191,6 +1190,10 @@ const factoryLandmarkDefaultPositions: LandmarkDefaultPosition[] = initialLandma
 
 const statusText: Record<AssetStatus, string> = { approved: "승인 완료", review: "검수 중", unchecked: "미검수" };
 const reviewStatusText: Record<ReviewStatus, string> = { delete: "삭제 검토", weaken: "약화 검토", keep: "유지", hierarchy: "도로 위계 조정" };
+
+function reviewStatusForCoordinateLock(locked: boolean): AssetStatus {
+  return locked ? "approved" : "unchecked";
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
@@ -1952,6 +1955,7 @@ function sanitizeDocument(document: DocumentState): DocumentState {
         ...elementDefaults,
         ...element,
         locked: Boolean(element.locked),
+        status: reviewStatusForCoordinateLock(Boolean(element.locked)),
         labelLocked: Boolean(element.labelLocked),
         mapVisible: element.mapVisible !== false,
       };
@@ -1972,7 +1976,7 @@ function sanitizeDocument(document: DocumentState): DocumentState {
       const needsCanonicalMarker = category !== "landmark"
         && (!canonical.assetId || !canonicalMarkerAssetIds.has(canonical.assetId));
       return needsCanonicalMarker && defaultAssetId
-        ? { ...canonical, assetId: defaultAssetId, status: markerAssetStatus(recommendedMarkerStyle) }
+        ? { ...canonical, assetId: defaultAssetId }
         : canonical;
     });
   const sanitizedDirectoryPlaces = document.directoryPlaces
@@ -2101,6 +2105,7 @@ function applyLockedCoordinateSettings(
     return {
       ...element,
       locked: true,
+      status: "approved",
       anchorX: clamp(setting.anchorX, 0, 100),
       anchorY: clamp(setting.anchorY, 0, 100),
       x: clamp(setting.x, 0, 100),
@@ -2133,9 +2138,9 @@ function applyLockedCoordinateSettings(
       size: category === "landmark" ? 6.2 : category === "culture" ? 2.5 : 1.65,
       z,
       locked: true,
+      status: "approved",
       labelVisible: category === "landmark" || category === "culture" || category === "parking",
       assetId,
-      status: assetId ? markerAssetStatus(recommendedMarkerStyle) : "unchecked",
       address: place?.address ?? "",
       addressSourceUrl: place?.sourceUrl ?? "",
       memo: "배포 사이트의 고정 좌표에서 동기화됨",
@@ -2493,9 +2498,9 @@ export default function Home() {
   const [storyReportSubmitting, setStoryReportSubmitting] = useState(false);
   const [reportedStoryIds, setReportedStoryIds] = useState<Set<string>>(() => new Set());
   const [placeEvents, setPlaceEvents] = useState<PlaceEvent[]>([]);
-  const [placeEventsLoading, setPlaceEventsLoading] = useState(false);
+  const [, setPlaceEventsLoading] = useState(false);
   const [placeEventsLoadedKey, setPlaceEventsLoadedKey] = useState<string | null>(null);
-  const [placeEventsCanManage, setPlaceEventsCanManage] = useState(false);
+  const [, setPlaceEventsCanManage] = useState(false);
   const [placeEventsRefreshKey, setPlaceEventsRefreshKey] = useState(0);
   const [eventLinkedPlaces, setEventLinkedPlaces] = useState<PlaceEventPlace[]>([]);
   const [placeEventFormOpen, setPlaceEventFormOpen] = useState(false);
@@ -2940,7 +2945,8 @@ export default function Home() {
     if (record) pushHistory();
     replaceElements((current) => current.map((element) => {
       if (element.id !== id) return element;
-      const next = { ...element, ...patch };
+      const patched = { ...element, ...patch };
+      const next = { ...patched, status: reviewStatusForCoordinateLock(patched.locked) };
       const name = normalizePlaceName(next.name);
       if (!isCoreLandmarkName(name) && !isPrimaryHubLabel(name)) return next;
       const preferredAssetId = landmarkLocationByName.get(name)?.assetId;
@@ -3065,6 +3071,17 @@ export default function Home() {
   const selectedUnlinkedTaxonomySaving = Boolean(selected)
     && directoryTaxonomySync.placeId === selected?.id
     && directoryTaxonomySync.state === "saving";
+  const selectedBasicInfoMeta = selected && directoryTaxonomySync.placeId === (selectedDirectoryPlace?.id ?? selected.id)
+    ? directoryTaxonomySync.state === "saving"
+      ? "DB 저장 중…"
+      : directoryTaxonomySync.state === "saved"
+        ? "DB 저장됨"
+        : directoryTaxonomySync.state === "error"
+          ? "DB 저장 실패"
+          : selectedDirectoryPlace ? "DB 연결" : "DB 미연결"
+    : selectedDirectoryPlace
+      ? placeDirectoryCanEdit ? "DB 연결" : "DB 읽기 전용"
+      : selected?.placeRequestId ? "승인 대기" : "DB 미연결";
   const selectedStoryKey = selectedDirectoryPlace
     ? `directory:${selectedDirectoryPlace.id}`
     : selected
@@ -3073,7 +3090,11 @@ export default function Home() {
   const publicPlaceDetailLoading = publicLayoutAccess === "viewer"
     && Boolean(selectedStoryKey)
     && (placeStoriesLoadedKey !== selectedStoryKey || placeEventsLoadedKey !== selectedStoryKey);
-  const selectedDisplayName = selectedDirectoryPlace
+  const selectedUsesMapDisplayName = Boolean(selected && selectedDirectoryPlace && (
+    selectedDirectoryPlace.id === selected.directoryId
+    || (!selected.directoryId && normalizePlaceName(selectedDirectoryPlace.name) === normalizePlaceName(selected.name))
+  ));
+  const selectedDisplayName = selectedDirectoryPlace && !selectedUsesMapDisplayName
     ? publicDisplayName(selectedDirectoryPlace.name, selectedDirectoryPlace.featuredRole)
     : selected?.name ?? "";
   const activeUiTheme = uiThemes.find((theme) => theme.id === uiTheme) ?? uiThemes[0];
@@ -3104,7 +3125,6 @@ export default function Home() {
   const selectedDisplayOffset = selected ? { x: selected.x - selected.anchorX, y: selected.y - selected.anchorY } : null;
   const selectedIsPrimaryCalibration = selected ? PRIMARY_CALIBRATION_NAMES.has(normalizePlaceName(selected.name)) : false;
   const selectedHasGeocodedSource = selected ? Boolean(geocodedPlaces[normalizePlaceName(selected.name)]) : false;
-  const selectedAsset = selected ? assets.find((asset) => asset.id === selected.assetId) ?? null : null;
   const compatibleAssets = selected ? assets.filter((asset) => (
     asset.placeName ? asset.placeName === selected.name : asset.category === selected.category
   )) : assets;
@@ -3352,11 +3372,12 @@ export default function Home() {
         const itemId = place.id || `element-${anchor.id}`;
         if (items.has(itemId)) return;
         const isMainHub = place.featuredRole === MAIN_HUB_ROLE || isPrimaryHubLabel(place.name);
+        const usesMapDisplayName = Boolean(ownPlace && place.id === ownPlace.id);
         items.set(itemId, {
           id: itemId,
           place,
           anchor,
-          displayName: publicDisplayName(place.name, place.featuredRole),
+          displayName: usesMapDisplayName ? anchor.name : publicDisplayName(place.name, place.featuredRole),
           categoryId: publicCategoryIdForPlace(place, anchor),
           isMainHub,
         });
@@ -3708,7 +3729,7 @@ export default function Home() {
     const run = ++storyRequestRunRef.current;
     const controller = new AbortController();
     void Promise.resolve().then(() => {
-      if (!selectedStoryKey || publicLayoutAccess === "loading") {
+      if (!selectedStoryKey || publicLayoutAccess !== "viewer") {
         setPlaceStories([]);
         setPlaceStoriesCanModerate(false);
         setPlaceStoriesLoading(false);
@@ -3751,7 +3772,7 @@ export default function Home() {
     const run = ++eventRequestRunRef.current;
     const controller = new AbortController();
     void Promise.resolve().then(() => {
-      if (!selectedStoryKey || publicLayoutAccess === "loading") {
+      if (!selectedStoryKey || publicLayoutAccess !== "viewer") {
         setPlaceEvents([]);
         setPlaceEventsCanManage(false);
         setPlaceEventsLoading(false);
@@ -5720,6 +5741,73 @@ export default function Home() {
     return nextPlace;
   };
 
+  const applyDirectoryAddressLocally = (placeId: string, address: string) => {
+    const currentPlace = placesRef.current.find((place) => place.id === placeId);
+    if (!currentPlace) return null;
+    const nextPlace: DirectoryPlace = {
+      ...currentPlace,
+      address,
+      ...(currentPlace.coordinateStatus !== "landmark" && currentPlace.address.trim() !== address.trim() ? {
+        coordinateStatus: "unresolved" as const,
+        latitude: undefined,
+        longitude: undefined,
+      } : {}),
+    };
+    replaceDirectoryPlaces((current) => current.map((place) => place.id === placeId ? nextPlace : place));
+    setDatabaseDraftPlaces((current) => current.map((place) => place.id === placeId ? nextPlace : place));
+    replaceElements((current) => current.map((element) => {
+      const attached = element.directoryId === placeId
+        || (!element.directoryId && normalizePlaceName(element.name) === normalizePlaceName(currentPlace.name));
+      return attached ? { ...element, address } : element;
+    }));
+    return nextPlace;
+  };
+
+  const saveSelectedDirectoryAddress = (place: DirectoryPlace, addressValue: string) => {
+    if (!placeDirectoryCanEdit) {
+      setToast("장소 주소 수정은 관리자 권한으로만 저장할 수 있습니다.");
+      return;
+    }
+    const currentPlace = placesRef.current.find((item) => item.id === place.id) ?? place;
+    const address = addressValue.trim();
+    if (address === currentPlace.address.trim()) return;
+    const previousAddress = currentPlace.address;
+    if (!applyDirectoryAddressLocally(currentPlace.id, address)) return;
+
+    const runId = ++directoryTaxonomySaveRunRef.current;
+    setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "saving" });
+    const queuedSave = directoryTaxonomySaveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await fetch(PLACE_DIRECTORY_API, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: currentPlace.id, address }),
+        });
+        const payload = await response.json().catch(() => null) as {
+          row?: PlaceDirectoryRecord;
+          updatedAt?: string | null;
+          error?: string;
+        } | null;
+        if (!response.ok || !payload?.row) throw new Error(payload?.error ?? "address save failed");
+        return payload;
+      });
+    directoryTaxonomySaveQueueRef.current = queuedSave.then(() => undefined, () => undefined);
+    void queuedSave.then((payload) => {
+      if (runId !== directoryTaxonomySaveRunRef.current || !payload.row) return;
+      applyDirectoryAddressLocally(payload.row.id, payload.row.address);
+      setPlaceDirectoryUpdatedAt(payload.updatedAt ?? null);
+      setPlaceDirectoryStorage("persistent");
+      setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "saved" });
+      setToast(`${publicDisplayName(currentPlace.name, currentPlace.featuredRole)} 주소를 DB에 저장했습니다.`);
+    }).catch(() => {
+      if (runId !== directoryTaxonomySaveRunRef.current) return;
+      applyDirectoryAddressLocally(currentPlace.id, previousAddress);
+      setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "error" });
+      setToast("주소 저장에 실패했습니다. 관리자 로그인과 DB 연결 상태를 확인해 주세요.");
+    });
+  };
+
   const updateSelectedDirectoryTaxonomy = (
     place: DirectoryPlace,
     patch: { category?: CategoryId; additionalCategories?: AdditionalCategoryId[] },
@@ -6106,7 +6194,7 @@ export default function Home() {
       ...elementDefaults, id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)), name: asset.placeName ?? (count > 1 ? `${asset.name} ${count}` : asset.name),
       category: asset.category, x: 50, y: 50, anchorX: 50, anchorY: 50, size,
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1, labelVisible: asset.category === "landmark",
-      assetId: asset.id, status: asset.status, address: asset.address ?? "", addressSourceUrl: asset.addressSourceUrl ?? "",
+      assetId: asset.id, status: "unchecked", address: asset.address ?? "", addressSourceUrl: asset.addressSourceUrl ?? "",
     };
     replaceElements((current) => [...current, next]); setSelectedId(next.id); setSelectedNoteId(null);
   };
@@ -6118,7 +6206,7 @@ export default function Home() {
       setToast(`${asset.placeName}에 ${asset.name} 후보를 적용했습니다.`);
       return;
     }
-    updateElement(existing.id, { assetId: asset.id, status: asset.status });
+    updateElement(existing.id, { assetId: asset.id });
     setSelectedId(existing.id);
     setSelectedNoteId(null);
     focusMapPosition(existing.x, existing.y, existing.id);
@@ -6424,7 +6512,7 @@ export default function Home() {
         ? directoryPlaces.find((candidate) => candidate.id === item.directoryId)
         : directoryPlaces.find((candidate) => normalizePlaceName(candidate.name) === normalizePlaceName(item.name));
       const nextAssetId = defaultMarkerAssetId(item.category, style, `${item.name} ${place?.subtype ?? ""}`);
-      return nextAssetId ? { ...item, assetId: nextAssetId, status: markerAssetStatus(style) } : item;
+      return nextAssetId ? { ...item, assetId: nextAssetId } : item;
     }));
     const styleName = style === "v2" ? "리뉴얼 최종 원형" : style === "01" ? "기본 핀형" : style === "02" ? "아치 배지형" : "유기적 원형";
     setToast(`범용 마커를 ${styleName}으로 통일했습니다.`);
@@ -6438,11 +6526,24 @@ export default function Home() {
       id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)),
       directoryId: undefined,
       name: `${selected.name} 복사본`,
+      locked: false,
+      status: "unchecked" as const,
       x: clamp(selected.x + 1.2, 0, 100),
       y: clamp(selected.y + 1.2, 0, 100),
       z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
     };
     replaceElements((current) => [...current, duplicate]); setSelectedId(duplicate.id);
+  };
+
+  const toggleSelectedCoordinateReview = () => {
+    if (!selected) return;
+    const locked = !selected.locked;
+    updateElement(selected.id, { locked });
+    setCalibrationDirty(true);
+    if (locked) setResourceOutputDragMode(false);
+    setToast(locked
+      ? `${selected.name} 좌표를 고정하고 최종 검수를 완료했습니다.`
+      : `${selected.name} 좌표 고정을 해제해 검수 필요 상태로 돌렸습니다.`);
   };
 
   const deleteSelected = () => {
@@ -7478,7 +7579,7 @@ export default function Home() {
         labelVisible: true,
         labelGap: 4,
         assetId: markerAssetIdForPlace(reviewing.markerStyle, reviewing.category, `${reviewing.name} ${reviewing.description}`),
-        status: "review",
+        status: "unchecked",
         address: reviewing.address,
         memo: "장소 등록 요청 검수 중 · 위치·크기·라벨을 조정한 뒤 장소 요청 관리에서 승인하세요.",
       };
@@ -7547,7 +7648,7 @@ export default function Home() {
         anchorX: x,
         anchorY: y,
         assetId: markerAssetIdForPlace(approved.markerStyle, approved.category, `${approved.name} ${approved.description}`),
-        status: "review",
+        status: "unchecked",
         address: approved.address,
         memo: "장소 등록 요청 승인 · 최종 표시 상태를 확인한 뒤 공개본을 업데이트하세요.",
       } : {
@@ -7566,7 +7667,7 @@ export default function Home() {
         labelVisible: true,
         labelGap: 4,
         assetId: markerAssetIdForPlace(approved.markerStyle, approved.category, `${approved.name} ${approved.description}`),
-        status: "review",
+        status: "unchecked",
         address: approved.address,
         memo: "장소 등록 요청 승인 · 최종 표시 상태를 확인한 뒤 공개본을 업데이트하세요.",
       };
@@ -7697,6 +7798,10 @@ export default function Home() {
     setGlobalStoriesOpen(true);
     setPublicPanelExpanded(false);
     setSelectedDenseLabelId(null);
+  };
+
+  const openUnifiedContentManagement = () => {
+    openGlobalManagement(globalContentTab === "events" ? "events" : "reviews");
   };
 
   const publicPlaceItemForReference = (placeKey: string, placeName: string) => {
@@ -8327,12 +8432,12 @@ export default function Home() {
               const activeAssetId = elements.find((element) => normalizePlaceName(element.name) === normalizePlaceName(placeName))?.assetId;
               return <article className="landmark-resource-group" key={placeName}>
                 <div><strong>{placeName}</strong><small>{candidates.length}개 후보 · 1024px</small></div>
-                <div className="landmark-candidate-row">{candidates.map((asset) => <button key={asset.id} className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.screenSrc ?? asset.src} alt="" loading="lazy" decoding="async" /><span>{asset.name}</span></button>)}</div>
+                <div className="landmark-candidate-row">{candidates.map((asset) => <div className="project-asset-candidate" key={asset.id}><button className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.screenSrc ?? asset.src} alt="" loading="lazy" decoding="async" /><span>{asset.name}</span></button>{asset.sourceUrl && <a className="project-asset-source-link" href={asset.sourceUrl} target="_blank" rel="noreferrer" title={`${asset.name} Drive 원본 보기`}>Drive 원본 ↗</a>}</div>)}</div>
               </article>;
             })}
-            {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>)}</>}
+            {!!customLandmarkAssets.length && <><div className="landmark-resource-heading"><strong>사용자 랜드마크</strong></div>{customLandmarkAssets.map((asset) => <div className="project-asset-row" key={asset.id}><button className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · 사용자 자산</small></span><i>＋</i></button>{asset.sourceUrl && <a className="project-asset-source-link" href={asset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>)}</>}
             <div className="landmark-resource-heading"><strong>문화시설·카페·음식점·소품샵·주차장·공원·편의시설</strong><small>리뉴얼 최종 9종과 기존 시안을 SVG 자산으로 선택할 수 있습니다.</small></div>
-            {generalMarkerAssets.map((asset) => <button key={asset.id} className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>)}
+            {generalMarkerAssets.map((asset) => <div className="project-asset-row" key={asset.id}><button className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>{asset.sourceUrl && <a className="project-asset-source-link" href={asset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>)}
           </div>
           </AdminFolder>
           <AdminFolder className="side-admin-folder group-size-panel" title="마커 스타일·크기">
@@ -8574,7 +8679,7 @@ export default function Home() {
                     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
-                    {editingEnabled && element.status !== "approved" && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">{element.status === "review" ? "검수 중" : "미검수"}</span>}
+                    {editingEnabled && !element.locked && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">검수 필요</span>}
                     {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}>{publicElementName}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
@@ -8675,7 +8780,7 @@ export default function Home() {
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
         {publicLayoutAccess === "editor" && <aside className="panel properties-panel" aria-label="속성 편집">
-          <div className="panel-heading"><div><strong>{selectedNote ? "검토 메모" : "속성"}</strong><span>{selected?.name ?? (selectedNote ? reviewStatusText[selectedNote.status] : "요소를 선택하세요")}</span></div><button className="icon-button" onClick={() => setRightOpen(false)} aria-label="오른쪽 패널 접기">›</button></div>
+          <div className="panel-heading properties-heading"><div className="properties-heading-title"><strong>{selectedNote ? "검토 메모" : "속성"}</strong><span>{selected?.name ?? (selectedNote ? reviewStatusText[selectedNote.status] : "요소를 선택하세요")}</span></div><div className="properties-heading-actions">{selected && !selectedNote && <button type="button" className={`coordinate-review-button ${selected.locked ? "complete" : "pending"}`} aria-pressed={selected.locked} onClick={toggleSelectedCoordinateReview} title={selected.locked ? "좌표 고정 ON · 최종 검수 완료. 누르면 다시 편집할 수 있습니다." : "좌표 고정 OFF · 검수 필요. 누르면 최종 검수를 완료합니다."}><b>{selected.locked ? "검수 완료" : "검수 필요"}</b><small>{selected.locked ? "좌표고정 ON" : "좌표고정 OFF"}</small></button>}<button className="icon-button" onClick={() => setRightOpen(false)} aria-label="오른쪽 패널 접기">›</button></div></div>
           {selectedNote ? <div className="property-form note-form">
             <AdminFolder title="도로·골목 검토" meta="메모 핀" defaultOpen>
               <label>상태<select value={selectedNote.status} onChange={(event) => updateNote(selectedNote.id, { status: event.target.value as ReviewStatus })}><option value="delete">삭제 검토</option><option value="weaken">약화 검토</option><option value="keep">유지</option><option value="hierarchy">도로 위계 조정</option></select></label>
@@ -8686,48 +8791,56 @@ export default function Home() {
             </AdminFolder>
             <AdminFolder title="빠른 작업"><button className="wide-danger" onClick={deleteSelectedNote}>검토 메모 삭제</button></AdminFolder>
           </div> : !selected ? <div className="empty-properties"><span>◇</span><strong>선택된 요소가 없습니다</strong><p>지도 위 요소나 검토 메모를 클릭하면 세부 설정을 편집할 수 있습니다.</p></div> : <div className="property-form">
-            <AdminFolder
-              title="기본 정보"
-              defaultOpen
-              actions={<><span className={`status-pill ${selected.status}`}>{statusText[selected.status]}</span><label className={`coordinate-lock-toggle ${selected.locked ? "active" : ""}`} title="켜면 요소는 움직이지 않으며, 실제 주소 좌표가 있으면 3차 지역 기준점으로 사용됩니다."><input type="checkbox" checked={selected.locked} onChange={(event) => { updateElement(selected.id, { locked: event.target.checked }); setCalibrationDirty(true); }} /><span>{selected.locked ? "좌표 고정 ON" : "좌표 고정 OFF"}</span></label></>}
-            >
-              <label>장소명<input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label>
-              <label>주소<input value={selected.address} onChange={(event) => updateElement(selected.id, { address: event.target.value })} placeholder="장소 주소" /></label>
+            <AdminFolder className="compact-basic-information" title="기본 정보" meta={selectedBasicInfoMeta} defaultOpen>
+              <label>장소명 <em>지도·관리자·배포 표시 전용</em><input value={selected.name} onChange={(event) => updateElement(selected.id, { name: event.target.value })} /></label>
+              <p className="field-help compact-help">연결된 ID의 DB 장소명은 변경하지 않습니다.</p>
+              <label>주소 <em>{selectedDirectoryPlace ? "연결 DB 반영" : "DB 연결 전 지도 값"}</em><input value={selected.address} disabled={Boolean(selectedDirectoryPlace) && !placeDirectoryCanEdit} onChange={(event) => updateElement(selected.id, { address: event.target.value })} onBlur={(event) => { if (selectedDirectoryPlace) saveSelectedDirectoryAddress(selectedDirectoryPlace, event.currentTarget.value); }} placeholder="장소 주소" /></label>
               {selected.addressSourceUrl && <a className="source-link" href={selected.addressSourceUrl} target="_blank" rel="noreferrer">주소 확인 출처 ↗</a>}
-              {selectedDirectoryPlace ? <label>지도 표현 <em>DB 기본분류와 랜드마크 역할에 따라 자동 적용</em><select value={selected.category} disabled>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label> : <label>지도 요소 유형<select value={selected.category} disabled={isCoreLandmarkName(selected.name) || isPrimaryHubLabel(selected.name)} onChange={(event) => updateElement(selected.id, { category: event.target.value as CategoryId })}>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
-              <label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id, status: asset.status, category: asset.category, address: asset.address || selected.address, addressSourceUrl: asset.addressSourceUrl || selected.addressSourceUrl } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
-              {selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id, status: asset.status })} title={asset.name}><img src={asset.screenSrc ?? asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}
-              {selectedAsset && <div className="asset-source-box"><span>{selectedAsset.sourceLabel ?? "사용자 업로드 자산"}</span>{selectedAsset.sourceUrl && <a href={selectedAsset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>}
-              <label>검수 상태<select value={selected.status} onChange={(event) => updateElement(selected.id, { status: event.target.value as AssetStatus })}><option value="approved">승인 완료</option><option value="review">검수 중</option><option value="unchecked">미검수</option></select></label>
-              <label>요소 메모<textarea value={selected.memo} onChange={(event) => updateElement(selected.id, { memo: event.target.value })} placeholder="배치 판단과 검수 의견 기록" /></label>
+              {selectedDirectoryPlace ? <>
+                <label>분류 <em>연결 DB 즉시 반영</em><select value={directoryCategory(selectedDirectoryPlace.category)} disabled={!placeDirectoryCanEdit} onChange={(event) => updateSelectedDirectoryTaxonomy(selectedDirectoryPlace, { category: event.target.value as CategoryId })}>{!isPrimaryPublicCategory(directoryCategory(selectedDirectoryPlace.category)) && <option value={directoryCategory(selectedDirectoryPlace.category)} disabled>{categoryOf(directoryCategory(selectedDirectoryPlace.category)).name} · 기존 분류</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
+                <details className="compact-property-details taxonomy-details"><summary>추가분류 <span>{sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).length}개</span></summary><div className="marker-additional-categories"><div>{additionalCategoryDefinitions.map((definition) => {
+                  const checked = sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).includes(definition.id);
+                  return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} disabled={!placeDirectoryCanEdit} onChange={() => toggleSelectedDirectoryAdditionalCategory(selectedDirectoryPlace, definition.id)} /><span>{definition.name}</span></label>;
+                })}</div></div></details>
+              </> : <>
+                <label>분류 <em>{selected.placeRequestId ? "승인 후 DB 연결" : "첫 변경 시 DB 항목 생성"}</em><select value={selectedUnlinkedPrimaryCategory ?? ""} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || Boolean(selected.placeRequestId)} onChange={(event) => connectUnlinkedElementTaxonomy(selected, { category: event.target.value as CategoryId, additionalCategories: [] })}>{!selectedUnlinkedPrimaryCategory && <option value="" disabled>기본분류 선택</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
+                <details className="compact-property-details taxonomy-details"><summary>추가분류 <span>DB 연결 후 선택</span></summary><div className="marker-additional-categories"><div>{additionalCategoryDefinitions.map((definition) => <label key={definition.id}><input type="checkbox" checked={false} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onChange={() => toggleUnlinkedElementAdditionalCategory(selected, definition.id)} /><span>{definition.name}</span></label>)}</div></div></details>
+              </>}
+              <label className="print-recommended-toggle compact-recommended"><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span><b>{selected.category === "landmark" ? "랜드마크 기본 추천" : "추천장소"}</b><small>공개 출력의 추천 중심 구성에 반영됩니다.</small></span></label>
+              <label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
+              {selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id })} title={asset.name}><img src={asset.screenSrc ?? asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}
+              <details className="compact-property-details print-details"><summary>고화질 출력 세부 <span>{printPolicyFor(selected).recommended ? "추천" : "일반"}</span></summary><div className="field-row"><label>마커 출력<select value={printPolicyFor(selected).setting?.markerMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { markerMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label><label>라벨 출력<select value={printPolicyFor(selected).setting?.labelMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { labelMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label></div><p className="field-help">자동은 랜드마크와 추천장소 여부를 따릅니다.</p></details>
             </AdminFolder>
-            {selectedDirectoryPlace ? <AdminFolder className="marker-taxonomy-section" aria-label="DB 연동 장소 분류" title="장소 분류 · DB 연동" defaultOpen meta={directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "saving" ? "저장 중…" : directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "saved" ? "DB 저장됨" : directoryTaxonomySync.placeId === selectedDirectoryPlace.id && directoryTaxonomySync.state === "error" ? "저장 실패" : placeDirectoryCanEdit ? "변경 즉시 저장" : "읽기 전용"}>
-              <label>기본분류 <em>1개 필수</em><select value={directoryCategory(selectedDirectoryPlace.category)} disabled={!placeDirectoryCanEdit} onChange={(event) => updateSelectedDirectoryTaxonomy(selectedDirectoryPlace, { category: event.target.value as CategoryId })}>{!isPrimaryPublicCategory(directoryCategory(selectedDirectoryPlace.category)) && <option value={directoryCategory(selectedDirectoryPlace.category)} disabled>{categoryOf(directoryCategory(selectedDirectoryPlace.category)).name} · 기존 분류</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
-              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>{sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).length}개 · 제한 없음</em></header><div>{additionalCategoryDefinitions.map((definition) => {
-                const checked = sanitizeAdditionalCategories(selectedDirectoryPlace.additionalCategories).includes(definition.id);
-                return <label className={checked ? "active" : ""} key={definition.id}><input type="checkbox" checked={checked} disabled={!placeDirectoryCanEdit} onChange={() => toggleSelectedDirectoryAdditionalCategory(selectedDirectoryPlace, definition.id)} /><span>{definition.name}</span></label>;
-              })}</div></div>
-              <p className="field-help">이곳에서 바꾼 기본분류와 추가분류는 해당 장소의 영구 DB와 현재 지도 편집본에 함께 반영됩니다.</p>
-            </AdminFolder> : <AdminFolder className="marker-taxonomy-section pending-link" aria-label="DB 미연결 자산 분류" title="장소 분류 · DB 자동 연결" defaultOpen meta={directoryTaxonomySync.placeId === selected.id && directoryTaxonomySync.state === "saving" ? "연결·저장 중…" : directoryTaxonomySync.placeId === selected.id && directoryTaxonomySync.state === "error" ? "저장 실패" : selected.placeRequestId ? "승인 대기" : placeDirectoryCanEdit ? "미연결 · 편집 가능" : "읽기 전용"}>
-              <label>기본분류 <em>첫 저장 시 DB 항목 생성</em><select value={selectedUnlinkedPrimaryCategory ?? ""} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || Boolean(selected.placeRequestId)} onChange={(event) => connectUnlinkedElementTaxonomy(selected, { category: event.target.value as CategoryId, additionalCategories: [] })}>{!selectedUnlinkedPrimaryCategory && <option value="" disabled>기본분류 선택</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
-              <div className="marker-additional-categories"><header><strong>추가분류</strong><em>제한 없음</em></header><div>{additionalCategoryDefinitions.map((definition) => <label key={definition.id}><input type="checkbox" checked={false} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onChange={() => toggleUnlinkedElementAdditionalCategory(selected, definition.id)} /><span>{definition.name}</span></label>)}</div></div>
-              <button type="button" className="wide-secondary taxonomy-connect-action" disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onClick={() => connectUnlinkedElementTaxonomy(selected, { category: selectedUnlinkedPrimaryCategory!, additionalCategories: [] })}>{selectedUnlinkedTaxonomySaving ? "DB 연결 중…" : "현재 분류로 DB 항목 생성·연결"}</button>
-              <p className="field-help">{selected.placeRequestId ? "등록 요청으로 생성된 마커는 승인 후 DB 분류를 편집할 수 있습니다." : "DB에 없는 이미지·마커도 기본분류 변경, 추가분류 선택 또는 연결 버튼을 누르면 장소 항목이 자동 생성되고 현재 자산에 연결됩니다."}</p>
-            </AdminFolder>}
-            <AdminFolder className="editor-place-events" title="장소 행사" meta={`${placeEvents.length}개`}>
-              <p className="field-help">{placeEventsLoading ? "행사 수를 확인하는 중입니다." : placeEvents.length ? `이 장소와 연결된 행사 ${placeEvents.length}개가 있습니다. 수정·숨김·삭제는 전체 관리창에서 처리합니다.` : "이 장소와 연결된 행사가 없습니다."}</p>
-              <div className="content-management-shortcuts">
-                {placeEventsCanManage && <button type="button" onClick={togglePlaceEventForm}>＋ 이 장소 행사 등록</button>}
-                <button type="button" className="primary" onClick={() => openGlobalManagement("events")}>전체 행사 관리</button>
+            <AdminFolder className="editor-place-content-management" title="리뷰·행사 관리" meta="통합 팝업"><p className="field-help">후기·사진 신고 처리와 행사 등록·수정·노출 관리를 하나의 팝업에서 전환합니다.</p><div className="content-management-shortcuts"><button type="button" className="primary" onClick={openUnifiedContentManagement}>리뷰·행사 통합 관리 열기</button></div></AdminFolder>
+            <AdminFolder
+              title="위치 앵커 · 리소스 출력"
+              meta={selected.locked ? "좌표 고정됨" : "직접 편집"}
+              actions={<label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 ON" : "앵커 이동"}</span></label>}
+            >
+              <div className="property-subsection anchor-controls">
+                <header><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : "지도 좌표"}</span></header>
+                {selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 가까운 미고정 장소의 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 현재 앵커가 유지됩니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용해 주세요.") : "확정한 기본 앵커로 주변 장소를 지역 보정합니다."}</span></div>}
+                <div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>
+                {selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 열기</button>}
               </div>
+              <div className="property-subsection output-offset-controls">
+                <header><strong>리소스 출력 오프셋</strong><span>앵커 대비 ΔX·ΔY</span></header>
+                {selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>리소스→앵커</button><button className="anchor-to-resource" disabled={selected.locked || (Math.abs(selectedDisplayOffset.x) < 0.001 && Math.abs(selectedDisplayOffset.y) < 0.001)} onClick={() => moveAnchorToResource(selected)} title="화면의 리소스는 그대로 두고 실제 위치 앵커를 리소스 중심으로 이동합니다.">앵커를 현재 리소스 위치로 이동</button></div></>}
+                <p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 출력 위치가 유지됩니다." : resourceOutputDragMode ? "드래그와 방향키로 이미지 리소스만 이동합니다." : "드래그와 방향키로 실제 위치 앵커를 이동하며 현재 오프셋은 유지됩니다."}</p>
+              </div>
+              <label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label>
+              <label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label>
+              <div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div>
             </AdminFolder>
-            <AdminFolder className="editor-place-stories" title="공개 사진·후기" meta={`${placeStories.length}개`}><p className="field-help">{placeStoriesLoading ? "리뷰 수를 확인하는 중입니다." : placeStories.length ? `이 장소의 리뷰 ${placeStories.length}개가 있습니다. 공개 상태와 삭제는 전체 관리창에서 처리합니다.` : "아직 등록된 사진이나 후기가 없습니다."}</p><div className="content-management-shortcuts"><button type="button" className="primary" onClick={() => openGlobalManagement("reviews")}>전체 리뷰 관리</button></div></AdminFolder>
-            <AdminFolder className="print-property-section" title="고화질 출력" meta={printPolicyFor(selected).recommended ? "추천 장소" : "일반 장소"}><label className="print-recommended-toggle"><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span><b>{selected.category === "landmark" ? "랜드마크 기본 포함" : "출력 추천 장소"}</b><small>추천 중심 출력에서 사용할 장소를 지정합니다.</small></span></label><div className="field-row"><label>마커 출력<select value={printPolicyFor(selected).setting?.markerMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { markerMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label><label>라벨 출력<select value={printPolicyFor(selected).setting?.labelMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { labelMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label></div><p className="field-help">자동은 랜드마크와 추천 상태를 따릅니다. 수동 포함·제외는 추천 상태가 바뀌어도 유지됩니다.</p></AdminFolder>
-            <AdminFolder title="리소스 출력 오프셋" actions={<label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 변경 ON" : "출력위치 변경 OFF"}</span></label>}>{selectedDisplayOffset && <><div className="field-row"><label>ΔX<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.x.toFixed(2)} onChange={(event) => updateElement(selected.id, { x: clamp(selected.anchorX + Number(event.target.value), 0, 100) })} /></label><label>ΔY<input disabled={selected.locked} type="number" step="0.1" value={selectedDisplayOffset.y.toFixed(2)} onChange={(event) => updateElement(selected.id, { y: clamp(selected.anchorY + Number(event.target.value), 0, 100) })} /></label></div><div className="offset-nudge-grid" aria-label="리소스 출력 위치 미세 조정"><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x - 0.1, 0, 100) })}>←</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y - 0.1, 0, 100) })}>↑</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { y: clamp(selected.y + 0.1, 0, 100) })}>↓</button><button disabled={selected.locked} onClick={() => updateElement(selected.id, { x: clamp(selected.x + 0.1, 0, 100) })}>→</button><button disabled={selected.locked} className="reset" onClick={() => updateElement(selected.id, { x: selected.anchorX, y: selected.anchorY })}>리소스→앵커</button><button className="anchor-to-resource" disabled={selected.locked || (Math.abs(selectedDisplayOffset.x) < 0.001 && Math.abs(selectedDisplayOffset.y) < 0.001)} onClick={() => moveAnchorToResource(selected)} title="화면의 리소스는 그대로 두고 실제 위치 앵커를 리소스 중심으로 이동합니다.">앵커를 현재 리소스 위치로 이동</button></div></>}<p className="field-help">{selected.locked ? "좌표 고정이 켜져 있어 앵커와 리소스 출력 위치가 유지됩니다." : resourceOutputDragMode ? "출력위치 변경 ON: 드래그와 방향키는 앵커를 고정한 채 이미지 리소스만 이동합니다." : "기본 상태: 드래그와 방향키는 실제 위치 앵커를 이동하며 현재 ΔX·ΔY는 유지됩니다."}</p><label className="range-label"><span>크기 <b>{selected.size.toFixed(1)}%</b></span><input type="range" min="0.8" max="15" step="0.1" value={selected.size} onChange={(event) => updateElement(selected.id, { size: Number(event.target.value) })} /></label><label className="range-label"><span>투명도 <b>{selected.opacity}%</b></span><input type="range" min="10" max="100" step="1" value={selected.opacity} onChange={(event) => updateElement(selected.id, { opacity: Number(event.target.value) })} /></label><div className="layer-actions"><button onClick={() => moveLayer("back")}>맨 뒤</button><button onClick={() => moveLayer("backward")}>한 칸 뒤</button><button onClick={() => moveLayer("forward")}>한 칸 앞</button><button onClick={() => moveLayer("front")}>맨 앞</button></div></AdminFolder>
             {selected.category === "landmark" && selectedLandmarkDefault && <AdminFolder className="landmark-default-section" title="랜드마크 기본 앵커" meta={selectedIsPrimaryCalibration ? "1차 기준점" : selectedLandmarkDefault.confirmed ? "2차 기준점" : "초기화 기준"}><div className="field-row"><label>기본 X<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.x.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { x: Number(event.target.value) })} /></label><label>기본 Y<input type="number" min="0" max="100" step="0.1" value={selectedLandmarkDefault.y.toFixed(2)} onChange={(event) => updateLandmarkDefault(selected, { y: Number(event.target.value) })} /></label></div><div className="landmark-default-buttons"><button className="primary" onClick={() => saveLandmarkAsDefault(selected)}>현재 앵커를 기본값으로 저장</button><button onClick={() => moveLandmarkToDefault(selected)}>기본 앵커로 이동</button></div>{selectedIsPrimaryCalibration ? <div className="default-tier-note primary">1차 기준점 6곳은 실제 위치 앵커와 기본 앵커가 자동 동기화되며 영구 기준좌표로 저장됩니다.</div> : <label className="default-confirm-toggle"><input type="checkbox" checked={Boolean(selectedLandmarkDefault.confirmed)} disabled={!selectedHasGeocodedSource} onChange={(event) => updateLandmarkDefault(selected, { confirmed: event.target.checked })} /><span><b>2차 기준점으로 확정</b><small>{selectedHasGeocodedSource ? "기본 앵커를 고정점으로 사용해 주변 마커를 보정합니다." : "실제 장소 좌표가 없어 2차 기준점으로 사용할 수 없습니다."}</small></span></label>}<p className="field-help">기본 위치는 화면상 리소스가 아니라 실제 위치 앵커를 기준으로 저장되며 자동 저장·배치안·JSON에 포함됩니다.</p></AdminFolder>}
-            <AdminFolder title="실제 위치 앵커" meta={selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : selected.locked ? "좌표 고정됨" : "직접 편집"}>{selectedCalibrationPoint && <div className="calibration-property-note"><b>◎ {selectedPrimaryCalibrationPoint ? "1차 6점 보정 기준" : selectedSecondaryCalibrationPoint ? "2차 확정 보정 기준" : "3차 고정 좌표 기준"}</b><span>{selectedTertiaryCalibrationPoint ? "이 고정 앵커는 움직이지 않으며 가까운 미고정 장소의 대략적 실제 위치를 보완합니다." : selected.locked ? "좌표 고정이 켜져 있어 보정 기준과 현재 앵커가 변경되지 않습니다." : selectedPrimaryCalibrationPoint ? (calibrationLiveApply ? "이 앵커를 바꾸면 주변 장소가 실시간으로 함께 보정됩니다." : "앵커를 맞춘 뒤 좌표 보정 패널에서 전체 적용 버튼을 눌러주세요.") : "확정한 기본 앵커를 유지하면서 주변 장소의 실제 좌표를 지역적으로 보정합니다."}</span></div>}<div className="field-row"><label>X<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetX ?? selected.anchorX).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetX: Number(event.target.value) }) : updateElementAnchor(selected, Number(event.target.value), selected.anchorY)} /></label><label>Y<input disabled={selected.locked} type="number" step="0.1" value={(selectedPrimaryCalibrationPoint?.targetY ?? selected.anchorY).toFixed(2)} onChange={(event) => selectedPrimaryCalibrationPoint ? updateCalibrationPoint(selectedPrimaryCalibrationPoint.id, { targetY: Number(event.target.value) }) : updateElementAnchor(selected, selected.anchorX, Number(event.target.value))} /></label></div>{selectedCalibrationPoint && <button className="wide-secondary" onClick={() => switchLeftPanel("calibration")}>계층형 좌표 보정 패널 열기</button>}<p className="field-help">앵커는 직접 수정할 수 있으며, 변경해도 리소스의 ΔX·ΔY 오프셋은 유지됩니다. 주소 자동 조회 좌표는 최종 육안 검수가 필요합니다.</p></AdminFolder>
-            <AdminFolder title="연결선" actions={<label className="switch"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label>}><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></AdminFolder>
-            <AdminFolder title="라벨" actions={<><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></>}>{selected.category !== "landmark" && <label className="dense-label-eligibility"><input type="checkbox" checked={!denseLabelExcludedIds.includes(selected.id)} onChange={(event) => setDenseLabelEligibility(selected.id, event.target.checked)} /><span><b>밀집 시 통합 라벨 사용</b><small>끄면 이 장소명은 항상 자기 마커 옆에 개별 표시됩니다.</small></span></label>}<div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div><label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label><div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div><p className="field-help">맞춤 화면에서 정한 위치를 기준으로 하며, 확대할수록 화면상 간격을 유지하면서 마커의 중앙 하단 또는 상단으로 자동 정렬됩니다. 전체 라벨 정리는 왼쪽 ‘지도 전체 조절’에서 한 번에 실행합니다.</p></AdminFolder>
+            <AdminFolder title="라벨 · 연결선" actions={<><label className={`coordinate-lock-toggle label-lock-toggle ${selected.labelLocked ? "active" : ""}`} title="켜면 라벨 위치 새로고침에서도 이 라벨을 기준점으로 유지합니다."><input type="checkbox" checked={selected.labelLocked} onChange={(event) => updateElement(selected.id, { labelLocked: event.target.checked })} /><span>{selected.labelLocked ? "라벨 고정 ON" : "라벨 고정 OFF"}</span></label><label className="switch" title="라벨 표시"><input type="checkbox" checked={selected.labelVisible} onChange={(event) => updateElement(selected.id, { labelVisible: event.target.checked })} /><span /></label></>}>
+              {selected.category !== "landmark" && <label className="dense-label-eligibility"><input type="checkbox" checked={!denseLabelExcludedIds.includes(selected.id)} onChange={(event) => setDenseLabelEligibility(selected.id, event.target.checked)} /><span><b>밀집 시 통합 라벨 사용</b><small>끄면 이 장소명은 항상 자기 마커 옆에 개별 표시됩니다.</small></span></label>}
+              <div className="position-grid">{(["top", "bottom", "left", "right"] as LabelPosition[]).map((position) => <button key={position} className={selected.labelPosition === position ? "active" : ""} onClick={() => updateElement(selected.id, { labelPosition: position })}>{{ top: "위", bottom: "아래", left: "왼쪽", right: "오른쪽" }[position]}</button>)}</div>
+              <label className="range-label"><span>보이는 아이콘과 간격 <b>{selected.labelGap}px</b></span><input type="range" min="0" max="40" step="1" value={selected.labelGap} onChange={(event) => updateElement(selected.id, { labelGap: Number(event.target.value) })} /></label>
+              <div className="field-row label-offset-fields"><label>좌우 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetX} onChange={(event) => updateElement(selected.id, { labelOffsetX: clamp(Number(event.target.value), -240, 240) })} /></label><label>상하 미세 조정<input type="number" min="-240" max="240" step="1" value={selected.labelOffsetY} onChange={(event) => updateElement(selected.id, { labelOffsetY: clamp(Number(event.target.value), -240, 240) })} /></label></div>
+              <div className="property-subsection connector-controls"><header><strong>연결선</strong><label className="switch" title="연결선 표시"><input type="checkbox" checked={selected.connectorVisible} onChange={(event) => updateElement(selected.id, { connectorVisible: event.target.checked })} /><span /></label></header><div className="field-row compact-color-row"><label>색상<input type="color" value={selected.connectorColor} onChange={(event) => updateElement(selected.id, { connectorColor: event.target.value })} /></label><label>기본 굵기<input type="number" min="0.5" max="6" step="0.5" value={selected.connectorWidth} onChange={(event) => updateElement(selected.id, { connectorWidth: clamp(Number(event.target.value), 0.5, 6) })} /></label></div></div>
+              <p className="field-help">라벨 위치와 마커 연결선을 한곳에서 조정합니다. 전체 라벨 정리는 왼쪽 ‘지도 전체 조절’에서 실행합니다.</p>
+            </AdminFolder>
             <AdminFolder title="빠른 작업"><div className="quick-actions"><button onClick={duplicateSelected}>복제</button><button disabled={isMainHubPersistenceTarget(selected)} onClick={() => toggleElementMapVisibility(selected, !selected.mapVisible)}>{selected.mapVisible ? "미배치로 변경" : "배치로 변경"}</button><button className="danger" disabled={selected.locked || isMainHubPersistenceTarget(selected)} onClick={deleteSelected}>삭제</button></div></AdminFolder>
           </div>}
         </aside>}
