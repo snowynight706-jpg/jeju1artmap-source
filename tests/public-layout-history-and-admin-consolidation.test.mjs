@@ -39,7 +39,8 @@ test("the administrator separates screen visibility, placement, and print inclus
   assert.match(pageSource, /labelMode: event\.target\.value as PrintMode/);
 });
 
-test("today's approved Mokgwana and Gwandeokjeong assets retain Drive originals", () => {
-  assert.match(landmarkSource, /asset\("mokgwana-v06"[^\n]+"1ryhDEaIZTCcokVxDOqE86gu48BnKH2GT"[^\n]+"approved"\)/);
-  assert.match(landmarkSource, /asset\("gwandeokjeong-v07"[^\n]+"1-6UaFKFZOWcuFa57IIXP-8xNWUkLOI-L"[^\n]+"approved"\)/);
+test("latest approved Mokgwana, Gwandeokjeong and seaside-stage assets retain Drive originals", () => {
+  assert.match(landmarkSource, /asset\("mokgwana-v10"[^\n]+"1yAL37umwvQ3Jsl8f7ze6c1qxx8DOp3ba"[^\n]+"approved"/);
+  assert.match(landmarkSource, /asset\("gwandeokjeong-v09"[^\n]+"1SVdDv5bLdjk9Hm6xiGfehlQrTwjtUZHt"[^\n]+"approved"/);
+  assert.match(landmarkSource, /asset\("tapdong-seaside-stage-02"[^\n]+"1jHvj42j4k-lbeS2BAje_UGkv3u3sDiDj"[^\n]+"approved"/);
 });

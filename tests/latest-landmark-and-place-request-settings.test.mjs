@@ -13,8 +13,8 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
     ["sanjicheon-v06", "산지천갤러리"],
     ["dongmun-v08", "동문시장"],
     ["artspace-ia-v04", "예술공간 이아"],
-    ["mokgwana-v06", "제주목 관아"],
-    ["gwandeokjeong-v07", "관덕정"],
+    ["mokgwana-v10", "제주목 관아"],
+    ["gwandeokjeong-v09", "관덕정"],
     ["kim-memorial-front03", "김만덕기념관"],
     ["arario-01", "아라리오뮤지엄 탑동시네마"],
     ["buksugu-02", "북수구광장"],
@@ -32,8 +32,8 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
   assert.match(pageSource, /const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06"/);
   assert.match(pageSource, /const LATEST_DONGMUN_ASSET_ID = "dongmun-v08"/);
   assert.match(pageSource, /const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04"/);
-  assert.match(pageSource, /const LATEST_MOKGWANA_ASSET_ID = "mokgwana-v06"/);
-  assert.match(pageSource, /const LATEST_GWANDEOKJEONG_ASSET_ID = "gwandeokjeong-v07"/);
+  assert.match(pageSource, /const LATEST_MOKGWANA_ASSET_ID = "mokgwana-v10"/);
+  assert.match(pageSource, /const LATEST_GWANDEOKJEONG_ASSET_ID = "gwandeokjeong-v09"/);
   assert.match(pageSource, /const LATEST_KIM_MEMORIAL_ASSET_ID = "kim-memorial-front03"/);
   assert.match(pageSource, /const LATEST_ARARIO_ASSET_ID = "arario-01"/);
   assert.match(pageSource, /const LATEST_BUKSUGU_ASSET_ID = "buksugu-02"/);
@@ -45,6 +45,8 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
   assert.match(pageSource, /\["북수구광장", LATEST_BUKSUGU_ASSET_ID\]/);
   assert.match(pageSource, /\["탑동해변공연장", LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID\]/);
   assert.match(pageSource, /supersededRedesignedLandmarkAssets/);
+  assert.match(pageSource, /"mokgwana-v06"/);
+  assert.match(pageSource, /"gwandeokjeong-v07"/);
   assert.match(pageSource, /supersededAssetIds\?\.has\(normalized\.assetId\)/);
 });
 

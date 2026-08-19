@@ -93,8 +93,8 @@ const ADMIN_SESSION_API = "/api/admin-session";
 const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06";
 const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04";
 const LATEST_DONGMUN_ASSET_ID = "dongmun-v08";
-const LATEST_MOKGWANA_ASSET_ID = "mokgwana-v06";
-const LATEST_GWANDEOKJEONG_ASSET_ID = "gwandeokjeong-v07";
+const LATEST_MOKGWANA_ASSET_ID = "mokgwana-v10";
+const LATEST_GWANDEOKJEONG_ASSET_ID = "gwandeokjeong-v09";
 const LATEST_KIM_MEMORIAL_ASSET_ID = "kim-memorial-front03";
 const LATEST_ARARIO_ASSET_ID = "arario-01";
 const LATEST_BUKSUGU_ASSET_ID = "buksugu-02";
@@ -119,8 +119,8 @@ const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["산지천갤러리", new Set(["sanjicheon-v04", "sanjicheon-01", "sanjicheon-02", "sanjicheon-03"])],
   ["동문시장", new Set(["dongmun-01", "dongmun-02", "dongmun-03"])],
   ["예술공간 이아", new Set(["artspace-ia-01", "artspace-ia-02", "artspace-ia-03"])],
-  ["제주목 관아", new Set(["mokgwana-01", "mokgwana-02", "mokgwana-03"])],
-  ["관덕정", new Set(["gwandeokjeong-01", "gwandeokjeong-02", "gwandeokjeong-03"])],
+  ["제주목 관아", new Set(["mokgwana-v06", "mokgwana-01", "mokgwana-02", "mokgwana-03"])],
+  ["관덕정", new Set(["gwandeokjeong-v07", "gwandeokjeong-01", "gwandeokjeong-02", "gwandeokjeong-03"])],
   ["김만덕기념관", new Set(["kim-memorial-front01", "kim-memorial-front02", "kim-memorial-quarter01", "kim-memorial-quarter02", "kim-memorial-quarter03"])],
   ["아라리오뮤지엄 탑동시네마", new Set(["arario-02", "arario-03"])],
   ["북수구광장", new Set(["buksugu-01", "buksugu-03"])],
