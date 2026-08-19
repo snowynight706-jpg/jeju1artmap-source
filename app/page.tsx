@@ -221,6 +221,8 @@ type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
 type ViewMode = "all" | "landmarks" | "markers" | "labels" | "anchors" | "clearance" | "collisions" | "dim" | "gray" | "nomap";
 type BaseMapMode = "svg" | "png" | "uploaded";
 type CoordinateLockFilter = "all" | "unlocked" | "locked";
+type PlacementFilter = "all" | "placed" | "unplaced";
+type RecommendationFilter = "all" | "recommended" | "standard";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PrintMode = "auto" | "include" | "exclude";
 type PlacementState = "unplaced" | "deleted";
@@ -495,6 +497,21 @@ type EditorDraftPayload = {
   hasPrevious: boolean;
 };
 
+type PublicLayoutHistoryItem = {
+  id: string;
+  kind: "snapshot" | "published" | "restored" | "legacy";
+  sourceRevision: number;
+  elementCount: number;
+  placedCount: number;
+  createdAt: string;
+  createdBy: string;
+};
+
+type PublicLayoutHistoryEntry = PublicLayoutHistoryItem & {
+  document: DocumentState;
+  view: PublicViewSettings;
+};
+
 type PublicLayoutPayload = {
   document?: DocumentState | null;
   view?: PublicViewSettings;
@@ -505,6 +522,8 @@ type PublicLayoutPayload = {
   publishedAt?: string | null;
   revision?: number;
   hasPrevious?: boolean;
+  history?: PublicLayoutHistoryItem[];
+  historyEntry?: PublicLayoutHistoryItem | PublicLayoutHistoryEntry;
   reviewCompletedCount?: number;
   contentSummary?: {
     reviews: number;
@@ -2411,6 +2430,9 @@ export default function Home() {
   const [layoutName, setLayoutName] = useState("최근 자동복구");
   const [toast, setToast] = useState("");
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [publicHistoryOpen, setPublicHistoryOpen] = useState(false);
+  const [publicHistory, setPublicHistory] = useState<PublicLayoutHistoryItem[]>([]);
+  const [publicHistoryActionId, setPublicHistoryActionId] = useState<string | null>(null);
   const [adminLoginOpen, setAdminLoginOpen] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminLoginSubmitting, setAdminLoginSubmitting] = useState(false);
@@ -2549,10 +2571,12 @@ export default function Home() {
   const [placeRequestActionId, setPlaceRequestActionId] = useState<string | null>(null);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
-  const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration">("assets");
+  const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration" | "print">("places");
   const [placeQuery, setPlaceQuery] = useState("");
   const [placeCategory, setPlaceCategory] = useState<CategoryId | "all">("all");
   const [coordinateLockFilter, setCoordinateLockFilter] = useState<CoordinateLockFilter>("all");
+  const [placementFilter, setPlacementFilter] = useState<PlacementFilter>("all");
+  const [recommendationFilter, setRecommendationFilter] = useState<RecommendationFilter>("all");
   const [expandedVisibilityGroups, setExpandedVisibilityGroups] = useState<Record<CategoryId, boolean>>({
     landmark: true,
     culture: false,
@@ -3188,10 +3212,17 @@ export default function Home() {
     return counts;
   }, { locked: 0, unlocked: 0 }), [searchedUnifiedPlaceRows]);
 
-  const unifiedPlaceRows = useMemo(() => searchedUnifiedPlaceRows.filter((row) => (
-    coordinateLockFilter === "all"
-      || (coordinateLockFilter === "locked" ? Boolean(row.element?.locked) : Boolean(row.element && !row.element.locked))
-  )), [coordinateLockFilter, searchedUnifiedPlaceRows]);
+  const unifiedPlaceRows = useMemo(() => searchedUnifiedPlaceRows.filter((row) => {
+    const lockMatches = coordinateLockFilter === "all"
+      || (coordinateLockFilter === "locked" ? Boolean(row.element?.locked) : Boolean(row.element && !row.element.locked));
+    const placed = Boolean(row.element?.mapVisible);
+    const placementMatches = placementFilter === "all" || (placementFilter === "placed" ? placed : !placed);
+    const target = row.element ?? { directoryId: row.place?.id ?? row.id, category: row.category, name: row.name };
+    const setting = printSettings.find((item) => item.key === printSettingKey(target));
+    const recommended = row.category === "landmark" || setting?.recommended === true || (!setting && /추천|우선/.test(row.place?.priority ?? ""));
+    const recommendationMatches = recommendationFilter === "all" || (recommendationFilter === "recommended" ? recommended : !recommended);
+    return lockMatches && placementMatches && recommendationMatches;
+  }), [coordinateLockFilter, placementFilter, printSettings, recommendationFilter, searchedUnifiedPlaceRows]);
 
   const unifiedPlaceGroups = useMemo(() => categories.map((category) => ({
     category,
@@ -3966,6 +3997,7 @@ export default function Home() {
         publishedLayoutRevisionRef.current = revision;
         setPublicLayoutRevision(revision);
         setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
+        setPublicHistory(Array.isArray(payload?.history) ? payload.history : []);
         const serverDraft = payload?.draft?.document && Array.isArray(payload.draft.document.elements)
           ? sanitizeDocument(payload.draft.document)
           : null;
@@ -5112,7 +5144,7 @@ export default function Home() {
     const handleKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const interactiveControl = Boolean(target?.closest("input, textarea, select, button, a, [contenteditable='true']"));
-      if (publicLayoutAccess !== "editor" || databaseEditorOpen || shortcutHelpOpen || placeEventFormOpen || !selectedId || interactiveControl) return;
+      if (publicLayoutAccess !== "editor" || databaseEditorOpen || publicHistoryOpen || shortcutHelpOpen || placeEventFormOpen || !selectedId || interactiveControl) return;
       const element = elementsRef.current.find((item) => item.id === selectedId);
       if (!element) return;
 
@@ -5161,7 +5193,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [databaseEditorOpen, placeEventFormOpen, publicLayoutAccess, pushHistory, replaceElements, resourceOutputDragMode, selectedId, setPlacementOverride, shortcutHelpOpen, updateCalibrationPoint, updateElement, updateElementAnchor]);
+  }, [databaseEditorOpen, placeEventFormOpen, publicHistoryOpen, publicLayoutAccess, pushHistory, replaceElements, resourceOutputDragMode, selectedId, setPlacementOverride, shortcutHelpOpen, updateCalibrationPoint, updateElement, updateElementAnchor]);
 
   const undo = () => {
     if (!undoStack.length) return;
@@ -5554,7 +5586,7 @@ export default function Home() {
     void runAddressLookup(targets, true);
   };
 
-  const switchLeftPanel = (mode: "assets" | "places" | "calibration") => {
+  const switchLeftPanel = (mode: "assets" | "places" | "calibration" | "print") => {
     setLeftPanelMode(mode);
     setCalibrationMode(mode === "calibration");
     if (mode === "calibration") {
@@ -5566,7 +5598,7 @@ export default function Home() {
 
   const openPrintSettings = () => {
     setLeftOpen(true);
-    setLeftPanelMode("assets");
+    setLeftPanelMode("print");
     setCalibrationMode(false);
     setPrintFolderOpenRequest((current) => current + 1);
     window.requestAnimationFrame(() => printPanelRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
@@ -6832,34 +6864,44 @@ export default function Home() {
     return document;
   };
 
+  const rememberPublicHistoryItem = (item: PublicLayoutHistoryItem | undefined) => {
+    if (!item) return;
+    setPublicHistory((current) => [item, ...current.filter((candidate) => candidate.id !== item.id)]);
+  };
+
+  const refreshPublicHistory = async () => {
+    try {
+      const response = await fetch(PUBLIC_LAYOUT_API, { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
+      if (response.ok && Array.isArray(payload?.history)) setPublicHistory(payload.history);
+    } catch {
+      // The just-created entry remains visible even if this non-critical refresh fails.
+    }
+  };
+
   const saveEditorDraft = async () => {
     if (publicLayoutAccess !== "editor" || editorDraftSaving) return;
     setEditorDraftSaving(true);
     setEditorDraftSyncState("saving");
     try {
       const response = await fetch(PUBLIC_LAYOUT_API, {
-        method: "PATCH",
+        method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          action: "save-history",
           document: cloneDocument(currentDocument()),
           view: currentPublicViewSettings(),
-          baseDraftRevision: editorDraftRevisionRef.current,
         }),
       });
       const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
-      if (!response.ok || !payload?.draft) {
-        if (response.status === 409) throw new Error("conflict");
-        throw new Error(payload?.error ?? "draft save failed");
-      }
+      if (!response.ok || !payload?.draft || !payload.historyEntry) throw new Error(payload?.error ?? "history save failed");
       rememberEditorDraft(payload.draft);
-      setSaveState("서버 초안 저장됨");
-      setToast("현재 편집 상태를 서버 초안으로 저장했습니다. 다른 기기에서도 불러올 수 있습니다.");
-    } catch (error) {
-      const conflict = error instanceof Error && error.message === "conflict";
-      setEditorDraftSyncState(conflict ? "conflict" : "error");
-      setToast(conflict
-        ? "다른 기기에서 서버 초안이 변경되었습니다. 새로고침해 최신 초안을 확인해 주세요."
-        : "서버 초안을 저장하지 못했습니다. 기기 임시 복구본은 유지됩니다.");
+      rememberPublicHistoryItem(payload.historyEntry as PublicLayoutHistoryItem);
+      setSaveState("공개본 기록 저장됨");
+      setToast("현재 편집 상태를 공개본 기록에 저장했습니다. 공개 화면은 변경되지 않았습니다.");
+    } catch {
+      setEditorDraftSyncState("error");
+      setToast("공개본 기록을 저장하지 못했습니다. 기기 임시 복구본은 유지됩니다.");
     } finally {
       setEditorDraftSaving(false);
     }
@@ -6881,7 +6923,7 @@ export default function Home() {
       const editingText = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
-      const blockingDialogOpen = adminLoginOpen || placeRequestFormOpen || placeEventFormOpen || databaseEditorOpen;
+      const blockingDialogOpen = adminLoginOpen || placeRequestFormOpen || placeEventFormOpen || databaseEditorOpen || publicHistoryOpen;
 
       if (modifier && !event.altKey && !event.shiftKey && key === "s") {
         event.preventDefault();
@@ -6928,7 +6970,7 @@ export default function Home() {
 
     window.addEventListener("keydown", handleAdminShortcut);
     return () => window.removeEventListener("keydown", handleAdminShortcut);
-  }, [adminLoginOpen, databaseEditorOpen, editorDraftSaving, placeEventFormOpen, placeRequestFormOpen, publicLayoutAccess, shortcutHelpOpen]);
+  }, [adminLoginOpen, databaseEditorOpen, editorDraftSaving, placeEventFormOpen, placeRequestFormOpen, publicHistoryOpen, publicLayoutAccess, shortcutHelpOpen]);
 
   const loadEditorDraft = () => {
     const draft = editorDraftDocumentRef.current;
@@ -7005,6 +7047,8 @@ export default function Home() {
       setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
       setDocument(publishedDocument);
       if (payload?.draft) rememberEditorDraft(payload.draft);
+      rememberPublicHistoryItem(payload?.historyEntry as PublicLayoutHistoryItem | undefined);
+      await refreshPublicHistory();
       const completedCount = Math.max(0, Number(payload?.reviewCompletedCount ?? 0));
       setToast(completedCount > 0
         ? `공개 배치본을 업데이트하고 미검수 ${completedCount}개를 검수완료로 전환했습니다.`
@@ -7034,6 +7078,29 @@ export default function Home() {
     setToast("공개 배치본을 현재 편집 초안으로 불러왔습니다.");
   };
 
+  const loadPublicHistoryEntry = async (item: PublicLayoutHistoryItem) => {
+    if (publicLayoutAccess !== "editor" || publicHistoryActionId) return;
+    if (!window.confirm(`${item.kind === "snapshot" ? "저장 기록" : "공개 기록"} ${new Date(item.createdAt).toLocaleString("ko-KR")} 상태를 편집 화면에 불러올까요? 현재 상태는 기기 자동복구에 유지됩니다.`)) return;
+    setPublicHistoryActionId(item.id);
+    try {
+      const response = await fetch(`${PUBLIC_LAYOUT_API}?historyId=${encodeURIComponent(item.id)}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
+      const entry = payload?.historyEntry as PublicLayoutHistoryEntry | undefined;
+      if (!response.ok || !entry?.document || !entry.view) throw new Error(payload?.error ?? "history load failed");
+      pushHistory();
+      setDocument(sanitizeDocument(entry.document));
+      applyPublicViewSettings(entry.view);
+      setLayoutName(`공개본 기록 · ${new Date(entry.createdAt).toLocaleString("ko-KR")}`);
+      setSaveState("공개본 기록 불러옴");
+      setPublicHistoryOpen(false);
+      setToast("선택한 기록을 편집 화면에 불러왔습니다. 공개 화면은 아직 변경되지 않았습니다.");
+    } catch {
+      setToast("선택한 공개본 기록을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.");
+    } finally {
+      setPublicHistoryActionId(null);
+    }
+  };
+
   const restorePreviousPublicLayout = async () => {
     if (publicLayoutAccess !== "editor" || !publicLayoutHasPrevious || publicLayoutPublishing) return;
     if (!window.confirm("직전 공개 배치본으로 되돌릴까요? 현재 공개본도 다시 복원할 수 있도록 교체 보관됩니다.")) return;
@@ -7057,6 +7124,8 @@ export default function Home() {
       setDocument(restored);
       applyPublicViewSettings(payload.view);
       if (payload.draft) rememberEditorDraft(payload.draft);
+      rememberPublicHistoryItem(payload.historyEntry as PublicLayoutHistoryItem | undefined);
+      await refreshPublicHistory();
       setToast("직전 공개 배치본으로 복원했습니다.");
     } catch {
       setToast("이전 공개 배치본을 복원하지 못했습니다. 새로고침 후 다시 시도해 주세요.");
@@ -8094,6 +8163,10 @@ export default function Home() {
         dismiss(closePlaceStoryReport);
         return;
       }
+      if (publicHistoryOpen) {
+        dismiss(() => setPublicHistoryOpen(false));
+        return;
+      }
       if (shortcutHelpOpen) {
         dismiss(() => setShortcutHelpOpen(false));
         return;
@@ -8150,7 +8223,7 @@ export default function Home() {
 
     window.addEventListener("keydown", handleEscape, true);
     return () => window.removeEventListener("keydown", handleEscape, true);
-  }, [adminLoginOpen, closeDatabaseEditor, closePlaceEventForm, closePlaceStoryReport, closePublicExplorerPanel, closePublicPlacePanel, databaseEditorOpen, globalStoriesOpen, placeEventFormOpen, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, publicPanelExpanded, publicPlaceExpanded, selectedId, setPublicPanelExpansion, shortcutHelpOpen, storyReportTarget]);
+  }, [adminLoginOpen, closeDatabaseEditor, closePlaceEventForm, closePlaceStoryReport, closePublicExplorerPanel, closePublicPlacePanel, databaseEditorOpen, globalStoriesOpen, placeEventFormOpen, placeRequestFormOpen, placeRequestPickingLocation, publicHistoryOpen, publicLayoutAccess, publicPanelExpanded, publicPlaceExpanded, selectedId, setPublicPanelExpansion, shortcutHelpOpen, storyReportTarget]);
 
   const openGlobalStoryPlace = (story: PlaceStory) => {
     const item = publicPlaceItemForReference(story.placeKey, story.placeName);
@@ -8285,24 +8358,21 @@ export default function Home() {
             </summary>
             <div className="admin-theme-popover"><div><strong>UI 테마</strong><span>이 기기에 저장됩니다</span></div><UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} /></div>
           </details></div>
-        <div className="toolbar-group draft-tools">
-          <span className={editorSyncClass} title={editorDraftUpdatedAt ? `서버 초안 ${editorDraftRevision}번` : "아직 저장된 서버 초안이 없습니다."}>{editorDraftUpdatedAt ? `초안 ${editorDraftRevision}` : "서버 초안"}</span>
-          <button className="draft-save" disabled={editorDraftSaving} onClick={() => void saveEditorDraft()}>{editorDraftSaving ? "저장 중…" : "초안 저장"}</button>
-          <button disabled={!editorDraftUpdatedAt || editorDraftSaving} onClick={loadEditorDraft}>불러오기</button>
-          <button disabled={!editorDraftHasPrevious || editorDraftSaving} onClick={() => void restorePreviousEditorDraft()}>이전 초안</button>
+        <div className="toolbar-group manager-tools">
+          <button type="button" onClick={openDatabaseEditor}>DB 관리</button>
+          <button type="button" className="history-trigger" onClick={() => { setPublicHistoryOpen(true); void refreshPublicHistory(); }}>공개본 기록 <span>{publicHistory.length}</span></button>
         </div>
         <div className="toolbar-group muted-actions">
           <button onClick={undo} disabled={!undoStack.length} aria-label="실행 취소">↶</button>
           <button onClick={redo} disabled={!redoStack.length} aria-label="다시 실행">↷</button>
           <button type="button" className="shortcut-trigger" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
-          <button className={calibrationMode ? "active-tool" : ""} onClick={() => switchLeftPanel(calibrationMode ? "assets" : "calibration")}>◎ 기준점 보정</button>
         </div>
         <div className="toolbar-group zoom-tools">
           <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
           <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
-        <div className="toolbar-group export-tools"><select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)} aria-label="고화질 사본 가로 크기"><option value="12000">12K PNG</option><option value="8944">원본 8.9K</option></select><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 설정 · 미리보기 중" : "출력 설정"}</button><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 사본 ↓"}</button></div>
-        <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button><button disabled={!publicLayoutPublishedAt || publicLayoutPublishing} onClick={loadPublishedLayoutIntoDraft}>공개본 불러오기</button><button disabled={!publicLayoutHasPrevious || publicLayoutPublishing} onClick={() => void restorePreviousPublicLayout()}>이전 공개본</button></div>
+        <div className="toolbar-group export-tools"><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 · 미리보기 중" : "출력"}</button></div>
+        <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
@@ -8315,36 +8385,16 @@ export default function Home() {
 
       <section className={`workspace ${publicLayoutAccess === "viewer" ? "public-viewer" : ""} ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"} ${leftPanelMode === "calibration" && leftOpen ? "calibration-open" : ""}`}>
         {publicLayoutAccess === "editor" && <aside ref={leftPanelRef} className="panel asset-panel" aria-label="자산 목록">
-          <div className="panel-heading"><div><strong>{leftPanelMode === "assets" ? "자산" : leftPanelMode === "places" ? "장소 탐색" : "좌표 기준점"}</strong><span>{leftPanelMode === "assets" ? `${layoutName} · ${elements.filter((element) => element.mapVisible).length}개 배치` : leftPanelMode === "places" ? `통합 목록 ${allUnifiedPlaceRows.length}곳 · 배치/미배치 관리` : `기준점 ${calibrationPoints.length}곳 · 실시간 보정`}</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
+          <div className="panel-heading"><div><strong>{leftPanelMode === "assets" ? "지도·자산" : leftPanelMode === "places" ? "장소·요소" : leftPanelMode === "print" ? "출력" : "좌표 기준점"}</strong><span>{leftPanelMode === "assets" ? "베이스맵·프로젝트 자산·검토 도구" : leftPanelMode === "places" ? `통합 목록 ${allUnifiedPlaceRows.length}곳 · 배치/표시 관리` : leftPanelMode === "print" ? `${exportWidth.toLocaleString()}px · 추천 ${recommendedPlaceCount}곳` : `기준점 ${calibrationPoints.length}곳 · 실시간 보정`}</span></div><button className="icon-button" onClick={() => setLeftOpen(false)} aria-label="왼쪽 패널 접기">‹</button></div>
           <div className="panel-tabs" role="tablist" aria-label="왼쪽 패널 내용">
-            <button className={leftPanelMode === "assets" ? "active" : ""} onClick={() => switchLeftPanel("assets")} role="tab" aria-selected={leftPanelMode === "assets"}>아이콘·마커</button>
-            <button className={leftPanelMode === "places" ? "active" : ""} onClick={() => switchLeftPanel("places")} role="tab" aria-selected={leftPanelMode === "places"}>장소 탐색 <span>{allUnifiedPlaceRows.length}</span></button>
+            <button className={leftPanelMode === "places" ? "active" : ""} onClick={() => switchLeftPanel("places")} role="tab" aria-selected={leftPanelMode === "places"}>장소·요소 <span>{allUnifiedPlaceRows.length}</span></button>
+            <button className={leftPanelMode === "assets" ? "active" : ""} onClick={() => switchLeftPanel("assets")} role="tab" aria-selected={leftPanelMode === "assets"}>지도·자산</button>
             <button className={leftPanelMode === "calibration" ? "active" : ""} onClick={() => switchLeftPanel("calibration")} role="tab" aria-selected={leftPanelMode === "calibration"}>좌표 보정 <span>6</span></button>
+            <button className={leftPanelMode === "print" ? "active" : ""} onClick={() => switchLeftPanel("print")} role="tab" aria-selected={leftPanelMode === "print"}>출력</button>
           </div>
           {leftPanelMode === "assets" ? <>
           <div className="panel-search">아이콘·마커 보기 및 자산 <kbd>{assets.length}</kbd></div>
-          <AdminFolder className="side-admin-folder view-control-panel" title="지도 전체 조절" meta={screenRecommendedOnly ? `비추천 ${screenHiddenMarkerCount}곳 숨김` : "화면 전용"} defaultOpen>
-            <div className="view-mode-grid" role="group" aria-label="표시 요소">
-              {([ ["all", "전체"], ["landmarks", "랜드마크"], ["markers", "일반마커"], ["labels", "라벨만"] ] as const).map(([mode, label]) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{label}</button>)}
-            </div>
-            <div className="view-toggle-list">
-              <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 보기</b><small>랜드마크와 추천 일반 마커만 임시 표시 · 배치와 출력 설정은 유지</small></span></label>
-              <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>마커 라벨 전체</b><small>일반 마커 라벨을 한 번에 ON/OFF</small></span></label>
-              <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
-              <label className={scaleLabelLimitEnabled ? "active" : ""}><input type="checkbox" checked={scaleLabelLimitEnabled} onChange={(event) => setScaleLabelLimitEnabled(event.target.checked)} /><span><b>축척별 라벨 자동 제한</b><small>맞춤 30 · 중간 50/80 · 충분히 확대하면 전체 표시</small></span></label>
-            </div>
-            <div className={`label-scale-status ${scaleHiddenLabelCount > 0 ? "limited" : "all"}`}>
-              <span><b>현재 라벨</b><em>{editorLabelElements.length}/{editorLabelCandidates.length}</em></span>
-              <small>{scaleHiddenLabelCount > 0 ? `축척에 따라 ${scaleHiddenLabelCount}개를 계산·표시에서 제외` : scaleLabelLimitActive ? "현재 배율에서는 설정된 라벨 전체 표시" : "자동 제한 꺼짐"}</small>
-            </div>
-            <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 위치 정리 중…" : "전체 라벨 위치 새로고침"}</button>
-            {selectedDenseLabel && <div className={`dense-label-control ${selectedDenseLabel.hasCollision ? "collision" : ""}`}>
-              <span><b>선택 라벨 · {selectedDenseLabel.names.length}곳</b><small>{selectedDenseLabel.manuallyPositioned ? "직접 지정한 위치를 화면·출력에 적용" : "겹침을 피한 자동 위치"}{selectedDenseLabel.hasCollision ? " · 겹침 확인 필요" : ""}</small></span>
-              <button type="button" disabled={!selectedDenseLabel.manuallyPositioned} onClick={() => { pushHistory(); resetDenseLabelPosition(selectedDenseLabel.positionKeys); setToast("통합 라벨을 자동 위치로 되돌렸습니다."); }}>자동 위치</button>
-              <div className="dense-label-member-list">{selectedDenseLabel.rows.map((row) => <div key={row.elementId}><i style={{ background: categoryOf(row.category).color }} /><b>{row.name}</b><button type="button" onClick={() => setDenseLabelEligibility(row.elementId, false, selectedDenseLabel.positionKeys)}>개별 분리</button></div>)}</div>
-            </div>}
-            {!!detachedDenseLabelElements.length && <div className="dense-label-detached-list"><div><strong>개별 표시 중</strong><span>{detachedDenseLabelElements.length}곳</span></div>{detachedDenseLabelElements.map((element) => <div key={element.id}><b>{element.name}</b><button type="button" onClick={() => setDenseLabelEligibility(element.id, true)}>자동 재통합</button></div>)}</div>}
-            {denseLabelCollisionCount > 0 && <p className="dense-label-warning">통합 라벨 {denseLabelCollisionCount}개가 이미지 또는 다른 라벨과 겹칩니다. 지도에서 직접 옮긴 뒤 출력해 주세요.</p>}
+          <AdminFolder className="side-admin-folder view-control-panel" title="지도 검수·베이스맵" meta={activeBaseMapLabel} defaultOpen>
             <details className="advanced-view-tools">
               <summary>고급 검수 보기·베이스맵</summary>
               <div className="advanced-view-tools-body">
@@ -8362,58 +8412,6 @@ export default function Home() {
                 <div className="advanced-backup-tools"><div><strong>편집 상태 백업</strong><span>문제 발생 시 복구용</span></div><div><button type="button" onClick={exportJson}>JSON 백업 ↓</button><button type="button" onClick={() => jsonInputRef.current?.click()}>JSON 불러오기 ↑</button></div><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
               </div>
             </details>
-          </AdminFolder>
-          <AdminFolder className="side-admin-folder marker-visibility-panel placed-marker-panel" title="배치된 마커 목록" meta={`라벨 ${placedLabelCount}/${elements.filter((element) => element.mapVisible).length} ON`}>
-            <div className="placed-label-bulk" role="group" aria-label="배치 라벨 일괄 조절">
-              <button type="button" onClick={() => setPlacedLabelsVisibility(true)}>전체 라벨 ON</button>
-              <button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 라벨 OFF</button>
-              <button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button>
-              <button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button>
-            </div>
-            <div className="placed-marker-search">
-              <input value={placedMarkerQuery} onChange={(event) => setPlacedMarkerQuery(event.target.value)} placeholder="배치 마커 검색" aria-label="배치 마커 검색" />
-              {placedMarkerQuery && <button type="button" onClick={() => setPlacedMarkerQuery("")} aria-label="배치 마커 검색어 지우기">×</button>}
-            </div>
-            <div className="marker-visibility-list placed-marker-list" role="list" aria-label="현재 지도에 배치된 마커">
-              {placedMarkerGroups.map(({ category, elements: groupElements }) => {
-                const expanded = Boolean(placedMarkerQuery.trim()) || expandedPlacedMarkerGroups[category.id];
-                const labelCount = groupElements.filter((element) => element.labelVisible).length;
-                return <section key={category.id} className={`marker-visibility-group ${expanded ? "expanded" : "collapsed"}`}>
-                  <button type="button" className="marker-visibility-group-toggle" aria-expanded={expanded} aria-controls={`placed-marker-group-${category.id}`} onClick={() => setExpandedPlacedMarkerGroups((current) => ({ ...current, [category.id]: !current[category.id] }))}>
-                    <span className="marker-folder-icon" aria-hidden="true" />
-                    <i style={{ background: category.color }} />
-                    <strong>{category.name}</strong>
-                    <span className="marker-group-count">라벨 {labelCount}/{groupElements.length}</span>
-                  </button>
-                  {expanded && <div id={`placed-marker-group-${category.id}`} className="marker-visibility-group-items">
-                    {groupElements.map((element) => <div key={element.id} className={`placed-marker-row ${selectedId === element.id ? "selected" : ""}`} role="listitem">
-                      <button type="button" className="placed-marker-focus" onClick={() => selectPlacedElement(element)} title={`${element.name} 지도 위치로 이동`}>
-                        <i style={{ background: category.color }} />
-                        <span><b>{element.name}</b><small>{element.locked ? "좌표 고정" : "좌표 미고정"}</small></span>
-                      </button>
-                      <label className={`placed-label-toggle ${element.labelVisible ? "active" : ""}`} title={`${element.name} 라벨 ${element.labelVisible ? "숨기기" : "표시"}`}>
-                        <input type="checkbox" checked={element.labelVisible} onChange={(event) => setPlacedElementLabelVisibility(element, event.target.checked)} />
-                        <span>{element.labelVisible ? "라벨 ON" : "라벨 OFF"}</span>
-                      </label>
-                    </div>)}
-                  </div>}
-                </section>;
-              })}
-              {!placedMarkerElements.length && <div className="place-empty">배치된 마커가 없거나 검색 결과가 없습니다.</div>}
-            </div>
-            <p>장소명을 누르면 지도 위치와 우측 편집창이 열립니다. 개별 라벨 설정은 자동 저장됩니다.</p>
-          </AdminFolder>
-          <AdminFolder sectionRef={printPanelRef} className="side-admin-folder print-output-panel" title="담당자 제출용 고화질 출력" meta={`추천 ${recommendedPlaceCount}곳`} openSignal={printFolderOpenRequest}>
-            <label className="print-recommended-toggle"><input type="checkbox" checked={printRecommendedOnly} onChange={(event) => setPrintRecommendedOnly(event.target.checked)} /><span><b>추천 장소 중심 출력</b><small>랜드마크는 기본 포함, 일반 마커는 추천 장소만</small></span></label>
-            <div className="print-layer-grid">
-              <label><input type="checkbox" checked={printLandmarks} onChange={(event) => setPrintLandmarks(event.target.checked)} />랜드마크</label>
-              <label><input type="checkbox" checked={printMarkers} onChange={(event) => setPrintMarkers(event.target.checked)} />마커</label>
-              <label><input type="checkbox" checked={printLabels} onChange={(event) => setPrintLabels(event.target.checked)} />라벨</label>
-            </div>
-            <div className="print-preview-actions"><button type="button" className={printPreviewMode ? "active" : ""} onClick={() => { setPrintPreviewMode((current) => !current); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); }}>◉ {printPreviewMode ? "편집 화면으로" : "실제 PNG 구성 미리보기"}</button><button type="button" className={printAudit.issues.length ? "warning" : "pass"} onClick={() => setPrintAuditOpen((current) => !current)}>{printAudit.issues.length ? `출력 점검 ${printAudit.issues.length}건` : "출력 점검 통과"}</button></div>
-            {printAuditOpen && <div className={`print-audit ${printAudit.issues.length ? "warning" : "pass"}`}><div className="print-audit-summary"><strong>{printAudit.issues.length ? "수정 권장 항목" : "출력 준비 완료"}</strong><span>잘림 {printAudit.clippingCount} · 겹침 {printAudit.overlapCount} · 선 교차 {printAudit.crossingCount}</span><small>최소 글자 {printAudit.minimumTextPixels.toFixed(0)}px · {exportWidth.toLocaleString()}px 출력 기준</small></div>{printAudit.issues.length > 0 && <div className="print-audit-list">{printAudit.issues.slice(0, 12).map((issue) => <button type="button" key={issue.id} onClick={() => { setPrintPreviewMode(true); if (issue.elementId) { const element = elementsRef.current.find((item) => item.id === issue.elementId); if (element) { setSelectedId(element.id); focusMapPosition(element.x, element.y, element.id); } } else if (issue.clusterId) setSelectedDenseLabelId(issue.clusterId); }}>{issue.label}</button>)}{printAudit.issues.length > 12 && <p>외 {printAudit.issues.length - 12}건은 위치를 조정하면 함께 다시 계산됩니다.</p>}</div>}</div>}
-            <p>미리보기는 추천·수동 포함/제외·통합 라벨·연결선을 실제 PNG와 같은 규칙으로 표시합니다.</p>
-            <div className="print-storage-status"><span>{printSyncLabel}</span>{(!printSettingsCanEdit || !denseLabelSettingsCanEdit) && <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}</div>
           </AdminFolder>
           <AdminFolder className="side-admin-folder" title="자산 필터·업로드" meta={`${assets.length}개`}>
           <div className="category-filter">
@@ -8440,29 +8438,29 @@ export default function Home() {
             {generalMarkerAssets.map((asset) => <div className="project-asset-row" key={asset.id}><button className="asset-card uploaded" onClick={() => addAssetElement(asset)}><span className="asset-preview image-preview"><img src={asset.src} alt="" loading="lazy" decoding="async" /></span><span><strong>{asset.name}</strong><small>{statusText[asset.status]} · {asset.fileType.toUpperCase()}</small></span><i>＋</i></button>{asset.sourceUrl && <a className="project-asset-source-link" href={asset.sourceUrl} target="_blank" rel="noreferrer">Drive 원본 보기 ↗</a>}</div>)}
           </div>
           </AdminFolder>
-          <AdminFolder className="side-admin-folder group-size-panel" title="마커 스타일·크기">
-            <div className="marker-style-panel">
-              <div className="review-list-head"><strong>범용 마커 스타일</strong><span>리뉴얼 최종 포함</span></div>
-              <div className="marker-style-options" role="group" aria-label="범용 마커 스타일 일괄 적용">
-                {([
-                  ["v2", "리뉴얼 최종 원형"],
-                  ["01", "기본 핀형"],
-                  ["02", "아치 배지형"],
-                  ["03", "유기적 원형"],
-                ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={markerAssetSrc(style, "culture")} alt="" /><span><b>{style === "v2" ? "최종" : `${style}안`}</b><small>{label}</small></span></button>)}
-              </div>
-              <p className="marker-style-help">리뉴얼 최종은 승인된 중앙 앵커 원형 자산입니다. 일괄 적용할 때 화장실·안내소는 전용 최종 마커로 자동 배정하며, 기존 01~03안도 계속 선택할 수 있습니다.</p>
-            </div>
-            <div className="review-list-head"><strong>종류별 크기 일괄 조절</strong><span>%</span></div>
-            <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
-            <div className="group-size-row"><label>일반 마커<input type="number" min="0.8" max="15" step="0.1" value={markerGroupSize} onChange={(event) => setMarkerGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("marker", markerGroupSize)}>전체 적용</button></div>
-            <p className="group-size-help">일반 마커 값은 공개본 업데이트 시 저장되며, 이후 새로 만드는 마커의 공통 기본 크기로 사용됩니다.</p>
-            <div className="landmark-default-actions">
-              <button onClick={saveAllLandmarksAsDefault}>현재 앵커를 기본 위치로 저장</button>
-              <button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 저장된 기본 위치로 초기화</button>
-            </div>
-          </AdminFolder>
           </> : leftPanelMode === "places" ? <div className="place-directory">
+            <AdminFolder className="side-admin-folder view-control-panel" title="화면 필터·가시성" meta={screenRecommendedOnly ? `비추천 ${screenHiddenMarkerCount}곳 숨김` : "편집 화면 전용"} defaultOpen>
+              <div className="view-mode-grid" role="group" aria-label="화면 표시 요소">
+                {([ ["all", "전체"], ["landmarks", "랜드마크"], ["markers", "일반마커"], ["labels", "라벨"] ] as const).map(([mode, label]) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{label}</button>)}
+              </div>
+              <div className="view-toggle-list">
+                <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 임시 표시</b><small>배치와 출력 포함 설정은 유지됩니다.</small></span></label>
+                <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>일반 마커 라벨</b><small>화면 표시만 한 번에 전환합니다.</small></span></label>
+                <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
+                <label className={scaleLabelLimitEnabled ? "active" : ""}><input type="checkbox" checked={scaleLabelLimitEnabled} onChange={(event) => setScaleLabelLimitEnabled(event.target.checked)} /><span><b>축척별 라벨 자동 제한</b><small>확대 수준에 맞춰 가독성을 유지합니다.</small></span></label>
+              </div>
+              <div className="placed-label-bulk" role="group" aria-label="배치 라벨 가시성 일괄 조절"><button type="button" onClick={() => setPlacedLabelsVisibility(true)}>배치 라벨 전체 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 OFF</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button></div>
+              <div className={`label-scale-status ${scaleHiddenLabelCount > 0 ? "limited" : "all"}`}><span><b>현재 라벨</b><em>{editorLabelElements.length}/{editorLabelCandidates.length}</em></span><small>{scaleHiddenLabelCount > 0 ? `축척에 따라 ${scaleHiddenLabelCount}개 임시 숨김` : "현재 배율 표시 준비 완료"}</small></div>
+              <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
+            </AdminFolder>
+            <AdminFolder className="side-admin-folder group-size-panel" title="일괄 조절" meta={`기본 마커 ${markerGroupSize.toFixed(1)}%`}>
+              <div className="marker-style-panel"><div className="review-list-head"><strong>범용 마커 스타일</strong><span>새 마커 기본 포함</span></div><div className="marker-style-options" role="group" aria-label="범용 마커 스타일 일괄 적용">{([ ["v2", "리뉴얼 최종 원형"], ["01", "기본 핀형"], ["02", "아치 배지형"], ["03", "유기적 원형"] ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={markerAssetSrc(style, "culture")} alt="" /><span><b>{style === "v2" ? "최종" : `${style}안`}</b><small>{label}</small></span></button>)}</div></div>
+              <div className="review-list-head"><strong>종류별 크기</strong><span>%</span></div>
+              <div className="group-size-row"><label>랜드마크<input type="number" min="0.8" max="15" step="0.1" value={landmarkGroupSize} onChange={(event) => setLandmarkGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("landmark", landmarkGroupSize)}>전체 적용</button></div>
+              <div className="group-size-row"><label>일반 마커<input type="number" min="0.8" max="15" step="0.1" value={markerGroupSize} onChange={(event) => setMarkerGroupSize(clamp(Number(event.target.value), 0.8, 15))} /></label><button onClick={() => applyGroupSize("marker", markerGroupSize)}>전체 적용</button></div>
+              <p className="group-size-help">일반 마커 값은 공개본 업데이트 시 저장되며 이후 새 마커의 공통 기본 크기로 사용됩니다.</p>
+              <div className="landmark-default-actions"><button onClick={saveAllLandmarksAsDefault}>현재 앵커를 기본 위치로 저장</button><button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 저장된 기본 위치로 초기화</button></div>
+            </AdminFolder>
             <AdminFolder className="side-admin-folder" title="지도 구성 도우미" meta={`${elements.length}개 배치`}>
             <div className="composition-helper folder-card-content">
               <div className="composition-counts" aria-label="현재 구성요소 수">
@@ -8478,20 +8476,6 @@ export default function Home() {
               <p>주소 정렬은 일반 마커의 앵커를 갱신하고 기존 리소스 오프셋을 유지합니다. 이후 속성 패널의 앵커·출력 오프셋 값으로 세부 보정할 수 있습니다.</p>
             </div>
             </AdminFolder>
-            <AdminFolder className="side-admin-folder" title="통합 장소 DB" meta={`${allUnifiedPlaceRows.length}곳`}>
-            <div className="database-import folder-card-content">
-              <div><strong>통합 장소 DB</strong><span>{placeDirectoryStorage === "persistent" ? "영구 DB" : placeDirectoryStorage === "bundled" ? "기본 DB" : "확인 중"} · {allUnifiedPlaceRows.length}곳</span></div>
-              <div className="database-action-grid">
-                {placeDirectoryCanEdit
-                  ? <button className="primary" onClick={openDatabaseEditor}>DB 직접 편집</button>
-                  : <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}
-                <button onClick={() => dbInputRef.current?.click()} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 찾는 중" : "JSON 불러오기"}</button>
-              </div>
-              <input ref={dbInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importMasterDatabase} />
-              {geocodeProgress.total > 0 && <div className="geocode-progress"><span style={{ width: `${(geocodeProgress.done / geocodeProgress.total) * 100}%` }} /><small>{geocodeProgress.done}/{geocodeProgress.total} · 반영 {geocodeProgress.found} · 미확정 {geocodeProgress.failed}</small></div>}
-              <p>직접 편집은 장소 정보 원본을 영구 저장합니다. 좌표·고정·라벨·자산 배치는 별도 상태로 보존됩니다. JSON 업로드 후 주소 확인은 이 브라우저에서 진행됩니다.</p>
-            </div>
-            </AdminFolder>
             <AdminFolder className="side-admin-folder" title="장소 배치 목록" meta={`미고정 ${coordinateLockCounts.unlocked} · 고정 ${coordinateLockCounts.locked}`} defaultOpen>
             <div className="place-search-wrap"><input ref={placeQueryInputRef} value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
@@ -8503,6 +8487,10 @@ export default function Home() {
               <button className={coordinateLockFilter === "all" ? "active" : ""} onClick={() => setCoordinateLockFilter("all")}>전체 <span>{searchedUnifiedPlaceRows.length}</span></button>
               <button className={`unlocked ${coordinateLockFilter === "unlocked" ? "active" : ""}`} onClick={() => setCoordinateLockFilter("unlocked")}>좌표 미고정 <span>{coordinateLockCounts.unlocked}</span></button>
               <button className={coordinateLockFilter === "locked" ? "active" : ""} onClick={() => setCoordinateLockFilter("locked")}>좌표 고정 <span>{coordinateLockCounts.locked}</span></button>
+            </div>
+            <div className="place-secondary-filters">
+              <div role="group" aria-label="지도 배치 상태 필터"><button className={placementFilter === "all" ? "active" : ""} onClick={() => setPlacementFilter("all")}>배치 전체</button><button className={placementFilter === "placed" ? "active" : ""} onClick={() => setPlacementFilter("placed")}>배치됨</button><button className={placementFilter === "unplaced" ? "active" : ""} onClick={() => setPlacementFilter("unplaced")}>미배치</button></div>
+              <div role="group" aria-label="추천 상태 필터"><button className={recommendationFilter === "all" ? "active" : ""} onClick={() => setRecommendationFilter("all")}>추천 전체</button><button className={recommendationFilter === "recommended" ? "active" : ""} onClick={() => setRecommendationFilter("recommended")}>★ 추천</button><button className={recommendationFilter === "standard" ? "active" : ""} onClick={() => setRecommendationFilter("standard")}>일반</button></div>
             </div>
             <div className="marker-visibility-panel unified-place-panel">
               <div className="review-list-head"><strong>배치 목록</strong><span>미고정 {coordinateLockCounts.unlocked} · 고정 {coordinateLockCounts.locked}</span></div>
@@ -8531,6 +8519,7 @@ export default function Home() {
                             <i style={{ background: category.color }} />
                             <span><b>{row.name}</b><small>{placed ? "배치" : "미배치"}{hasCoordinateState && <em className={row.element?.locked ? "locked" : "unlocked"}>{row.element?.locked ? "좌표 고정" : "좌표 미고정"}</em>}</small></span>
                           </label>
+                          {row.element && <button className={`row-label-toggle ${row.element.labelVisible ? "active" : ""}`} onClick={() => setPlacedElementLabelVisibility(row.element!, !row.element!.labelVisible)} aria-label={`${row.name} 라벨 ${row.element.labelVisible ? "숨기기" : "표시"}`} title="지도 라벨 가시성">{row.element.labelVisible ? "라벨" : "라벨 OFF"}</button>}
                           <button className={`recommend-toggle ${recommended ? "active" : ""}`} disabled={row.category === "landmark" || !printSettingsCanEdit} onClick={() => void savePrintSetting(printTarget, { recommended: !recommended })} aria-label={`${row.name} ${recommended ? "추천 해제" : "출력 추천"}`} title={row.category === "landmark" ? "랜드마크는 출력 기본 포함" : recommended ? "출력 추천 해제" : "고화질 출력 추천 장소로 지정"}>{recommended ? "★" : "☆"}</button>
                           <button onClick={() => selectUnifiedPlace(row)} aria-label={`${row.name} ${placed ? "선택" : "배치"}`}>{placed ? "선택" : "배치"}</button>
                         </div>;
@@ -8541,6 +8530,26 @@ export default function Home() {
                 {!unifiedPlaceRows.length && <div className="place-empty">조건에 맞는 장소가 없습니다.</div>}
               </div>
             </div>
+            </AdminFolder>
+          </div> : leftPanelMode === "print" ? <div className="print-panel-directory">
+            <AdminFolder sectionRef={printPanelRef} className="side-admin-folder print-output-panel" title="고화질 출력 설정" meta={`추천 ${recommendedPlaceCount}곳`} openSignal={printFolderOpenRequest} defaultOpen>
+              <div className="print-resolution-row"><label>출력 해상도<select value={exportWidth} onChange={(event) => setExportWidth(Number(event.target.value) as 8944 | 12000)}><option value="12000">12K PNG · 12,000px</option><option value="8944">원본 비율 · 8,944px</option></select></label><button className="primary-export" disabled={exporting} onClick={() => void exportHighResolutionPng()}>{exporting ? "합성 중…" : "고화질 PNG 만들기 ↓"}</button></div>
+              <label className="print-recommended-toggle"><input type="checkbox" checked={printRecommendedOnly} onChange={(event) => setPrintRecommendedOnly(event.target.checked)} /><span><b>추천 장소 중심 출력</b><small>랜드마크는 기본 포함, 일반 마커는 추천 장소만</small></span></label>
+              <div className="print-layer-grid">
+                <label><input type="checkbox" checked={printLandmarks} onChange={(event) => setPrintLandmarks(event.target.checked)} />랜드마크</label>
+                <label><input type="checkbox" checked={printMarkers} onChange={(event) => setPrintMarkers(event.target.checked)} />마커</label>
+                <label><input type="checkbox" checked={printLabels} onChange={(event) => setPrintLabels(event.target.checked)} />라벨</label>
+              </div>
+              <div className="print-preview-actions"><button type="button" className={printPreviewMode ? "active" : ""} onClick={() => { setPrintPreviewMode((current) => !current); setSelectedId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null); setMemoMode(false); }}>◉ {printPreviewMode ? "편집 화면으로" : "실제 PNG 구성 미리보기"}</button><button type="button" className={printAudit.issues.length ? "warning" : "pass"} onClick={() => setPrintAuditOpen((current) => !current)}>{printAudit.issues.length ? `출력 점검 ${printAudit.issues.length}건` : "출력 점검 통과"}</button></div>
+              {printAuditOpen && <div className={`print-audit ${printAudit.issues.length ? "warning" : "pass"}`}><div className="print-audit-summary"><strong>{printAudit.issues.length ? "수정 권장 항목" : "출력 준비 완료"}</strong><span>잘림 {printAudit.clippingCount} · 겹침 {printAudit.overlapCount} · 선 교차 {printAudit.crossingCount}</span><small>최소 글자 {printAudit.minimumTextPixels.toFixed(0)}px · {exportWidth.toLocaleString()}px 출력 기준</small></div>{printAudit.issues.length > 0 && <div className="print-audit-list">{printAudit.issues.slice(0, 12).map((issue) => <button type="button" key={issue.id} onClick={() => { setPrintPreviewMode(true); if (issue.elementId) { const element = elementsRef.current.find((item) => item.id === issue.elementId); if (element) { setSelectedId(element.id); focusMapPosition(element.x, element.y, element.id); } } else if (issue.clusterId) setSelectedDenseLabelId(issue.clusterId); }}>{issue.label}</button>)}</div>}</div>}
+              <p>화면 가시성, 지도 배치, 출력 포함 여부는 서로 독립적으로 유지됩니다.</p>
+              <div className="print-storage-status"><span>{printSyncLabel}</span>{(!printSettingsCanEdit || !denseLabelSettingsCanEdit) && <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}</div>
+            </AdminFolder>
+            <AdminFolder className="side-admin-folder print-target-panel" title="장소별 출력 항목" meta={`${elements.filter((element) => element.mapVisible).length}곳`} defaultOpen>
+              <div className="print-target-list">{elements.filter((element) => element.mapVisible).map((element) => {
+                const setting = printSettingsByKey.get(printSettingKey(element));
+                return <div className="print-target-row" key={element.id}><button type="button" onClick={() => selectPlacedElement(element)}><i style={{ background: categoryOf(element.category).color }} /><span><b>{element.name}</b><small>{printPolicyFor(element).marker ? "마커 출력" : "마커 제외"} · {printPolicyFor(element).label ? "라벨 출력" : "라벨 제외"}</small></span></button><select aria-label={`${element.name} 마커 출력`} value={setting?.markerMode ?? "auto"} onChange={(event) => void savePrintSetting(element, { markerMode: event.target.value as PrintMode })}><option value="auto">마커 자동</option><option value="include">마커 포함</option><option value="exclude">마커 제외</option></select><select aria-label={`${element.name} 라벨 출력`} value={setting?.labelMode ?? "auto"} onChange={(event) => void savePrintSetting(element, { labelMode: event.target.value as PrintMode })}><option value="auto">라벨 자동</option><option value="include">라벨 포함</option><option value="exclude">라벨 제외</option></select></div>;
+              })}</div>
             </AdminFolder>
           </div> : <div className="calibration-panel">
             <div className="calibration-summary">
@@ -8611,17 +8620,17 @@ export default function Home() {
             <button className="calibration-anchor-align" onClick={moveAllResourcesToAnchors}>모든 리소스를 저장된 기본 앵커로 이동</button>
             <p className="calibration-warning">`전체 좌표 보정 적용`은 리소스 오프셋을 유지합니다. `기본 앵커로 이동`은 랜드마크의 저장 기본값과 일반 마커의 현재 앵커를 사용하며, 우측 개별 이동과 동일하게 오프셋을 0으로 맞춥니다.</p>
           </div>}
-          <div className="review-list">
+          {leftPanelMode === "assets" && <div className="review-list">
             <div className="review-list-head"><strong>골목 검토 메모</strong><span>{reviewNotes.length}</span></div>
             <button className={`memo-add ${memoMode ? "active" : ""}`} onClick={() => setMemoMode((value) => !value)}>{memoMode ? "지도에서 위치를 클릭하세요" : "＋ 검토 메모 핀 추가"}</button>
             <div className="review-note-scroll">{reviewNotes.map((note, index) => <button key={note.id} className={selectedNoteId === note.id ? "active" : ""} onClick={() => { setSelectedNoteId(note.id); setSelectedId(null); setRightOpen(true); }}><i className={`note-dot ${note.status}`} /> <span>{index + 1}. {note.text || reviewStatusText[note.status]}</span></button>)}</div>
             <div className="review-export"><button onClick={exportNotesJson}>메모 JSON</button><button onClick={exportNotesCsv}>메모 CSV</button></div>
-          </div>
+          </div>}
         </aside>}
-        {publicLayoutAccess === "editor" && !leftOpen && <button className="panel-reopen left" onClick={() => setLeftOpen(true)}>자산 ›</button>}
+        {publicLayoutAccess === "editor" && !leftOpen && <button className="panel-reopen left" onClick={() => setLeftOpen(true)}>관리 도구 ›</button>}
 
         <section className="canvas-column">
-          <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력위치 변경 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "기본 드래그: 실제 위치 앵커 이동"}</div></div>
+          <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
             <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))` }}>
@@ -8806,7 +8815,7 @@ export default function Home() {
                 <label>분류 <em>{selected.placeRequestId ? "승인 후 DB 연결" : "첫 변경 시 DB 항목 생성"}</em><select value={selectedUnlinkedPrimaryCategory ?? ""} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || Boolean(selected.placeRequestId)} onChange={(event) => connectUnlinkedElementTaxonomy(selected, { category: event.target.value as CategoryId, additionalCategories: [] })}>{!selectedUnlinkedPrimaryCategory && <option value="" disabled>기본분류 선택</option>}{categories.filter((category) => isPrimaryPublicCategory(category.id)).map((category) => <option key={category.id} value={category.id}>{category.id === "culture" ? "문화공간" : category.name}</option>)}</select></label>
                 <details className="compact-property-details taxonomy-details"><summary>추가분류 <span>DB 연결 후 선택</span></summary><div className="marker-additional-categories"><div>{additionalCategoryDefinitions.map((definition) => <label key={definition.id}><input type="checkbox" checked={false} disabled={!placeDirectoryCanEdit || selectedUnlinkedTaxonomySaving || !selectedUnlinkedPrimaryCategory || Boolean(selected.placeRequestId)} onChange={() => toggleUnlinkedElementAdditionalCategory(selected, definition.id)} /><span>{definition.name}</span></label>)}</div></div></details>
               </>}
-              <label className="print-recommended-toggle compact-recommended"><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span><b>{selected.category === "landmark" ? "랜드마크 기본 추천" : "추천장소"}</b><small>공개 출력의 추천 중심 구성에 반영됩니다.</small></span></label>
+              <label className="compact-recommended" title="공개 출력의 추천 중심 구성에 반영됩니다."><input type="checkbox" checked={printPolicyFor(selected).recommended} disabled={selected.category === "landmark" || !printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { recommended: event.target.checked })} /><span>{selected.category === "landmark" ? "기본 추천" : "추천 장소"}</span></label>
               <label>사용 자산<select value={selected.assetId ?? ""} onChange={(event) => { const asset = assets.find((item) => item.id === event.target.value); updateElement(selected.id, asset ? { assetId: asset.id } : { assetId: null }); }}><option value="" disabled>리소스 미지정</option>{compatibleAssets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
               {selected.category === "landmark" && compatibleAssets.length > 1 && <div className="property-candidate-grid" aria-label="랜드마크 후보 리소스">{compatibleAssets.map((asset) => <button key={asset.id} className={selected.assetId === asset.id ? "active" : ""} onClick={() => updateElement(selected.id, { assetId: asset.id })} title={asset.name}><img src={asset.screenSrc ?? asset.src} alt="" /><span>{asset.name}</span></button>)}</div>}
               <details className="compact-property-details print-details"><summary>고화질 출력 세부 <span>{printPolicyFor(selected).recommended ? "추천" : "일반"}</span></summary><div className="field-row"><label>마커 출력<select value={printPolicyFor(selected).setting?.markerMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { markerMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label><label>라벨 출력<select value={printPolicyFor(selected).setting?.labelMode ?? "auto"} disabled={!printSettingsCanEdit} onChange={(event) => void savePrintSetting(selected, { labelMode: event.target.value as PrintMode })}><option value="auto">자동</option><option value="include">항상 포함</option><option value="exclude">항상 제외</option></select></label></div><p className="field-help">자동은 랜드마크와 추천장소 여부를 따릅니다.</p></details>
@@ -8815,7 +8824,7 @@ export default function Home() {
             <AdminFolder
               title="위치 앵커 · 리소스 출력"
               meta={selected.locked ? "좌표 고정됨" : "직접 편집"}
-              actions={<label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력위치 ON" : "앵커 이동"}</span></label>}
+              actions={<label className={`coordinate-lock-toggle output-drag-toggle ${resourceOutputDragMode ? "active" : ""}`} title="켜면 지도 드래그와 방향키가 앵커 대신 이미지 리소스의 출력 위치만 변경합니다."><input type="checkbox" checked={resourceOutputDragMode} disabled={selected.locked} onChange={(event) => setResourceOutputDragMode(event.target.checked)} /><span>{resourceOutputDragMode ? "출력 위치 ON" : "출력 위치 OFF"}</span></label>}
             >
               <div className="property-subsection anchor-controls">
                 <header><strong>실제 위치 앵커</strong><span>{selectedPrimaryCalibrationPoint ? "1차 기준점" : selectedSecondaryCalibrationPoint ? "2차 확정 기준점" : selectedTertiaryCalibrationPoint ? "3차 지역 기준점" : "지도 좌표"}</span></header>
@@ -9021,12 +9030,33 @@ export default function Home() {
           <footer><span>사이트 소유자는 기존 계정으로도 들어갈 수 있습니다.</span><a href="/signin-with-chatgpt?return_to=/">소유자 계정 로그인</a></footer>
         </section>
       </div>}
+      {publicLayoutAccess === "editor" && publicHistoryOpen && <div className="public-history-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPublicHistoryOpen(false); }}>
+        <section className="public-history-dialog" role="dialog" aria-modal="true" aria-labelledby="public-history-title">
+          <header>
+            <div><strong id="public-history-title">공개본 기록</strong><span>저장 기록은 공개 화면을 바꾸지 않으며, 게시 기록만 실제 공개된 상태입니다.</span></div>
+            <div><button type="button" className="history-save-current" disabled={editorDraftSaving} onClick={() => void saveEditorDraft()}>{editorDraftSaving ? "기록 중…" : "현재 상태 기록"}</button><button type="button" onClick={() => setPublicHistoryOpen(false)} aria-label="공개본 기록 닫기">×</button></div>
+          </header>
+          <div className="public-history-legend"><span className="snapshot">저장 기록</span><span className="published">게시 기록</span><small>Ctrl / ⌘ + S = 저장 기록 추가</small></div>
+          <div className="public-history-list">
+            {publicHistory.map((item) => {
+              const isLive = item.sourceRevision === publicLayoutRevision && item.kind !== "snapshot";
+              const label = item.kind === "snapshot" ? "저장 기록" : item.kind === "restored" ? "복원 게시" : item.kind === "legacy" ? "기존 공개본" : "게시 기록";
+              return <article key={item.id} className={`public-history-row ${item.kind} ${isLive ? "live" : ""}`}>
+                <div className="public-history-row-main"><span className="history-kind">{label}</span>{isLive && <span className="history-live">현재 공개</span>}<strong>{new Date(item.createdAt).toLocaleString("ko-KR")}</strong><small>요소 {item.elementCount} · 배치 {item.placedCount} · 공개 리비전 {item.sourceRevision}</small></div>
+                <div className="public-history-row-meta"><span title={item.createdBy}>{item.createdBy}</span><button type="button" disabled={Boolean(publicHistoryActionId)} onClick={() => void loadPublicHistoryEntry(item)}>{publicHistoryActionId === item.id ? "불러오는 중…" : "편집 화면에 불러오기"}</button></div>
+              </article>;
+            })}
+            {!publicHistory.length && <div className="public-history-empty"><strong>아직 저장된 기록이 없습니다.</strong><span>Ctrl / ⌘ + S를 누르면 현재 편집 상태가 첫 기록으로 추가됩니다.</span></div>}
+          </div>
+          <footer>기록을 불러와도 공개 화면은 바뀌지 않습니다. 검토 후 상단의 ‘공개본 업데이트’를 눌러야 게시됩니다.</footer>
+        </section>
+      </div>}
       {shortcutHelpOpen && <div className="admin-shortcut-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutHelpOpen(false); }}>
         <section id="shortcut-dialog" className="admin-shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-title" aria-describedby="shortcut-note">
           <header><div><strong id="shortcut-title">{publicLayoutAccess === "editor" ? "관리자 단축키" : "공개본 단축키"}</strong><span>{publicLayoutAccess === "editor" ? "편집 작업을 빠르게 이어가는 안전 단축키" : "키보드로 지도 탐색을 빠르게 이어갈 수 있습니다."}</span></div><button type="button" autoFocus onClick={() => setShortcutHelpOpen(false)} aria-label="단축키 안내 닫기">×</button></header>
           <div className="admin-shortcut-list">
             {publicLayoutAccess === "editor" ? <>
-              <div><kbd>Ctrl / ⌘ + S</kbd><span>서버 초안 저장</span></div>
+              <div><kbd>Ctrl / ⌘ + S</kbd><span>현재 상태를 공개본 기록에 저장</span></div>
               <div><kbd>Ctrl / ⌘ + Z</kbd><span>실행 취소</span></div>
               <div><kbd>Ctrl / ⌘ + Shift + Z</kbd><span>다시 실행</span></div>
               <div><kbd>↑ ↓ ← →</kbd><span>선택 항목 미세 이동</span></div>
@@ -9044,7 +9074,7 @@ export default function Home() {
               <div><kbd>?</kbd><span>이 단축키 안내 열기</span></div>
             </>}
           </div>
-          <p id="shortcut-note">{publicLayoutAccess === "editor" ? "삭제 단축키는 지도 배치만 제거하며 통합 장소 DB는 보존합니다. 공개본 업데이트와 DB 영구 삭제에는 단축키를 두지 않았습니다." : "단축키는 PC 키보드 환경에서 동작하며, 입력란을 작성하는 동안에는 실행되지 않습니다."}</p>
+          <p id="shortcut-note">{publicLayoutAccess === "editor" ? "Ctrl+S 기록은 공개 화면을 바꾸지 않습니다. 삭제 단축키는 지도 배치만 제거하며 통합 장소 DB는 보존합니다. 공개본 업데이트와 DB 영구 삭제에는 단축키를 두지 않았습니다." : "단축키는 PC 키보드 환경에서 동작하며, 입력란을 작성하는 동안에는 실행되지 않습니다."}</p>
         </section>
       </div>}
       {publicLayoutAccess === "editor" && databaseEditorOpen && <Suspense fallback={<div className="database-editor-backdrop" role="status"><div className="admin-module-loading"><span className="global-story-spinner" /><strong>관리자 DB 편집 도구를 불러오는 중입니다.</strong></div></div>}>

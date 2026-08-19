@@ -40,20 +40,23 @@ test("admin functions use reusable folders with clean CSS chevrons and distinct 
   assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.advanced-view-tools\[open\] > summary \{[^}]*background: linear-gradient\([^}]*box-shadow: inset 4px 0 0 var\(--ui-accent-strong\)[^}]*font-weight: 850/);
 });
 
-test("left admin panels are grouped into collapsible functional folders", () => {
+test("left admin panels consolidate duplicate functions into four work areas", () => {
   for (const title of [
-    "지도 전체 조절",
-    "배치된 마커 목록",
-    "담당자 제출용 고화질 출력",
+    "화면 필터·가시성",
+    "일괄 조절",
+    "고화질 출력 설정",
+    "장소별 출력 항목",
     "자산 필터·업로드",
     "프로젝트 자산",
-    "마커 스타일·크기",
+    "지도 검수·베이스맵",
     "지도 구성 도우미",
-    "통합 장소 DB",
     "장소 배치 목록",
   ]) {
     assert.match(pageSource, new RegExp(`title="${title}"`));
   }
+  for (const tab of ["장소·요소", "지도·자산", "좌표 보정", "출력"]) assert.match(pageSource, new RegExp(`>${tab}`));
+  assert.doesNotMatch(pageSource, /title="배치된 마커 목록"|title="통합 장소 DB"|>초안 저장<|>이전 초안</);
+  assert.match(pageSource, /onClick=\{openDatabaseEditor\}>DB 관리/);
 });
 
 test("the desktop left admin explorer is wide and uses one edge-to-edge scroll surface", () => {

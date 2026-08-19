@@ -41,6 +41,22 @@ type StoredDraft = {
   revision: number;
 };
 
+type LayoutHistoryKind = "snapshot" | "published" | "restored" | "legacy";
+
+type StoredLayoutHistory = {
+  id: string;
+  kind: LayoutHistoryKind;
+  documentJson: string;
+  viewSettingsJson: string;
+  sourceRevision: number;
+  elementCount: number;
+  placedCount: number;
+  createdAt: string;
+  createdBy: string;
+};
+
+type LayoutHistoryItem = Omit<StoredLayoutHistory, "documentJson" | "viewSettingsJson">;
+
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
   return workers.env as unknown as RuntimeEnv;
@@ -168,6 +184,82 @@ async function readDraft(db: D1Database) {
   ).first() as Promise<StoredDraft | null>;
 }
 
+async function readHistory(db: D1Database) {
+  return db.prepare(
+    `SELECT id, kind, source_revision AS sourceRevision,
+      element_count AS elementCount, placed_count AS placedCount,
+      created_at AS createdAt, created_by AS createdBy
+     FROM public_map_layout_history
+     ORDER BY created_at DESC, id DESC
+     LIMIT 80`,
+  ).all() as Promise<D1Result<LayoutHistoryItem>>;
+}
+
+async function readHistoryEntry(db: D1Database, id: string) {
+  return db.prepare(
+    `SELECT id, kind, document_json AS documentJson, view_settings_json AS viewSettingsJson,
+      source_revision AS sourceRevision, element_count AS elementCount, placed_count AS placedCount,
+      created_at AS createdAt, created_by AS createdBy
+     FROM public_map_layout_history WHERE id = ?`,
+  ).bind(id).first() as Promise<StoredLayoutHistory | null>;
+}
+
+function documentCounts(value: unknown) {
+  const elements = isRecord(value) && Array.isArray(value.elements) ? value.elements : [];
+  return {
+    elementCount: elements.length,
+    placedCount: elements.filter((item) => isRecord(item) && item.mapVisible !== false).length,
+  };
+}
+
+function historyItem(row: StoredLayoutHistory): LayoutHistoryItem {
+  return {
+    id: row.id,
+    kind: row.kind,
+    sourceRevision: row.sourceRevision,
+    elementCount: row.elementCount,
+    placedCount: row.placedCount,
+    createdAt: row.createdAt,
+    createdBy: row.createdBy,
+  };
+}
+
+function syntheticHistoryItem(row: StoredLayout, target: "current" | "previous"): LayoutHistoryItem | null {
+  const documentJson = target === "current" ? row.documentJson : row.previousDocumentJson;
+  if (!documentJson) return null;
+  let counts = { elementCount: 0, placedCount: 0 };
+  try {
+    counts = documentCounts(JSON.parse(documentJson) as unknown);
+  } catch {}
+  return {
+    id: target,
+    kind: "legacy",
+    sourceRevision: Math.max(0, row.revision - (target === "previous" ? 1 : 0)),
+    ...counts,
+    createdAt: row.publishedAt,
+    createdBy: target === "current" ? "현재 공개본" : "기존 공개본",
+  };
+}
+
+function mergeHistory(rows: LayoutHistoryItem[], layout: StoredLayout | null) {
+  if (!layout) return rows;
+  const result = [...rows];
+  const publishedRevisions = new Set(rows.filter((item) => item.kind !== "snapshot").map((item) => item.sourceRevision));
+  const current = syntheticHistoryItem(layout, "current");
+  const previous = syntheticHistoryItem(layout, "previous");
+  if (current && !publishedRevisions.has(current.sourceRevision)) result.unshift(current);
+  if (previous && !publishedRevisions.has(previous.sourceRevision)) result.push(previous);
+  return result;
+}
+
+function parseHistoryDocument(row: StoredLayoutHistory) {
+  return {
+    ...historyItem(row),
+    document: stabilizeMainHubDocument(JSON.parse(row.documentJson) as unknown),
+    view: normalizeViewSettings(JSON.parse(row.viewSettingsJson)),
+  };
+}
+
 function batchRow<T>(result: D1Result<T>) {
   return result.results?.[0] ?? null;
 }
@@ -249,25 +341,42 @@ function parseDraft(row: StoredDraft) {
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit, accessMethod } = ownerAccess(request, runtime);
+  const requestedHistoryId = new URL(request.url).searchParams.get("historyId");
   if (!runtime.DB) {
     const uploadedBaseMap = await readUploadedBaseMapMetadata(runtime.BUCKET, canEdit);
     return cacheableJson(request, { document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null, eventLinkedPlaces: [], uploadedBaseMap }, 503);
   }
-  const [{ row, draftRow, contentSummary, eventLinkedPlaces }, uploadedBaseMap] = await Promise.all([
+  if (requestedHistoryId) {
+    if (!canEdit) return json({ error: "owner authentication required" }, 403);
+    const layout = await readLayout(runtime.DB);
+    if ((requestedHistoryId === "current" || requestedHistoryId === "previous") && layout) {
+      const documentJson = requestedHistoryId === "current" ? layout.documentJson : layout.previousDocumentJson;
+      const viewSettingsJson = requestedHistoryId === "current" ? layout.viewSettingsJson : layout.previousViewSettingsJson;
+      const item = syntheticHistoryItem(layout, requestedHistoryId);
+      if (!documentJson || !viewSettingsJson || !item) return json({ error: "layout history entry unavailable" }, 404);
+      return json({ historyEntry: { ...item, document: stabilizeMainHubDocument(JSON.parse(documentJson) as unknown), view: normalizeViewSettings(JSON.parse(viewSettingsJson)) } });
+    }
+    const entry = await readHistoryEntry(runtime.DB, requestedHistoryId);
+    if (!entry) return json({ error: "layout history entry unavailable" }, 404);
+    return json({ historyEntry: parseHistoryDocument(entry) });
+  }
+  const [{ row, draftRow, contentSummary, eventLinkedPlaces }, uploadedBaseMap, historyResult] = await Promise.all([
     readInitialState(runtime.DB, canEdit),
     readUploadedBaseMapMetadata(runtime.BUCKET, canEdit),
+    canEdit ? readHistory(runtime.DB) : Promise.resolve({ results: [] as LayoutHistoryItem[] }),
   ]);
+  const history = canEdit ? mergeHistory(historyResult.results ?? [], row) : undefined;
   let draft = null;
   try {
     draft = draftRow ? parseDraft(draftRow) : null;
   } catch {
     draft = null;
   }
-  if (!row) return cacheableJson(request, { document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, uploadedBaseMap });
+  if (!row) return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, uploadedBaseMap });
   try {
-    return cacheableJson(request, { ...parseStored(row, canEdit), draft, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, uploadedBaseMap });
+    return cacheableJson(request, { ...parseStored(row, canEdit), draft, history, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, uploadedBaseMap });
   } catch {
-    return cacheableJson(request, { document: null, draft, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, uploadedBaseMap }, 500);
+    return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, uploadedBaseMap }, 500);
   }
 }
 
@@ -344,6 +453,8 @@ export async function PUT(request: Request) {
   const publishedAt = new Date().toISOString();
   const revision = (current?.revision ?? 0) + 1;
   const draftRevision = (currentDraft?.revision ?? 0) + 1;
+  const historyId = crypto.randomUUID();
+  const historyCounts = documentCounts(completed.document);
   await runtime.DB.batch([
     runtime.DB.prepare(
       `INSERT INTO public_map_layout
@@ -387,6 +498,20 @@ export async function PUT(request: Request) {
       currentEmail,
       draftRevision,
     ),
+    runtime.DB.prepare(
+      `INSERT INTO public_map_layout_history
+        (id, kind, document_json, view_settings_json, source_revision, element_count, placed_count, created_at, created_by)
+       VALUES (?, 'published', ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      historyId,
+      documentJson,
+      viewSettingsJson,
+      revision,
+      historyCounts.elementCount,
+      historyCounts.placedCount,
+      publishedAt,
+      currentEmail,
+    ),
   ]);
   return json({
     document: completed.document,
@@ -398,6 +523,14 @@ export async function PUT(request: Request) {
     revision,
     hasPrevious: Boolean(current),
     reviewCompletedCount: completed.completedCount,
+    historyEntry: {
+      id: historyId,
+      kind: "published",
+      sourceRevision: revision,
+      ...historyCounts,
+      createdAt: publishedAt,
+      createdBy: currentEmail,
+    },
   });
 }
 
@@ -406,7 +539,47 @@ export async function POST(request: Request) {
   if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
   const { canEdit, currentEmail } = ownerAccess(request, runtime);
   if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
-  const payload = await request.json().catch(() => null) as { action?: unknown; baseRevision?: unknown; baseDraftRevision?: unknown } | null;
+  const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (payload?.action === "save-history") {
+    const stableDocument = stabilizeMainHubDocument(payload.document);
+    if (!validDocument(stableDocument)) return json({ error: "valid history document required" }, 400);
+    const documentJson = JSON.stringify(stableDocument);
+    if (new TextEncoder().encode(documentJson).byteLength > MAX_DOCUMENT_BYTES) return json({ error: "history document too large" }, 413);
+    const view = normalizeViewSettings(payload.view);
+    const viewSettingsJson = JSON.stringify(view);
+    const [current, currentDraft] = await Promise.all([readLayout(runtime.DB), readDraft(runtime.DB)]);
+    const createdAt = new Date().toISOString();
+    const historyId = crypto.randomUUID();
+    const sourceRevision = current?.revision ?? 0;
+    const counts = documentCounts(stableDocument);
+    const draftRevision = (currentDraft?.revision ?? 0) + 1;
+    await runtime.DB.batch([
+      runtime.DB.prepare(
+        `INSERT INTO public_map_layout_history
+          (id, kind, document_json, view_settings_json, source_revision, element_count, placed_count, created_at, created_by)
+         VALUES (?, 'snapshot', ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(historyId, documentJson, viewSettingsJson, sourceRevision, counts.elementCount, counts.placedCount, createdAt, currentEmail),
+      runtime.DB.prepare(
+        `INSERT INTO map_editor_draft
+          (id, document_json, view_settings_json, previous_document_json, previous_view_settings_json, updated_at, updated_by, revision)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           previous_document_json = map_editor_draft.document_json,
+           previous_view_settings_json = map_editor_draft.view_settings_json,
+           document_json = excluded.document_json,
+           view_settings_json = excluded.view_settings_json,
+           updated_at = excluded.updated_at,
+           updated_by = excluded.updated_by,
+           revision = excluded.revision`,
+      ).bind(documentJson, viewSettingsJson, currentDraft?.documentJson ?? null, currentDraft?.viewSettingsJson ?? null, createdAt, currentEmail, draftRevision),
+    ]);
+    return json({
+      historyEntry: { id: historyId, kind: "snapshot", sourceRevision, ...counts, createdAt, createdBy: currentEmail },
+      draft: { document: stableDocument, view, updatedAt: createdAt, revision: draftRevision, hasPrevious: Boolean(currentDraft) },
+      canEdit: true,
+      persistent: true,
+    });
+  }
   if (payload?.action === "restore-previous-draft") {
     const currentDraft = await readDraft(runtime.DB);
     if (!currentDraft?.previousDocumentJson || !currentDraft.previousViewSettingsJson) return json({ error: "previous editor draft unavailable" }, 404);
@@ -457,6 +630,8 @@ export async function POST(request: Request) {
   const revision = current.revision + 1;
   const currentDraft = await readDraft(runtime.DB);
   const draftRevision = (currentDraft?.revision ?? 0) + 1;
+  const historyId = crypto.randomUUID();
+  const historyCounts = documentCounts(restoredCompleted.document);
   await runtime.DB.batch([
     runtime.DB.prepare(
       `UPDATE public_map_layout SET
@@ -494,6 +669,11 @@ export async function POST(request: Request) {
       currentEmail,
       draftRevision,
     ),
+    runtime.DB.prepare(
+      `INSERT INTO public_map_layout_history
+        (id, kind, document_json, view_settings_json, source_revision, element_count, placed_count, created_at, created_by)
+       VALUES (?, 'restored', ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(historyId, restoredDocumentJson, restoredViewSettingsJson, revision, historyCounts.elementCount, historyCounts.placedCount, publishedAt, currentEmail),
   ]);
   const restored: StoredLayout = {
     documentJson: restoredDocumentJson,
@@ -509,5 +689,6 @@ export async function POST(request: Request) {
     canEdit: true,
     persistent: true,
     reviewCompletedCount: restoredCompleted.completedCount,
+    historyEntry: { id: historyId, kind: "restored", sourceRevision: revision, ...historyCounts, createdAt: publishedAt, createdBy: currentEmail },
   });
 }
