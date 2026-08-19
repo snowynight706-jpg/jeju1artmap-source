@@ -42,20 +42,25 @@ test("admin functions use reusable folders with clean CSS chevrons and distinct 
 
 test("left admin panels consolidate duplicate functions into four work areas", () => {
   for (const title of [
-    "화면 필터·가시성",
     "일괄 조절",
     "고화질 출력 설정",
     "장소별 출력 항목",
     "자산 필터·업로드",
     "프로젝트 자산",
     "지도 검수·베이스맵",
-    "지도 구성 도우미",
-    "장소 배치 목록",
+    "장소·지도 구성",
   ]) {
     assert.match(pageSource, new RegExp(`title="${title}"`));
   }
   for (const tab of ["장소·요소", "지도·자산", "좌표 보정", "출력"]) assert.match(pageSource, new RegExp(`>${tab}`));
-  assert.doesNotMatch(pageSource, /title="배치된 마커 목록"|title="통합 장소 DB"|>초안 저장<|>이전 초안</);
+  assert.doesNotMatch(pageSource, /title="화면 필터·가시성"|title="지도 구성 도우미"|title="장소 배치 목록"|title="배치된 마커 목록"|title="통합 장소 DB"|>초안 저장<|>이전 초안</);
+  assert.match(pageSource, /className="side-admin-folder place-map-manager"/);
+  assert.match(pageSource, /화면·라벨 표시 설정/);
+  assert.match(pageSource, /장소 찾기·배치 필터/);
+  assert.match(pageSource, /지도 정리·복원/);
+  assert.match(pageSource, /필터 초기화/);
+  assert.match(cssSource, /\.place-map-manager\.admin-folder \{[^}]*flex-direction: column/);
+  assert.match(cssSource, /\.place-manager-sticky \{[^}]*position: sticky/);
   assert.match(pageSource, /onClick=\{openDatabaseEditor\}>DB 관리/);
 });
 

@@ -3245,6 +3245,14 @@ export default function Home() {
     category,
     rows: unifiedPlaceRows.filter((row) => row.category === category.id),
   })).filter((group) => group.rows.length > 0), [unifiedPlaceRows]);
+  const placeFiltersActive = Boolean(placeQuery.trim())
+    || placeCategory !== "all"
+    || coordinateLockFilter !== "all"
+    || placementFilter !== "all"
+    || recommendationFilter !== "all"
+    || viewMode !== "all"
+    || screenRecommendedOnly;
+  const placedUnifiedPlaceCount = allUnifiedPlaceRows.filter((row) => row.element?.mapVisible).length;
 
   const selectedDatabasePlace = useMemo(
     () => databaseDraftPlaces.find((place) => place.id === databaseEditorSelectedId) ?? null,
@@ -8518,20 +8526,6 @@ export default function Home() {
           </div>
           </AdminFolder>
           </> : leftPanelMode === "places" ? <div className="place-directory">
-            <AdminFolder className="side-admin-folder view-control-panel" title="화면 필터·가시성" meta={screenRecommendedOnly ? `비추천 ${screenHiddenMarkerCount}곳 숨김` : "편집 화면 전용"} defaultOpen>
-              <div className="view-mode-grid" role="group" aria-label="화면 표시 요소">
-                {([ ["all", "전체"], ["landmarks", "랜드마크"], ["markers", "일반마커"], ["labels", "라벨"] ] as const).map(([mode, label]) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{label}</button>)}
-              </div>
-              <div className="view-toggle-list">
-                <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 임시 표시</b><small>배치와 출력 포함 설정은 유지됩니다.</small></span></label>
-                <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>일반 마커 라벨</b><small>화면 표시만 한 번에 전환합니다.</small></span></label>
-                <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
-                <label className={scaleLabelLimitEnabled ? "active" : ""}><input type="checkbox" checked={scaleLabelLimitEnabled} onChange={(event) => setScaleLabelLimitEnabled(event.target.checked)} /><span><b>축척별 라벨 자동 제한</b><small>확대 수준에 맞춰 가독성을 유지합니다.</small></span></label>
-              </div>
-              <div className="placed-label-bulk" role="group" aria-label="배치 라벨 가시성 일괄 조절"><button type="button" onClick={() => setPlacedLabelsVisibility(true)}>배치 라벨 전체 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 OFF</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button></div>
-              <div className={`label-scale-status ${scaleHiddenLabelCount > 0 ? "limited" : "all"}`}><span><b>현재 라벨</b><em>{editorLabelElements.length}/{editorLabelCandidates.length}</em></span><small>{scaleHiddenLabelCount > 0 ? `축척에 따라 ${scaleHiddenLabelCount}개 임시 숨김` : "현재 배율 표시 준비 완료"}</small></div>
-              <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
-            </AdminFolder>
             <AdminFolder className="side-admin-folder group-size-panel" title="일괄 조절" meta={`기본 마커 ${markerGroupSize.toFixed(1)}%`}>
               <div className="marker-style-panel"><div className="review-list-head"><strong>범용 마커 스타일</strong><span>새 마커 기본 포함</span></div><div className="marker-style-options" role="group" aria-label="범용 마커 스타일 일괄 적용">{([ ["v2", "리뉴얼 최종 원형"], ["01", "기본 핀형"], ["02", "아치 배지형"], ["03", "유기적 원형"] ] as const).map(([style, label]) => <button key={style} className={markerStyle === style ? "active" : ""} onClick={() => applyMarkerStyle(style)}><img src={markerAssetSrc(style, "culture")} alt="" /><span><b>{style === "v2" ? "최종" : `${style}안`}</b><small>{label}</small></span></button>)}</div></div>
               <div className="review-list-head"><strong>종류별 크기</strong><span>%</span></div>
@@ -8540,23 +8534,29 @@ export default function Home() {
               <p className="group-size-help">일반 마커 값은 공개본 업데이트 시 저장되며 이후 새 마커의 공통 기본 크기로 사용됩니다.</p>
               <div className="landmark-default-actions"><button onClick={saveAllLandmarksAsDefault}>현재 앵커를 기본 위치로 저장</button><button className="landmark-reset" onClick={resetLandmarkPositions}>↺ 저장된 기본 위치로 초기화</button></div>
             </AdminFolder>
-            <AdminFolder className="side-admin-folder" title="지도 구성 도우미" meta={`${elements.length}개 배치`}>
-            <div className="composition-helper folder-card-content">
-              <div className="composition-counts" aria-label="현재 구성요소 수">
-                <span><i style={{ background: categoryOf("landmark").color }} />랜드마크 <b>{placedCategoryCounts.landmark}</b></span>
-                <span><i style={{ background: categoryOf("culture").color }} />문화 <b>{placedCategoryCounts.culture}</b></span>
-                <span><i style={{ background: categoryOf("cafe").color }} />카페 <b>{placedCategoryCounts.cafe}</b></span>
-                <span><i style={{ background: categoryOf("food").color }} />음식 <b>{placedCategoryCounts.food}</b></span>
-                <span><i style={{ background: categoryOf("shop").color }} />소품샵 <b>{placedCategoryCounts.shop}</b></span>
-                <span><i style={{ background: categoryOf("parking").color }} />주차 <b>{placedCategoryCounts.parking}</b></span>
-                <span><i style={{ background: categoryOf("utility").color }} />편의 <b>{placedCategoryCounts.utility}</b></span>
+            <AdminFolder className="side-admin-folder place-map-manager" title="장소·지도 구성" meta={`배치 ${placedUnifiedPlaceCount} · 미고정 ${coordinateLockCounts.unlocked}`} defaultOpen>
+            <div className="place-manager-sticky">
+              <div className="place-search-wrap"><input ref={placeQueryInputRef} value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
+              <div className="place-manager-view-head"><strong>화면 보기</strong><span>화면에만 적용</span></div>
+              <div className="view-mode-grid" role="group" aria-label="화면 표시 요소">
+                {([ ["all", "전체"], ["landmarks", "랜드마크"], ["markers", "일반마커"], ["labels", "라벨"] ] as const).map(([mode, label]) => <button key={mode} className={viewMode === mode ? "active" : ""} onClick={() => setViewMode(mode)}>{label}</button>)}
               </div>
-              <div className="composition-actions"><button onClick={applyStarterComposition}>기본 구성 복원</button><button onClick={alignPlacedMarkersByAddress} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 확인 중" : "배치 장소 주소로 정렬"}</button></div>
-              <p>주소 정렬은 일반 마커의 앵커를 갱신하고 기존 리소스 오프셋을 유지합니다. 이후 속성 패널의 앵커·출력 오프셋 값으로 세부 보정할 수 있습니다.</p>
             </div>
-            </AdminFolder>
-            <AdminFolder className="side-admin-folder" title="장소 배치 목록" meta={`미고정 ${coordinateLockCounts.unlocked} · 고정 ${coordinateLockCounts.locked}`} defaultOpen>
-            <div className="place-search-wrap"><input ref={placeQueryInputRef} value={placeQuery} onChange={(event) => setPlaceQuery(event.target.value)} placeholder="장소명·주소·권역 검색" aria-label="장소 검색" />{placeQuery && <button onClick={() => setPlaceQuery("")} aria-label="검색어 지우기">×</button>}</div>
+            <details className="place-manager-details screen-settings">
+              <summary><span><strong>화면·라벨 표시 설정</strong><small>{screenRecommendedOnly ? `비추천 ${screenHiddenMarkerCount}곳 임시 숨김` : `라벨 ${editorLabelElements.length}/${editorLabelCandidates.length}`}</small></span></summary>
+              <div className="place-manager-details-body">
+                <div className="view-toggle-list">
+                  <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 임시 표시</b><small>배치와 출력 포함 설정은 유지됩니다.</small></span></label>
+                  <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>일반 마커 라벨</b><small>화면 표시만 한 번에 전환합니다.</small></span></label>
+                  <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
+                  <label className={scaleLabelLimitEnabled ? "active" : ""}><input type="checkbox" checked={scaleLabelLimitEnabled} onChange={(event) => setScaleLabelLimitEnabled(event.target.checked)} /><span><b>축척별 라벨 자동 제한</b><small>확대 수준에 맞춰 가독성을 유지합니다.</small></span></label>
+                </div>
+                <div className="placed-label-bulk" role="group" aria-label="배치 라벨 가시성 일괄 조절"><button type="button" onClick={() => setPlacedLabelsVisibility(true)}>배치 라벨 전체 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 OFF</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button></div>
+                <div className={`label-scale-status ${scaleHiddenLabelCount > 0 ? "limited" : "all"}`}><span><b>현재 라벨</b><em>{editorLabelElements.length}/{editorLabelCandidates.length}</em></span><small>{scaleHiddenLabelCount > 0 ? `축척에 따라 ${scaleHiddenLabelCount}개 임시 숨김` : "현재 배율 표시 준비 완료"}</small></div>
+                <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
+              </div>
+            </details>
+            <div className="place-manager-filter-head"><div><strong>장소 찾기·배치 필터</strong><span>{unifiedPlaceRows.length}/{allUnifiedPlaceRows.length}곳 표시</span></div>{placeFiltersActive && <button type="button" onClick={() => { setPlaceQuery(""); setPlaceCategory("all"); setCoordinateLockFilter("all"); setPlacementFilter("all"); setRecommendationFilter("all"); setViewMode("all"); setScreenRecommendedOnly(false); }}>필터 초기화</button>}</div>
             <div className="place-filter" role="group" aria-label="장소 분류">
               {([
                 ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["shop", "소품샵"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
@@ -8571,9 +8571,16 @@ export default function Home() {
               <div role="group" aria-label="지도 배치 상태 필터"><button className={placementFilter === "all" ? "active" : ""} onClick={() => setPlacementFilter("all")}>배치 전체</button><button className={placementFilter === "placed" ? "active" : ""} onClick={() => setPlacementFilter("placed")}>배치됨</button><button className={placementFilter === "unplaced" ? "active" : ""} onClick={() => setPlacementFilter("unplaced")}>미배치</button></div>
               <div role="group" aria-label="추천 상태 필터"><button className={recommendationFilter === "all" ? "active" : ""} onClick={() => setRecommendationFilter("all")}>추천 전체</button><button className={recommendationFilter === "recommended" ? "active" : ""} onClick={() => setRecommendationFilter("recommended")}>★ 추천</button><button className={recommendationFilter === "standard" ? "active" : ""} onClick={() => setRecommendationFilter("standard")}>일반</button></div>
             </div>
+            <details className="place-manager-details composition-settings">
+              <summary><span><strong>지도 정리·복원</strong><small>주소 정렬 · 기본 구성</small></span></summary>
+              <div className="place-manager-details-body composition-helper folder-card-content">
+                <div className="composition-actions"><button onClick={applyStarterComposition}>기본 구성 복원</button><button onClick={alignPlacedMarkersByAddress} disabled={geocodeProgress.active}>{geocodeProgress.active ? "주소 확인 중" : "배치 장소 주소로 정렬"}</button></div>
+                <p>주소 정렬은 일반 마커의 앵커를 갱신하고 기존 리소스 오프셋을 유지합니다. 기본 구성 복원은 누락된 초기 요소만 추가하며 현재 배치는 유지합니다.</p>
+              </div>
+            </details>
             <div className="marker-visibility-panel unified-place-panel">
-              <div className="review-list-head"><strong>배치 목록</strong><span>미고정 {coordinateLockCounts.unlocked} · 고정 {coordinateLockCounts.locked}</span></div>
-              <p>체크 상태는 배치/미배치만 사용합니다. 미배치로 바꿔도 좌표와 편집 정보는 보존됩니다.</p>
+              <div className="review-list-head"><strong>장소 배치 목록</strong><span>미고정 {coordinateLockCounts.unlocked} · 고정 {coordinateLockCounts.locked}</span></div>
+              <p><b>체크</b> 배치 · <b>라벨</b> 화면 표시 · <b>★</b> 출력 추천. 미배치로 바꿔도 좌표와 편집 정보는 보존됩니다.</p>
               <div className="marker-visibility-list unified-place-list" role="list" aria-label="통합 장소 배치 목록">
                 {unifiedPlaceGroups.map(({ category, rows }) => {
                   const placedCount = rows.filter((row) => row.element?.mapVisible).length;
