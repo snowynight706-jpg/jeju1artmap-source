@@ -12,7 +12,8 @@ test("admin map keeps one label refresh and one memo-pin entry point", () => {
 test("print preview is controlled from the output panel and PNG map is advanced-only", () => {
   assert.equal(pageSource.match(/실제 PNG 구성 미리보기/g)?.length ?? 0, 1);
   assert.equal(pageSource.match(/원본 PNG · 비상용/g)?.length ?? 0, 1);
-  assert.match(pageSource, /고급 검수 보기·베이스맵/);
+  assert.equal(pageSource.match(/title="지도 검수·베이스맵"/g)?.length ?? 0, 1);
+  assert.doesNotMatch(pageSource, /고급 검수 보기·베이스맵|className="advanced-view-tools"/);
 });
 
 test("place-specific content panels route moderation to the unified manager", () => {

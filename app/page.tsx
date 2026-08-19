@@ -2590,7 +2590,6 @@ export default function Home() {
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration" | "print">("places");
   const [placeQuery, setPlaceQuery] = useState("");
-  const [placeCategory, setPlaceCategory] = useState<CategoryId | "all">("all");
   const [coordinateLockFilter, setCoordinateLockFilter] = useState<CoordinateLockFilter>("all");
   const [placementFilter, setPlacementFilter] = useState<PlacementFilter>("all");
   const [recommendationFilter, setRecommendationFilter] = useState<RecommendationFilter>("all");
@@ -3218,10 +3217,8 @@ export default function Home() {
 
   const searchedUnifiedPlaceRows = useMemo(() => {
     const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
-    return allUnifiedPlaceRows
-      .filter((row) => placeCategory === "all" || row.category === placeCategory)
-      .filter((row) => !query || `${row.name} ${row.address} ${row.area}`.toLocaleLowerCase("ko-KR").includes(query));
-  }, [allUnifiedPlaceRows, placeCategory, placeQuery]);
+    return allUnifiedPlaceRows.filter((row) => !query || `${row.name} ${row.address} ${row.area}`.toLocaleLowerCase("ko-KR").includes(query));
+  }, [allUnifiedPlaceRows, placeQuery]);
 
   const coordinateLockCounts = useMemo(() => searchedUnifiedPlaceRows.reduce((counts, row) => {
     if (!row.element) return counts;
@@ -3246,7 +3243,6 @@ export default function Home() {
     rows: unifiedPlaceRows.filter((row) => row.category === category.id),
   })).filter((group) => group.rows.length > 0), [unifiedPlaceRows]);
   const placeFiltersActive = Boolean(placeQuery.trim())
-    || placeCategory !== "all"
     || coordinateLockFilter !== "all"
     || placementFilter !== "all"
     || recommendationFilter !== "all"
@@ -8482,23 +8478,23 @@ export default function Home() {
           {leftPanelMode === "assets" ? <>
           <div className="panel-search">아이콘·마커 보기 및 자산 <kbd>{assets.length}</kbd></div>
           <AdminFolder className="side-admin-folder view-control-panel" title="지도 검수·베이스맵" meta={activeBaseMapLabel} defaultOpen>
-            <details className="advanced-view-tools">
-              <summary>고급 검수 보기·베이스맵</summary>
-              <div className="advanced-view-tools-body">
-                <label className="view-detail-select">검수 화면<select value={(["anchors", "clearance", "collisions", "dim", "gray", "nomap"] as ViewMode[]).includes(viewMode) ? viewMode : "all"} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
+            <div className="map-review-flat">
+              <section className="map-review-section">
+                <div className="flat-section-head"><strong>검수 화면</strong><span>지도 효과와 오류 표시</span></div>
+                <label className="view-detail-select">표시 효과<select value={(["anchors", "clearance", "collisions", "dim", "gray", "nomap"] as ViewMode[]).includes(viewMode) ? viewMode : "all"} onChange={(event) => setViewMode(event.target.value as ViewMode)}>
                   <option value="all">효과 없음</option><option value="anchors">앵커·연결선</option><option value="clearance">아이콘 여유 구역</option><option value="collisions">충돌 검사</option><option value="dim">베이스맵 명도 낮추기</option><option value="gray">베이스맵 흑백</option><option value="nomap">지도 없이 보기</option>
                 </select></label>
-                <div className="advanced-basemap-tools">
-                  <div><strong>베이스맵</strong><span>{activeBaseMapLabel}</span></div>
-                  <div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터 기본</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}<button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG · 비상용</button></div>
-                  <button className="advanced-map-upload" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button>
-                  <input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} />
-                  {baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}
-                  <p>벡터 지도를 기본으로 사용합니다. 원본 PNG는 벡터 표시를 확인하기 어려울 때만 선택하세요.</p>
-                </div>
-                <div className="advanced-backup-tools"><div><strong>편집 상태 백업</strong><span>문제 발생 시 복구용</span></div><div><button type="button" onClick={exportJson}>JSON 백업 ↓</button><button type="button" onClick={() => jsonInputRef.current?.click()}>JSON 불러오기 ↑</button></div><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></div>
-              </div>
-            </details>
+              </section>
+              <section className="map-review-section advanced-basemap-tools">
+                <div className="flat-section-head"><strong>베이스맵</strong><span>{activeBaseMapLabel}</span></div>
+                <div className="segmented"><button className={baseMap === "svg" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("svg"); }}>벡터 기본</button>{uploadedBaseMap?.available && <button className={baseMap === "uploaded" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("uploaded"); }}>업로드 지도</button>}<button className={baseMap === "png" ? "active" : ""} onClick={() => { setMapLoaded(false); setBaseMap("png"); }}>원본 PNG · 비상용</button></div>
+                <button className="advanced-map-upload" disabled={baseMapUploading} onClick={() => mapUploadInputRef.current?.click()}>{baseMapUploading ? "저장 중…" : "베이스 지도 업로드"}</button>
+                <input ref={mapUploadInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => void uploadBaseMap(event)} />
+                {baseMapCanUpload === false && <a className="inline-signin" href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}
+                <p>벡터 지도를 기본으로 사용합니다. 원본 PNG는 벡터 표시를 확인하기 어려울 때만 선택하세요.</p>
+              </section>
+              <section className="map-review-section advanced-backup-tools"><div className="flat-section-head"><strong>편집 상태 백업</strong><span>문제 발생 시 복구용</span></div><div><button type="button" onClick={exportJson}>JSON 백업 ↓</button><button type="button" onClick={() => jsonInputRef.current?.click()}>JSON 불러오기 ↑</button></div><input ref={jsonInputRef} className="visually-hidden" type="file" accept="application/json,.json" onChange={importJson} /></section>
+            </div>
           </AdminFolder>
           <AdminFolder className="side-admin-folder" title="자산 필터·업로드" meta={`${assets.length}개`}>
           <div className="category-filter">
@@ -8556,20 +8552,24 @@ export default function Home() {
                 <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
               </div>
             </details>
-            <div className="place-manager-filter-head"><div><strong>장소 찾기·배치 필터</strong><span>{unifiedPlaceRows.length}/{allUnifiedPlaceRows.length}곳 표시</span></div>{placeFiltersActive && <button type="button" onClick={() => { setPlaceQuery(""); setPlaceCategory("all"); setCoordinateLockFilter("all"); setPlacementFilter("all"); setRecommendationFilter("all"); setViewMode("all"); setScreenRecommendedOnly(false); }}>필터 초기화</button>}</div>
-            <div className="place-filter" role="group" aria-label="장소 분류">
-              {([
-                ["all", "전체"], ["landmark", "랜드마크"], ["culture", "문화시설"], ["cafe", "카페"], ["food", "음식점"], ["shop", "소품샵"], ["parking", "주차장"], ["park", "공원"], ["utility", "편의시설"],
-              ] as const).map(([id, label]) => <button key={id} className={placeCategory === id ? "active" : ""} onClick={() => setPlaceCategory(id)}>{label}<span>{id === "all" ? allUnifiedPlaceRows.length : allUnifiedPlaceRows.filter((row) => row.category === id).length}</span></button>)}
-            </div>
-            <div className="coordinate-lock-filter" role="group" aria-label="좌표 고정 상태 필터">
-              <button className={coordinateLockFilter === "all" ? "active" : ""} onClick={() => setCoordinateLockFilter("all")}>전체 <span>{searchedUnifiedPlaceRows.length}</span></button>
-              <button className={`unlocked ${coordinateLockFilter === "unlocked" ? "active" : ""}`} onClick={() => setCoordinateLockFilter("unlocked")}>좌표 미고정 <span>{coordinateLockCounts.unlocked}</span></button>
-              <button className={coordinateLockFilter === "locked" ? "active" : ""} onClick={() => setCoordinateLockFilter("locked")}>좌표 고정 <span>{coordinateLockCounts.locked}</span></button>
-            </div>
-            <div className="place-secondary-filters">
-              <div role="group" aria-label="지도 배치 상태 필터"><button className={placementFilter === "all" ? "active" : ""} onClick={() => setPlacementFilter("all")}>배치 전체</button><button className={placementFilter === "placed" ? "active" : ""} onClick={() => setPlacementFilter("placed")}>배치됨</button><button className={placementFilter === "unplaced" ? "active" : ""} onClick={() => setPlacementFilter("unplaced")}>미배치</button></div>
-              <div role="group" aria-label="추천 상태 필터"><button className={recommendationFilter === "all" ? "active" : ""} onClick={() => setRecommendationFilter("all")}>추천 전체</button><button className={recommendationFilter === "recommended" ? "active" : ""} onClick={() => setRecommendationFilter("recommended")}>★ 추천</button><button className={recommendationFilter === "standard" ? "active" : ""} onClick={() => setRecommendationFilter("standard")}>일반</button></div>
+            <div className="place-manager-filter-head"><div><strong>상태 필터</strong><span>{unifiedPlaceRows.length}/{allUnifiedPlaceRows.length}곳 표시 · 분류는 아래 카테고리 폴더 사용</span></div>{placeFiltersActive && <button type="button" onClick={() => { setPlaceQuery(""); setCoordinateLockFilter("all"); setPlacementFilter("all"); setRecommendationFilter("all"); setViewMode("all"); setScreenRecommendedOnly(false); }}>필터 초기화</button>}</div>
+            <div className="place-status-filters">
+              <div className="place-filter-axis">
+                <div className="place-filter-axis-head"><strong>좌표</strong><span>고정 여부</span></div>
+                <div className="coordinate-lock-filter" role="group" aria-label="좌표 고정 상태 필터">
+                  <button className={coordinateLockFilter === "all" ? "active" : ""} onClick={() => setCoordinateLockFilter("all")}>전체 <span>{searchedUnifiedPlaceRows.length}</span></button>
+                  <button className={`unlocked ${coordinateLockFilter === "unlocked" ? "active" : ""}`} onClick={() => setCoordinateLockFilter("unlocked")}>미고정 <span>{coordinateLockCounts.unlocked}</span></button>
+                  <button className={coordinateLockFilter === "locked" ? "active" : ""} onClick={() => setCoordinateLockFilter("locked")}>고정 <span>{coordinateLockCounts.locked}</span></button>
+                </div>
+              </div>
+              <div className="place-filter-axis">
+                <div className="place-filter-axis-head"><strong>지도 배치</strong><span>표시 상태</span></div>
+                <div className="place-secondary-filters" role="group" aria-label="지도 배치 상태 필터"><button className={placementFilter === "all" ? "active" : ""} onClick={() => setPlacementFilter("all")}>전체</button><button className={placementFilter === "placed" ? "active" : ""} onClick={() => setPlacementFilter("placed")}>배치됨</button><button className={placementFilter === "unplaced" ? "active" : ""} onClick={() => setPlacementFilter("unplaced")}>미배치</button></div>
+              </div>
+              <div className="place-filter-axis">
+                <div className="place-filter-axis-head"><strong>출력 추천</strong><span>인쇄 기준</span></div>
+                <div className="place-secondary-filters" role="group" aria-label="추천 상태 필터"><button className={recommendationFilter === "all" ? "active" : ""} onClick={() => setRecommendationFilter("all")}>전체</button><button className={recommendationFilter === "recommended" ? "active" : ""} onClick={() => setRecommendationFilter("recommended")}>★ 추천</button><button className={recommendationFilter === "standard" ? "active" : ""} onClick={() => setRecommendationFilter("standard")}>일반</button></div>
+              </div>
             </div>
             <details className="place-manager-details composition-settings">
               <summary><span><strong>지도 정리·복원</strong><small>주소 정렬 · 기본 구성</small></span></summary>
@@ -8579,7 +8579,7 @@ export default function Home() {
               </div>
             </details>
             <div className="marker-visibility-panel unified-place-panel">
-              <div className="review-list-head"><strong>장소 배치 목록</strong><span>미고정 {coordinateLockCounts.unlocked} · 고정 {coordinateLockCounts.locked}</span></div>
+              <div className="review-list-head place-list-head"><div><strong>장소 배치 목록</strong><span>카테고리 폴더를 여러 개 동시에 펼칠 수 있습니다.</span></div><div className="place-group-actions"><button type="button" onClick={() => setExpandedVisibilityGroups((current) => Object.fromEntries(Object.keys(current).map((id) => [id, true])) as Record<CategoryId, boolean>)}>모두 펼치기</button><button type="button" onClick={() => setExpandedVisibilityGroups((current) => Object.fromEntries(Object.keys(current).map((id) => [id, false])) as Record<CategoryId, boolean>)}>접기</button></div></div>
               <p><b>체크</b> 배치 · <b>라벨</b> 화면 표시 · <b>★</b> 출력 추천. 미배치로 바꿔도 좌표와 편집 정보는 보존됩니다.</p>
               <div className="marker-visibility-list unified-place-list" role="list" aria-label="통합 장소 배치 목록">
                 {unifiedPlaceGroups.map(({ category, rows }) => {

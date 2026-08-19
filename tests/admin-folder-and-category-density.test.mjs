@@ -35,9 +35,7 @@ test("admin functions use reusable folders with clean CSS chevrons and distinct 
   assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.admin-folder\.open > \.admin-folder-head \.admin-folder-arrow \{[^}]*background: var\(--ui-accent-strong\)[^}]*color: var\(--ui-on-accent\)/);
   assert.match(cssSource, /\.marker-folder-icon::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
   assert.match(cssSource, /:is\(\.marker-visibility-group, \.calibration-folder\)\.expanded \.marker-folder-icon::before \{[^}]*rotate\(225deg\)/);
-  assert.match(cssSource, /\.advanced-view-tools summary::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);
   assert.match(cssSource, /\.app-shell\[data-ui-theme\] :is\(\.marker-visibility-group, \.calibration-folder\)\.expanded \{[^}]*background: var\(--ui-surface-raised\)/);
-  assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.advanced-view-tools\[open\] > summary \{[^}]*background: linear-gradient\([^}]*box-shadow: inset 4px 0 0 var\(--ui-accent-strong\)[^}]*font-weight: 850/);
 });
 
 test("left admin panels consolidate duplicate functions into four work areas", () => {
@@ -56,11 +54,15 @@ test("left admin panels consolidate duplicate functions into four work areas", (
   assert.doesNotMatch(pageSource, /title="화면 필터·가시성"|title="지도 구성 도우미"|title="장소 배치 목록"|title="배치된 마커 목록"|title="통합 장소 DB"|>초안 저장<|>이전 초안</);
   assert.match(pageSource, /className="side-admin-folder place-map-manager"/);
   assert.match(pageSource, /화면·라벨 표시 설정/);
-  assert.match(pageSource, /장소 찾기·배치 필터/);
+  assert.match(pageSource, />상태 필터</);
   assert.match(pageSource, /지도 정리·복원/);
   assert.match(pageSource, /필터 초기화/);
+  assert.doesNotMatch(pageSource, /className="place-filter"|aria-label="장소 분류"/);
+  assert.match(pageSource, /카테고리 폴더를 여러 개 동시에 펼칠 수 있습니다/);
+  assert.match(pageSource, />모두 펼치기</);
   assert.match(cssSource, /\.place-map-manager\.admin-folder \{[^}]*flex-direction: column/);
   assert.match(cssSource, /\.place-manager-sticky \{[^}]*position: sticky/);
+  assert.match(cssSource, /\.map-review-flat \{[^}]*display: grid/);
   assert.match(pageSource, /onClick=\{openDatabaseEditor\}>DB 관리/);
 });
 
@@ -69,7 +71,7 @@ test("the desktop left admin explorer is wide and uses one edge-to-edge scroll s
   assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.asset-panel \.side-admin-folder \{[^}]*width: 100%[^}]*margin: 0[^}]*border-radius: 0/);
   assert.match(cssSource, /\.app-shell\[data-ui-theme\] \.asset-panel \.marker-visibility-list \{[^}]*max-height: none[^}]*overflow: visible/);
   assert.match(cssSource, /\.place-directory \.marker-visibility-panel\.unified-place-panel \{[^}]*margin: 0[^}]*border: 0[^}]*background: transparent/);
-  assert.match(cssSource, /\.place-directory \.place-filter \{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(cssSource, /\.place-directory \.place-status-filters \{[^}]*margin-right: 0[^}]*margin-left: 0/);
 });
 
 test("public category controls keep five compact one-row buttons with larger icons while place rows stay extra slim and ruled", () => {
