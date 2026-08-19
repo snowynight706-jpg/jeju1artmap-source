@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "wonartmap-pwa-";
-const CACHE_VERSION = "2026-08-18-v2";
+const CACHE_VERSION = "2026-08-19-v3";
 const CORE_CACHE = `${CACHE_PREFIX}core-${CACHE_VERSION}`;
 const IMAGE_CACHE = `${CACHE_PREFIX}images-${CACHE_VERSION}`;
 const BASE_MAP_CACHE = `${CACHE_PREFIX}base-map-${CACHE_VERSION}`;
@@ -95,6 +95,22 @@ async function cacheFirstVersionedBaseMap(request) {
   return response;
 }
 
+async function cacheFirstVersionedImage(request) {
+  const cache = await caches.open(IMAGE_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response.ok) {
+    try {
+      await cache.put(request, response.clone());
+      await trimCache(IMAGE_CACHE, MAX_CACHED_IMAGES);
+    } catch {
+      // 저장 공간이 부족하면 네트워크 응답만 사용한다.
+    }
+  }
+  return response;
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -121,6 +137,10 @@ self.addEventListener("fetch", (event) => {
   if (request.destination === "script" || request.destination === "style") return;
 
   if (request.destination === "image") {
+    if (url.searchParams.has("v")) {
+      event.respondWith(cacheFirstVersionedImage(request).catch(() => caches.match(request)));
+      return;
+    }
     event.respondWith(staleWhileRevalidateImage(event).catch(() => caches.match(request)));
     return;
   }

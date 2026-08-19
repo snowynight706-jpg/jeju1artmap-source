@@ -14,7 +14,7 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(pageSource, /primaryHubAsset\?\.screenSrc \?\? primaryHubAsset\?\.src/);
   assert.match(pageSource, /Promise\.all\(sources\.map\(preload\)\)/);
   assert.match(pageSource, /const \[startupInitialViewReady, setStartupInitialViewReady\] = useState\(false\)/);
-  assert.match(pageSource, /setStartupRevealReady\(true\), 320/);
+  assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
   assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.png",\s*mapSource/);
   assert.match(loaderBlock, /src="\/jfac-signature-b\.png" alt="제주문화예술재단 국문 시그니처 B"/);

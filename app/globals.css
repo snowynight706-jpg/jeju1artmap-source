@@ -565,6 +565,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-viewport.place-request-location-selecting { cursor: crosshair; }
 .map-stage-wrap { position: absolute; left: 50%; top: 50%; width: min(1180px, 84vw); transform-origin: center; will-change: auto; }
 .map-stage { position: relative; left: 50%; overflow: visible; transform: translateX(-50%); background: #f4f2ed; box-shadow: 0 15px 45px rgb(51 51 51 / 18%); user-select: none; }
+.map-viewport.is-direct-manipulation .map-stage-wrap,
+.map-viewport.is-direct-manipulation .map-stage { will-change: transform; }
 .map-viewport.is-programmatic-focus .map-stage-wrap { transition: transform .3s cubic-bezier(.22, .78, .28, 1); }
 .map-viewport.is-programmatic-focus .map-stage { transition: width .3s cubic-bezier(.22, .78, .28, 1); }
 .base-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
@@ -609,7 +611,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .dummy-symbol.marker span { transform: rotate(45deg); color: white; font-weight: 800; font-size: clamp(5px, 1.2vw, 16px); }
 .dummy-symbol.landmark span { position: relative; margin-top: 22%; font-weight: 900; color: currentColor; font-size: clamp(8px, 2.2vw, 27px); }
 .placed-asset { display: block; width: 100%; height: 100%; object-fit: contain; image-rendering: auto; filter: drop-shadow(0 2px 2px rgb(40 40 40 / 13%)); pointer-events: none; }
-.map-viewport:is(.is-panning, .is-zooming, .is-dragging-element) .map-element.general-marker .placed-asset { filter: none; }
+.map-viewport:is(.is-panning, .is-zooming, .is-dragging-element, .is-direct-manipulation) .placed-asset { filter: none; }
+.map-viewport.is-direct-manipulation .map-element.public-interactive .icon-visual { transition: none; }
 .clearance-zone { position: absolute; left: 50%; top: 50%; width: 130%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; z-index: -1; }
 .clearance-zone.visible { border: 1px dashed rgb(100 100 100 / 50%); background: rgb(100 100 100 / 7%); }
 .clearance-zone.collision-hard { border: 1.5px solid rgb(194 65 50 / 75%); background: rgb(222 80 62 / 20%); }

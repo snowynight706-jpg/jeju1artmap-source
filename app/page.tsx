@@ -12,6 +12,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -94,6 +95,10 @@ const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04";
 const LATEST_DONGMUN_ASSET_ID = "dongmun-v08";
 const LATEST_MOKGWANA_ASSET_ID = "mokgwana-v06";
 const LATEST_GWANDEOKJEONG_ASSET_ID = "gwandeokjeong-v07";
+const LATEST_KIM_MEMORIAL_ASSET_ID = "kim-memorial-front03";
+const LATEST_ARARIO_ASSET_ID = "arario-01";
+const LATEST_BUKSUGU_ASSET_ID = "buksugu-02";
+const LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID = "tapdong-seaside-stage-02";
 const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
 const LANDMARK_RESOURCE_SIZE = 6.2;
 const LANDMARK_LABEL_GAP = 8;
@@ -105,6 +110,10 @@ const latestRedesignedLandmarkAssets = new Map<string, string>([
   ["예술공간 이아", LATEST_ARTSPACE_IA_ASSET_ID],
   ["제주목 관아", LATEST_MOKGWANA_ASSET_ID],
   ["관덕정", LATEST_GWANDEOKJEONG_ASSET_ID],
+  ["김만덕기념관", LATEST_KIM_MEMORIAL_ASSET_ID],
+  ["아라리오뮤지엄 탑동시네마", LATEST_ARARIO_ASSET_ID],
+  ["북수구광장", LATEST_BUKSUGU_ASSET_ID],
+  ["탑동해변공연장", LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID],
 ]);
 const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["산지천갤러리", new Set(["sanjicheon-v04", "sanjicheon-01", "sanjicheon-02", "sanjicheon-03"])],
@@ -112,6 +121,10 @@ const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["예술공간 이아", new Set(["artspace-ia-01", "artspace-ia-02", "artspace-ia-03"])],
   ["제주목 관아", new Set(["mokgwana-01", "mokgwana-02", "mokgwana-03"])],
   ["관덕정", new Set(["gwandeokjeong-01", "gwandeokjeong-02", "gwandeokjeong-03"])],
+  ["김만덕기념관", new Set(["kim-memorial-front01", "kim-memorial-front02", "kim-memorial-quarter01", "kim-memorial-quarter02", "kim-memorial-quarter03"])],
+  ["아라리오뮤지엄 탑동시네마", new Set(["arario-02", "arario-03"])],
+  ["북수구광장", new Set(["buksugu-01", "buksugu-03"])],
+  ["탑동해변공연장", new Set(["tapdong-seaside-stage-03"])],
 ]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
@@ -682,18 +695,18 @@ function mapElementDisplaySize(element: Pick<MapElement, "category" | "size">) {
 const landmarkLocations = [
   { name: MAIN_HUB_CANONICAL_NAME, address: "제주특별자치도 제주시 관덕로 44", addressSourceUrl: "https://www.jejusotong.kr/", assetId: MAIN_HUB_LANDMARK_ASSET_ID, x: 48, y: 64 },
   { name: "제주아트플랫폼", address: "제주특별자치도 제주시 중앙로14길 18", addressSourceUrl: "https://www.jfac.kr/", assetId: "jeju-art-platform-c01", x: 31, y: 62 },
-  { name: "김만덕기념관", address: "제주특별자치도 제주시 산지로 7", addressSourceUrl: "https://www.mandukmuseum.or.kr/", assetId: "kim-memorial-front03", x: 74, y: 31 },
+  { name: "김만덕기념관", address: "제주특별자치도 제주시 산지로 7", addressSourceUrl: "https://www.mandukmuseum.or.kr/", assetId: LATEST_KIM_MEMORIAL_ASSET_ID, x: 74, y: 31 },
   { name: "예술공간 이아", address: "제주특별자치도 제주시 중앙로14길 21", addressSourceUrl: "https://www.jfac.kr/operatingSpace/artSpaceIAa/iAaGuide", assetId: LATEST_ARTSPACE_IA_ASSET_ID, x: 34, y: 57 },
-  { name: "아라리오뮤지엄 탑동시네마", address: "제주특별자치도 제주시 탑동로 14", addressSourceUrl: "https://www.arariomuseum.org/", assetId: "arario-01", x: 18, y: 24 },
+  { name: "아라리오뮤지엄 탑동시네마", address: "제주특별자치도 제주시 탑동로 14", addressSourceUrl: "https://www.arariomuseum.org/", assetId: LATEST_ARARIO_ASSET_ID, x: 18, y: 24 },
   { name: "김만덕객주", address: "제주특별자치도 제주시 임항로 68", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CNTS_000000000019652", assetId: "guesthouse-01", x: 75, y: 25 },
   { name: "산지천갤러리", address: "제주특별자치도 제주시 중앙로3길 36", addressSourceUrl: "https://www.jfac.kr/operatingSpace/sjcGallery/sjcGuide", assetId: LATEST_SANJICHEON_ASSET_ID, x: 64, y: 40 },
   { name: "제주목 관아", address: "제주특별자치도 제주시 관덕로 25", addressSourceUrl: "https://www.jeju.go.kr/mokkwana/", assetId: LATEST_MOKGWANA_ASSET_ID, x: 39, y: 60 },
   { name: "관덕정", address: "제주특별자치도 제주시 관덕로 19", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500057", assetId: LATEST_GWANDEOKJEONG_ASSET_ID, x: 37, y: 58 },
   { name: "칠성로", address: "제주특별자치도 제주시 관덕로13길 12 일대", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500750", assetId: "chilsungro", x: 58, y: 50 },
   { name: "동문시장", address: "제주특별자치도 제주시 관덕로14길 20", addressSourceUrl: "https://www.visitjeju.net/kr/detail/view?contentsid=CONT_000000000500745", assetId: LATEST_DONGMUN_ASSET_ID, x: 66, y: 55 },
-  { name: "북수구광장", address: "제주특별자치도 제주시 일도일동 1232", addressSourceUrl: "https://www.facebook.com/wowjejusi/", assetId: "buksugu-01", x: 62, y: 45 },
+  { name: "북수구광장", address: "제주특별자치도 제주시 일도일동 1232", addressSourceUrl: "https://www.facebook.com/wowjejusi/", assetId: LATEST_BUKSUGU_ASSET_ID, x: 62, y: 45 },
   { name: "탑동광장", address: "제주특별자치도 제주시 중앙로 1", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", assetId: "tapdong-square-03", x: 28, y: 20 },
-  { name: "탑동해변공연장", address: "제주특별자치도 제주시 중앙로 2", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e", assetId: "tapdong-seaside-stage-02", x: 37, y: 20 },
+  { name: "탑동해변공연장", address: "제주특별자치도 제주시 중앙로 2", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e", assetId: LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID, x: 37, y: 20 },
 ] as const;
 
 const CALIBRATION_LANDMARK_NAMES = [
@@ -2395,6 +2408,10 @@ export default function Home() {
   const fitZoomAppliedRef = useRef(false);
   const zoomRef = useRef(0.72);
   const panRef = useRef({ x: 0, y: 0 });
+  const touchTransformBaseZoomRef = useRef(0.72);
+  const touchTransformFrameRef = useRef<number | null>(null);
+  const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
+  const touchTransformCommitPendingRef = useRef(false);
   const wheelFrameRef = useRef<number | null>(null);
   const focusTransitionFrameRef = useRef<number | null>(null);
   const focusTransitionTimerRef = useRef<number | null>(null);
@@ -4174,7 +4191,7 @@ export default function Home() {
                 } : {}),
               };
               if (restored.name === "탑동해변공연장" && !restored.assetId) {
-                return { ...restored, assetId: "tapdong-seaside-stage-02", status: "approved" as AssetStatus, directoryId: "place-tapdong-seaside-stage" };
+                return { ...restored, assetId: LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID, status: "approved" as AssetStatus, directoryId: "place-tapdong-seaside-stage" };
               }
               const markerDefault = defaultMarkerAssetId(restored.category, recommendedMarkerStyle, restored.name);
               if (!restored.assetId && markerDefault) {
@@ -4903,8 +4920,8 @@ export default function Home() {
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !startupAssetsReady || !startupInitialViewReady) return;
-    const timer = window.setTimeout(() => setStartupRevealReady(true), 320);
-    return () => window.clearTimeout(timer);
+    const readyFrame = window.requestAnimationFrame(() => setStartupRevealReady(true));
+    return () => window.cancelAnimationFrame(readyFrame);
   }, [publicLayoutAccess, startupAssetsReady, startupInitialViewReady]);
 
   useEffect(() => {
@@ -4924,6 +4941,61 @@ export default function Home() {
     calibrationLiveApplyRef.current = calibrationLiveApply;
   }, [calibrationLiveApply]);
 
+  const applyTouchMapTransform = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
+    const stageWrap = stageWrapRef.current;
+    const stage = stageRef.current;
+    const viewport = viewportRef.current;
+    if (!stageWrap || !stage || !viewport) return;
+    const scale = nextZoom / Math.max(touchTransformBaseZoomRef.current, 0.01);
+    stageWrap.style.transform = `translate3d(calc(-50% + ${nextPan.x}px), calc(-50% + ${nextPan.y}px), 0)`;
+    stage.style.transform = `translateX(-50%) scale(${scale})`;
+    viewport.classList.add("is-direct-manipulation");
+  }, []);
+
+  const flushTouchMapTransform = useCallback(() => {
+    if (touchTransformFrameRef.current !== null) {
+      window.cancelAnimationFrame(touchTransformFrameRef.current);
+      touchTransformFrameRef.current = null;
+    }
+    const pending = pendingTouchTransformRef.current;
+    pendingTouchTransformRef.current = null;
+    if (pending) applyTouchMapTransform(pending.zoom, pending.pan);
+  }, [applyTouchMapTransform]);
+
+  const queueTouchMapTransform = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
+    zoomRef.current = nextZoom;
+    panRef.current = nextPan;
+    pendingTouchTransformRef.current = { zoom: nextZoom, pan: nextPan };
+    if (touchTransformFrameRef.current !== null) return;
+    touchTransformFrameRef.current = window.requestAnimationFrame(() => {
+      touchTransformFrameRef.current = null;
+      const pending = pendingTouchTransformRef.current;
+      pendingTouchTransformRef.current = null;
+      if (pending) applyTouchMapTransform(pending.zoom, pending.pan);
+    });
+  }, [applyTouchMapTransform]);
+
+  const beginTouchMapTransform = useCallback(() => {
+    flushTouchMapTransform();
+    touchTransformBaseZoomRef.current = zoomRef.current;
+    viewportRef.current?.classList.add("is-direct-manipulation");
+  }, [flushTouchMapTransform]);
+
+  const commitTouchMapTransform = useCallback(() => {
+    flushTouchMapTransform();
+    touchTransformCommitPendingRef.current = true;
+    touchTransformBaseZoomRef.current = zoomRef.current;
+    setZoom(zoomRef.current);
+    setPan({ ...panRef.current });
+  }, [flushTouchMapTransform]);
+
+  useLayoutEffect(() => {
+    if (!touchTransformCommitPendingRef.current) return;
+    touchTransformCommitPendingRef.current = false;
+    stageRef.current?.style.removeProperty("transform");
+    viewportRef.current?.classList.remove("is-direct-manipulation");
+  }, [pan, zoom]);
+
   useEffect(() => {
     zoomRef.current = zoom;
     panRef.current = pan;
@@ -4931,10 +5003,12 @@ export default function Home() {
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
+    if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
     if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
     if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
     activeTouchPointersRef.current.clear();
     pinchGestureRef.current = null;
+    pendingTouchTransformRef.current = null;
   }, []);
 
   const beginPinchGesture = useCallback(() => {
@@ -4953,9 +5027,10 @@ export default function Home() {
       startPanX: panRef.current.x,
       startPanY: panRef.current.y,
     };
+    beginTouchMapTransform();
     setInteraction(null);
     return true;
-  }, []);
+  }, [beginTouchMapTransform]);
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || (publicLayoutAccess === "viewer" && baseMap !== "uploaded")) return;
@@ -4978,7 +5053,10 @@ export default function Home() {
     const applyMove = ({ clientX, clientY }: { clientX: number; clientY: number }) => {
       if (!interaction) return;
       if (interaction.type === "pan") {
-        setPan({ x: interaction.panX + clientX - interaction.startX, y: interaction.panY + clientY - interaction.startY });
+        queueTouchMapTransform(zoomRef.current, {
+          x: interaction.panX + clientX - interaction.startX,
+          y: interaction.panY + clientY - interaction.startY,
+        });
         return;
       }
       if (interaction.type === "label") {
@@ -5054,10 +5132,7 @@ export default function Home() {
               x: centerX - (pinch.startCenterX - pinch.startPanX) * ratio,
               y: centerY - (pinch.startCenterY - pinch.startPanY) * ratio,
             };
-            zoomRef.current = nextZoom;
-            panRef.current = nextPan;
-            setZoom(nextZoom);
-            setPan(nextPan);
+            queueTouchMapTransform(nextZoom, nextPan);
           }
           return;
         }
@@ -5078,6 +5153,7 @@ export default function Home() {
       if (trackedTouch) activeTouchPointersRef.current.delete(event.pointerId);
       if (pinch && pinch.pointerIds.includes(event.pointerId)) {
         pinchGestureRef.current = null;
+        commitTouchMapTransform();
         const remaining = activeTouchPointersRef.current.values().next().value as { clientX: number; clientY: number } | undefined;
         if (remaining) {
           setInteraction({
@@ -5094,6 +5170,7 @@ export default function Home() {
       }
       if (trackedTouch && pinch) return;
       flushMove();
+      if (interaction?.type === "pan") commitTouchMapTransform();
       if (interaction?.type === "pan" && interaction.pendingPublicPlaceId) {
         const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
         if (moved <= 6) {
@@ -5127,6 +5204,7 @@ export default function Home() {
       pendingMove = null;
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
       moveFrame = null;
+      if (interaction?.type === "pan" || event.pointerType === "touch") commitTouchMapTransform();
       setInteraction(null);
     };
     window.addEventListener("pointermove", handleMove);
@@ -5138,7 +5216,7 @@ export default function Home() {
       window.removeEventListener("pointercancel", handleCancel);
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
     };
-  }, [clientToMap, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
+  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -5265,6 +5343,7 @@ export default function Home() {
       }
       setSelectedId(null); setSelectedFacilityId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     }
+    beginTouchMapTransform();
     setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId, pendingPlaceRequestLocation });
   };
 
@@ -8300,7 +8379,7 @@ export default function Home() {
     ? MAP_SVG
     : baseMap === "png"
       ? MAP_PNG
-      : uploadedBaseMapDisplaySource(uploadedBaseMap, viewportDimensions.width > 0 && viewportDimensions.width <= 760, zoom / Math.max(fitZoom, 0.22)) || MAP_SVG;
+      : uploadedBaseMapDisplaySource(uploadedBaseMap, viewportDimensions.width > 0 && viewportDimensions.width <= 760, settledLabelZoom / Math.max(fitZoom, 0.22)) || MAP_SVG;
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
   const editorSyncLabel = editorDraftSyncState === "saving"
     ? "서버 저장 중"
@@ -8633,7 +8712,7 @@ export default function Home() {
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
           <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
-            <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))` }}>
+            <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0)` }}>
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />

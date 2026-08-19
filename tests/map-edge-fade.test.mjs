@@ -22,9 +22,9 @@ test("the east and optional south fades stay inside the requested responsive edg
   assert.doesNotMatch(cssSource, /\.base-map-edge-fade[^}]*mask-image/);
 });
 
-test("map geometry, normalized coordinates and device transforms remain unchanged", () => {
+test("map geometry and normalized coordinates stay unchanged while pan uses a composited translation", () => {
   assert.match(pageSource, /const MAP_ASPECT = 8944 \/ 7324;/);
-  assert.match(pageSource, /transform: `translate\(calc\(-50% \+ \$\{pan\.x\}px\), calc\(-50% \+ \$\{pan\.y\}px\)\)`/);
+  assert.match(pageSource, /transform: `translate3d\(calc\(-50% \+ \$\{pan\.x\}px\), calc\(-50% \+ \$\{pan\.y\}px\), 0\)`/);
   assert.match(pageSource, /style=\{\{ aspectRatio: `\$\{MAP_ASPECT\}`, width: `\$\{zoom \* 100\}%` \}\}/);
   assert.match(pageSource, /style=\{\{ left: `\$\{element\.x\}%`, top: `\$\{element\.y\}%`, width: `\$\{displaySize\}%`/);
   assert.match(cssSource, /\.base-map \{[^}]*inset: 0;[^}]*width: 100%;[^}]*height: 100%;[^}]*object-fit: fill;[^}]*pointer-events: none/);

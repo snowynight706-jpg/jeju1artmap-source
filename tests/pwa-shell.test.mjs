@@ -35,7 +35,8 @@ test("the service worker never caches mutable APIs and keeps HTML network-first"
   assert.match(serviceWorkerSource, /baseMapVersion && baseMapVersion !== "current"[\s\S]{0,180}cacheFirstVersionedBaseMap/);
   assert.match(serviceWorkerSource, /request\.mode === "navigate"[\s\S]{0,140}fetch\(request, \{ cache: "no-store" \}\)\.catch\(offlineResponse\)/);
   assert.match(serviceWorkerSource, /request\.destination === "script" \|\| request\.destination === "style"/);
-  assert.match(serviceWorkerSource, /request\.destination === "image"[\s\S]{0,120}staleWhileRevalidateImage/);
+  assert.match(serviceWorkerSource, /request\.destination === "image"[\s\S]{0,240}cacheFirstVersionedImage/);
+  assert.match(serviceWorkerSource, /request\.destination === "image"[\s\S]{0,420}staleWhileRevalidateImage/);
   assert.doesNotMatch(serviceWorkerSource, /caches\.match\(request\)[\s\S]{0,80}url\.pathname\.startsWith\("\/api\/"\)/);
 });
 
