@@ -50,6 +50,17 @@ test("mobile sheet drag has two deterministic snap states", () => {
   assert.equal(publicPanelAfterDrag("place", false, -70), "place-expanded");
   assert.equal(publicPanelAfterDrag("place", true, 70), "place");
   assert.equal(publicPanelAfterDrag("explorer", false, 12), "explorer");
+  assert.equal(publicPanelAfterDrag("explorer", true, 0), "explorer-expanded");
+});
+
+test("public sheets use only the drag handle for height changes", () => {
+  assert.doesNotMatch(pageSource, /className="public-place-expand"/);
+  assert.doesNotMatch(pageSource, /className="public-panel-expand"/);
+  assert.doesNotMatch(pageSource, />\{publicPlaceExpanded \? "접기" : "펼치기"\}<\/button>/);
+  assert.doesNotMatch(pageSource, />\{publicPanelExpanded \? "접기" : "펼치기"\}<\/button>/);
+  assert.match(pageSource, /role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소 정보 패널 높이 조절"/);
+  assert.match(pageSource, /role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소·리뷰·행사 패널 높이 조절"/);
+  assert.match(pageSource, /const nextPanel = publicPanelAfterDrag\(drag\.target, drag\.startExpanded, deltaY\);/);
 });
 
 test("public explorer starts with all places and reports the filtered result count", () => {

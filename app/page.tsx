@@ -3664,7 +3664,7 @@ export default function Home() {
     );
   };
 
-  const startPublicPanelDrag = (event: ReactPointerEvent<HTMLButtonElement>, target: "place" | "explorer", startExpanded: boolean) => {
+  const startPublicPanelDrag = (event: ReactPointerEvent<HTMLDivElement>, target: "place" | "explorer", startExpanded: boolean) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -3673,20 +3673,18 @@ export default function Home() {
     setPublicPanelDrag({ target, offsetY: 0 });
   };
 
-  const movePublicPanelDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const movePublicPanelDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = publicPanelDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     setPublicPanelDrag({ target: drag.target, offsetY: clamp(event.clientY - drag.startY, -96, 96) });
   };
 
-  const finishPublicPanelDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const finishPublicPanelDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = publicPanelDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const deltaY = event.clientY - drag.startY;
-    const nextPanel = Math.abs(deltaY) < 8
-      ? (drag.startExpanded ? drag.target : `${drag.target}-expanded`)
-      : publicPanelAfterDrag(drag.target, drag.startExpanded, deltaY);
+    const nextPanel = publicPanelAfterDrag(drag.target, drag.startExpanded, deltaY);
     publicPanelDragRef.current = null;
     setPublicPanelDrag(null);
     setPublicPanelExpansion(drag.target, publicPanelIsExpanded(nextPanel));
@@ -8814,10 +8812,10 @@ export default function Home() {
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
           {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <aside className={`public-place-sheet ${publicPlaceExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "place" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "place" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={`${selectedDisplayName} 장소 정보`} aria-busy={publicPlaceDetailLoading}>
-            <button type="button" className="public-panel-drag-handle" aria-label={publicPlaceExpanded ? "아래로 끌어 장소 정보 접기" : "위로 끌어 장소 정보 펼치기"} onPointerDown={(event) => startPublicPanelDrag(event, "place", publicPlaceExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></button>
+            <div className="public-panel-drag-handle" role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소 정보 패널 높이 조절" onPointerDown={(event) => startPublicPanelDrag(event, "place", publicPlaceExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></div>
             <header className="public-place-sheet-head">
               <div><span style={{ color: selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).color : categoryOf(selected.category).color }}>{selectedDirectoryPlace?.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).name : categoryOf(selected.category).name}</span><strong>{selectedDisplayName}</strong></div>
-              <div className="public-place-sheet-actions"><button type="button" className="public-place-list-back" onClick={openPublicPlaceList} aria-label="장소 목록으로 돌아가기">목록</button><button type="button" className="public-place-expand" onClick={() => setPublicPanelExpansion("place", !publicPlaceExpanded)} aria-label={publicPlaceExpanded ? "장소 정보 접기" : "장소 정보 펼치기"}>{publicPlaceExpanded ? "접기" : "펼치기"}</button><button type="button" onClick={closePublicPlacePanel} aria-label="장소 정보 닫기">×</button></div>
+              <div className="public-place-sheet-actions"><button type="button" className="public-place-list-back" onClick={openPublicPlaceList} aria-label="장소 목록으로 돌아가기">목록</button><button type="button" onClick={closePublicPlacePanel} aria-label="장소 정보 닫기">×</button></div>
             </header>
             <div className="public-place-sheet-scroll">
               {publicPlaceDetailLoading ? <div className="public-place-detail-loading" role="status" aria-live="polite">
@@ -8945,11 +8943,10 @@ export default function Home() {
           <span aria-hidden="true">⌖</span><strong>{globalStoriesOpen ? "탐색 닫기" : "장소 · 리뷰 · 행사"}</strong>{publicPlaceItems.length > 0 && <em>{publicPlaceItems.length}</em>}
         </button>}
         {globalStoriesOpen && <aside id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : "public-explorer-panel"} ${publicLayoutAccess === "viewer" && publicPanelExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "explorer" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "explorer" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "원도심 장소·리뷰·행사 탐색"}>
-          {publicLayoutAccess === "viewer" && <button type="button" className="public-panel-drag-handle" aria-label={publicPanelExpanded ? "아래로 끌어 탐색 패널 접기" : "위로 끌어 탐색 패널 펼치기"} onPointerDown={(event) => startPublicPanelDrag(event, "explorer", publicPanelExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></button>}
+          {publicLayoutAccess === "viewer" && <div className="public-panel-drag-handle" role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소·리뷰·행사 패널 높이 조절" onPointerDown={(event) => startPublicPanelDrag(event, "explorer", publicPanelExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></div>}
           <header className="global-story-panel-head">
             <div><strong>{publicLayoutAccess === "editor" ? "리뷰·행사 관리" : "원도심 탐색"}</strong><span>{publicLayoutAccess === "editor" ? "전체 장소의 최신 기록과 현재 행사" : "목록을 보면서 지도 위치를 바로 확인하세요."}</span></div>
             <div className="global-story-panel-head-actions">
-              {publicLayoutAccess === "viewer" && <button type="button" className="public-panel-expand" onClick={() => setPublicPanelExpansion("explorer", !publicPanelExpanded)} aria-label={publicPanelExpanded ? "탐색 패널 접기" : "탐색 패널 펼치기"}>{publicPanelExpanded ? "접기" : "펼치기"}</button>}
               {publicLayoutAccess === "viewer" && <button type="button" className="place-request-open-button" onClick={() => setPlaceRequestFormOpen(true)}>＋ 장소 등록 요청</button>}
               <button type="button" className="global-panel-close" onClick={closePublicExplorerPanel} aria-label="탐색 패널 닫기">×</button>
             </div>

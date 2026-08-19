@@ -837,7 +837,6 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .global-story-panel-head-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }
 .global-story-panel-head-actions button { cursor: pointer; }
 .global-story-panel-head-actions .global-panel-close { width: 34px; height: 34px; flex: 0 0 auto; padding: 0; border: 1px solid #dcdcdc; border-radius: 50%; background: white; color: #646464; font-size: 20px; line-height: 1; }
-.public-panel-expand { min-height: 32px; padding: 0 9px; border: 1px solid #d0d0d0; border-radius: 9px; background: white; color: #646464; font-size: 9px; font-weight: 800; }
 .place-request-open-button { min-height: 32px; padding: 0 10px; border: 1px solid #ababab; border-radius: 9px; background: #f3f3f3; color: #636363; font-size: 9px; font-weight: 800; white-space: nowrap; }
 .global-content-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 7px 10px; border-bottom: 1px solid #e6e6e6; background: #f7f7f7; }
 .global-content-tabs.public { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1532,7 +1531,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .global-story-panel-head strong { font-size: 14px; }
   .global-story-panel-head span { display: none; }
   .global-story-panel-head-actions { gap: 4px; }
-  .public-panel-expand, .place-request-open-button { min-height: 32px; padding: 0 7px; font-size: 8px; }
+  .place-request-open-button { min-height: 32px; padding: 0 7px; font-size: 8px; }
   .global-story-panel-head-actions .global-panel-close { width: 32px; height: 32px; }
   .global-content-tabs { padding: 5px 8px; }
   .global-content-tabs button { min-height: 34px; height: 34px; }
@@ -2091,7 +2090,6 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .place-story-form textarea,
   .place-story-form button,
   .global-content-tabs button,
-  .public-panel-expand,
   .place-request-open-button,
   .public-place-category-chips button,
   .public-place-open-action,
@@ -2960,7 +2958,6 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .public-place-sheet-head .public-place-sheet-actions button,
   .public-place-sheet-head .public-place-sheet-actions button:last-child,
   .global-story-panel-head-actions .global-panel-close,
-  .public-panel-expand,
   .place-request-open-button { min-width: 44px; width: auto; height: 44px; min-height: 44px; }
   .public-place-sheet-head .public-place-sheet-actions button:last-child,
   .global-story-panel-head-actions .global-panel-close { width: 44px; }
