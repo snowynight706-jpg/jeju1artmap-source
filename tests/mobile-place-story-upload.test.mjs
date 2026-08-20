@@ -16,8 +16,12 @@ test("mobile place-story submission survives unavailable browser storage", () =>
 test("mobile photos have a native picker and resilient encoding fallbacks", () => {
   assert.match(pageSource, /className="place-story-photo-picker"/);
   assert.match(pageSource, /accept="image\/\*,\.heic,\.heif"/);
-  assert.match(pageSource, /timedPhotoBlob\(canvas, "image\/webp", 0\.82\)/);
-  assert.match(pageSource, /timedPhotoBlob\(canvas, "image\/jpeg", 0\.82\)/);
+  assert.match(pageSource, /const STORY_PHOTO_TARGET_BYTES = 1\.5 \* 1024 \* 1024/);
+  assert.match(pageSource, /const STORY_PHOTO_ENCODING_ATTEMPTS = \[/);
+  assert.match(pageSource, /\{ maximumEdge: 1080, type: "image\/webp", quality: 0\.7 \}/);
+  assert.match(pageSource, /\{ maximumEdge: 900, type: "image\/jpeg", quality: 0\.64 \}/);
+  assert.match(pageSource, /for \(const attempt of STORY_PHOTO_ENCODING_ATTEMPTS\)/);
+  assert.match(pageSource, /blob\.size <= STORY_PHOTO_TARGET_BYTES/);
   assert.match(pageSource, /createImageBitmap\(file, \{ imageOrientation: "from-image" \}\)/);
   assert.match(pageSource, /\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(file\.type\)/);
   assert.match(styleSource, /\.place-story-photo-picker input \{ position: absolute; inset: 0;/);

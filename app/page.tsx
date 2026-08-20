@@ -150,6 +150,15 @@ const UI_THEME_STORAGE_KEY = "jeju-wondosim-map-review:ui-theme:v1";
 const STORY_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const STORY_PHOTO_MAX_SOURCE_BYTES = 30 * 1024 * 1024;
 const STORY_PHOTO_MAX_EDGE = 1280;
+const STORY_PHOTO_TARGET_BYTES = 1.5 * 1024 * 1024;
+const STORY_PHOTO_ENCODING_ATTEMPTS = [
+  { maximumEdge: STORY_PHOTO_MAX_EDGE, type: "image/webp", quality: 0.82 },
+  { maximumEdge: STORY_PHOTO_MAX_EDGE, type: "image/webp", quality: 0.7 },
+  { maximumEdge: STORY_PHOTO_MAX_EDGE, type: "image/jpeg", quality: 0.78 },
+  { maximumEdge: 1080, type: "image/webp", quality: 0.7 },
+  { maximumEdge: 1080, type: "image/jpeg", quality: 0.7 },
+  { maximumEdge: 900, type: "image/jpeg", quality: 0.64 },
+] as const;
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 const UI_THEME_EASTER_EGG_PLACES = new Set([
   "제주아트플랫폼",
@@ -1534,31 +1543,45 @@ async function prepareStoryPhoto(file: File) {
     const image = await decodeStoryPhoto(file);
     release = image.release;
     if (!image.width || !image.height) throw new Error("photo-unsupported");
-    const scale = Math.min(1, STORY_PHOTO_MAX_EDGE / Math.max(image.width, image.height));
-    const width = Math.max(1, Math.round(image.width * scale));
-    const height = Math.max(1, Math.round(image.height * scale));
     canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("photo canvas unavailable");
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image.drawable, 0, 0, width, height);
-    const webp = await timedPhotoBlob(canvas, "image/webp", 0.82);
-    const blob = webp && webp.size <= STORY_PHOTO_MAX_UPLOAD_BYTES
-      ? webp
-      : await timedPhotoBlob(canvas, "image/jpeg", 0.82);
-    if (!blob) throw new Error("photo-conversion-failed");
-    const extension = blob.type === "image/png" ? "png" : blob.type === "image/jpeg" ? "jpg" : "webp";
-    return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`, { type: blob.type || "image/webp" });
+    let smallestBlob: Blob | null = null;
+    let renderedWidth = 0;
+    let renderedHeight = 0;
+
+    for (const attempt of STORY_PHOTO_ENCODING_ATTEMPTS) {
+      const scale = Math.min(1, attempt.maximumEdge / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      if (width !== renderedWidth || height !== renderedHeight) {
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) throw new Error("photo canvas unavailable");
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image.drawable, 0, 0, width, height);
+        renderedWidth = width;
+        renderedHeight = height;
+      }
+      const blob = await timedPhotoBlob(canvas, attempt.type, attempt.quality);
+      if (!blob || blob.type !== attempt.type) continue;
+      if (!smallestBlob || blob.size < smallestBlob.size) smallestBlob = blob;
+      if (blob.size <= STORY_PHOTO_TARGET_BYTES) {
+        const extension = blob.type === "image/jpeg" ? "jpg" : "webp";
+        return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`, { type: blob.type });
+      }
+    }
+
+    if (!smallestBlob || smallestBlob.size > STORY_PHOTO_MAX_UPLOAD_BYTES) throw new Error("photo-too-large");
+    const extension = smallestBlob.type === "image/jpeg" ? "jpg" : "webp";
+    return new File([smallestBlob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`, { type: smallestBlob.type });
   } catch (error) {
     if (["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= STORY_PHOTO_MAX_UPLOAD_BYTES) {
       return file;
     }
-    if (error instanceof Error && error.message === "photo-source-too-large") throw error;
+    if (error instanceof Error && ["photo-source-too-large", "photo-too-large"].includes(error.message)) throw error;
     throw new Error("photo-unsupported");
   } finally {
     if (canvas) {
