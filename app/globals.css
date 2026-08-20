@@ -674,6 +674,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .review-flag { position: absolute; top: -13px; right: -5px; padding: 2px 4px; border-radius: 4px; background: #f0aa4b; color: white; font-size: clamp(4px, .55vw, 7px); font-weight: 700; white-space: nowrap; }
 .label { position: absolute; color: #303030; background: rgb(255 255 255 / 94%); border: 1px solid rgb(100 100 100 / 20%); border-radius: 2px; padding: 1px 3px; box-shadow: 0 1px 2px rgb(34 34 34 / 8%); font-size: clamp(8px, .7vw, 9.5px); font-weight: 700; line-height: 1.1; letter-spacing: -.025em; text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; transform-origin: center; white-space: nowrap; }
 .label.primary-hub-label { color: #493807; background: rgb(255 226 92 / 98%); border-color: rgb(158 116 9 / 52%); box-shadow: 0 1px 3px rgb(111 81 5 / 18%); }
+.map-label-name { display: block; }
+.map-label-status { position: absolute; z-index: 2; pointer-events: none; transition: opacity .16s ease; }
+.map-label-status.event { left: -4px; top: -4px; width: 6px; height: 6px; border: 1px solid rgb(255 255 255 / 95%); border-radius: 50%; background: #d59632; box-shadow: 0 0 0 .5px rgb(111 81 5 / 28%), 0 1px 2px rgb(55 45 20 / 20%); }
+.map-label-status.reviews { right: -6px; top: -5px; min-width: 10px; height: 8px; box-sizing: border-box; display: grid; place-items: center; padding: 0 2px; border: 1px solid rgb(255 255 255 / 92%); border-radius: 5px; background: rgb(67 72 70 / 78%); box-shadow: 0 1px 2px rgb(25 30 28 / 18%); color: white; font-size: 5.5px; font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1; }
+.map-viewport:is(.is-panning, .is-zooming, .is-direct-manipulation) .map-label-status { opacity: .42; }
 .dense-label-layer { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
 .dense-label { position: absolute; transform-origin: center; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 1px; padding: 3px 4px; border: 1px solid rgb(100 100 100 / 20%); border-radius: 2px; background: rgb(255 255 255 / 94%); box-shadow: 0 1px 2px rgb(34 34 34 / 8%); color: #303030; text-align: left; line-height: 1.08; letter-spacing: -.02em; pointer-events: auto; cursor: move; touch-action: none; user-select: none; }
 .dense-label:hover, .dense-label.selected { border-color: #646464; box-shadow: 0 0 0 2px rgb(100 100 100 / 18%), 0 3px 9px rgb(55 55 55 / 17%); }
@@ -681,11 +686,13 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .dense-label.manual::after { content: "직접 배치"; position: absolute; right: 4px; top: -11px; padding: 1px 4px; border-radius: 5px; background: #646464; color: white; font-size: 6px; font-weight: 700; }
 .dense-label.collision { border-color: #c87842; box-shadow: 0 0 0 2px rgb(200 120 66 / 18%), 0 3px 9px rgb(91 49 24 / 14%); }
 .dense-label strong { min-height: 0; display: grid; column-gap: 4px; row-gap: 0; overflow: visible; font-size: 8px; }
-.dense-label strong span { min-width: 0; display: grid; grid-template-columns: 6px max-content; align-items: center; gap: 2px; overflow: visible; white-space: nowrap; }
+.dense-label strong span { min-width: 0; display: grid; grid-template-columns: 6px max-content auto auto; align-items: center; gap: 2px; overflow: visible; white-space: nowrap; }
 .dense-label strong span.public-dense-row { border-radius: 2px; cursor: pointer; }
 .dense-label strong span.public-dense-row:hover, .dense-label strong span.public-dense-row:focus-visible { background: #f0f0f0; color: #5c5c5c; outline: 1px solid #b5b5b5; }
 .dense-label strong i { width: 5px; height: 5px; border-radius: 50%; }
 .dense-label strong em { color: #646464; font-size: 7px; font-style: normal; }
+.dense-label strong i.dense-map-event { width: 4px; height: 4px; background: #d59632; box-shadow: 0 0 0 1px rgb(255 255 255 / 90%); }
+.dense-label strong em.dense-map-reviews { min-width: 8px; box-sizing: border-box; padding: 1px 2px; border-radius: 4px; background: rgb(67 72 70 / 78%); color: white; font-size: 5px; font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1; text-align: center; }
 .dense-label-count { justify-self: start; padding: 0; color: #646464; font-size: 7px; font-weight: 800; line-height: 1.05; }
 .map-stage.print-preview-mode .dense-label.manual::after { display: none; }
 .map-stage.print-preview-mode .dense-label.collision { border-color: rgb(100 100 100 / 20%); box-shadow: 0 1px 2px rgb(34 34 34 / 8%); }

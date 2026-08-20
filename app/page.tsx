@@ -564,6 +564,7 @@ type PublicLayoutPayload = {
     refreshedAt: string;
   } | null;
   eventLinkedPlaces?: PlaceEventPlace[];
+  reviewCountsByPlace?: PlaceReviewCount[];
   uploadedBaseMap?: UploadedBaseMap | null;
   error?: string;
 };
@@ -612,6 +613,10 @@ const storyReportReasons: Array<{ id: StoryReportReason; label: string }> = [
 type PlaceEventPlace = {
   placeKey: string;
   placeName: string;
+};
+
+type PlaceReviewCount = PlaceEventPlace & {
+  count: number;
 };
 
 type PlaceEvent = {
@@ -1364,6 +1369,41 @@ function persistentVisitorId() {
   } catch {
     volatileVisitorId ||= newVisitorId();
     return volatileVisitorId;
+  }
+}
+
+async function sendPlaceStoryUploadDiagnostic(details: {
+  placeKey: string;
+  stage: "prepare" | "request" | "response";
+  errorCode: string;
+  responseStatus: number;
+  sourceFile: File | null;
+  preparedFile: File | null;
+}) {
+  try {
+    const response = await fetch(PLACE_STORIES_API, {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "upload-diagnostic",
+        visitorId: persistentVisitorId(),
+        placeKey: details.placeKey,
+        stage: details.stage,
+        errorCode: details.errorCode,
+        responseStatus: details.responseStatus,
+        sourceSize: details.sourceFile?.size ?? 0,
+        preparedSize: details.preparedFile?.size ?? null,
+        sourceType: details.sourceFile?.type ?? "",
+        preparedType: details.preparedFile?.type ?? null,
+        online: navigator.onLine,
+      }),
+    });
+    const payload = await response.json().catch(() => null) as { reference?: unknown } | null;
+    return response.ok && typeof payload?.reference === "string" ? payload.reference : null;
+  } catch {
+    return null;
   }
 }
 
@@ -2657,6 +2697,7 @@ export default function Home() {
   const [, setPlaceEventsCanManage] = useState(false);
   const [placeEventsRefreshKey, setPlaceEventsRefreshKey] = useState(0);
   const [eventLinkedPlaces, setEventLinkedPlaces] = useState<PlaceEventPlace[]>([]);
+  const [reviewCountsByPlace, setReviewCountsByPlace] = useState<PlaceReviewCount[]>([]);
   const [placeEventFormOpen, setPlaceEventFormOpen] = useState(false);
   const [placeEventEditingId, setPlaceEventEditingId] = useState<string | null>(null);
   const [placeEventNoPlace, setPlaceEventNoPlace] = useState(false);
@@ -3575,6 +3616,34 @@ export default function Home() {
     }));
   }, [eventLinkedPlaces, publicPlaceItems]);
 
+  const mapLabelStatusByElementId = useMemo(() => {
+    const eventKeys = new Set(eventLinkedPlaces.map((place) => place.placeKey));
+    const eventNames = new Set(eventLinkedPlaces.map((place) => normalizePlaceName(place.placeName)));
+    const reviewCountsByKey = new Map(reviewCountsByPlace.map((place) => [place.placeKey, place.count]));
+    const reviewCountsByName = new Map<string, number>();
+    reviewCountsByPlace.forEach((place) => {
+      const name = normalizePlaceName(place.placeName);
+      reviewCountsByName.set(name, Math.max(reviewCountsByName.get(name) ?? 0, place.count));
+    });
+    return new Map(elements.map((element) => {
+      const contentKey = placeContentKey(element);
+      const directoryKey = element.directoryId ? `directory:${element.directoryId}` : null;
+      const normalizedName = normalizePlaceName(element.name);
+      const hasEvent = Boolean(
+        (directoryKey && eventKeys.has(directoryKey))
+        || eventKeys.has(contentKey)
+        || eventNames.has(normalizedName),
+      );
+      const reviewCount = Math.max(0,
+        (directoryKey ? reviewCountsByKey.get(directoryKey) : undefined)
+        ?? reviewCountsByKey.get(contentKey)
+        ?? reviewCountsByName.get(normalizedName)
+        ?? 0,
+      );
+      return [element.id, { hasEvent, reviewCount }] as const;
+    }));
+  }, [elements, eventLinkedPlaces, reviewCountsByPlace]);
+
   const publicPlaceCategoryCounts = useMemo(() => publicListCategories.reduce<Record<PublicPlaceCategoryFilter, number>>((counts, category) => {
     counts[category.id] = placesForPublicCategory(publicPlaceItems, category.id, eventLinkedPublicPlaceIds).length;
     return counts;
@@ -4151,6 +4220,9 @@ export default function Home() {
         if (Array.isArray(payload?.eventLinkedPlaces)) {
           eventPlaceIndexBootstrappedRef.current = true;
           setEventLinkedPlaces(payload.eventLinkedPlaces);
+        }
+        if (Array.isArray(payload?.reviewCountsByPlace)) {
+          setReviewCountsByPlace(payload.reviewCountsByPlace);
         }
         if (payload?.uploadedBaseMap?.available) {
           setUploadedBaseMap(payload.uploadedBaseMap);
@@ -7371,33 +7443,48 @@ export default function Home() {
     if (!selected || !selectedStoryKey || placeStorySubmitting) return;
     const authorName = placeStoryAuthor.replace(/\s+/g, " ").trim().slice(0, 20);
     const reviewText = placeStoryText.replace(/\s+/g, " ").trim().slice(0, 220);
+    const selectedStoryPlaceName = selectedDirectoryPlace?.name ?? selected.name;
     if (!authorName || reviewText.length < 2) {
       setToast("닉네임과 2자 이상의 짧은 후기를 입력해 주세요.");
       return;
     }
     setPlaceStorySubmitting(true);
+    let uploadStage: "prepare" | "request" | "response" = "prepare";
+    let preparedPhoto: File | null = null;
+    let responseStatus = 0;
     try {
       const form = new FormData();
       form.set("placeKey", selectedStoryKey);
-      form.set("placeName", selected.name);
+      form.set("placeName", selectedStoryPlaceName);
       form.set("authorName", authorName);
       form.set("reviewText", reviewText);
       form.set("visitorId", persistentVisitorId());
       if (placeStoryPhoto) {
-        const prepared = await prepareStoryPhoto(placeStoryPhoto);
-        if (prepared.size > STORY_PHOTO_MAX_UPLOAD_BYTES) throw new Error("photo-too-large");
-        form.set("photo", prepared);
+        preparedPhoto = await prepareStoryPhoto(placeStoryPhoto);
+        if (preparedPhoto.size > STORY_PHOTO_MAX_UPLOAD_BYTES) throw new Error("photo-too-large");
+        form.set("photo", preparedPhoto);
       }
+      uploadStage = "request";
       const response = await fetch(PLACE_STORIES_API, { method: "POST", body: form, cache: "no-store", credentials: "same-origin" });
       const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
+      responseStatus = response.status;
+      uploadStage = "response";
       if (!response.ok || !payload?.story) {
         if (response.status === 429) throw new Error("rate-limit");
-        if (response.status === 413) throw new Error("photo-too-large");
+        if (response.status === 413) throw new Error("request-too-large");
         if (response.status === 415) throw new Error("photo-unsupported");
         if (response.status === 503) throw new Error("storage-unavailable");
+        if (response.status === 404) throw new Error("place-not-found");
+        if (response.status === 400) throw new Error("entry-invalid");
+        if (response.status >= 500) throw new Error("server-error");
         throw new Error(payload?.error ?? "story-submit-failed");
       }
       setPlaceStories((current) => [payload.story!, ...current]);
+      setReviewCountsByPlace((current) => {
+        const matchedIndex = current.findIndex((place) => place.placeKey === selectedStoryKey);
+        if (matchedIndex < 0) return [...current, { placeKey: selectedStoryKey, placeName: selectedStoryPlaceName, count: 1 }];
+        return current.map((place, index) => index === matchedIndex ? { ...place, count: place.count + 1 } : place);
+      });
       setGlobalStoriesPage(1);
       setGlobalStoriesRefreshKey((current) => current + 1);
       writePlaceStoryDraft(selectedStoryKey, "");
@@ -7409,19 +7496,37 @@ export default function Home() {
       setToast("사진과 후기를 원도심 아카이브에 남겼습니다.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      setToast(!navigator.onLine
+      const errorCode = !navigator.onLine ? "offline" : message || (uploadStage === "request" ? "network-error" : "unknown-error");
+      const diagnosticReference = await sendPlaceStoryUploadDiagnostic({
+        placeKey: selectedStoryKey,
+        stage: uploadStage,
+        errorCode,
+        responseStatus,
+        sourceFile: placeStoryPhoto,
+        preparedFile: preparedPhoto,
+      });
+      const diagnosticSuffix = diagnosticReference ? ` · 오류 ID ${diagnosticReference}` : "";
+      setToast((!navigator.onLine
         ? "인터넷 연결을 확인한 뒤 다시 시도해 주세요. 작성한 내용은 현재 화면에 유지됩니다."
         : message === "rate-limit"
         ? "짧은 시간에 등록이 많습니다. 잠시 뒤 다시 시도해 주세요."
         : message === "photo-too-large"
-          ? "사진을 처리해도 5MB를 넘습니다. 더 작은 사진을 선택해 주세요."
+          ? "기기에서 사진 압축 결과를 만들지 못했습니다. 다른 사진 형식으로 다시 선택해 주세요."
+          : message === "request-too-large"
+            ? `사진은 ${preparedPhoto ? `${Math.max(1, Math.round(preparedPhoto.size / 1024))}KB로 준비됐지만 ` : ""}서버 요청 크기 제한에 걸렸습니다.`
           : message === "photo-source-too-large"
             ? "원본 사진이 30MB를 넘습니다. 더 작은 사진을 선택해 주세요."
             : message === "photo-unsupported"
               ? "이 사진 형식을 모바일에서 처리하지 못했습니다. JPEG·PNG·WebP 사진을 선택해 주세요."
+              : message === "place-not-found"
+                ? "선택한 장소 연결 정보가 현재 배포본과 일치하지 않습니다. 지도를 새로고침한 뒤 다시 시도해 주세요."
+                : message === "entry-invalid"
+                  ? "닉네임·후기 또는 장소 연결값을 서버가 확인하지 못했습니다. 입력 내용은 그대로 유지됩니다."
               : message === "storage-unavailable"
                 ? "후기 저장 서버가 잠시 응답하지 않습니다. 작성한 내용을 유지한 채 잠시 후 다시 시도해 주세요."
-          : "후기를 저장하지 못했습니다. 입력 내용을 확인해 다시 시도해 주세요.");
+                : message === "server-error"
+                  ? "후기 저장 서버에서 오류가 발생했습니다. 입력 내용은 유지됩니다."
+          : "후기를 저장하지 못했습니다. 입력 내용은 유지되며 오류 원인을 서버에 전송했습니다.") + diagnosticSuffix);
     } finally {
       setPlaceStorySubmitting(false);
     }
@@ -8918,6 +9023,7 @@ export default function Home() {
                   const isMainHub = isPrimaryHubLabel(element.name);
                   const displaySize = mapElementDisplaySize(element);
                   const publicElementName = isMainHub ? "제주소통협력센터" : element.name;
+                  const labelStatus = mapLabelStatusByElementId.get(element.id) ?? { hasEvent: false, reviewCount: 0 };
                   return <div
                     key={element.id}
                     data-element-id={element.id}
@@ -8933,7 +9039,7 @@ export default function Home() {
                     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
                     {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
                     {editingEnabled && !element.locked && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">검수 필요</span>}
-                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}>{publicElementName}</div>}
+                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음" />}{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.reviewCount > 0 && <span className="map-label-status reviews" aria-label={`${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={`후기 ${labelStatus.reviewCount}개`}>{labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</div>}
                     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
                   </div>;
                 })}</div>
@@ -8950,7 +9056,7 @@ export default function Home() {
                     title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
                     role={editingEnabled ? "button" : undefined}
                     aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectPublicMarker(row.elementId); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}</span>)}</strong></div>)}
+                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => { const rowStatus = mapLabelStatusByElementId.get(row.elementId) ?? { hasEvent: false, reviewCount: 0 }; return <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectPublicMarker(row.elementId); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.hasEvent && <i className="dense-map-event" aria-label={`${row.name} 행사 있음`} />}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.reviewCount > 0 && <em className="dense-map-reviews" aria-label={`${row.name} 후기 ${rowStatus.reviewCount}개`}>{rowStatus.reviewCount > 99 ? "99+" : rowStatus.reviewCount}</em>}</span>; })}</strong></div>)}
                 </div>}
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>

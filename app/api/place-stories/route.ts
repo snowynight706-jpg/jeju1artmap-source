@@ -3,6 +3,7 @@ import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 export const runtime = "edge";
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_MULTIPART_OVERHEAD_BYTES = 512 * 1024;
 const MAX_STORIES_PER_PLACE = 80;
 const GLOBAL_PAGE_SIZE = 10;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -59,6 +60,22 @@ const REPORTS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_story_reports (
   resolved_by TEXT
 )`;
 
+const UPLOAD_DIAGNOSTICS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_story_upload_diagnostics (
+  id TEXT PRIMARY KEY NOT NULL,
+  place_key TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  error_code TEXT NOT NULL,
+  response_status INTEGER NOT NULL,
+  source_size INTEGER NOT NULL,
+  prepared_size INTEGER,
+  source_type TEXT NOT NULL,
+  prepared_type TEXT,
+  online INTEGER NOT NULL,
+  actor_hash TEXT NOT NULL,
+  user_agent TEXT NOT NULL,
+  created_at TEXT NOT NULL
+)`;
+
 let storageReady: Promise<void> | null = null;
 
 async function runtimeEnv() {
@@ -80,12 +97,15 @@ async function ensureStorage(db: D1Database) {
     storageReady = db.batch([
       db.prepare(TABLE_SQL),
       db.prepare(REPORTS_TABLE_SQL),
+      db.prepare(UPLOAD_DIAGNOSTICS_TABLE_SQL),
       db.prepare("CREATE INDEX IF NOT EXISTS place_stories_place_status_created_idx ON place_stories (place_key, status, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_stories_actor_created_idx ON place_stories (actor_hash, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_stories_status_created_idx ON place_stories (status, created_at)"),
       db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS place_story_reports_story_actor_idx ON place_story_reports (story_id, actor_hash)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_story_reports_story_status_idx ON place_story_reports (story_id, status, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_story_reports_actor_created_idx ON place_story_reports (actor_hash, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_story_upload_diagnostics_created_idx ON place_story_upload_diagnostics (created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS place_story_upload_diagnostics_actor_created_idx ON place_story_upload_diagnostics (actor_hash, created_at)"),
     ]).then(() => undefined).catch((error) => {
       storageReady = null;
       throw error;
@@ -126,7 +146,14 @@ async function publishedPlaceExists(db: D1Database, placeKey: string, placeName:
   const row = await db.prepare("SELECT document_json AS documentJson FROM public_map_layout WHERE id = 1").first() as { documentJson?: string } | null;
   if (!row?.documentJson) return false;
   try {
-    const document = JSON.parse(row.documentJson) as { elements?: Array<{ id?: unknown; directoryId?: unknown; name?: unknown; mapVisible?: unknown }> };
+    const document = JSON.parse(row.documentJson) as {
+      elements?: Array<{ id?: unknown; directoryId?: unknown; name?: unknown; mapVisible?: unknown }>;
+      directoryPlaces?: Array<{ id?: unknown; name?: unknown }>;
+    };
+    if (placeKey.startsWith("directory:") && Array.isArray(document.directoryPlaces)) {
+      const directoryId = placeKey.slice("directory:".length);
+      if (document.directoryPlaces.some((place) => place.id === directoryId && typeof place.name === "string" && place.name.trim() === placeName)) return true;
+    }
     return Array.isArray(document.elements) && document.elements.some((element) => {
       const key = typeof element.directoryId === "string" && element.directoryId.trim()
         ? `directory:${element.directoryId.trim()}`
@@ -179,6 +206,19 @@ export async function GET(request: Request) {
   const scope = searchParams.get("scope")?.trim();
   const placeKey = searchParams.get("placeKey")?.trim() ?? "";
   await ensureStorage(runtime.DB);
+  if (scope === "upload-diagnostics") {
+    if (!canModerate) return json({ error: "owner authentication required" }, 403);
+    const result = await runtime.DB.prepare(
+      `SELECT id, place_key AS placeKey, stage, error_code AS errorCode,
+        response_status AS responseStatus, source_size AS sourceSize,
+        prepared_size AS preparedSize, source_type AS sourceType,
+        prepared_type AS preparedType, online, user_agent AS userAgent,
+        created_at AS createdAt
+       FROM place_story_upload_diagnostics
+       ORDER BY created_at DESC LIMIT 100`,
+    ).all();
+    return json({ diagnostics: result.results ?? [] });
+  }
   if (scope === "all") {
     const visibleStatuses = canModerate ? "s.status IN ('published', 'hidden')" : "s.status = 'published'";
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
@@ -219,7 +259,62 @@ export async function POST(request: Request) {
   await ensureStorage(runtime.DB);
 
   if (request.headers.get("content-type")?.includes("application/json")) {
-    const payload = await request.json().catch(() => null) as { action?: unknown; storyId?: unknown; reason?: unknown; detail?: unknown; visitorId?: unknown } | null;
+    const payload = await request.json().catch(() => null) as {
+      action?: unknown;
+      storyId?: unknown;
+      reason?: unknown;
+      detail?: unknown;
+      visitorId?: unknown;
+      placeKey?: unknown;
+      stage?: unknown;
+      errorCode?: unknown;
+      responseStatus?: unknown;
+      sourceSize?: unknown;
+      preparedSize?: unknown;
+      sourceType?: unknown;
+      preparedType?: unknown;
+      online?: unknown;
+    } | null;
+    if (payload?.action === "upload-diagnostic") {
+      const visitorId = typeof payload.visitorId === "string" ? payload.visitorId.trim().slice(0, 100) : "";
+      const placeKey = typeof payload.placeKey === "string" ? payload.placeKey.trim().slice(0, 260) : "";
+      const stage = payload.stage === "prepare" || payload.stage === "request" || payload.stage === "response" ? payload.stage : "unknown";
+      const errorCode = typeof payload.errorCode === "string" ? payload.errorCode.replace(/[^a-z0-9_-]/gi, "").slice(0, 80) : "unknown";
+      const responseStatus = Math.max(0, Math.min(599, Number(payload.responseStatus) || 0));
+      const sourceSize = Math.max(0, Math.min(50 * 1024 * 1024, Number(payload.sourceSize) || 0));
+      const preparedSizeValue = Number(payload.preparedSize);
+      const preparedSize = Number.isFinite(preparedSizeValue) ? Math.max(0, Math.min(10 * 1024 * 1024, preparedSizeValue)) : null;
+      const sourceType = typeof payload.sourceType === "string" ? payload.sourceType.slice(0, 80) : "";
+      const preparedType = typeof payload.preparedType === "string" ? payload.preparedType.slice(0, 80) : null;
+      if (!validPlaceKey(placeKey) || !/^[a-zA-Z0-9_-]{24,100}$/.test(visitorId)) return json({ error: "valid upload diagnostic required" }, 400);
+      const hash = await actorHash(request, visitorId);
+      const recent = await runtime.DB.prepare(
+        "SELECT COUNT(*) AS count FROM place_story_upload_diagnostics WHERE actor_hash = ? AND created_at >= ?",
+      ).bind(hash, new Date(Date.now() - 60 * 60 * 1000).toISOString()).first() as { count?: number } | null;
+      if (Number(recent?.count ?? 0) >= 10) return json({ accepted: false }, 202);
+      const id = crypto.randomUUID();
+      await runtime.DB.prepare(
+        `INSERT INTO place_story_upload_diagnostics
+          (id, place_key, stage, error_code, response_status, source_size, prepared_size,
+           source_type, prepared_type, online, actor_hash, user_agent, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        placeKey,
+        stage,
+        errorCode || "unknown",
+        responseStatus,
+        sourceSize,
+        preparedSize,
+        sourceType,
+        preparedType,
+        payload.online === false ? 0 : 1,
+        hash,
+        (request.headers.get("user-agent") ?? "unknown-agent").slice(0, 300),
+        new Date().toISOString(),
+      ).run();
+      return json({ accepted: true, reference: id.slice(0, 8) }, 202);
+    }
     const storyId = typeof payload?.storyId === "string" ? payload.storyId.trim().slice(0, 120) : "";
     const reason = typeof payload?.reason === "string" ? payload.reason.trim() : "";
     const detail = typeof payload?.detail === "string" ? payload.detail.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) : "";
@@ -253,7 +348,7 @@ export async function POST(request: Request) {
 
   if (!runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
   const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MAX_PHOTO_BYTES + 64 * 1024) return json({ error: "upload too large" }, 413);
+  if (declaredLength > MAX_PHOTO_BYTES + MAX_MULTIPART_OVERHEAD_BYTES) return json({ error: "upload too large" }, 413);
   const form = await request.formData().catch(() => null);
   if (!form) return json({ error: "multipart form required" }, 400);
 

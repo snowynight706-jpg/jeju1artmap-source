@@ -287,6 +287,13 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
        WHERE e.status = 'active' AND e.visible_from <= ? AND e.visible_until > ?
        ORDER BY ep.place_name, ep.place_key`,
     ).bind(now, now);
+  const reviewPlaceIndex = db.prepare(
+    `SELECT place_key AS placeKey, place_name AS placeName, COUNT(*) AS count
+     FROM place_stories
+     WHERE ${reviewWhere}
+     GROUP BY place_key, place_name
+     ORDER BY place_name, place_key`,
+  );
   const statements = [
     db.prepare(
       `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
@@ -298,6 +305,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
     eventCount,
     placeRequestCount,
     eventPlaceIndex,
+    reviewPlaceIndex,
     ...(canEdit ? [db.prepare(
       `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
         previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
@@ -305,13 +313,18 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
        FROM map_editor_draft WHERE id = 1`,
     )] : []),
   ];
-  const [layoutResult, reviewResult, eventResult, placeRequestResult, eventPlaceResult, draftResult] = await db.batch(statements);
+  const [layoutResult, reviewResult, eventResult, placeRequestResult, eventPlaceResult, reviewPlaceResult, draftResult] = await db.batch(statements);
   const contentSummary = contentSummaryFromBatchResults(reviewResult, eventResult, placeRequestResult, now);
   return {
     row: batchRow(layoutResult) as StoredLayout | null,
     draftRow: canEdit && draftResult ? batchRow(draftResult) as StoredDraft | null : null,
     contentSummary,
     eventLinkedPlaces: (eventPlaceResult.results ?? []) as Array<{ placeKey: string; placeName: string }>,
+    reviewCountsByPlace: (reviewPlaceResult.results ?? []).map((row) => ({
+      placeKey: String(row.placeKey ?? ""),
+      placeName: String(row.placeName ?? ""),
+      count: Math.max(0, Number(row.count ?? 0)),
+    })),
   };
 }
 
@@ -344,7 +357,7 @@ export async function GET(request: Request) {
   const requestedHistoryId = new URL(request.url).searchParams.get("historyId");
   if (!runtime.DB) {
     const uploadedBaseMap = await readUploadedBaseMapMetadata(runtime.BUCKET, canEdit);
-    return cacheableJson(request, { document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null, eventLinkedPlaces: [], uploadedBaseMap }, 503);
+    return cacheableJson(request, { document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null, eventLinkedPlaces: [], reviewCountsByPlace: [], uploadedBaseMap }, 503);
   }
   if (requestedHistoryId) {
     if (!canEdit) return json({ error: "owner authentication required" }, 403);
@@ -360,7 +373,7 @@ export async function GET(request: Request) {
     if (!entry) return json({ error: "layout history entry unavailable" }, 404);
     return json({ historyEntry: parseHistoryDocument(entry) });
   }
-  const [{ row, draftRow, contentSummary, eventLinkedPlaces }, uploadedBaseMap, historyResult] = await Promise.all([
+  const [{ row, draftRow, contentSummary, eventLinkedPlaces, reviewCountsByPlace }, uploadedBaseMap, historyResult] = await Promise.all([
     readInitialState(runtime.DB, canEdit),
     readUploadedBaseMapMetadata(runtime.BUCKET, canEdit),
     canEdit ? readHistory(runtime.DB) : Promise.resolve({ results: [] as LayoutHistoryItem[] }),
@@ -372,11 +385,11 @@ export async function GET(request: Request) {
   } catch {
     draft = null;
   }
-  if (!row) return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, uploadedBaseMap });
+  if (!row) return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
   try {
-    return cacheableJson(request, { ...parseStored(row, canEdit), draft, history, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, uploadedBaseMap });
+    return cacheableJson(request, { ...parseStored(row, canEdit), draft, history, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
   } catch {
-    return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, uploadedBaseMap }, 500);
+    return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap }, 500);
   }
 }
 

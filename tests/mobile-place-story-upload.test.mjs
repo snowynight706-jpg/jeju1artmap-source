@@ -5,6 +5,7 @@ import test from "node:test";
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../public/service-worker.js", import.meta.url), "utf8");
+const storyRouteSource = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
 
 test("mobile place-story submission survives unavailable browser storage", () => {
   assert.match(pageSource, /let volatileVisitorId = ""/);
@@ -32,4 +33,17 @@ test("review uploads bypass PWA caching and report mobile failure causes", () =>
   assert.match(pageSource, /fetch\(PLACE_STORIES_API, \{ method: "POST", body: form, cache: "no-store", credentials: "same-origin" \}\)/);
   assert.match(pageSource, /message === "photo-unsupported"/);
   assert.match(pageSource, /!navigator\.onLine/);
+  assert.match(pageSource, /sendPlaceStoryUploadDiagnostic/);
+  assert.match(pageSource, /오류 ID/);
+  assert.match(storyRouteSource, /place_story_upload_diagnostics/);
+  assert.match(storyRouteSource, /scope === "upload-diagnostics"/);
+  assert.match(storyRouteSource, /user_agent AS userAgent/);
+});
+
+test("review place identity and multipart allowance avoid false mobile upload errors", () => {
+  assert.match(pageSource, /selectedStoryPlaceName = selectedDirectoryPlace\?\.name \?\? selected\.name/);
+  assert.match(pageSource, /form\.set\("placeName", selectedStoryPlaceName\)/);
+  assert.match(storyRouteSource, /document\.directoryPlaces\.some/);
+  assert.match(storyRouteSource, /MAX_MULTIPART_OVERHEAD_BYTES = 512 \* 1024/);
+  assert.match(pageSource, /message === "request-too-large"/);
 });
