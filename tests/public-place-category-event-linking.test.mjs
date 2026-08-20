@@ -50,6 +50,20 @@ test("the culture tab appends cafes and restaurants tagged as multi-cultural wit
   );
 });
 
+test("reading, exhibition, and performance additions also appear in the culture tab", () => {
+  const items = [
+    { id: "food-reading", categoryId: "food", place: { additionalCategories: ["reading"] } },
+    { id: "cafe-exhibition", categoryId: "cafe", place: { additionalCategories: ["exhibition"] } },
+    { id: "shop-performance", categoryId: "shop", place: { additionalCategories: ["performance"] } },
+    { id: "food-unrelated", categoryId: "food", place: { additionalCategories: ["rest"] } },
+  ];
+
+  assert.deepEqual(
+    placesForPublicCategory(items, "culture").map((item) => item.id),
+    ["food-reading", "cafe-exhibition", "shop-performance"],
+  );
+});
+
 test("category rows use the assigned map marker color and explain event-derived entries", () => {
   assert.match(pageSource, /className="public-place-marker-key"[\s\S]{0,140}categoryOf\(item\.anchor\.category\)\.color/);
   assert.match(pageSource, /className="public-place-event-badge">행사/);

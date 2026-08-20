@@ -1,3 +1,5 @@
+const CULTURE_ADDITIONAL_CATEGORY_IDS = new Set(["multi-cultural", "reading", "exhibition", "performance"]);
+
 export function placesForPublicCategory(items, categoryId, eventLinkedIds = new Set()) {
   const nativeItems = items.filter((item) => (
     item.categoryId === categoryId
@@ -7,7 +9,7 @@ export function placesForPublicCategory(items, categoryId, eventLinkedIds = new 
 
   const additionalCultureItems = items.filter((item) => (
     item.categoryId !== "culture"
-    && item.place?.additionalCategories?.includes("multi-cultural")
+    && item.place?.additionalCategories?.some((additionalCategory) => CULTURE_ADDITIONAL_CATEGORY_IDS.has(additionalCategory))
   ));
   const includedIds = new Set([...nativeItems, ...additionalCultureItems].map((item) => item.id));
 
