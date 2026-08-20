@@ -2416,6 +2416,8 @@ export default function Home() {
   const panRef = useRef({ x: 0, y: 0 });
   const touchTransformBaseZoomRef = useRef(0.72);
   const touchTransformFrameRef = useRef<number | null>(null);
+  const touchLayerReleaseFrameRef = useRef<number | null>(null);
+  const touchLayerReleaseTimerRef = useRef<number | null>(null);
   const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const touchTransformCommitPendingRef = useRef(false);
   const wheelFrameRef = useRef<number | null>(null);
@@ -4983,11 +4985,35 @@ export default function Home() {
     });
   }, [applyTouchMapTransform]);
 
+  const cancelTouchLayerRelease = useCallback(() => {
+    if (touchLayerReleaseFrameRef.current !== null) {
+      window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
+      touchLayerReleaseFrameRef.current = null;
+    }
+    if (touchLayerReleaseTimerRef.current !== null) {
+      window.clearTimeout(touchLayerReleaseTimerRef.current);
+      touchLayerReleaseTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleTouchLayerRelease = useCallback(() => {
+    cancelTouchLayerRelease();
+    touchLayerReleaseFrameRef.current = window.requestAnimationFrame(() => {
+      touchLayerReleaseFrameRef.current = null;
+      touchLayerReleaseTimerRef.current = window.setTimeout(() => {
+        touchLayerReleaseTimerRef.current = null;
+        if (activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
+        viewportRef.current?.classList.remove("is-direct-manipulation");
+      }, 80);
+    });
+  }, [cancelTouchLayerRelease]);
+
   const beginTouchMapTransform = useCallback(() => {
+    cancelTouchLayerRelease();
     flushTouchMapTransform();
     touchTransformBaseZoomRef.current = zoomRef.current;
-    viewportRef.current?.classList.add("is-direct-manipulation");
-  }, [flushTouchMapTransform]);
+    applyTouchMapTransform(zoomRef.current, panRef.current);
+  }, [applyTouchMapTransform, cancelTouchLayerRelease, flushTouchMapTransform]);
 
   const commitTouchMapTransform = useCallback(() => {
     flushTouchMapTransform();
@@ -5001,8 +5027,9 @@ export default function Home() {
     if (!touchTransformCommitPendingRef.current) return;
     touchTransformCommitPendingRef.current = false;
     stageRef.current?.style.removeProperty("transform");
-    viewportRef.current?.classList.remove("is-direct-manipulation");
-  }, [pan, zoom]);
+    if (interaction?.type === "pan" || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
+    scheduleTouchLayerRelease();
+  }, [interaction?.type, pan, scheduleTouchLayerRelease, zoom]);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -5012,6 +5039,8 @@ export default function Home() {
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
     if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
+    if (touchLayerReleaseFrameRef.current !== null) window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
+    if (touchLayerReleaseTimerRef.current !== null) window.clearTimeout(touchLayerReleaseTimerRef.current);
     if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
     if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
     activeTouchPointersRef.current.clear();

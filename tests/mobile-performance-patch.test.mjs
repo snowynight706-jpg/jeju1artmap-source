@@ -11,6 +11,7 @@ test("touch pan and pinch stay on a requestAnimationFrame composited path until 
   assert.match(pageSource, /touchTransformFrameRef\.current = window\.requestAnimationFrame/);
   assert.match(pageSource, /stage\.style\.transform = `translateX\(-50%\) scale\(\$\{scale\}\)`/);
   assert.match(pageSource, /commitTouchMapTransform\(\)/);
+  assert.match(pageSource, /applyTouchMapTransform\(zoomRef\.current, panRef\.current\)/);
   assert.doesNotMatch(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\);\s*setZoom\(nextZoom\)/);
 });
 
@@ -18,6 +19,13 @@ test("mobile map manipulation avoids layout-heavy effects per frame", () => {
   assert.match(pageSource, /translate3d\(calc\(-50% \+ \$\{pan\.x\}px\), calc\(-50% \+ \$\{pan\.y\}px\), 0\)/);
   assert.match(cssSource, /\.map-viewport\.is-direct-manipulation \.map-stage[\s\S]{0,80}will-change: transform/);
   assert.match(cssSource, /is-direct-manipulation\) \.placed-asset \{ filter: none; \}/);
+});
+
+test("touch transform handoff keeps the compositor layer through the settled frame", () => {
+  assert.match(pageSource, /touchLayerReleaseFrameRef\.current = window\.requestAnimationFrame/);
+  assert.match(pageSource, /touchLayerReleaseTimerRef\.current = window\.setTimeout/);
+  assert.match(pageSource, /activeTouchPointersRef\.current\.size > 0 \|\| pinchGestureRef\.current/);
+  assert.match(pageSource, /interaction\?\.type === "pan"[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
 });
 
 test("mobile high-resolution map switching and startup reveal wait for settled work only", () => {
