@@ -20,7 +20,7 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
     ["buksugu-02", "북수구광장"],
     ["tapdong-seaside-stage-02", "탑동해변공연장"],
     ["jeju-art-platform-c01-v05", "제주아트플랫폼"],
-    ["chilsungro-20260819", "칠성로"],
+    ["chilsungro-20260820-transparent", "칠성로"],
   ];
 
   for (const [id, placeName] of latest) {
@@ -41,7 +41,7 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
   assert.match(pageSource, /const LATEST_BUKSUGU_ASSET_ID = "buksugu-02"/);
   assert.match(pageSource, /const LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID = "tapdong-seaside-stage-02"/);
   assert.match(pageSource, /const LATEST_JEJU_ART_PLATFORM_ASSET_ID = "jeju-art-platform-c01-v05"/);
-  assert.match(pageSource, /const LATEST_CHILSUNGRO_ASSET_ID = "chilsungro-20260819"/);
+  assert.match(pageSource, /const LATEST_CHILSUNGRO_ASSET_ID = "chilsungro-20260820-transparent"/);
   assert.match(pageSource, /\["제주목 관아", LATEST_MOKGWANA_ASSET_ID\]/);
   assert.match(pageSource, /\["관덕정", LATEST_GWANDEOKJEONG_ASSET_ID\]/);
   assert.match(pageSource, /\["김만덕기념관", LATEST_KIM_MEMORIAL_ASSET_ID\]/);
@@ -54,8 +54,16 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
   assert.match(pageSource, /"mokgwana-v06"/);
   assert.match(pageSource, /"gwandeokjeong-v07"/);
   assert.match(pageSource, /new Set\(\["jeju-art-platform-c01"\]\)/);
-  assert.match(pageSource, /new Set\(\["chilsungro"\]\)/);
+  assert.match(pageSource, /new Set\(\["chilsungro", "chilsungro-20260819"\]\)/);
   assert.match(pageSource, /supersededAssetIds\?\.has\(normalized\.assetId\)/);
+});
+
+test("the current Chilseong-ro screen and export assets retain a real alpha channel", async () => {
+  const id = "chilsungro-20260820-transparent";
+  for (const variant of ["landmarks-hq", "landmarks-screen"]) {
+    const bytes = await readFile(new URL(`../public/${variant}/${id}.webp`, import.meta.url));
+    assert.ok(bytes.includes(Buffer.from("ALPH")), `${variant} must include a WebP alpha chunk`);
+  }
 });
 
 test("public place requests choose and persist an existing area value", () => {

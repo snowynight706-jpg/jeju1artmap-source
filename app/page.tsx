@@ -100,7 +100,7 @@ const LATEST_ARARIO_ASSET_ID = "arario-01";
 const LATEST_BUKSUGU_ASSET_ID = "buksugu-02";
 const LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID = "tapdong-seaside-stage-02";
 const LATEST_JEJU_ART_PLATFORM_ASSET_ID = "jeju-art-platform-c01-v05";
-const LATEST_CHILSUNGRO_ASSET_ID = "chilsungro-20260819";
+const LATEST_CHILSUNGRO_ASSET_ID = "chilsungro-20260820-transparent";
 const MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02";
 const LANDMARK_RESOURCE_SIZE = 6.2;
 const LANDMARK_LABEL_GAP = 8;
@@ -130,7 +130,7 @@ const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["북수구광장", new Set(["buksugu-01", "buksugu-03"])],
   ["탑동해변공연장", new Set(["tapdong-seaside-stage-03"])],
   ["제주아트플랫폼", new Set(["jeju-art-platform-c01"])],
-  ["칠성로", new Set(["chilsungro"])],
+  ["칠성로", new Set(["chilsungro", "chilsungro-20260819"])],
 ]);
 const EXPORT_CANONICAL_WIDTH = 1180;
 const AUTOSAVE_KEY = "jeju-wondosim-map-review:autosave:v3";
