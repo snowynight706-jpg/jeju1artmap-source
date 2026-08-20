@@ -118,6 +118,7 @@ export default function PwaLifecycle() {
     }
 
     let loadListenerAttached = false;
+    let loadingNoticeObserver: MutationObserver | null = null;
 
     const handleBeforeInstall = (event: Event) => {
       const promptEvent = event as BeforeInstallPromptEvent;
@@ -133,6 +134,21 @@ export default function PwaLifecycle() {
       if (!updateRequestedRef.current) return;
       updateRequestedRef.current = false;
       window.location.reload();
+    };
+    const showUpdateNoticeAfterLoading = (worker: ServiceWorker) => {
+      if (!document.querySelector(".public-loading")) {
+        setWaitingWorker(worker);
+        return;
+      }
+      setWaitingWorker(null);
+      loadingNoticeObserver?.disconnect();
+      loadingNoticeObserver = new MutationObserver(() => {
+        if (disposed || document.querySelector(".public-loading")) return;
+        loadingNoticeObserver?.disconnect();
+        loadingNoticeObserver = null;
+        setWaitingWorker(worker);
+      });
+      loadingNoticeObserver.observe(document.body, { childList: true, subtree: true });
     };
     const applyDuringStartupOrNotify = (worker: ServiceWorker) => {
       if (disposed) return;
@@ -150,7 +166,7 @@ export default function PwaLifecycle() {
         worker.postMessage({ type: "SKIP_WAITING" });
         return;
       }
-      setWaitingWorker(worker);
+      showUpdateNoticeAfterLoading(worker);
     };
 
     const register = async () => {
@@ -202,6 +218,7 @@ export default function PwaLifecycle() {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
       window.removeEventListener("appinstalled", handleInstalled);
       navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange);
+      loadingNoticeObserver?.disconnect();
       if (loadListenerAttached) window.removeEventListener("load", register);
     };
   }, []);

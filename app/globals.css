@@ -949,7 +949,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .upload-diagnostic-body { display: grid; gap: 7px; padding: 8px; border-top: 1px solid #dfdfdf; background: white; }
 .upload-diagnostic-body > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .upload-diagnostic-body > header p { margin: 0; color: #727272; font-size: 8px; line-height: 1.4; }
+.upload-diagnostic-toolbar { display: flex; flex: 0 0 auto; gap: 4px; }
 .upload-diagnostic-body button { min-height: 28px; flex: 0 0 auto; padding: 0 8px; border: 1px solid #c8c8c8; border-radius: 6px; background: #f5f5f5; color: #5f5f5f; cursor: pointer; font-size: 8px; font-weight: 750; }
+.upload-diagnostic-body button.danger { border-color: #dfc4be; background: #fff7f5; color: #9a5b50; }
 .upload-diagnostic-body button:disabled { cursor: wait; opacity: .55; }
 .upload-diagnostic-list { display: grid; gap: 6px; }
 .upload-diagnostic-list > article { padding: 8px; border: 1px solid #dedede; border-left: 3px solid #b66e5e; border-radius: 7px; background: #fcfcfc; content-visibility: auto; contain-intrinsic-size: auto 140px; }
@@ -958,6 +960,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .upload-diagnostic-list > article > header strong { color: #4d4d4d; font-size: 10px; }
 .upload-diagnostic-list > article > header code { padding: 2px 4px; border-radius: 4px; background: #ededed; color: #6b5a57; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 7px; }
 .upload-diagnostic-list > article > header time { flex: 0 0 auto; color: #777; font-size: 7px; }
+.upload-diagnostic-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.upload-diagnostic-card-actions button { min-height: 22px; padding: 0 6px; border-color: #dfc4be; background: #fff7f5; color: #9a5b50; font-size: 7px; }
 .upload-diagnostic-list dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 7px; margin: 7px 0 0; }
 .upload-diagnostic-list dl > div { min-width: 0; padding: 5px 6px; border-radius: 5px; background: #f1f1f1; }
 .upload-diagnostic-list dt { color: #7a7a7a; font-size: 7px; }

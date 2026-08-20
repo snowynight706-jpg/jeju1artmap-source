@@ -2760,6 +2760,7 @@ export default function Home() {
   const [uploadDiagnosticsLoading, setUploadDiagnosticsLoading] = useState(false);
   const [uploadDiagnosticsError, setUploadDiagnosticsError] = useState(false);
   const [uploadDiagnosticsRefreshKey, setUploadDiagnosticsRefreshKey] = useState(0);
+  const [uploadDiagnosticActionId, setUploadDiagnosticActionId] = useState<string | null>(null);
   const [placeStoryActionId, setPlaceStoryActionId] = useState<string | null>(null);
   const [placeStoryFormOpen, setPlaceStoryFormOpen] = useState(false);
   const [placeStoryAuthor, setPlaceStoryAuthor] = useState("");
@@ -7815,6 +7816,44 @@ export default function Home() {
     }
   };
 
+  const deleteUploadDiagnostic = async (diagnosticId: string) => {
+    if (uploadDiagnosticActionId) return;
+    setUploadDiagnosticActionId(diagnosticId);
+    try {
+      const response = await fetch(`${PLACE_STORIES_API}?scope=upload-diagnostics`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-one", id: diagnosticId }),
+      });
+      if (!response.ok) throw new Error("diagnostic cleanup failed");
+      setUploadDiagnostics((current) => current.filter((diagnostic) => diagnostic.id !== diagnosticId));
+      setToast("선택한 업로드 오류 로그를 삭제했습니다.");
+    } catch {
+      setToast("오류 로그를 삭제하지 못했습니다. 관리자 권한과 연결 상태를 확인해 주세요.");
+    } finally {
+      setUploadDiagnosticActionId(null);
+    }
+  };
+
+  const clearUploadDiagnostics = async () => {
+    if (uploadDiagnosticActionId || !uploadDiagnostics.length || !window.confirm(`해결된 업로드 오류 로그 ${uploadDiagnostics.length}건을 모두 삭제할까요? 삭제 후 복구할 수 없습니다.`)) return;
+    setUploadDiagnosticActionId("all");
+    try {
+      const response = await fetch(`${PLACE_STORIES_API}?scope=upload-diagnostics`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "clear-all" }),
+      });
+      if (!response.ok) throw new Error("diagnostic cleanup failed");
+      setUploadDiagnostics([]);
+      setToast("해결된 업로드 오류 로그를 모두 정리했습니다.");
+    } catch {
+      setToast("오류 로그 전체 정리를 완료하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setUploadDiagnosticActionId(null);
+    }
+  };
+
   const closePlaceEventForm = () => {
     setPlaceEventFormOpen(false);
     setPlaceEventEditingId(null);
@@ -9420,11 +9459,11 @@ export default function Home() {
             {publicLayoutAccess === "editor" && globalContentTab === "reviews" && <details className="upload-diagnostic-panel">
               <summary><span><strong>모바일 후기 업로드 오류</strong><small>사진·후기 내용과 닉네임은 기록하지 않습니다.</small></span><em>{uploadDiagnosticsLoading ? "확인 중" : `${uploadDiagnostics.length}건`}</em></summary>
               <div className="upload-diagnostic-body">
-                <header><p>최근 오류 최대 100건 · 단계·용량·형식·기기 환경만 표시</p><button type="button" disabled={uploadDiagnosticsLoading} onClick={() => setUploadDiagnosticsRefreshKey((current) => current + 1)}>새로고침</button></header>
+                <header><p>최근 오류 최대 100건 · 단계·용량·형식·기기 환경만 표시</p><div className="upload-diagnostic-toolbar"><button type="button" disabled={uploadDiagnosticsLoading || uploadDiagnosticActionId !== null} onClick={() => setUploadDiagnosticsRefreshKey((current) => current + 1)}>새로고침</button><button type="button" className="danger" disabled={!uploadDiagnostics.length || uploadDiagnosticActionId !== null} onClick={() => void clearUploadDiagnostics()}>{uploadDiagnosticActionId === "all" ? "정리 중…" : "전체 정리"}</button></div></header>
                 {uploadDiagnosticsLoading ? <div className="upload-diagnostic-state"><span className="global-story-spinner" /><strong>오류 로그를 불러오는 중입니다.</strong></div>
                   : uploadDiagnosticsError ? <div className="upload-diagnostic-state error"><strong>오류 로그를 불러오지 못했습니다.</strong><button type="button" onClick={() => setUploadDiagnosticsRefreshKey((current) => current + 1)}>다시 시도</button></div>
                     : uploadDiagnostics.length ? <div className="upload-diagnostic-list">{uploadDiagnostics.map((diagnostic) => <article key={diagnostic.id}>
-                      <header><div><strong>{uploadDiagnosticErrorLabel(diagnostic.errorCode, diagnostic.responseStatus)}</strong><code>{diagnostic.errorCode}</code></div><time dateTime={diagnostic.createdAt}>{storyDateTimeLabel(diagnostic.createdAt)}</time></header>
+                      <header><div><strong>{uploadDiagnosticErrorLabel(diagnostic.errorCode, diagnostic.responseStatus)}</strong><code>{diagnostic.errorCode}</code></div><div className="upload-diagnostic-card-actions"><time dateTime={diagnostic.createdAt}>{storyDateTimeLabel(diagnostic.createdAt)}</time><button type="button" disabled={uploadDiagnosticActionId !== null} onClick={() => void deleteUploadDiagnostic(diagnostic.id)}>{uploadDiagnosticActionId === diagnostic.id ? "삭제 중…" : "삭제"}</button></div></header>
                       <dl><div><dt>실패 단계</dt><dd>{uploadDiagnosticStageLabel(diagnostic.stage)}</dd></div><div><dt>서버 응답</dt><dd>{diagnostic.responseStatus || "없음"}</dd></div><div><dt>파일 용량</dt><dd>{uploadDiagnosticSizeLabel(diagnostic.sourceSize)} → {uploadDiagnosticSizeLabel(diagnostic.preparedSize)}</dd></div><div><dt>기기 환경</dt><dd>{uploadDiagnosticDeviceLabel(diagnostic.userAgent)}</dd></div><div><dt>연결 상태</dt><dd>{diagnostic.online ? "온라인" : "오프라인"}</dd></div><div><dt>사진 형식</dt><dd>{diagnostic.sourceType || "불명"} → {diagnostic.preparedType || "변환 안 됨"}</dd></div></dl>
                       <details><summary>기술 정보</summary><p><b>장소 키</b> {diagnostic.placeKey}</p><p><b>User-Agent</b> {diagnostic.userAgent}</p></details>
                     </article>)}</div>

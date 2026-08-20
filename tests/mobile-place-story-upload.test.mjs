@@ -61,6 +61,12 @@ test("review uploads bypass PWA caching and report mobile failure causes", () =>
   assert.match(pageSource, /모바일 후기 업로드 오류/);
   assert.match(pageSource, /사진·후기 내용과 닉네임은 기록하지 않습니다/);
   assert.match(pageSource, /uploadDiagnosticErrorLabel/);
+  assert.match(pageSource, /deleteUploadDiagnostic/);
+  assert.match(pageSource, /clearUploadDiagnostics/);
+  assert.match(pageSource, /전체 정리/);
+  assert.match(storyRouteSource, /payload\?\.action === "clear-all"/);
+  assert.match(storyRouteSource, /DELETE FROM place_story_upload_diagnostics WHERE id = \?/);
+  assert.match(storyRouteSource, /owner authentication required/);
 });
 
 test("review place identity and multipart allowance avoid false mobile upload errors", () => {

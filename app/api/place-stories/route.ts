@@ -429,10 +429,25 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   const runtime = await runtimeEnv();
-  if (!runtime.DB || !runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
+  if (!runtime.DB) return json({ error: "storage unavailable" }, 503);
   const { canModerate, currentEmail } = ownerAccess(request, runtime);
   if (!canModerate || !currentEmail) return json({ error: "owner authentication required" }, 403);
-  const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
+  const url = new URL(request.url);
+  if (url.searchParams.get("scope") === "upload-diagnostics") {
+    await ensureStorage(runtime.DB);
+    const payload = await request.json().catch(() => null) as { action?: unknown; id?: unknown } | null;
+    if (payload?.action === "clear-all") {
+      const result = await runtime.DB.prepare("DELETE FROM place_story_upload_diagnostics").run();
+      return json({ deleted: true, scope: "all", count: result.meta.changes });
+    }
+    const diagnosticId = typeof payload?.id === "string" ? payload.id.trim().slice(0, 120) : "";
+    if (payload?.action !== "delete-one" || !diagnosticId) return json({ error: "valid diagnostic cleanup required" }, 400);
+    const result = await runtime.DB.prepare("DELETE FROM place_story_upload_diagnostics WHERE id = ?").bind(diagnosticId).run();
+    if (!result.meta.changes) return json({ error: "diagnostic not found" }, 404);
+    return json({ deleted: true, id: diagnosticId });
+  }
+  if (!runtime.BUCKET) return json({ error: "storage unavailable" }, 503);
+  const id = url.searchParams.get("id")?.trim() ?? "";
   if (!id) return json({ error: "story id required" }, 400);
   await ensureStorage(runtime.DB);
   const row = await runtime.DB.prepare("SELECT photo_key AS photoKey FROM place_stories WHERE id = ?").bind(id).first() as { photoKey: string | null } | null;

@@ -64,6 +64,9 @@ test("production registration checks for updates without blocking development", 
   assert.match(lifecycleSource, /최신 아트맵을 자동 업데이트하고 있습니다/);
   assert.match(lifecycleSource, /applyDuringStartupOrNotify\(registration\.waiting\)/);
   assert.match(lifecycleSource, /applyDuringStartupOrNotify\(installing\)/);
+  assert.match(lifecycleSource, /showUpdateNoticeAfterLoading/);
+  assert.match(lifecycleSource, /if \(!document\.querySelector\("\.public-loading"\)\)/);
+  assert.match(lifecycleSource, /loadingNoticeObserver\.observe\(document\.body, \{ childList: true, subtree: true \}\)/);
   assert.match(layoutSource, /manifest: "\/manifest\.webmanifest"/);
   assert.match(layoutSource, /viewport-fit=cover/);
   assert.match(layoutSource, /apple-mobile-web-app-capable" content="yes"/);
