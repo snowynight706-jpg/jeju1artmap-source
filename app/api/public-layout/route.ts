@@ -288,7 +288,8 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
        ORDER BY ep.place_name, ep.place_key`,
     ).bind(now, now);
   const reviewPlaceIndex = db.prepare(
-    `SELECT place_key AS placeKey, place_name AS placeName, COUNT(*) AS count
+    `SELECT place_key AS placeKey, place_name AS placeName, COUNT(*) AS count,
+       MAX(created_at) AS latestCreatedAt
      FROM place_stories
      WHERE ${reviewWhere}
      GROUP BY place_key, place_name
@@ -324,6 +325,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
       placeKey: String(row.placeKey ?? ""),
       placeName: String(row.placeName ?? ""),
       count: Math.max(0, Number(row.count ?? 0)),
+      latestCreatedAt: typeof row.latestCreatedAt === "string" ? row.latestCreatedAt : null,
     })),
   };
 }
