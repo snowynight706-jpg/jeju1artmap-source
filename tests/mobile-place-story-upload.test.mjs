@@ -17,6 +17,12 @@ test("mobile place-story submission survives unavailable browser storage", () =>
 test("mobile photos have a native picker and resilient encoding fallbacks", () => {
   assert.match(pageSource, /className="place-story-photo-picker"/);
   assert.match(pageSource, /accept="image\/\*,\.heic,\.heif"/);
+  assert.match(pageSource, /navigator\.mediaDevices\.getUserMedia/);
+  assert.match(pageSource, /facingMode: \{ ideal: "environment" \}/);
+  assert.match(pageSource, /capture="environment"/);
+  assert.match(pageSource, /갤러리는 선택한 사진 1장에만 접근합니다/);
+  assert.match(pageSource, /카메라 권한 요청/);
+  assert.match(pageSource, /stream\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
   assert.match(pageSource, /const STORY_PHOTO_TARGET_BYTES = 1\.5 \* 1024 \* 1024/);
   assert.match(pageSource, /const STORY_PHOTO_ENCODING_ATTEMPTS = \[/);
   assert.match(pageSource, /\{ maximumEdge: 1080, type: "image\/webp", quality: 0\.7 \}/);

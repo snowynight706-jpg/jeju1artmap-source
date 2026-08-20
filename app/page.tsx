@@ -625,6 +625,8 @@ type PlaceStoryDiagnosticsPayload = {
   error?: string;
 };
 
+type StoryCameraPermissionState = "unknown" | "requesting" | "granted" | "denied" | "unavailable";
+
 const storyReportReasons: Array<{ id: StoryReportReason; label: string }> = [
   { id: "inappropriate", label: "부적절한 내용" },
   { id: "privacy", label: "개인정보 노출" },
@@ -1362,6 +1364,14 @@ function uploadDiagnosticDeviceLabel(userAgent: string) {
   const platform = /iPhone/i.test(userAgent) ? "iPhone" : /iPad/i.test(userAgent) ? "iPad" : /Android/i.test(userAgent) ? "Android" : "기타 기기";
   const browser = /EdgA|EdgiOS/i.test(userAgent) ? "Edge" : /CriOS|Chrome/i.test(userAgent) ? "Chrome" : /FxiOS|Firefox/i.test(userAgent) ? "Firefox" : /Safari/i.test(userAgent) ? "Safari" : "브라우저 불명";
   return `${platform} · ${browser}`;
+}
+
+function storyCameraPermissionLabel(state: StoryCameraPermissionState) {
+  if (state === "requesting") return "확인 중";
+  if (state === "granted") return "허용됨";
+  if (state === "denied") return "차단됨";
+  if (state === "unavailable") return "확인 미지원";
+  return "요청 전";
 }
 
 function storyDateTimeLabel(value: string) {
@@ -2756,6 +2766,7 @@ export default function Home() {
   const [placeStoryPhoto, setPlaceStoryPhoto] = useState<File | null>(null);
   const [placeStoryPhotoPreview, setPlaceStoryPhotoPreview] = useState<string | null>(null);
   const [placeStorySubmitting, setPlaceStorySubmitting] = useState(false);
+  const [storyCameraPermission, setStoryCameraPermission] = useState<StoryCameraPermissionState>("unknown");
   const [storyReportTarget, setStoryReportTarget] = useState<PlaceStory | null>(null);
   const [storyReportReason, setStoryReportReason] = useState<StoryReportReason>("inappropriate");
   const [storyReportDetail, setStoryReportDetail] = useState("");
@@ -7548,6 +7559,28 @@ export default function Home() {
     setPlaceStoryFormOpen(next);
   };
 
+  const requestPlaceStoryCameraPermission = async () => {
+    if (storyCameraPermission === "requesting") return;
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setStoryCameraPermission("unavailable");
+      setToast("이 기기의 PWA에서는 카메라 권한 확인 기능을 지원하지 않습니다. 사진 선택은 계속 사용할 수 있습니다.");
+      return;
+    }
+    setStoryCameraPermission("requesting");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+      stream.getTracks().forEach((track) => track.stop());
+      setStoryCameraPermission("granted");
+      setToast("카메라 권한이 허용되었습니다. ‘카메라 촬영’을 눌러 사진을 촬영할 수 있습니다.");
+    } catch (error) {
+      const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
+      setStoryCameraPermission(denied ? "denied" : "unavailable");
+      setToast(denied
+        ? "카메라 권한이 차단되었습니다. 기기 설정의 원도심 아트맵 권한에서 카메라를 허용해 주세요."
+        : "이 기기에서 카메라를 사용할 수 없습니다. 갤러리의 ‘사진 1장 선택’을 이용해 주세요.");
+    }
+  };
+
   const submitPlaceStory = async () => {
     if (!selected || !selectedStoryKey || placeStorySubmitting) return;
     const authorName = placeStoryAuthor.replace(/\s+/g, " ").trim().slice(0, 20);
@@ -9232,7 +9265,8 @@ export default function Home() {
                 {placeStoryFormOpen && <div className="place-story-form">
                   <label>닉네임<input value={placeStoryAuthor} maxLength={20} onChange={(event) => setPlaceStoryAuthor(event.target.value)} placeholder="20자 이내" /></label>
                   <label>짧은 후기<textarea value={placeStoryText} maxLength={220} onChange={(event) => setPlaceStoryText(event.target.value)} placeholder="이 장소에서 기억하고 싶은 순간을 남겨주세요." /><small>{placeStoryText.length}/220</small></label>
-                  <div className="place-story-photo-row"><label className="place-story-photo-picker"><span>{placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</span><input type="file" accept="image/*,.heic,.heif" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></label>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}</div>
+                  <div className="place-story-photo-permission"><span>갤러리는 선택한 사진 1장에만 접근합니다. 카메라 <b className={storyCameraPermission}>{storyCameraPermissionLabel(storyCameraPermission)}</b></span><button type="button" disabled={storyCameraPermission === "requesting"} onClick={() => void requestPlaceStoryCameraPermission()}>{storyCameraPermission === "granted" ? "권한 다시 확인" : "카메라 권한 요청"}</button></div>
+                  <div className="place-story-photo-row"><label className="place-story-photo-picker"><span>{placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</span><input type="file" accept="image/*,.heic,.heif" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></label><label className="place-story-photo-picker camera"><span>카메라 촬영</span><input type="file" accept="image/*" capture="environment" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></label>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}</div>
                   {placeStoryPhotoPreview && <img className="place-story-photo-preview" src={placeStoryPhotoPreview} alt="등록할 사진 미리보기" />}
                   <p>직접 촬영했거나 게시 권한이 있는 사진만 등록해 주세요. 등록한 내용은 다른 방문자에게 바로 공개됩니다.</p>
                   <button type="button" className="place-story-submit" disabled={placeStorySubmitting || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : "사진·후기 공개하기"}</button>
