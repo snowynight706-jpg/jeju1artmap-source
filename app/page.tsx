@@ -1346,6 +1346,7 @@ function uploadDiagnosticStageLabel(stage: PlaceStoryUploadDiagnostic["stage"]) 
 function uploadDiagnosticErrorLabel(code: string, status: number) {
   if (code === "offline") return "오프라인 상태";
   if (code === "network-error") return "네트워크 전송 실패";
+  if (code === "photo-read-failed") return "선택 사진 임시 복사 실패";
   if (code === "photo-decode-failed") return "기기 사진 열기 실패";
   if (code === "photo-encode-failed") return "기기 사진 변환 실패";
   if (code === "photo-compression-target-failed") return "목표 용량 압축 실패";
@@ -2766,7 +2767,9 @@ export default function Home() {
   const [placeStoryPhoto, setPlaceStoryPhoto] = useState<File | null>(null);
   const [placeStoryPhotoPreview, setPlaceStoryPhotoPreview] = useState<string | null>(null);
   const [placeStorySubmitting, setPlaceStorySubmitting] = useState(false);
+  const [placeStoryPhotoRetaining, setPlaceStoryPhotoRetaining] = useState(false);
   const [storyCameraPermission, setStoryCameraPermission] = useState<StoryCameraPermissionState>("unknown");
+  const placeStoryPhotoRetainTokenRef = useRef(0);
   const [storyReportTarget, setStoryReportTarget] = useState<PlaceStory | null>(null);
   const [storyReportReason, setStoryReportReason] = useState<StoryReportReason>("inappropriate");
   const [storyReportDetail, setStoryReportDetail] = useState("");
@@ -3854,6 +3857,43 @@ export default function Home() {
     });
     setPlaceStoryPhoto(file);
   }, []);
+
+  const retainPlaceStoryPhoto = useCallback(async (sourceFile: File | null) => {
+    if (!sourceFile) return;
+    const token = placeStoryPhotoRetainTokenRef.current + 1;
+    placeStoryPhotoRetainTokenRef.current = token;
+    setPlaceStoryPhotoRetaining(true);
+    try {
+      if (sourceFile.size > STORY_PHOTO_MAX_SOURCE_BYTES) throw new Error("photo-source-too-large");
+      const bytes = await sourceFile.arrayBuffer();
+      if (!bytes.byteLength) throw new Error("photo-read-failed");
+      if (placeStoryPhotoRetainTokenRef.current !== token) return;
+      const retainedFile = new File([bytes], sourceFile.name || `wondosim-photo-${Date.now()}`, {
+        type: sourceFile.type,
+        lastModified: sourceFile.lastModified || Date.now(),
+      });
+      updatePlaceStoryPhoto(retainedFile);
+      setToast("선택한 사진을 후기 등록 전까지 앱의 임시 메모리에 보관합니다.");
+    } catch (error) {
+      if (placeStoryPhotoRetainTokenRef.current !== token) return;
+      updatePlaceStoryPhoto(null);
+      const errorCode = error instanceof Error && error.message === "photo-source-too-large" ? "photo-source-too-large" : "photo-read-failed";
+      const diagnosticReference = selectedStoryKey ? await sendPlaceStoryUploadDiagnostic({
+        placeKey: selectedStoryKey,
+        stage: "prepare",
+        errorCode,
+        responseStatus: 0,
+        sourceFile,
+        preparedFile: null,
+      }) : null;
+      const diagnosticSuffix = diagnosticReference ? ` · 오류 ID ${diagnosticReference}` : "";
+      setToast((errorCode === "photo-source-too-large"
+        ? "원본 사진이 30MB를 넘습니다. 더 작은 사진을 선택해 주세요."
+        : "선택한 사진을 앱의 임시 메모리로 가져오지 못했습니다. 사진 접근을 다시 허용해 선택해 주세요.") + diagnosticSuffix);
+    } finally {
+      if (placeStoryPhotoRetainTokenRef.current === token) setPlaceStoryPhotoRetaining(false);
+    }
+  }, [selectedStoryKey, updatePlaceStoryPhoto]);
 
   const updatePlaceEventPhoto = useCallback((file: File | null) => {
     setPlaceEventPhotoPreview((current) => {
@@ -9265,11 +9305,11 @@ export default function Home() {
                 {placeStoryFormOpen && <div className="place-story-form">
                   <label>닉네임<input value={placeStoryAuthor} maxLength={20} onChange={(event) => setPlaceStoryAuthor(event.target.value)} placeholder="20자 이내" /></label>
                   <label>짧은 후기<textarea value={placeStoryText} maxLength={220} onChange={(event) => setPlaceStoryText(event.target.value)} placeholder="이 장소에서 기억하고 싶은 순간을 남겨주세요." /><small>{placeStoryText.length}/220</small></label>
-                  <div className="place-story-photo-permission"><span>갤러리는 선택한 사진 1장에만 접근합니다. 카메라 <b className={storyCameraPermission}>{storyCameraPermissionLabel(storyCameraPermission)}</b></span><button type="button" disabled={storyCameraPermission === "requesting"} onClick={() => void requestPlaceStoryCameraPermission()}>{storyCameraPermission === "granted" ? "권한 다시 확인" : "카메라 권한 요청"}</button></div>
-                  <div className="place-story-photo-row"><label className="place-story-photo-picker"><span>{placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</span><input type="file" accept="image/*,.heic,.heif" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></label><label className="place-story-photo-picker camera"><span>카메라 촬영</span><input type="file" accept="image/*" capture="environment" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></label>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}</div>
+                  <div className="place-story-photo-permission"><span>선택한 사진 1장을 즉시 앱의 임시 메모리로 복사합니다. 임시 사본은 후기 등록 완료 후 자동 삭제됩니다. 카메라 <b className={storyCameraPermission}>{storyCameraPermissionLabel(storyCameraPermission)}</b></span><button type="button" disabled={storyCameraPermission === "requesting"} onClick={() => void requestPlaceStoryCameraPermission()}>{storyCameraPermission === "granted" ? "권한 다시 확인" : "카메라 권한 요청"}</button></div>
+                  <div className="place-story-photo-row" aria-busy={placeStoryPhotoRetaining}><label className="place-story-photo-picker"><span>{placeStoryPhotoRetaining ? "사진 가져오는 중…" : placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</span><input type="file" disabled={placeStoryPhotoRetaining} accept="image/*,.heic,.heif" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void retainPlaceStoryPhoto(file); }} /></label><label className="place-story-photo-picker camera"><span>카메라 촬영</span><input type="file" disabled={placeStoryPhotoRetaining} accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void retainPlaceStoryPhoto(file); }} /></label>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}</div>
                   {placeStoryPhotoPreview && <img className="place-story-photo-preview" src={placeStoryPhotoPreview} alt="등록할 사진 미리보기" />}
                   <p>직접 촬영했거나 게시 권한이 있는 사진만 등록해 주세요. 등록한 내용은 다른 방문자에게 바로 공개됩니다.</p>
-                  <button type="button" className="place-story-submit" disabled={placeStorySubmitting || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : "사진·후기 공개하기"}</button>
+                  <button type="button" className="place-story-submit" disabled={placeStorySubmitting || placeStoryPhotoRetaining || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : placeStoryPhotoRetaining ? "사진 준비 중…" : "사진·후기 공개하기"}</button>
                 </div>}
                 {placeStoriesLoading ? <div className="place-story-empty">장소 기록을 불러오는 중입니다.</div> : publishedPlaceStories.length ? <div className="place-story-list">{publishedPlaceStories.map((story) => <article className="place-story-card" key={story.id}>
                   {story.photoUrl && <img src={story.photoUrl} alt={`${story.authorName}님이 남긴 ${selectedDisplayName} 사진`} loading="lazy" decoding="async" />}
