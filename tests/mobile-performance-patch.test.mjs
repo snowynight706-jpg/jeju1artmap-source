@@ -35,7 +35,7 @@ test("mobile high-resolution map switching and startup reveal wait for settled w
 });
 
 test("versioned immutable images use cache-first without caching mutable APIs", () => {
-  assert.match(serviceWorkerSource, /CACHE_VERSION = "2026-08-19-v3"/);
+  assert.match(serviceWorkerSource, /CACHE_VERSION = "2026-08-20-v5"/);
   assert.match(serviceWorkerSource, /url\.searchParams\.has\("v"\)[\s\S]{0,160}cacheFirstVersionedImage/);
   assert.match(serviceWorkerSource, /url\.pathname\.startsWith\("\/api\/"\)\) return/);
 });
