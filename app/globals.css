@@ -929,6 +929,39 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .global-event-management-toolbar span { margin-top: 3px; color: #707070; font-size: 9px; }
 .global-event-management-toolbar button { min-width: 92px; height: 32px; flex: 0 0 auto; padding: 0 10px; border: 1px solid #555; border-radius: 5px; background: #555; color: white; cursor: pointer; font-size: 10px; font-weight: 800; }
 .global-event-management-toolbar button:disabled { cursor: wait; opacity: .55; }
+.upload-diagnostic-panel { margin-bottom: 10px; overflow: hidden; border: 1px solid #d5d5d5; border-radius: 9px; background: #fafafa; }
+.upload-diagnostic-panel > summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; color: #4b4b4b; cursor: pointer; list-style: none; }
+.upload-diagnostic-panel > summary::-webkit-details-marker { display: none; }
+.upload-diagnostic-panel > summary::before { content: "＋"; width: 18px; height: 18px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid #c8c8c8; border-radius: 50%; background: white; color: #666; font-size: 10px; }
+.upload-diagnostic-panel[open] > summary::before { content: "−"; }
+.upload-diagnostic-panel > summary > span { min-width: 0; flex: 1; }
+.upload-diagnostic-panel > summary strong, .upload-diagnostic-panel > summary small { display: block; }
+.upload-diagnostic-panel > summary strong { font-size: 11px; }
+.upload-diagnostic-panel > summary small { margin-top: 3px; color: #777; font-size: 8px; font-weight: 500; }
+.upload-diagnostic-panel > summary em { min-width: 42px; padding: 3px 6px; border-radius: 9px; background: #ececec; color: #606060; font-size: 8px; font-style: normal; font-weight: 800; text-align: center; }
+.upload-diagnostic-body { display: grid; gap: 7px; padding: 8px; border-top: 1px solid #dfdfdf; background: white; }
+.upload-diagnostic-body > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.upload-diagnostic-body > header p { margin: 0; color: #727272; font-size: 8px; line-height: 1.4; }
+.upload-diagnostic-body button { min-height: 28px; flex: 0 0 auto; padding: 0 8px; border: 1px solid #c8c8c8; border-radius: 6px; background: #f5f5f5; color: #5f5f5f; cursor: pointer; font-size: 8px; font-weight: 750; }
+.upload-diagnostic-body button:disabled { cursor: wait; opacity: .55; }
+.upload-diagnostic-list { display: grid; gap: 6px; }
+.upload-diagnostic-list > article { padding: 8px; border: 1px solid #dedede; border-left: 3px solid #b66e5e; border-radius: 7px; background: #fcfcfc; content-visibility: auto; contain-intrinsic-size: auto 140px; }
+.upload-diagnostic-list > article > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.upload-diagnostic-list > article > header > div { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.upload-diagnostic-list > article > header strong { color: #4d4d4d; font-size: 10px; }
+.upload-diagnostic-list > article > header code { padding: 2px 4px; border-radius: 4px; background: #ededed; color: #6b5a57; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 7px; }
+.upload-diagnostic-list > article > header time { flex: 0 0 auto; color: #777; font-size: 7px; }
+.upload-diagnostic-list dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 7px; margin: 7px 0 0; }
+.upload-diagnostic-list dl > div { min-width: 0; padding: 5px 6px; border-radius: 5px; background: #f1f1f1; }
+.upload-diagnostic-list dt { color: #7a7a7a; font-size: 7px; }
+.upload-diagnostic-list dd { margin: 2px 0 0; overflow: hidden; color: #4f4f4f; font-size: 8px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.upload-diagnostic-list > article > details { margin-top: 6px; color: #686868; font-size: 7px; }
+.upload-diagnostic-list > article > details summary { cursor: pointer; font-weight: 750; }
+.upload-diagnostic-list > article > details p { margin: 4px 0 0; overflow-wrap: anywhere; line-height: 1.4; }
+.upload-diagnostic-state { min-height: 82px; display: grid; place-items: center; align-content: center; gap: 6px; padding: 12px; color: #6b6b6b; text-align: center; }
+.upload-diagnostic-state strong { font-size: 9px; }
+.upload-diagnostic-state span { font-size: 8px; line-height: 1.4; }
+.upload-diagnostic-state.error { color: #965c50; }
 .global-story-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
 .global-story-meta strong { overflow: hidden; color: #595959; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .global-story-meta strong em { display: inline-block; margin-left: 5px; padding: 2px 5px; border-radius: 7px; background: #e4e4e4; color: #646464; font-size: 7px; font-style: normal; vertical-align: 1px; }

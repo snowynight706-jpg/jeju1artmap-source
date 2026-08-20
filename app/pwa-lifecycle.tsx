@@ -11,6 +11,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 const defaultBrowserThemeColor = "#F6F6F6";
+const autoUpdateSessionKey = "jeju-wondosim-map-review:auto-update-attempted:v1";
 const standaloneStatusBarColors: Record<string, string> = {
   "stormy": "#2B2D33",
   "nordic-sand": "#3A3835",
@@ -61,6 +62,7 @@ export default function PwaLifecycle() {
   const [applyingUpdate, setApplyingUpdate] = useState(false);
   const online = useSyncExternalStore(subscribeToOnlineStatus, onlineSnapshot, () => true);
   const updateRequestedRef = useRef(false);
+  const startupAutoUpdateEligibleRef = useRef(false);
 
   useEffect(() => {
     const standaloneQuery = window.matchMedia("(display-mode: standalone)");
@@ -132,9 +134,28 @@ export default function PwaLifecycle() {
       updateRequestedRef.current = false;
       window.location.reload();
     };
+    const applyDuringStartupOrNotify = (worker: ServiceWorker) => {
+      if (disposed) return;
+      let autoUpdateAttempted = false;
+      try {
+        autoUpdateAttempted = sessionStorage.getItem(autoUpdateSessionKey) === "1";
+      } catch {}
+      if (startupAutoUpdateEligibleRef.current && !autoUpdateAttempted) {
+        try { sessionStorage.setItem(autoUpdateSessionKey, "1"); } catch {}
+        const loadingMessage = document.querySelector<HTMLElement>(".public-loading-card p");
+        if (loadingMessage) loadingMessage.textContent = "최신 아트맵을 자동 업데이트하고 있습니다.";
+        setWaitingWorker(null);
+        setApplyingUpdate(true);
+        updateRequestedRef.current = true;
+        worker.postMessage({ type: "SKIP_WAITING" });
+        return;
+      }
+      setWaitingWorker(worker);
+    };
 
     const register = async () => {
       try {
+        startupAutoUpdateEligibleRef.current = Boolean(document.querySelector(".public-loading"));
         const registration = await navigator.serviceWorker.register("/service-worker.js", {
           scope: "/",
           updateViaCache: "none",
@@ -142,7 +163,7 @@ export default function PwaLifecycle() {
         if (disposed) return;
 
         if (registration.waiting && navigator.serviceWorker.controller) {
-          setWaitingWorker(registration.waiting);
+          applyDuringStartupOrNotify(registration.waiting);
         }
 
         registration.addEventListener("updatefound", () => {
@@ -154,7 +175,7 @@ export default function PwaLifecycle() {
               && navigator.serviceWorker.controller
               && !disposed
             ) {
-              setWaitingWorker(installing);
+              applyDuringStartupOrNotify(installing);
             }
           });
         });

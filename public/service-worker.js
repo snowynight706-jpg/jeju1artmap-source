@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "wonartmap-pwa-";
-const CACHE_VERSION = "2026-08-20-v10";
+const CACHE_VERSION = "2026-08-20-v11";
 const CORE_CACHE = `${CACHE_PREFIX}core-${CACHE_VERSION}`;
 const IMAGE_CACHE = `${CACHE_PREFIX}images-${CACHE_VERSION}`;
 const BASE_MAP_CACHE = `${CACHE_PREFIX}base-map-${CACHE_VERSION}`;

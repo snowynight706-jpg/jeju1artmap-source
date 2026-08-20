@@ -38,6 +38,10 @@ test("review uploads bypass PWA caching and report mobile failure causes", () =>
   assert.match(storyRouteSource, /place_story_upload_diagnostics/);
   assert.match(storyRouteSource, /scope === "upload-diagnostics"/);
   assert.match(storyRouteSource, /user_agent AS userAgent/);
+  assert.match(pageSource, /PLACE_STORIES_API}\?scope=upload-diagnostics/);
+  assert.match(pageSource, /모바일 후기 업로드 오류/);
+  assert.match(pageSource, /사진·후기 내용과 닉네임은 기록하지 않습니다/);
+  assert.match(pageSource, /uploadDiagnosticErrorLabel/);
 });
 
 test("review place identity and multipart allowance avoid false mobile upload errors", () => {

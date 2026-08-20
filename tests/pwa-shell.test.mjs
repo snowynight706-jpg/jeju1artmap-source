@@ -59,6 +59,11 @@ test("production registration checks for updates without blocking development", 
   assert.match(lifecycleSource, /브라우저 메뉴에서 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 선택하세요/);
   assert.match(lifecycleSource, /querySelectorAll<HTMLMetaElement>\('meta\[name="viewport"\]'\)/);
   assert.match(lifecycleSource, /viewportTags\.slice\(0, -1\)\.forEach\(\(tag\) => tag\.remove\(\)\)/);
+  assert.match(lifecycleSource, /document\.querySelector\("\.public-loading"\)/);
+  assert.match(lifecycleSource, /sessionStorage\.getItem\(autoUpdateSessionKey\) === "1"/);
+  assert.match(lifecycleSource, /최신 아트맵을 자동 업데이트하고 있습니다/);
+  assert.match(lifecycleSource, /applyDuringStartupOrNotify\(registration\.waiting\)/);
+  assert.match(lifecycleSource, /applyDuringStartupOrNotify\(installing\)/);
   assert.match(layoutSource, /manifest: "\/manifest\.webmanifest"/);
   assert.match(layoutSource, /viewport-fit=cover/);
   assert.match(layoutSource, /apple-mobile-web-app-capable" content="yes"/);
