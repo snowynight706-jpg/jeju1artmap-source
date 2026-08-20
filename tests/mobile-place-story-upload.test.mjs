@@ -21,10 +21,16 @@ test("mobile photos have a native picker and resilient encoding fallbacks", () =
   assert.match(pageSource, /const STORY_PHOTO_ENCODING_ATTEMPTS = \[/);
   assert.match(pageSource, /\{ maximumEdge: 1080, type: "image\/webp", quality: 0\.7 \}/);
   assert.match(pageSource, /\{ maximumEdge: 900, type: "image\/jpeg", quality: 0\.64 \}/);
+  assert.match(pageSource, /\{ maximumEdge: 640, type: "image\/jpeg", quality: 0\.5 \}/);
   assert.match(pageSource, /for \(const attempt of STORY_PHOTO_ENCODING_ATTEMPTS\)/);
   assert.match(pageSource, /blob\.size <= STORY_PHOTO_TARGET_BYTES/);
   assert.match(pageSource, /createImageBitmap\(file, \{ imageOrientation: "from-image" \}\)/);
   assert.match(pageSource, /\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(file\.type\)/);
+  assert.match(pageSource, /file\.size <= STORY_PHOTO_TARGET_BYTES\) return file/);
+  assert.doesNotMatch(pageSource, /file\.size <= STORY_PHOTO_MAX_UPLOAD_BYTES\) \{\s+return file/);
+  assert.match(pageSource, /throw new Error\("photo-encode-failed"\)/);
+  assert.match(pageSource, /throw new Error\("photo-compression-target-failed"\)/);
+  assert.match(pageSource, /preparedPhoto\.size > STORY_PHOTO_TARGET_BYTES/);
   assert.match(styleSource, /\.place-story-photo-picker input \{ position: absolute; inset: 0;/);
 });
 

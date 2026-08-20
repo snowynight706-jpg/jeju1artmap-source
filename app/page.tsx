@@ -159,6 +159,8 @@ const STORY_PHOTO_ENCODING_ATTEMPTS = [
   { maximumEdge: 1080, type: "image/webp", quality: 0.7 },
   { maximumEdge: 1080, type: "image/jpeg", quality: 0.7 },
   { maximumEdge: 900, type: "image/jpeg", quality: 0.64 },
+  { maximumEdge: 720, type: "image/jpeg", quality: 0.56 },
+  { maximumEdge: 640, type: "image/jpeg", quality: 0.5 },
 ] as const;
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 const UI_THEME_EASTER_EGG_PLACES = new Set([
@@ -1342,6 +1344,9 @@ function uploadDiagnosticStageLabel(stage: PlaceStoryUploadDiagnostic["stage"]) 
 function uploadDiagnosticErrorLabel(code: string, status: number) {
   if (code === "offline") return "오프라인 상태";
   if (code === "network-error") return "네트워크 전송 실패";
+  if (code === "photo-decode-failed") return "기기 사진 열기 실패";
+  if (code === "photo-encode-failed") return "기기 사진 변환 실패";
+  if (code === "photo-compression-target-failed") return "목표 용량 압축 실패";
   if (code === "request-too-large" || status === 413) return "요청 용량 제한";
   if (code === "photo-too-large") return "기기 압축 실패";
   if (code === "photo-unsupported" || status === 415) return "지원하지 않는 사진 형식";
@@ -1629,12 +1634,15 @@ async function decodeStoryPhoto(file: File) {
 
 async function prepareStoryPhoto(file: File) {
   if (file.size > STORY_PHOTO_MAX_SOURCE_BYTES) throw new Error("photo-source-too-large");
+  if (["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= STORY_PHOTO_TARGET_BYTES) return file;
   let canvas: HTMLCanvasElement | null = null;
   let release = () => {};
   try {
-    const image = await decodeStoryPhoto(file);
+    const image = await decodeStoryPhoto(file).catch(() => {
+      throw new Error("photo-decode-failed");
+    });
     release = image.release;
-    if (!image.width || !image.height) throw new Error("photo-unsupported");
+    if (!image.width || !image.height) throw new Error("photo-decode-failed");
     canvas = document.createElement("canvas");
     let smallestBlob: Blob | null = null;
     let renderedWidth = 0;
@@ -1644,20 +1652,25 @@ async function prepareStoryPhoto(file: File) {
       const scale = Math.min(1, attempt.maximumEdge / Math.max(image.width, image.height));
       const width = Math.max(1, Math.round(image.width * scale));
       const height = Math.max(1, Math.round(image.height * scale));
-      if (width !== renderedWidth || height !== renderedHeight) {
-        canvas.width = width;
-        canvas.height = height;
-        const context = canvas.getContext("2d", { alpha: false });
-        if (!context) throw new Error("photo canvas unavailable");
-        context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = "high";
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, width, height);
-        context.drawImage(image.drawable, 0, 0, width, height);
-        renderedWidth = width;
-        renderedHeight = height;
+      let blob: Blob | null = null;
+      try {
+        if (width !== renderedWidth || height !== renderedHeight) {
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext("2d", { alpha: false });
+          if (!context) continue;
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = "high";
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, width, height);
+          context.drawImage(image.drawable, 0, 0, width, height);
+          renderedWidth = width;
+          renderedHeight = height;
+        }
+        blob = await timedPhotoBlob(canvas, attempt.type, attempt.quality);
+      } catch {
+        // 한 인코더가 실패해도 더 작은 JPEG 단계까지 계속 시도합니다.
       }
-      const blob = await timedPhotoBlob(canvas, attempt.type, attempt.quality);
       if (!blob || blob.type !== attempt.type) continue;
       if (!smallestBlob || blob.size < smallestBlob.size) smallestBlob = blob;
       if (blob.size <= STORY_PHOTO_TARGET_BYTES) {
@@ -1666,15 +1679,16 @@ async function prepareStoryPhoto(file: File) {
       }
     }
 
-    if (!smallestBlob || smallestBlob.size > STORY_PHOTO_MAX_UPLOAD_BYTES) throw new Error("photo-too-large");
-    const extension = smallestBlob.type === "image/jpeg" ? "jpg" : "webp";
-    return new File([smallestBlob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`, { type: smallestBlob.type });
+    if (smallestBlob) throw new Error("photo-compression-target-failed");
+    throw new Error("photo-encode-failed");
   } catch (error) {
-    if (["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= STORY_PHOTO_MAX_UPLOAD_BYTES) {
-      return file;
-    }
-    if (error instanceof Error && ["photo-source-too-large", "photo-too-large"].includes(error.message)) throw error;
-    throw new Error("photo-unsupported");
+    if (error instanceof Error && [
+      "photo-source-too-large",
+      "photo-decode-failed",
+      "photo-encode-failed",
+      "photo-compression-target-failed",
+    ].includes(error.message)) throw error;
+    throw new Error("photo-encode-failed");
   } finally {
     if (canvas) {
       canvas.width = 1;
@@ -7556,7 +7570,7 @@ export default function Home() {
       form.set("visitorId", persistentVisitorId());
       if (placeStoryPhoto) {
         preparedPhoto = await prepareStoryPhoto(placeStoryPhoto);
-        if (preparedPhoto.size > STORY_PHOTO_MAX_UPLOAD_BYTES) throw new Error("photo-too-large");
+        if (preparedPhoto.size > STORY_PHOTO_TARGET_BYTES) throw new Error("photo-compression-target-failed");
         form.set("photo", preparedPhoto);
       }
       uploadStage = "request";
@@ -7607,6 +7621,12 @@ export default function Home() {
         ? "짧은 시간에 등록이 많습니다. 잠시 뒤 다시 시도해 주세요."
         : message === "photo-too-large"
           ? "기기에서 사진 압축 결과를 만들지 못했습니다. 다른 사진 형식으로 다시 선택해 주세요."
+          : message === "photo-decode-failed"
+            ? "선택한 사진을 기기에서 열지 못했습니다. 사진을 다시 저장하거나 다른 사진을 선택해 주세요."
+          : message === "photo-encode-failed"
+            ? "기기에서 사진 변환을 완료하지 못했습니다. 원본은 전송하지 않았으며 다른 사진을 선택해 주세요."
+          : message === "photo-compression-target-failed"
+            ? "사진을 안전한 업로드 용량까지 줄이지 못했습니다. 원본은 전송하지 않았으며 다른 사진을 선택해 주세요."
           : message === "request-too-large"
             ? `사진은 ${preparedPhoto ? `${Math.max(1, Math.round(preparedPhoto.size / 1024))}KB로 준비됐지만 ` : ""}서버 요청 크기 제한에 걸렸습니다.`
           : message === "photo-source-too-large"
