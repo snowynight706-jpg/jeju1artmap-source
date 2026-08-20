@@ -90,6 +90,7 @@ const PLACE_STORIES_API = "/api/place-stories";
 const PLACE_EVENTS_API = "/api/place-events";
 const PLACE_REGISTRATION_REQUESTS_API = "/api/place-registration-requests";
 const ADMIN_SESSION_API = "/api/admin-session";
+const PUBLIC_VIEW_COOKIE = "jfac_map_public_view";
 const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06";
 const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04";
 const LATEST_DONGMUN_ASSET_ID = "dongmun-v08";
@@ -2463,6 +2464,7 @@ export default function Home() {
   const [adminLoginSubmitting, setAdminLoginSubmitting] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState("");
   const [adminAccessMethod, setAdminAccessMethod] = useState<"owner" | "shared" | null>(null);
+  const [publicViewOverride, setPublicViewOverride] = useState(false);
   const [zoom, setZoom] = useState(0.72);
   const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
@@ -4004,6 +4006,7 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
+    setPublicViewOverride(document.cookie.split(";").some((item) => item.trim() === `${PUBLIC_VIEW_COOKIE}=1`));
     fetch(PUBLIC_LAYOUT_API, { cache: "no-cache" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
@@ -8401,6 +8404,12 @@ export default function Home() {
     }
   };
 
+  const switchPublicView = (enabled: boolean) => {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${PUBLIC_VIEW_COOKIE}=${enabled ? "1" : ""}; Path=/; SameSite=Strict; Max-Age=${enabled ? 43_200 : 0}${secure}`;
+    window.location.reload();
+  };
+
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
   const editingEnabled = publicLayoutAccess === "editor" && !printPreviewMode;
   const activeGlobalCount = globalContentTab === "reviews"
@@ -8488,7 +8497,7 @@ export default function Home() {
           <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
         <div className="toolbar-group export-tools"><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 · 미리보기 중" : "출력"}</button></div>
-        <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
+        <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
@@ -8496,7 +8505,9 @@ export default function Home() {
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <button className="public-shortcut-trigger shortcut-trigger" type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
-        <button className="owner-signin admin-login-trigger" type="button" onClick={() => { setAdminPassword(""); setAdminLoginError(""); setAdminLoginOpen(true); }}>관리자 로그인</button>
+        {publicViewOverride
+          ? <button className="owner-signin admin-return-trigger" type="button" onClick={() => switchPublicView(false)}>관리자 화면으로</button>
+          : <button className="owner-signin admin-login-trigger" type="button" onClick={() => { setAdminPassword(""); setAdminLoginError(""); setAdminLoginOpen(true); }}>관리자 로그인</button>}
       </header>}
 
       <section className={`workspace ${publicLayoutAccess === "viewer" ? "public-viewer" : ""} ${leftOpen ? "" : "left-closed"} ${rightOpen ? "" : "right-closed"} ${leftPanelMode === "calibration" && leftOpen ? "calibration-open" : ""}`}>

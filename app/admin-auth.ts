@@ -11,6 +11,7 @@ export type AdminAccess = {
 };
 
 const ADMIN_COOKIE = "jfac_map_admin";
+const PUBLIC_VIEW_COOKIE = "jfac_map_public_view";
 const SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 
 function fixedTimeEqual(left: string, right: string) {
@@ -40,6 +41,10 @@ function cookieValue(request: Request, name: string) {
 }
 
 export function adminAccess(request: Request, runtime: AdminRuntimeEnv): AdminAccess {
+  if (cookieValue(request, PUBLIC_VIEW_COOKIE) === "1") {
+    return { allowed: false, actor: null, method: null };
+  }
+
   const ownerEmail = runtime.BASE_MAP_OWNER_EMAIL?.trim().toLowerCase() ?? "";
   const currentEmail = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase() ?? "";
   if (ownerEmail && currentEmail && fixedTimeEqual(currentEmail, ownerEmail)) {

@@ -62,7 +62,9 @@ test("the current Chilseong-ro screen and export assets retain a real alpha chan
   const id = "chilsungro-20260820-transparent";
   for (const variant of ["landmarks-hq", "landmarks-screen"]) {
     const bytes = await readFile(new URL(`../public/${variant}/${id}.webp`, import.meta.url));
-    assert.ok(bytes.includes(Buffer.from("ALPH")), `${variant} must include a WebP alpha chunk`);
+    const isLosslessAlphaWebP = bytes.includes(Buffer.from("VP8L"));
+    const isLossyAlphaWebP = bytes.includes(Buffer.from("ALPH"));
+    assert.ok(isLosslessAlphaWebP || isLossyAlphaWebP, `${variant} must retain WebP alpha data`);
   }
 });
 

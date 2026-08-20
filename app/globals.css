@@ -728,6 +728,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-layout-tools > span.published { color: #646464; }
 .public-layout-tools > span.draft-only { color: #9a672d; }
 .public-layout-tools button { height: 28px; padding: 0 7px; font-size: 8px; }
+.public-layout-tools button.public-view-link { border-color: #c8c8c8; background: white; color: #5d5d5d; font-weight: 700; }
+.public-layout-tools button.public-view-link:hover, .public-layout-tools button.public-view-link:focus-visible { border-color: #8f8f8f; background: #efefef; outline: none; }
 .public-layout-tools button.publish-layout { border-color: #646464; background: var(--emerald); color: white; font-weight: 700; }
 .public-topbar { box-shadow: 0 4px 18px rgb(51 51 51 / 8%); }
 .public-topbar .brand-block { min-width: 0; }
@@ -1472,7 +1474,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .export-tools select { display: none; }
   .toolbar-group button.primary-export { padding: 0 8px; font-size: 9px; }
   .draft-tools > span, .draft-tools button:not(.draft-save) { display: none; }
-  .public-layout-tools button:not(.publish-layout), .public-layout-tools > span { display: none; }
+  .public-layout-tools > span { display: none; }
 }
 
 @media (max-width: 760px) {
@@ -1507,6 +1509,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .statusbar span:nth-child(n+3) { display: none; }
   .public-topbar { position: absolute; top: calc(9px + env(safe-area-inset-top)); right: 9px; z-index: 130; width: auto; height: auto; min-height: 0; flex-basis: auto; padding: 0; border: 0; background: transparent; box-shadow: none; }
   .public-topbar .brand-block, .public-topbar .zoom-tools, .public-topbar .readonly-badge, .public-topbar .public-shortcut-trigger, .public-topbar .owner-signin { display: none; }
+  .public-topbar .admin-return-trigger { min-height: 34px; display: inline-flex; align-items: center; padding: 0 9px; background: rgb(255 255 255 / 94%); box-shadow: 0 5px 18px rgb(55 55 55 / 13%); font-size: 8px; backdrop-filter: blur(9px); }
   .main-hub-quick { min-height: 34px; padding: 0 9px; border-radius: 10px; background: rgb(255 249 231 / 94%); box-shadow: 0 5px 18px rgb(70 52 15 / 16%); font-size: 8px; backdrop-filter: blur(9px); }
   .public-place-sheet { left: 8px; right: 8px; top: auto; bottom: calc(34px + env(safe-area-inset-bottom)); width: auto; height: min(34dvh, 310px); max-height: none; border-radius: 14px; transition: height .24s cubic-bezier(.22, .78, .28, 1); }
   .public-place-sheet.expanded { height: calc(100dvh - 96px - env(safe-area-inset-bottom)); }
