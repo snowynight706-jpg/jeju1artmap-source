@@ -21,6 +21,35 @@ test("event-linked non-culture places are appended below native culture places",
   assert.deepEqual(placesForPublicCategory(items, "cafe", new Set(["shop-event"])).map((item) => item.id), ["cafe-event"]);
 });
 
+test("the shop tab also includes cafes and restaurants tagged as a goods shop", () => {
+  const items = [
+    { id: "primary-shop", categoryId: "shop", place: { additionalCategories: [] } },
+    { id: "cafe-with-goods", categoryId: "cafe", place: { additionalCategories: ["goods-shop", "rest"] } },
+    { id: "food-with-goods", categoryId: "food", place: { additionalCategories: ["goods-shop"] } },
+    { id: "plain-cafe", categoryId: "cafe", place: { additionalCategories: ["rest"] } },
+  ];
+
+  assert.deepEqual(
+    placesForPublicCategory(items, "shop").map((item) => item.id),
+    ["primary-shop", "cafe-with-goods", "food-with-goods"],
+  );
+  assert.deepEqual(placesForPublicCategory(items, "cafe").map((item) => item.id), ["cafe-with-goods", "plain-cafe"]);
+});
+
+test("the culture tab appends cafes and restaurants tagged as multi-cultural without event duplicates", () => {
+  const items = [
+    { id: "culture-native", categoryId: "culture", place: { additionalCategories: [] } },
+    { id: "cafe-cultural", categoryId: "cafe", place: { additionalCategories: ["multi-cultural"] } },
+    { id: "food-cultural-event", categoryId: "food", place: { additionalCategories: ["multi-cultural"] } },
+    { id: "cafe-event-only", categoryId: "cafe", place: { additionalCategories: [] } },
+  ];
+
+  assert.deepEqual(
+    placesForPublicCategory(items, "culture", new Set(["food-cultural-event", "cafe-event-only"])).map((item) => item.id),
+    ["culture-native", "cafe-cultural", "food-cultural-event", "cafe-event-only"],
+  );
+});
+
 test("category rows use the assigned map marker color and explain event-derived entries", () => {
   assert.match(pageSource, /className="public-place-marker-key"[\s\S]{0,140}categoryOf\(item\.anchor\.category\)\.color/);
   assert.match(pageSource, /className="public-place-event-badge">행사/);
