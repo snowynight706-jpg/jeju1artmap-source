@@ -5,6 +5,7 @@ import {
   ChangeEvent,
   type CSSProperties,
   FormEvent,
+  memo,
   PointerEvent as ReactPointerEvent,
   lazy,
   Suspense,
@@ -2517,6 +2518,255 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
   return [...new Map(rows.map((row) => [row.name, row])).values()];
 }
 
+type MapRenderActions = {
+  measureAssetBounds: (assetId: string, image: HTMLImageElement) => void;
+  selectPublicMarker: (elementId: string) => void;
+  startDenseLabelDrag: (event: ReactPointerEvent<HTMLDivElement>, cluster: DenseLabelCluster) => void;
+  startDrag: (event: ReactPointerEvent<HTMLDivElement>, element: MapElement) => void;
+  startLabelDrag: (event: ReactPointerEvent<HTMLDivElement>, element: MapElement) => void;
+  startPan: (event: ReactPointerEvent<HTMLElement>, pendingPublicPlaceId?: string, pendingPlaceRequestLocation?: boolean) => void;
+  startResize: (event: ReactPointerEvent<HTMLButtonElement>, element: MapElement) => void;
+  togglePlaceEventMapSelection: (elementId: string) => void;
+};
+
+type MapRenderActionsRef = { current: MapRenderActions | null };
+type MapLabelStatus = { hasEvent: boolean; reviewCount: number; hasNewReview: boolean };
+
+const EMPTY_MAP_LABEL_STATUS: MapLabelStatus = Object.freeze({ hasEvent: false, reviewCount: 0, hasNewReview: false });
+
+type MapElementMarkerProps = {
+  actionsRef: MapRenderActionsRef;
+  asset?: MapAsset;
+  assetBounds?: VisualBounds;
+  collisionClass: string;
+  editingEnabled: boolean;
+  element: MapElement;
+  eventPlacePicked: boolean;
+  eventPlaceSelectionMode: boolean;
+  fitZoom: number;
+  focusPulse: boolean;
+  isCalibrationReference: boolean;
+  isPublicSelected: boolean;
+  isSelected: boolean;
+  labelClustered: boolean;
+  labelStatus: MapLabelStatus;
+  metaColor: string;
+  metaGlyph: string;
+  placeRequestPickingLocation: boolean;
+  printPreviewMode: boolean;
+  publicLayoutAccess: PublicLayoutAccess;
+  publicSelectedMarkerZIndex: number;
+  showLabel: boolean;
+  showMarker: boolean;
+  viewMode: ViewMode;
+  zoom: number;
+};
+
+const MapElementMarker = memo(function MapElementMarker({
+  actionsRef,
+  asset,
+  assetBounds,
+  collisionClass,
+  editingEnabled,
+  element,
+  eventPlacePicked,
+  eventPlaceSelectionMode,
+  fitZoom,
+  focusPulse,
+  isCalibrationReference,
+  isPublicSelected,
+  isSelected,
+  labelClustered,
+  labelStatus,
+  metaColor,
+  metaGlyph,
+  placeRequestPickingLocation,
+  printPreviewMode,
+  publicLayoutAccess,
+  publicSelectedMarkerZIndex,
+  showLabel,
+  showMarker,
+  viewMode,
+  zoom,
+}: MapElementMarkerProps) {
+  const isMainHub = isPrimaryHubLabel(element.name);
+  const publicElementName = isMainHub ? "제주소통협력센터" : element.name;
+  const keyboardSelectable = publicLayoutAccess === "viewer" || eventPlaceSelectionMode;
+  const displaySize = mapElementDisplaySize(element);
+
+  return <div
+    data-element-id={element.id}
+    className={`map-element ${element.category !== "landmark" ? "general-marker" : ""} ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${isMainHub ? "main-hub" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${focusPulse ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
+    style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${displaySize}%`, zIndex: isPublicSelected ? publicSelectedMarkerZIndex : element.z, color: metaColor, opacity: element.opacity / 100 }}
+    onPointerDown={eventPlaceSelectionMode
+      ? (event) => actionsRef.current?.startPan(event, element.id)
+      : editingEnabled
+        ? (event) => actionsRef.current?.startDrag(event, element)
+        : publicLayoutAccess === "viewer"
+          ? (event) => actionsRef.current?.startPan(event, placeRequestPickingLocation ? undefined : element.id, placeRequestPickingLocation)
+          : undefined}
+    role={keyboardSelectable ? "button" : undefined}
+    tabIndex={keyboardSelectable ? 0 : undefined}
+    aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}
+    onKeyDown={keyboardSelectable ? (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      if (eventPlaceSelectionMode) actionsRef.current?.togglePlaceEventMapSelection(element.id);
+      else actionsRef.current?.selectPublicMarker(element.id);
+    } : undefined}
+  >
+    {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
+    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => actionsRef.current?.measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{metaGlyph}</span></div>}</div>}
+    {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
+    {editingEnabled && !element.locked && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">검수 필요</span>}
+    {showLabel && !labelClustered && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : assetBounds, !printPreviewMode)} onPointerDown={isSelected ? (event) => actionsRef.current?.startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음">EVENT</span>}{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.reviewCount > 0 && <span className={`map-label-status reviews ${labelStatus.hasNewReview ? "new" : ""}`} aria-label={labelStatus.hasNewReview ? `${publicElementName} 최근 3일 내 새 후기 있음` : `${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={labelStatus.hasNewReview ? "최근 3일 내 새 후기" : `후기 ${labelStatus.reviewCount}개`}>{labelStatus.hasNewReview ? "NEW" : labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</div>}
+    {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => actionsRef.current?.startResize(event, element)} />}
+  </div>;
+});
+
+type MapElementLayerProps = {
+  actionsRef: MapRenderActionsRef;
+  assetVisualBounds: Record<string, VisualBounds>;
+  assetsById: Map<string, MapAsset>;
+  calibrationMode: boolean;
+  calibrationReferenceNames: Set<string>;
+  clusteredLabelElementIds: Set<string>;
+  collisions: { hard: Set<string>; clearance: Set<string> };
+  editingEnabled: boolean;
+  eventPlaceKeySet: Set<string>;
+  eventPlaceSelectionMode: boolean;
+  fitZoom: number;
+  focusPulseId: string | null;
+  mapLabelStatusByElementId: Map<string, MapLabelStatus>;
+  placeRequestPickingLocation: boolean;
+  printPreviewMode: boolean;
+  publicLayoutAccess: PublicLayoutAccess;
+  publicSelectedMarkerZIndex: number;
+  selectedId: string | null;
+  stageLabelIds: Set<string>;
+  stageMarkerIds: Set<string>;
+  viewMode: ViewMode;
+  visibleElements: MapElement[];
+  zoom: number;
+};
+
+const MapElementLayer = memo(function MapElementLayer(props: MapElementLayerProps) {
+  return <div className="element-layer" data-render-isolation="marker-layer">{props.visibleElements.map((element) => {
+    const meta = categoryOf(element.category);
+    const asset = element.assetId ? props.assetsById.get(element.assetId) : undefined;
+    const collisionClass = props.collisions.hard.has(element.id) ? "collision-hard" : props.collisions.clearance.has(element.id) ? "collision-near" : "";
+    return <MapElementMarker
+      key={element.id}
+      actionsRef={props.actionsRef}
+      asset={asset}
+      assetBounds={asset ? props.assetVisualBounds[asset.id] : undefined}
+      collisionClass={collisionClass}
+      editingEnabled={props.editingEnabled}
+      element={element}
+      eventPlacePicked={props.eventPlaceSelectionMode && props.eventPlaceKeySet.has(placeContentKey(element))}
+      eventPlaceSelectionMode={props.eventPlaceSelectionMode}
+      fitZoom={props.fitZoom}
+      focusPulse={props.editingEnabled && props.focusPulseId === element.id}
+      isCalibrationReference={props.editingEnabled && props.calibrationMode && props.calibrationReferenceNames.has(normalizePlaceName(element.name))}
+      isPublicSelected={props.publicLayoutAccess === "viewer" && props.selectedId === element.id}
+      isSelected={props.editingEnabled && props.selectedId === element.id}
+      labelClustered={props.clusteredLabelElementIds.has(element.id)}
+      labelStatus={props.mapLabelStatusByElementId.get(element.id) ?? EMPTY_MAP_LABEL_STATUS}
+      metaColor={meta.color}
+      metaGlyph={meta.glyph}
+      placeRequestPickingLocation={props.placeRequestPickingLocation}
+      printPreviewMode={props.printPreviewMode}
+      publicLayoutAccess={props.publicLayoutAccess}
+      publicSelectedMarkerZIndex={props.publicSelectedMarkerZIndex}
+      showLabel={props.stageLabelIds.has(element.id)}
+      showMarker={props.stageMarkerIds.has(element.id)}
+      viewMode={props.viewMode}
+      zoom={props.zoom}
+    />;
+  })}</div>;
+});
+
+type MapConnectorLayerProps = {
+  denseLabelClusters: DenseLabelCluster[];
+  printPreviewMode: boolean;
+  selectedDenseLabelId: string | null;
+  selectedId: string | null;
+  stageDimensions: StageDimensions;
+  viewMode: ViewMode;
+  visibleElements: MapElement[];
+  visibleElementsById: Map<string, MapElement>;
+  zoom: number;
+};
+
+const MapConnectorLayer = memo(function MapConnectorLayer({
+  denseLabelClusters,
+  printPreviewMode,
+  selectedDenseLabelId,
+  selectedId,
+  stageDimensions,
+  viewMode,
+  visibleElements,
+  visibleElementsById,
+  zoom,
+}: MapConnectorLayerProps) {
+  return <svg className="connector-layer" data-render-isolation="connector-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{!printPreviewMode && visibleElements.map((element) => {
+    const showAnchor = viewMode === "anchors" || element.connectorVisible || selectedId === element.id;
+    if (!showAnchor) return null;
+    const showLine = element.connectorVisible && (Math.abs(element.x - element.anchorX) > 0.05 || Math.abs(element.y - element.anchorY) > 0.05);
+    return <g key={`anchor-${element.id}`} opacity={element.opacity / 100}>{showLine && <line x1={element.anchorX} y1={element.anchorY} x2={element.x} y2={element.y} stroke={element.connectorColor} strokeWidth={element.connectorWidth / 10} vectorEffect="non-scaling-stroke" />}{selectedId !== element.id && <><circle cx={element.anchorX} cy={element.anchorY} r="0.42" fill="white" stroke={element.connectorColor} strokeWidth="0.13" vectorEffect="non-scaling-stroke" /><circle cx={element.anchorX} cy={element.anchorY} r="0.12" fill={element.connectorColor} /></>}</g>;
+  })}{denseLabelClusters.flatMap((cluster) => cluster.rows.map((row) => {
+    const element = visibleElementsById.get(row.elementId);
+    const color = categoryOf(row.category).color;
+    const target = denseLabelScreenTarget(cluster, row, zoom, stageDimensions);
+    const connectorOpacity = element
+      ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
+      : 0.34;
+    const connectorWidth = element
+      ? distanceAwareConnectorWidth(element.x, element.y, target.x, target.y, MAP_ASPECT)
+      : 1.1;
+    const selectedConnector = selectedDenseLabelId === cluster.id;
+    return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedConnector ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" style={{ opacity: selectedConnector ? Math.max(0.9, connectorOpacity) : connectorOpacity, strokeWidth: selectedConnector ? 2.5 : connectorWidth }} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
+  }))}</svg>;
+});
+
+type DenseLabelLayerProps = {
+  actionsRef: MapRenderActionsRef;
+  denseLabelClusters: DenseLabelCluster[];
+  editingEnabled: boolean;
+  mapLabelStatusByElementId: Map<string, MapLabelStatus>;
+  placeRequestPickingLocation: boolean;
+  printPreviewMode: boolean;
+  publicLayoutAccess: PublicLayoutAccess;
+  selectedDenseLabelId: string | null;
+};
+
+const DenseLabelLayer = memo(function DenseLabelLayer({
+  actionsRef,
+  denseLabelClusters,
+  editingEnabled,
+  mapLabelStatusByElementId,
+  placeRequestPickingLocation,
+  printPreviewMode,
+  publicLayoutAccess,
+  selectedDenseLabelId,
+}: DenseLabelLayerProps) {
+  if (!denseLabelClusters.length) return null;
+  return <div className="dense-label-layer" data-render-isolation="dense-label-layer" aria-label="통합 라벨">
+    {denseLabelClusters.map((cluster) => <div
+      key={cluster.id}
+      className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
+      style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: "translate(-50%, -50%)" }}
+      onPointerDown={editingEnabled ? (event) => actionsRef.current?.startDenseLabelDrag(event, cluster) : undefined}
+      title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
+      role={editingEnabled ? "button" : undefined}
+      aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
+    ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => {
+      const rowStatus = mapLabelStatusByElementId.get(row.elementId) ?? EMPTY_MAP_LABEL_STATUS;
+      return <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => actionsRef.current?.startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); actionsRef.current?.selectPublicMarker(row.elementId); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.hasEvent && <em className="dense-map-event" aria-label={`${row.name} 행사 있음`}>EVENT</em>}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.reviewCount > 0 && <em className={`dense-map-reviews ${rowStatus.hasNewReview ? "new" : ""}`} aria-label={rowStatus.hasNewReview ? `${row.name} 최근 3일 내 새 후기 있음` : `${row.name} 후기 ${rowStatus.reviewCount}개`}>{rowStatus.hasNewReview ? "NEW" : rowStatus.reviewCount > 99 ? "99+" : rowStatus.reviewCount}</em>}</span>;
+    })}</strong></div>)}
+  </div>;
+});
+
 export default function Home() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageWrapRef = useRef<HTMLDivElement>(null);
@@ -2533,6 +2783,7 @@ export default function Home() {
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
   const adminShortcutActionsRef = useRef({ saveDraft: () => {}, undo: () => {}, redo: () => {} });
+  const mapRenderActionsRef = useRef<MapRenderActions | null>(null);
   const placeRequestLocationBeforePickingRef = useRef<{ x: number; y: number } | null>(null);
   const eventDialogDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const activeTouchPointersRef = useRef(new Map<number, { clientX: number; clientY: number }>());
@@ -5785,6 +6036,12 @@ export default function Home() {
     });
   };
 
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>, element: MapElement) => {
+    event.stopPropagation();
+    pushHistory();
+    setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size });
+  };
+
   const focusMapPosition = (
     x: number,
     y: number,
@@ -8901,6 +9158,17 @@ export default function Home() {
     <small>{startupAssetsReady && startupInitialViewReady ? "화면 정리" : startupLoadTotal > 0 ? `${Math.min(startupLoadDone, startupLoadTotal)} / ${startupLoadTotal}` : "연결 준비"}</small>
   </section>;
 
+  mapRenderActionsRef.current = {
+    measureAssetBounds,
+    selectPublicMarker,
+    startDenseLabelDrag,
+    startDrag,
+    startLabelDrag,
+    startPan,
+    startResize,
+    togglePlaceEventMapSelection,
+  };
+
   if (publicLayoutAccess === "loading") {
     return <main className="app-shell public-loading" data-ui-theme={uiTheme}>{startupLoadingCard}</main>;
   }
@@ -9207,71 +9475,56 @@ export default function Home() {
                   {secondaryCalibrationPoints.map((point) => <g key={`secondary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-secondary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.45" className="calibration-secondary-dot" /></g>)}
                   {tertiaryCalibrationPoints.map((point) => <g key={`tertiary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-tertiary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.4" className="calibration-tertiary-dot" /></g>)}
                 </svg>}
-                <svg className="connector-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{!printPreviewMode && visibleElements.map((element) => {
-                  const showAnchor = viewMode === "anchors" || element.connectorVisible || selectedId === element.id;
-                  if (!showAnchor) return null;
-                  const showLine = element.connectorVisible && (Math.abs(element.x - element.anchorX) > 0.05 || Math.abs(element.y - element.anchorY) > 0.05);
-                  return <g key={`anchor-${element.id}`} opacity={element.opacity / 100}>{showLine && <line x1={element.anchorX} y1={element.anchorY} x2={element.x} y2={element.y} stroke={element.connectorColor} strokeWidth={element.connectorWidth / 10} vectorEffect="non-scaling-stroke" />}{selectedId !== element.id && <><circle cx={element.anchorX} cy={element.anchorY} r="0.42" fill="white" stroke={element.connectorColor} strokeWidth="0.13" vectorEffect="non-scaling-stroke" /><circle cx={element.anchorX} cy={element.anchorY} r="0.12" fill={element.connectorColor} /></>}</g>;
-                })}{denseLabelClusters.flatMap((cluster) => cluster.rows.map((row) => {
-                  const element = visibleElementsById.get(row.elementId);
-                  const color = categoryOf(row.category).color;
-                  const target = denseLabelScreenTarget(cluster, row, zoom, stageDimensions);
-                  const connectorOpacity = element
-                    ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
-                    : 0.34;
-                  const connectorWidth = element
-                    ? distanceAwareConnectorWidth(element.x, element.y, target.x, target.y, MAP_ASPECT)
-                    : 1.1;
-                  const selectedConnector = selectedDenseLabelId === cluster.id;
-                  return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedConnector ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" style={{ opacity: selectedConnector ? Math.max(0.9, connectorOpacity) : connectorOpacity, strokeWidth: selectedConnector ? 2.5 : connectorWidth }} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
-                }))}</svg>
-                <div className="element-layer">{visibleElements.map((element) => {
-                  const meta = categoryOf(element.category); const isSelected = editingEnabled && selectedId === element.id; const asset = element.assetId ? assetsById.get(element.assetId) : undefined;
-                  const isPublicSelected = publicLayoutAccess === "viewer" && selectedId === element.id;
-                  const showMarker = stageMarkerIds.has(element.id);
-                  const showLabel = stageLabelIds.has(element.id);
-                  const isCalibrationReference = editingEnabled && calibrationMode && calibrationReferenceNames.has(normalizePlaceName(element.name));
-                  const collisionClass = collisions.hard.has(element.id) ? "collision-hard" : collisions.clearance.has(element.id) ? "collision-near" : "";
-                  const eventPlacePicked = eventPlaceSelectionMode && eventPlaceKeySet.has(placeContentKey(element));
-                  const keyboardSelectable = publicLayoutAccess === "viewer" || eventPlaceSelectionMode;
-                  const isMainHub = isPrimaryHubLabel(element.name);
-                  const displaySize = mapElementDisplaySize(element);
-                  const publicElementName = isMainHub ? "제주소통협력센터" : element.name;
-                  const labelStatus = mapLabelStatusByElementId.get(element.id) ?? { hasEvent: false, reviewCount: 0, hasNewReview: false };
-                  return <div
-                    key={element.id}
-                    data-element-id={element.id}
-                    className={`map-element ${element.category !== "landmark" ? "general-marker" : ""} ${isSelected ? "selected" : ""} ${isPublicSelected ? "public-active" : ""} ${publicLayoutAccess === "viewer" ? "public-interactive" : ""} ${isMainHub ? "main-hub" : ""} ${eventPlacePicked ? "event-place-picked" : ""} ${editingEnabled && focusPulseId === element.id ? "focus-pulse" : ""} ${element.locked && editingEnabled ? "locked" : ""} ${isCalibrationReference ? "calibration-reference" : ""} ${editingEnabled && viewMode === "collisions" ? collisionClass : ""} ${!showMarker || (editingEnabled && viewMode === "labels") ? "label-only" : ""}`}
-                    style={{ left: `${element.x}%`, top: `${element.y}%`, width: `${displaySize}%`, zIndex: isPublicSelected ? publicSelectedMarkerZIndex : element.z, color: meta.color, opacity: element.opacity / 100 }}
-                    onPointerDown={eventPlaceSelectionMode ? (event) => startPan(event, element.id) : editingEnabled ? (event) => startDrag(event, element) : publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : element.id, placeRequestPickingLocation) : undefined}
-                    role={keyboardSelectable ? "button" : undefined}
-                    tabIndex={keyboardSelectable ? 0 : undefined}
-                    aria-label={eventPlaceSelectionMode ? `${element.name} 행사 장소 ${eventPlacePicked ? "선택 해제" : "추가"}` : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}
-                    onKeyDown={keyboardSelectable ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); if (eventPlaceSelectionMode) togglePlaceEventMapSelection(element.id); else selectPublicMarker(element.id); } } : undefined}
-                  >
-                    {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
-                    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{meta.glyph}</span></div>}</div>}
-                    {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
-                    {editingEnabled && !element.locked && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">검수 필요</span>}
-                    {showLabel && !clusteredLabelElementIds.has(element.id) && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : asset ? assetVisualBounds[asset.id] : undefined, !printPreviewMode)} onPointerDown={isSelected ? (event) => startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음">EVENT</span>}{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.reviewCount > 0 && <span className={`map-label-status reviews ${labelStatus.hasNewReview ? "new" : ""}`} aria-label={labelStatus.hasNewReview ? `${publicElementName} 최근 3일 내 새 후기 있음` : `${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={labelStatus.hasNewReview ? "최근 3일 내 새 후기" : `후기 ${labelStatus.reviewCount}개`}>{labelStatus.hasNewReview ? "NEW" : labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</div>}
-                    {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => { event.stopPropagation(); pushHistory(); setInteraction({ type: "resize", id: element.id, startX: event.clientX, startSize: element.size }); }} />}
-                  </div>;
-                })}</div>
+                <MapConnectorLayer
+                  denseLabelClusters={denseLabelClusters}
+                  printPreviewMode={printPreviewMode}
+                  selectedDenseLabelId={selectedDenseLabelId}
+                  selectedId={selectedId}
+                  stageDimensions={stageDimensions}
+                  viewMode={viewMode}
+                  visibleElements={visibleElements}
+                  visibleElementsById={visibleElementsById}
+                  zoom={zoom}
+                />
+                <MapElementLayer
+                  actionsRef={mapRenderActionsRef}
+                  assetVisualBounds={assetVisualBounds}
+                  assetsById={assetsById}
+                  calibrationMode={calibrationMode}
+                  calibrationReferenceNames={calibrationReferenceNames}
+                  clusteredLabelElementIds={clusteredLabelElementIds}
+                  collisions={collisions}
+                  editingEnabled={editingEnabled}
+                  eventPlaceKeySet={eventPlaceKeySet}
+                  eventPlaceSelectionMode={eventPlaceSelectionMode}
+                  fitZoom={fitZoom}
+                  focusPulseId={focusPulseId}
+                  mapLabelStatusByElementId={mapLabelStatusByElementId}
+                  placeRequestPickingLocation={placeRequestPickingLocation}
+                  printPreviewMode={printPreviewMode}
+                  publicLayoutAccess={publicLayoutAccess}
+                  publicSelectedMarkerZIndex={publicSelectedMarkerZIndex}
+                  selectedId={selectedId}
+                  stageLabelIds={stageLabelIds}
+                  stageMarkerIds={stageMarkerIds}
+                  viewMode={viewMode}
+                  visibleElements={visibleElements}
+                  zoom={zoom}
+                />
                 {placeRequestPickingLocation && placeRequestLocation && <div className="place-request-location-marker" style={{ left: `${placeRequestLocation.x}%`, top: `${placeRequestLocation.y}%` }} aria-label="요청할 마커 위치">
                   <img src={markerAssetSrc(placeRequestMarkerStyle, placeRequestCategory)} alt="" draggable={false} decoding="async" />
                   <span>제안 위치</span>
                 </div>}
-                {!!denseLabelClusters.length && <div className="dense-label-layer" aria-label="통합 라벨">
-                  {denseLabelClusters.map((cluster) => <div
-                    key={cluster.id}
-                    className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
-                    style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: "translate(-50%, -50%)" }}
-                    onPointerDown={editingEnabled ? (event) => startDenseLabelDrag(event, cluster) : undefined}
-                    title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
-                    role={editingEnabled ? "button" : undefined}
-                    aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
-                  ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => { const rowStatus = mapLabelStatusByElementId.get(row.elementId) ?? { hasEvent: false, reviewCount: 0, hasNewReview: false }; return <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); selectPublicMarker(row.elementId); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.hasEvent && <em className="dense-map-event" aria-label={`${row.name} 행사 있음`}>EVENT</em>}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.reviewCount > 0 && <em className={`dense-map-reviews ${rowStatus.hasNewReview ? "new" : ""}`} aria-label={rowStatus.hasNewReview ? `${row.name} 최근 3일 내 새 후기 있음` : `${row.name} 후기 ${rowStatus.reviewCount}개`}>{rowStatus.hasNewReview ? "NEW" : rowStatus.reviewCount > 99 ? "99+" : rowStatus.reviewCount}</em>}</span>; })}</strong></div>)}
-                </div>}
+                <DenseLabelLayer
+                  actionsRef={mapRenderActionsRef}
+                  denseLabelClusters={denseLabelClusters}
+                  editingEnabled={editingEnabled}
+                  mapLabelStatusByElementId={mapLabelStatusByElementId}
+                  placeRequestPickingLocation={placeRequestPickingLocation}
+                  printPreviewMode={printPreviewMode}
+                  publicLayoutAccess={publicLayoutAccess}
+                  selectedDenseLabelId={selectedDenseLabelId}
+                />
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.72" className="active-anchor-halo" vectorEffect="non-scaling-stroke" />

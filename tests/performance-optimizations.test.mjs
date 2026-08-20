@@ -49,3 +49,14 @@ test("screen landmarks and build assets use lightweight, immutable delivery path
   assert.ok(map4096.size < 700_000);
   assert.ok(mainHub.size < 100_000);
 });
+
+test("map markers, connectors, and dense labels are isolated from unrelated panel renders", () => {
+  assert.match(pageSource, /const MapElementMarker = memo\(/);
+  assert.match(pageSource, /const MapElementLayer = memo\(/);
+  assert.match(pageSource, /const MapConnectorLayer = memo\(/);
+  assert.match(pageSource, /const DenseLabelLayer = memo\(/);
+  assert.match(pageSource, /const mapRenderActionsRef = useRef<MapRenderActions \| null>\(null\)/);
+  assert.match(pageSource, /data-render-isolation="marker-layer"/);
+  assert.match(pageSource, /data-render-isolation="connector-layer"/);
+  assert.match(pageSource, /data-render-isolation="dense-label-layer"/);
+});
