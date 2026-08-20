@@ -126,7 +126,7 @@ test("PC shortcut help and viewer shortcuts are available in both modes", () => 
   assert.match(viewerShortcutHandler, /event\.key === "\/"[\s\S]+openPublicPlaceList\(\)[\s\S]+publicPlaceQueryInputRef\.current\?\.focus/);
   assert.match(viewerShortcutHandler, /event\.key === "\+" \|\| event\.key === "="[\s\S]+value \* 1\.16/);
   assert.match(viewerShortcutHandler, /event\.key === "-"[\s\S]+value \/ 1\.16/);
-  assert.match(viewerShortcutHandler, /event\.key === "0"[\s\S]+setZoom\(fitZoom\)[\s\S]+setPan\(\{ x: 0, y: 0 \}\)/);
+  assert.match(viewerShortcutHandler, /event\.key === "0"[\s\S]+setZoom\(fitZoom\)[\s\S]+setMapPan\(\{ x: 0, y: 0 \}\)/);
   assert.match(pageSource, /className="public-shortcut-trigger shortcut-trigger"[\s\S]{0,180}>단축키<\/button>/);
   assert.match(pageSource, /\{shortcutHelpOpen && <div className="admin-shortcut-backdrop"/);
   assert.match(pageSource, /공개본 단축키/);

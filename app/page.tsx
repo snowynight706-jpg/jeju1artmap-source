@@ -4,8 +4,6 @@
 import {
   ChangeEvent,
   type CSSProperties,
-  type ReactNode,
-  type Ref,
   FormEvent,
   PointerEvent as ReactPointerEvent,
   lazy,
@@ -74,6 +72,7 @@ import {
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 
 const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
+const AdminFolder = lazy(() => import("./admin-folder"));
 
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -1614,6 +1613,63 @@ function timedPhotoBlob(canvas: HTMLCanvasElement, type: "image/webp" | "image/j
   });
 }
 
+function prepareStoryPhotoInWorker(file: File) {
+  if (
+    typeof Worker !== "function"
+    || typeof OffscreenCanvas !== "function"
+    || typeof createImageBitmap !== "function"
+  ) return Promise.resolve<File | null>(null);
+
+  return new Promise<File | null>((resolve) => {
+    let worker: Worker;
+    try {
+      worker = new Worker("/story-photo-worker.js");
+    } catch {
+      resolve(null);
+      return;
+    }
+    const requestId = typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let settled = false;
+    let timeout = 0;
+    const finish = (result: File | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      worker.terminate();
+      resolve(result);
+    };
+    timeout = window.setTimeout(() => finish(null), 30_000);
+    worker.onerror = () => finish(null);
+    worker.onmessage = (event: MessageEvent<{
+      id?: string;
+      ok?: boolean;
+      blob?: Blob;
+      type?: string;
+    }>) => {
+      const payload = event.data;
+      if (payload?.id !== requestId) return;
+      if (!payload.ok || !(payload.blob instanceof Blob)) {
+        finish(null);
+        return;
+      }
+      const extension = payload.type === "image/jpeg" ? "jpg" : "webp";
+      finish(new File(
+        [payload.blob],
+        `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`,
+        { type: payload.type || payload.blob.type },
+      ));
+    };
+    worker.postMessage({
+      id: requestId,
+      file,
+      attempts: STORY_PHOTO_ENCODING_ATTEMPTS,
+      targetBytes: STORY_PHOTO_TARGET_BYTES,
+    });
+  });
+}
+
 async function decodeStoryPhoto(file: File) {
   if (typeof createImageBitmap === "function") {
     try {
@@ -1646,6 +1702,8 @@ async function decodeStoryPhoto(file: File) {
 async function prepareStoryPhoto(file: File) {
   if (file.size > STORY_PHOTO_MAX_SOURCE_BYTES) throw new Error("photo-source-too-large");
   if (["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= STORY_PHOTO_TARGET_BYTES) return file;
+  const workerPrepared = await prepareStoryPhotoInWorker(file);
+  if (workerPrepared) return workerPrepared;
   let canvas: HTMLCanvasElement | null = null;
   let release = () => {};
   try {
@@ -2459,121 +2517,6 @@ function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
   return [...new Map(rows.map((row) => [row.name, row])).values()];
 }
 
-type AdminFolderProps = {
-  title: string;
-  children: ReactNode;
-  meta?: ReactNode;
-  actions?: ReactNode;
-  className?: string;
-  defaultOpen?: boolean;
-  sectionRef?: Ref<HTMLElement>;
-  "aria-label"?: string;
-  openSignal?: number;
-};
-
-const adminFolderScrollFrames = new WeakMap<HTMLElement, number>();
-
-function findScrollableAdminAncestor(element: HTMLElement) {
-  let ancestor = element.parentElement;
-  while (ancestor) {
-    const { overflowY } = window.getComputedStyle(ancestor);
-    if (/(auto|scroll)/.test(overflowY) && ancestor.scrollHeight > ancestor.clientHeight + 1) return ancestor;
-    ancestor = ancestor.parentElement;
-  }
-  return null;
-}
-
-function slowlyRevealAdminFolder(folder: HTMLElement) {
-  const scroller = findScrollableAdminAncestor(folder);
-  if (!scroller) {
-    folder.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-    return;
-  }
-
-  const scrollerRect = scroller.getBoundingClientRect();
-  const folderRect = folder.getBoundingClientRect();
-  const breathingRoom = 12;
-  const topOverflow = folderRect.top - scrollerRect.top - breathingRoom;
-  const bottomOverflow = folderRect.bottom - scrollerRect.bottom + breathingRoom;
-  const offset = topOverflow < 0 ? topOverflow : bottomOverflow > 0 ? bottomOverflow : 0;
-  if (Math.abs(offset) < 1) return;
-
-  const start = scroller.scrollTop;
-  const target = Math.min(
-    Math.max(0, scroller.scrollHeight - scroller.clientHeight),
-    Math.max(0, start + offset),
-  );
-  const distance = target - start;
-  if (Math.abs(distance) < 1) return;
-
-  const previousFrame = adminFolderScrollFrames.get(scroller);
-  if (previousFrame !== undefined) window.cancelAnimationFrame(previousFrame);
-
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    scroller.scrollTop = target;
-    adminFolderScrollFrames.delete(scroller);
-    return;
-  }
-
-  const duration = Math.min(760, Math.max(480, Math.abs(distance) * 1.35));
-  const startedAt = window.performance.now();
-  const animate = (now: number) => {
-    const progress = Math.min(1, (now - startedAt) / duration);
-    const eased = progress < 0.5
-      ? 4 * progress * progress * progress
-      : 1 - Math.pow(-2 * progress + 2, 3) / 2;
-    scroller.scrollTop = start + distance * eased;
-    if (progress < 1) {
-      adminFolderScrollFrames.set(scroller, window.requestAnimationFrame(animate));
-    } else {
-      adminFolderScrollFrames.delete(scroller);
-    }
-  };
-
-  adminFolderScrollFrames.set(scroller, window.requestAnimationFrame(animate));
-}
-
-function AdminFolder({
-  title,
-  children,
-  meta,
-  actions,
-  className = "",
-  defaultOpen = false,
-  sectionRef,
-  "aria-label": ariaLabel,
-  openSignal = 0,
-}: AdminFolderProps) {
-  const [folderState, setFolderState] = useState({ open: defaultOpen, signal: openSignal });
-  const open = openSignal > folderState.signal ? true : folderState.open;
-
-  return (
-    <section ref={sectionRef} className={`admin-folder ${open ? "open" : "closed"} ${className}`.trim()} aria-label={ariaLabel}>
-      <div className="admin-folder-head">
-        <button
-          type="button"
-          className="admin-folder-toggle"
-          aria-expanded={open}
-          onClick={(event) => {
-            const nextOpen = !open;
-            const folder = event.currentTarget.closest(".admin-folder");
-            setFolderState({ open: nextOpen, signal: openSignal });
-            if (nextOpen && folder instanceof HTMLElement) {
-              requestAnimationFrame(() => requestAnimationFrame(() => slowlyRevealAdminFolder(folder)));
-            }
-          }}
-        >
-          <span className="admin-folder-arrow" aria-hidden="true" />
-          <strong>{title}</strong>
-        </button>
-        {meta !== undefined && <span className="admin-folder-meta">{meta}</span>}
-        {actions !== undefined && <div className="admin-folder-actions">{actions}</div>}
-      </div>
-      <div className="admin-folder-body" hidden={!open}>{children}</div>
-    </section>
-  );
-}
-
 export default function Home() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageWrapRef = useRef<HTMLDivElement>(null);
@@ -2601,6 +2544,14 @@ export default function Home() {
     startZoom: number;
     startPanX: number;
     startPanY: number;
+  } | null>(null);
+  const panInteractionRef = useRef<{
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+    pendingPublicPlaceId?: string;
+    pendingPlaceRequestLocation?: boolean;
   } | null>(null);
   const publicInitialViewAppliedRef = useRef(false);
   const publicNavigationInitializedRef = useRef(false);
@@ -2694,7 +2645,6 @@ export default function Home() {
     height: EXPORT_CANONICAL_WIDTH / MAP_ASPECT,
   });
   const [viewportDimensions, setViewportDimensions] = useState<StageDimensions>({ width: 0, height: 0 });
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [baseMap, setBaseMap] = useState<BaseMapMode>("svg");
   const [uploadedBaseMap, setUploadedBaseMap] = useState<UploadedBaseMap | null>(null);
   const [baseMapCanUpload, setBaseMapCanUpload] = useState<boolean | null>(null);
@@ -2901,13 +2851,20 @@ export default function Home() {
     state: "ready" | "saving" | "saved" | "error";
   }>({ placeId: null, state: "ready" });
   const [interaction, setInteraction] = useState<
-    | { type: "pan"; startX: number; startY: number; panX: number; panY: number; pendingPublicPlaceId?: string; pendingPlaceRequestLocation?: boolean }
     | { type: "resize"; id: string; startX: number; startSize: number }
     | { type: "drag"; id: string; startX: number; startY: number; elementX: number; elementY: number; anchorX: number; anchorY: number; mode: "anchor" | "output"; calibrationPointId?: string }
     | { type: "label"; id: string; startX: number; startY: number; offsetX: number; offsetY: number }
     | { type: "dense-label"; key: string; elementIds: string[]; startX: number; startY: number; x: number; y: number; halfWidth: number; halfHeight: number }
     | null
   >(null);
+
+  const setMapPan = useCallback((nextPan: { x: number; y: number }) => {
+    panRef.current = nextPan;
+    const stageWrap = stageWrapRef.current;
+    if (stageWrap) {
+      stageWrap.style.transform = `translate3d(calc(-50% + ${nextPan.x}px), calc(-50% + ${nextPan.y}px), 0)`;
+    }
+  }, []);
 
   const currentDocument = useCallback((): DocumentState => ({
     elements: elementsRef.current,
@@ -3936,9 +3893,9 @@ export default function Home() {
     zoomRef.current = nextZoom;
     panRef.current = nextPan;
     setZoom(nextZoom);
-    setPan(nextPan);
+    setMapPan(nextPan);
     if (clear) publicMapViewBeforeFocusRef.current = null;
-  }, []);
+  }, [setMapPan]);
 
   const writePublicHistory = useCallback((
     panel: PublicPanelHistory,
@@ -5201,9 +5158,9 @@ export default function Home() {
     if (!fitZoomAppliedRef.current || wasAtFit) {
       fitZoomAppliedRef.current = true;
       setZoom(fitZoom);
-      setPan({ x: 0, y: 0 });
+      setMapPan({ x: 0, y: 0 });
     }
-  }, [fitZoom, viewportDimensions.height, viewportDimensions.width, zoom]);
+  }, [fitZoom, setMapPan, viewportDimensions.height, viewportDimensions.width, zoom]);
 
   useEffect(() => {
     if (
@@ -5253,14 +5210,14 @@ export default function Home() {
       zoomRef.current = targetZoom;
       panRef.current = targetPan;
       setZoom(targetZoom);
-      setPan(targetPan);
+      setMapPan(targetPan);
       settledFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
     });
     return () => {
       window.cancelAnimationFrame(frame);
       if (settledFrame) window.cancelAnimationFrame(settledFrame);
     };
-  }, [elements, fitZoom, hydrated, publicLayoutAccess, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
+  }, [elements, fitZoom, hydrated, publicLayoutAccess, setMapPan, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
 
   useEffect(() => {
     if (publicLayoutAccess !== "editor" || !startupAssetsReady) return;
@@ -5360,21 +5317,24 @@ export default function Home() {
     touchTransformCommitPendingRef.current = true;
     touchTransformBaseZoomRef.current = zoomRef.current;
     setZoom(zoomRef.current);
-    setPan({ ...panRef.current });
-  }, [flushTouchMapTransform]);
+    setMapPan({ ...panRef.current });
+  }, [flushTouchMapTransform, setMapPan]);
+
+  useLayoutEffect(() => {
+    setMapPan(panRef.current);
+  }, [setMapPan]);
 
   useLayoutEffect(() => {
     if (!touchTransformCommitPendingRef.current) return;
     touchTransformCommitPendingRef.current = false;
     stageRef.current?.style.removeProperty("transform");
-    if (interaction?.type === "pan" || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
+    if (panInteractionRef.current || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
     scheduleTouchLayerRelease();
-  }, [interaction?.type, pan, scheduleTouchLayerRelease, zoom]);
+  }, [interaction?.type, scheduleTouchLayerRelease, zoom]);
 
   useEffect(() => {
     zoomRef.current = zoom;
-    panRef.current = pan;
-  }, [pan, zoom]);
+  }, [zoom]);
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
@@ -5384,6 +5344,7 @@ export default function Home() {
     if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
     if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
     activeTouchPointersRef.current.clear();
+    panInteractionRef.current = null;
     pinchGestureRef.current = null;
     pendingTouchTransformRef.current = null;
   }, []);
@@ -5405,6 +5366,8 @@ export default function Home() {
       startPanY: panRef.current.y,
     };
     beginTouchMapTransform();
+    panInteractionRef.current = null;
+    viewportRef.current?.classList.remove("is-panning");
     setInteraction(null);
     return true;
   }, [beginTouchMapTransform]);
@@ -5428,14 +5391,15 @@ export default function Home() {
     let moveFrame: number | null = null;
     let pendingMove: { clientX: number; clientY: number } | null = null;
     const applyMove = ({ clientX, clientY }: { clientX: number; clientY: number }) => {
-      if (!interaction) return;
-      if (interaction.type === "pan") {
+      const panInteraction = panInteractionRef.current;
+      if (panInteraction) {
         queueTouchMapTransform(zoomRef.current, {
-          x: interaction.panX + clientX - interaction.startX,
-          y: interaction.panY + clientY - interaction.startY,
+          x: panInteraction.panX + clientX - panInteraction.startX,
+          y: panInteraction.panY + clientY - panInteraction.startY,
         });
         return;
       }
+      if (!interaction) return;
       if (interaction.type === "label") {
         updateElement(interaction.id, {
           labelOffsetX: clamp(interaction.offsetX + (clientX - interaction.startX) / Math.max(fitZoom, 0.22), -240, 240),
@@ -5514,7 +5478,7 @@ export default function Home() {
           return;
         }
       }
-      if (!interaction) return;
+      if (!interaction && !panInteractionRef.current) return;
       pendingMove = { clientX: event.clientX, clientY: event.clientY };
       if (moveFrame !== null) return;
       moveFrame = window.requestAnimationFrame(() => {
@@ -5533,38 +5497,47 @@ export default function Home() {
         commitTouchMapTransform();
         const remaining = activeTouchPointersRef.current.values().next().value as { clientX: number; clientY: number } | undefined;
         if (remaining) {
-          setInteraction({
-            type: "pan",
+          panInteractionRef.current = {
             startX: remaining.clientX,
             startY: remaining.clientY,
             panX: panRef.current.x,
             panY: panRef.current.y,
-          });
+          };
+          viewportRef.current?.classList.add("is-panning");
         } else {
+          panInteractionRef.current = null;
+          viewportRef.current?.classList.remove("is-panning");
           setInteraction(null);
         }
         return;
       }
       if (trackedTouch && pinch) return;
       flushMove();
-      if (interaction?.type === "pan") commitTouchMapTransform();
-      if (interaction?.type === "pan" && interaction.pendingPublicPlaceId) {
-        const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
+      const panInteraction = panInteractionRef.current;
+      if (panInteraction) commitTouchMapTransform();
+      if (panInteraction?.pendingPublicPlaceId) {
+        const moved = Math.hypot(event.clientX - panInteraction.startX, event.clientY - panInteraction.startY);
         if (moved <= 6) {
           if (placeEventFormOpen && !placeEventNoPlace && placeEventMultiPlace) {
-            togglePlaceEventMapSelection(interaction.pendingPublicPlaceId);
+            togglePlaceEventMapSelection(panInteraction.pendingPublicPlaceId);
           } else {
-            selectPublicMarker(interaction.pendingPublicPlaceId);
+            selectPublicMarker(panInteraction.pendingPublicPlaceId);
           }
         }
       }
-      if (interaction?.type === "pan" && interaction.pendingPlaceRequestLocation) {
-        const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
+      if (panInteraction?.pendingPlaceRequestLocation) {
+        const moved = Math.hypot(event.clientX - panInteraction.startX, event.clientY - panInteraction.startY);
         if (moved <= 6) {
           const point = clientToMap(event.clientX, event.clientY);
           setPlaceRequestLocation({ x: Math.round(point.x * 1000) / 1000, y: Math.round(point.y * 1000) / 1000 });
           setToast("요청할 마커 위치를 지정했습니다. 필요하면 지도를 이동·확대한 뒤 다시 눌러 조정하세요.");
         }
+      }
+      if (panInteraction) {
+        panInteractionRef.current = null;
+        viewportRef.current?.classList.remove("is-panning");
+        scheduleTouchLayerRelease();
+        return;
       }
       if (interaction?.type === "drag") {
         const draggedId = interaction.id;
@@ -5581,7 +5554,10 @@ export default function Home() {
       pendingMove = null;
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
       moveFrame = null;
-      if (interaction?.type === "pan" || event.pointerType === "touch") commitTouchMapTransform();
+      if (panInteractionRef.current || event.pointerType === "touch") commitTouchMapTransform();
+      panInteractionRef.current = null;
+      viewportRef.current?.classList.remove("is-panning");
+      scheduleTouchLayerRelease();
       setInteraction(null);
     };
     window.addEventListener("pointermove", handleMove);
@@ -5592,8 +5568,10 @@ export default function Home() {
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleCancel);
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
+      panInteractionRef.current = null;
+      viewportRef.current?.classList.remove("is-panning");
     };
-  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
+  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, scheduleTouchLayerRelease, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -5694,7 +5672,7 @@ export default function Home() {
       };
       zoomRef.current = nextZoom;
       panRef.current = nextPan;
-      setPan(nextPan);
+      setMapPan(nextPan);
       setZoom(nextZoom);
     });
   };
@@ -5721,7 +5699,15 @@ export default function Home() {
       setSelectedId(null); setSelectedFacilityId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     }
     beginTouchMapTransform();
-    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId, pendingPlaceRequestLocation });
+    panInteractionRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: panRef.current.x,
+      panY: panRef.current.y,
+      pendingPublicPlaceId,
+      pendingPlaceRequestLocation,
+    };
+    viewportRef.current?.classList.add("is-panning");
   };
 
   const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -5862,7 +5848,7 @@ export default function Home() {
     focusTransitionFrameRef.current = window.requestAnimationFrame(() => {
       zoomRef.current = targetZoom;
       panRef.current = targetPan;
-      setPan(targetPan);
+      setMapPan(targetPan);
       setZoom(targetZoom);
       focusTransitionFrameRef.current = null;
     });
@@ -8522,7 +8508,7 @@ export default function Home() {
     zoomRef.current = fitZoom;
     panRef.current = nextPan;
     setZoom(fitZoom);
-    setPan(nextPan);
+    setMapPan(nextPan);
     setSelectedId(null);
     setSelectedFacilityId(null);
     setSelectedDenseLabelId(null);
@@ -8571,13 +8557,13 @@ export default function Home() {
       if (event.key === "0") {
         event.preventDefault();
         setZoom(fitZoom);
-        setPan({ x: 0, y: 0 });
+        setMapPan({ x: 0, y: 0 });
       }
     };
 
     window.addEventListener("keydown", handleViewerShortcut);
     return () => window.removeEventListener("keydown", handleViewerShortcut);
-  }, [adminLoginOpen, fitZoom, globalStoriesOpen, openPublicPlaceList, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, shortcutHelpOpen]);
+  }, [adminLoginOpen, fitZoom, globalStoriesOpen, openPublicPlaceList, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, setMapPan, shortcutHelpOpen]);
 
   const copyPublicPlaceAddress = async () => {
     const address = selectedDirectoryPlace?.address || selected?.address || "";
@@ -8920,7 +8906,8 @@ export default function Home() {
   }
 
   return (
-    <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""} ${publicLayoutAccess === "viewer" && selected ? "public-place-selected" : ""}`} data-ui-theme={uiTheme}>
+    <Suspense fallback={<main className="app-shell public-loading" data-ui-theme={uiTheme}>{startupLoadingCard}</main>}>
+      <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""} ${publicLayoutAccess === "viewer" && selected ? "public-place-selected" : ""}`} data-ui-theme={uiTheme}>
       {!startupRevealReady && <div className="public-loading public-loading-overlay">{startupLoadingCard}</div>}
       {publicLayoutAccess === "editor" ? <header className="topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
@@ -8940,14 +8927,14 @@ export default function Home() {
         </div>
         <div className="toolbar-group zoom-tools">
           <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
-          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button>
+          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
         <div className="toolbar-group export-tools"><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 · 미리보기 중" : "출력"}</button></div>
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
-        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
+        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <button className="public-shortcut-trigger shortcut-trigger" type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
@@ -9207,9 +9194,9 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
-            <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0)` }}>
+            <div ref={stageWrapRef} className="map-stage-wrap">
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
@@ -9698,6 +9685,7 @@ export default function Home() {
         />
       </Suspense>}
       {toast && <div className="toast" role="status">{toast}</div>}
-    </main>
+      </main>
+    </Suspense>
   );
 }

@@ -6,6 +6,7 @@ const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../public/service-worker.js", import.meta.url), "utf8");
 const storyRouteSource = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
+const photoWorkerSource = await readFile(new URL("../public/story-photo-worker.js", import.meta.url), "utf8");
 
 test("mobile place-story submission survives unavailable browser storage", () => {
   assert.match(pageSource, /let volatileVisitorId = ""/);
@@ -38,6 +39,10 @@ test("mobile photos have a native picker and resilient encoding fallbacks", () =
   assert.match(pageSource, /for \(const attempt of STORY_PHOTO_ENCODING_ATTEMPTS\)/);
   assert.match(pageSource, /blob\.size <= STORY_PHOTO_TARGET_BYTES/);
   assert.match(pageSource, /createImageBitmap\(file, \{ imageOrientation: "from-image" \}\)/);
+  assert.match(pageSource, /prepareStoryPhotoInWorker\(file\)/);
+  assert.match(pageSource, /new Worker\("\/story-photo-worker\.js"\)/);
+  assert.match(photoWorkerSource, /new OffscreenCanvas\(width, height\)/);
+  assert.match(photoWorkerSource, /canvas\.convertToBlob/);
   assert.match(pageSource, /\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(file\.type\)/);
   assert.match(pageSource, /file\.size <= STORY_PHOTO_TARGET_BYTES\) return file/);
   assert.doesNotMatch(pageSource, /file\.size <= STORY_PHOTO_MAX_UPLOAD_BYTES\) \{\s+return file/);

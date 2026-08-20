@@ -3,12 +3,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const adminFolderSource = await readFile(new URL("../app/admin-folder.tsx", import.meta.url), "utf8");
 const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("admin functions use reusable folders with clean CSS chevrons and distinct states", () => {
-  assert.match(pageSource, /function AdminFolder/);
-  assert.match(pageSource, /<span className="admin-folder-arrow" aria-hidden="true" \/>/);
+  assert.match(pageSource, /const AdminFolder = lazy\(\(\) => import\("\.\/admin-folder"\)\)/);
+  assert.match(adminFolderSource, /function AdminFolder/);
+  assert.match(adminFolderSource, /<span className="admin-folder-arrow" aria-hidden="true" \/>/);
   assert.doesNotMatch(pageSource, /△|▽/);
   assert.doesNotMatch(cssSource, /△|▽/);
   assert.match(pageSource, /className="compact-basic-information" title="기본 정보"[\s\S]{0,120}defaultOpen/);
@@ -19,12 +21,12 @@ test("admin functions use reusable folders with clean CSS chevrons and distinct 
   assert.match(pageSource, /title="빠른 작업"/);
   assert.match(pageSource, /setPrintFolderOpenRequest\(\(current\) => current \+ 1\)/);
   assert.match(pageSource, /openSignal=\{printFolderOpenRequest\}/);
-  assert.match(pageSource, /function slowlyRevealAdminFolder\(folder: HTMLElement\)/);
-  assert.match(pageSource, /findScrollableAdminAncestor\(folder\)/);
-  assert.match(pageSource, /prefers-reduced-motion: reduce/);
-  assert.match(pageSource, /Math\.min\(760, Math\.max\(480, Math\.abs\(distance\) \* 1\.35\)\)/);
-  assert.match(pageSource, /requestAnimationFrame\(\(\) => requestAnimationFrame\(\(\) => slowlyRevealAdminFolder\(folder\)\)\)/);
-  assert.doesNotMatch(pageSource, /folder\.scrollIntoView\(\{ block: "end", inline: "nearest" \}\)/);
+  assert.match(adminFolderSource, /function slowlyRevealAdminFolder\(folder: HTMLElement\)/);
+  assert.match(adminFolderSource, /findScrollableAdminAncestor\(folder\)/);
+  assert.match(adminFolderSource, /prefers-reduced-motion: reduce/);
+  assert.match(adminFolderSource, /Math\.min\(760, Math\.max\(480, Math\.abs\(distance\) \* 1\.35\)\)/);
+  assert.match(adminFolderSource, /requestAnimationFrame\(\(\) => requestAnimationFrame\(\(\) => slowlyRevealAdminFolder\(folder\)\)\)/);
+  assert.doesNotMatch(adminFolderSource, /folder\.scrollIntoView\(\{ block: "end", inline: "nearest" \}\)/);
   assert.match(cssSource, /\.admin-folder \{[^}]*flex-direction: column-reverse/);
   assert.match(cssSource, /\.admin-folder\.open > \.admin-folder-head \{[^}]*border-top/);
   assert.match(cssSource, /\.admin-folder-arrow::before \{[^}]*content: ""[^}]*border-right: 1\.5px solid currentColor[^}]*border-bottom: 1\.5px solid currentColor[^}]*rotate\(45deg\)/);

@@ -142,7 +142,9 @@ function publicDocument(value: unknown) {
     delete safe.placeRequestId;
     return { ...safe, status: "approved", locked: false, labelLocked: false };
   }) : [];
-  const assets = Array.isArray(value.assets) ? value.assets.map((item) => {
+  const assets = Array.isArray(value.assets) ? value.assets.filter((item) => (
+    !isRecord(item) || item.builtIn !== true
+  )).map((item) => {
     if (!isRecord(item)) return item;
     const safe = { ...item };
     delete safe.sourceLabel;

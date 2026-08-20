@@ -13,10 +13,14 @@ test("touch pan and pinch stay on a requestAnimationFrame composited path until 
   assert.match(pageSource, /commitTouchMapTransform\(\)/);
   assert.match(pageSource, /applyTouchMapTransform\(zoomRef\.current, panRef\.current\)/);
   assert.doesNotMatch(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\);\s*setZoom\(nextZoom\)/);
+  assert.match(pageSource, /panInteractionRef = useRef/);
+  assert.match(pageSource, /panInteractionRef\.current = \{[\s\S]{0,240}viewportRef\.current\?\.classList\.add\("is-panning"\)/);
+  assert.doesNotMatch(pageSource, /setInteraction\(\{ type: "pan"/);
+  assert.doesNotMatch(pageSource, /const \[pan, setPan\] = useState/);
 });
 
 test("mobile map manipulation avoids layout-heavy effects per frame", () => {
-  assert.match(pageSource, /translate3d\(calc\(-50% \+ \$\{pan\.x\}px\), calc\(-50% \+ \$\{pan\.y\}px\), 0\)/);
+  assert.match(pageSource, /translate3d\(calc\(-50% \+ \$\{nextPan\.x\}px\), calc\(-50% \+ \$\{nextPan\.y\}px\), 0\)/);
   assert.match(cssSource, /\.map-viewport\.is-direct-manipulation \.map-stage[\s\S]{0,80}will-change: transform/);
   assert.match(cssSource, /is-direct-manipulation\) \.placed-asset \{ filter: none; \}/);
 });
@@ -25,7 +29,7 @@ test("touch transform handoff keeps the compositor layer through the settled fra
   assert.match(pageSource, /touchLayerReleaseFrameRef\.current = window\.requestAnimationFrame/);
   assert.match(pageSource, /touchLayerReleaseTimerRef\.current = window\.setTimeout/);
   assert.match(pageSource, /activeTouchPointersRef\.current\.size > 0 \|\| pinchGestureRef\.current/);
-  assert.match(pageSource, /interaction\?\.type === "pan"[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
+  assert.match(pageSource, /panInteractionRef\.current = null;[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
 });
 
 test("mobile high-resolution map switching and startup reveal wait for settled work only", () => {
@@ -35,7 +39,9 @@ test("mobile high-resolution map switching and startup reveal wait for settled w
 });
 
 test("versioned immutable images use cache-first without caching mutable APIs", () => {
-  assert.match(serviceWorkerSource, /CACHE_VERSION = "2026-08-20-v15"/);
+  assert.match(serviceWorkerSource, /CACHE_VERSION = "2026-08-20-v16"/);
   assert.match(serviceWorkerSource, /url\.searchParams\.has\("v"\)[\s\S]{0,160}cacheFirstVersionedImage/);
   assert.match(serviceWorkerSource, /url\.pathname\.startsWith\("\/api\/"\)\) return/);
+  assert.match(serviceWorkerSource, /IMAGE_TRIM_INTERVAL = 12/);
+  assert.match(serviceWorkerSource, /trimImageCachePeriodically/);
 });

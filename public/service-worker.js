@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "wonartmap-pwa-";
-const CACHE_VERSION = "2026-08-20-v15";
+const CACHE_VERSION = "2026-08-20-v16";
 const CORE_CACHE = `${CACHE_PREFIX}core-${CACHE_VERSION}`;
 const IMAGE_CACHE = `${CACHE_PREFIX}images-${CACHE_VERSION}`;
 const BASE_MAP_CACHE = `${CACHE_PREFIX}base-map-${CACHE_VERSION}`;
@@ -12,6 +12,8 @@ const CORE_ASSETS = [
 ];
 const MAX_CACHED_IMAGES = 140;
 const MAX_CACHED_BASE_MAPS = 6;
+const IMAGE_TRIM_INTERVAL = 12;
+let imageWritesSinceTrim = 0;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -56,6 +58,13 @@ async function trimCache(cacheName, maximumEntries) {
   }
 }
 
+async function trimImageCachePeriodically() {
+  imageWritesSinceTrim += 1;
+  if (imageWritesSinceTrim < IMAGE_TRIM_INTERVAL) return;
+  imageWritesSinceTrim = 0;
+  await trimCache(IMAGE_CACHE, MAX_CACHED_IMAGES);
+}
+
 async function staleWhileRevalidateImage(event) {
   const cache = await caches.open(IMAGE_CACHE);
   const cached = await cache.match(event.request);
@@ -63,7 +72,7 @@ async function staleWhileRevalidateImage(event) {
     if (response.ok) {
       try {
         await cache.put(event.request, response.clone());
-        await trimCache(IMAGE_CACHE, MAX_CACHED_IMAGES);
+        await trimImageCachePeriodically();
       } catch {
         // 저장 공간이 부족해도 네트워크에서 받은 원본 이미지는 그대로 표시한다.
       }
@@ -103,7 +112,7 @@ async function cacheFirstVersionedImage(request) {
   if (response.ok) {
     try {
       await cache.put(request, response.clone());
-      await trimCache(IMAGE_CACHE, MAX_CACHED_IMAGES);
+      await trimImageCachePeriodically();
     } catch {
       // 저장 공간이 부족하면 네트워크 응답만 사용한다.
     }

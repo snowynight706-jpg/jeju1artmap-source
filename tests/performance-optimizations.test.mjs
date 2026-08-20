@@ -27,6 +27,7 @@ test("public bootstrap includes map metadata and event-linked places with condit
   assert.match(publicLayoutRoute, /status: 304/);
   assert.match(pageSource, /fetch\(PUBLIC_LAYOUT_API, \{ cache: "no-cache" \}\)/);
   assert.match(pageSource, /eventPlaceIndexBootstrappedRef\.current = true/);
+  assert.match(publicLayoutRoute, /item\.builtIn !== true/);
 });
 
 test("event list reads skip runtime schema maintenance and batch page metadata with rows", () => {
