@@ -147,6 +147,9 @@ const PLACE_STORY_VISITOR_KEY = "jeju-wondosim-map-review:story-visitor:v1";
 const PLACE_STORY_AUTHOR_KEY = "jeju-wondosim-map-review:story-author:v1";
 const PLACE_STORY_DRAFTS_KEY = "jeju-wondosim-map-review:story-drafts:v1";
 const UI_THEME_STORAGE_KEY = "jeju-wondosim-map-review:ui-theme:v1";
+const STORY_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const STORY_PHOTO_MAX_SOURCE_BYTES = 30 * 1024 * 1024;
+const STORY_PHOTO_MAX_EDGE = 1280;
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 const UI_THEME_EASTER_EGG_PLACES = new Set([
   "제주아트플랫폼",
@@ -1335,12 +1338,24 @@ function eventVisibilityState(event: PlaceEvent) {
   return "노출 중";
 }
 
+let volatileVisitorId = "";
+
+function newVisitorId() {
+  return `${crypto.randomUUID().replaceAll("-", "")}${Date.now().toString(36)}`;
+}
+
 function persistentVisitorId() {
-  const existing = localStorage.getItem(PLACE_STORY_VISITOR_KEY)?.trim();
-  if (existing && /^[a-zA-Z0-9_-]{24,100}$/.test(existing)) return existing;
-  const next = `${crypto.randomUUID().replaceAll("-", "")}${Date.now().toString(36)}`;
-  localStorage.setItem(PLACE_STORY_VISITOR_KEY, next);
-  return next;
+  try {
+    const existing = localStorage.getItem(PLACE_STORY_VISITOR_KEY)?.trim();
+    if (existing && /^[a-zA-Z0-9_-]{24,100}$/.test(existing)) return existing;
+    const next = volatileVisitorId || newVisitorId();
+    volatileVisitorId = next;
+    localStorage.setItem(PLACE_STORY_VISITOR_KEY, next);
+    return next;
+  } catch {
+    volatileVisitorId ||= newVisitorId();
+    return volatileVisitorId;
+  }
 }
 
 function readPlaceStoryDraft(placeKey: string | null) {
@@ -1465,25 +1480,92 @@ async function prepareBaseMapScreenVariant(image: HTMLImageElement, maximumWidth
   return blob?.type === "image/webp" ? { blob, width, height } : null;
 }
 
-async function prepareStoryPhoto(file: File) {
+function timedPhotoBlob(canvas: HTMLCanvasElement, type: "image/webp" | "image/jpeg", quality: number) {
+  return new Promise<Blob | null>((resolve) => {
+    let finished = false;
+    const timer = window.setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      resolve(null);
+    }, 12_000);
+    canvas.toBlob((blob) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      resolve(blob);
+    }, type, quality);
+  });
+}
+
+async function decodeStoryPhoto(file: File) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      return {
+        drawable: bitmap as CanvasImageSource,
+        width: bitmap.width,
+        height: bitmap.height,
+        release: () => bitmap.close(),
+      };
+    } catch {
+      // 일부 HEIC·기기별 사진은 아래 이미지 요소 방식으로 다시 시도합니다.
+    }
+  }
   const source = URL.createObjectURL(file);
   try {
     const image = await loadImage(source);
-    const maximumEdge = 1600;
-    const scale = Math.min(1, maximumEdge / Math.max(image.naturalWidth, image.naturalHeight));
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const canvas = document.createElement("canvas");
+    return {
+      drawable: image as CanvasImageSource,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      release: () => URL.revokeObjectURL(source),
+    };
+  } catch (error) {
+    URL.revokeObjectURL(source);
+    throw error;
+  }
+}
+
+async function prepareStoryPhoto(file: File) {
+  if (file.size > STORY_PHOTO_MAX_SOURCE_BYTES) throw new Error("photo-source-too-large");
+  let canvas: HTMLCanvasElement | null = null;
+  let release = () => {};
+  try {
+    const image = await decodeStoryPhoto(file);
+    release = image.release;
+    if (!image.width || !image.height) throw new Error("photo-unsupported");
+    const scale = Math.min(1, STORY_PHOTO_MAX_EDGE / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    const context = canvas.getContext("2d");
+    const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("photo canvas unavailable");
-    context.drawImage(image, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.84));
-    if (!blob) throw new Error("photo conversion failed");
-    return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.webp`, { type: "image/webp" });
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image.drawable, 0, 0, width, height);
+    const webp = await timedPhotoBlob(canvas, "image/webp", 0.82);
+    const blob = webp && webp.size <= STORY_PHOTO_MAX_UPLOAD_BYTES
+      ? webp
+      : await timedPhotoBlob(canvas, "image/jpeg", 0.82);
+    if (!blob) throw new Error("photo-conversion-failed");
+    const extension = blob.type === "image/png" ? "png" : blob.type === "image/jpeg" ? "jpg" : "webp";
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`, { type: blob.type || "image/webp" });
+  } catch (error) {
+    if (["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= STORY_PHOTO_MAX_UPLOAD_BYTES) {
+      return file;
+    }
+    if (error instanceof Error && error.message === "photo-source-too-large") throw error;
+    throw new Error("photo-unsupported");
   } finally {
-    URL.revokeObjectURL(source);
+    if (canvas) {
+      canvas.width = 1;
+      canvas.height = 1;
+    }
+    release();
   }
 }
 
@@ -2366,7 +2448,6 @@ export default function Home() {
   const publicPlaceQueryInputRef = useRef<HTMLInputElement>(null);
   const databaseEditorQueryInputRef = useRef<HTMLInputElement>(null);
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
-  const storyPhotoInputRef = useRef<HTMLInputElement>(null);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
   const adminShortcutActionsRef = useRef({ saveDraft: () => {}, undo: () => {}, redo: () => {} });
   const placeRequestLocationBeforePickingRef = useRef<{ x: number; y: number } | null>(null);
@@ -2464,7 +2545,8 @@ export default function Home() {
   const [adminLoginSubmitting, setAdminLoginSubmitting] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState("");
   const [adminAccessMethod, setAdminAccessMethod] = useState<"owner" | "shared" | null>(null);
-  const [publicViewOverride, setPublicViewOverride] = useState(false);
+  const [publicViewOverride] = useState(() => typeof document !== "undefined"
+    && document.cookie.split(";").some((item) => item.trim() === `${PUBLIC_VIEW_COOKIE}=1`));
   const [zoom, setZoom] = useState(0.72);
   const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
@@ -4006,7 +4088,6 @@ export default function Home() {
 
   useEffect(() => {
     let cancelled = false;
-    setPublicViewOverride(document.cookie.split(";").some((item) => item.trim() === `${PUBLIC_VIEW_COOKIE}=1`));
     fetch(PUBLIC_LAYOUT_API, { cache: "no-cache" })
       .then(async (response) => {
         const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
@@ -7281,14 +7362,16 @@ export default function Home() {
       form.set("visitorId", persistentVisitorId());
       if (placeStoryPhoto) {
         const prepared = await prepareStoryPhoto(placeStoryPhoto);
-        if (prepared.size > 5 * 1024 * 1024) throw new Error("photo-too-large");
+        if (prepared.size > STORY_PHOTO_MAX_UPLOAD_BYTES) throw new Error("photo-too-large");
         form.set("photo", prepared);
       }
-      const response = await fetch(PLACE_STORIES_API, { method: "POST", body: form });
+      const response = await fetch(PLACE_STORIES_API, { method: "POST", body: form, cache: "no-store", credentials: "same-origin" });
       const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
       if (!response.ok || !payload?.story) {
         if (response.status === 429) throw new Error("rate-limit");
         if (response.status === 413) throw new Error("photo-too-large");
+        if (response.status === 415) throw new Error("photo-unsupported");
+        if (response.status === 503) throw new Error("storage-unavailable");
         throw new Error(payload?.error ?? "story-submit-failed");
       }
       setPlaceStories((current) => [payload.story!, ...current]);
@@ -7299,14 +7382,22 @@ export default function Home() {
       setPlaceStoryText("");
       updatePlaceStoryPhoto(null);
       setPlaceStoryFormOpen(false);
-      localStorage.setItem(PLACE_STORY_AUTHOR_KEY, authorName);
+      try { localStorage.setItem(PLACE_STORY_AUTHOR_KEY, authorName); } catch {}
       setToast("사진과 후기를 원도심 아카이브에 남겼습니다.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      setToast(message === "rate-limit"
+      setToast(!navigator.onLine
+        ? "인터넷 연결을 확인한 뒤 다시 시도해 주세요. 작성한 내용은 현재 화면에 유지됩니다."
+        : message === "rate-limit"
         ? "짧은 시간에 등록이 많습니다. 잠시 뒤 다시 시도해 주세요."
         : message === "photo-too-large"
           ? "사진을 처리해도 5MB를 넘습니다. 더 작은 사진을 선택해 주세요."
+          : message === "photo-source-too-large"
+            ? "원본 사진이 30MB를 넘습니다. 더 작은 사진을 선택해 주세요."
+            : message === "photo-unsupported"
+              ? "이 사진 형식을 모바일에서 처리하지 못했습니다. JPEG·PNG·WebP 사진을 선택해 주세요."
+              : message === "storage-unavailable"
+                ? "후기 저장 서버가 잠시 응답하지 않습니다. 작성한 내용을 유지한 채 잠시 후 다시 시도해 주세요."
           : "후기를 저장하지 못했습니다. 입력 내용을 확인해 다시 시도해 주세요.");
     } finally {
       setPlaceStorySubmitting(false);
@@ -7554,7 +7645,7 @@ export default function Home() {
       form.set("visibleUntil", visibleUntilDate.toISOString());
       if (placeEventPhoto) {
         const prepared = await prepareStoryPhoto(placeEventPhoto);
-        if (prepared.size > 5 * 1024 * 1024) throw new Error("photo-too-large");
+        if (prepared.size > STORY_PHOTO_MAX_UPLOAD_BYTES) throw new Error("photo-too-large");
         form.set("photo", prepared);
       }
       const response = await fetch(PLACE_EVENTS_API, { method: placeEventEditingId ? "PATCH" : "POST", body: form });
@@ -8897,7 +8988,7 @@ export default function Home() {
                 {placeStoryFormOpen && <div className="place-story-form">
                   <label>닉네임<input value={placeStoryAuthor} maxLength={20} onChange={(event) => setPlaceStoryAuthor(event.target.value)} placeholder="20자 이내" /></label>
                   <label>짧은 후기<textarea value={placeStoryText} maxLength={220} onChange={(event) => setPlaceStoryText(event.target.value)} placeholder="이 장소에서 기억하고 싶은 순간을 남겨주세요." /><small>{placeStoryText.length}/220</small></label>
-                  <div className="place-story-photo-row"><button type="button" onClick={() => storyPhotoInputRef.current?.click()}>{placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</button>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}<input ref={storyPhotoInputRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></div>
+                  <div className="place-story-photo-row"><label className="place-story-photo-picker"><span>{placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</span><input type="file" accept="image/*,.heic,.heif" onChange={(event) => { updatePlaceStoryPhoto(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} /></label>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}</div>
                   {placeStoryPhotoPreview && <img className="place-story-photo-preview" src={placeStoryPhotoPreview} alt="등록할 사진 미리보기" />}
                   <p>직접 촬영했거나 게시 권한이 있는 사진만 등록해 주세요. 등록한 내용은 다른 방문자에게 바로 공개됩니다.</p>
                   <button type="button" className="place-story-submit" disabled={placeStorySubmitting || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : "사진·후기 공개하기"}</button>

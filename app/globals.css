@@ -805,7 +805,9 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .place-story-form input:focus, .place-story-form textarea:focus { border-color: #999999; box-shadow: 0 0 0 3px rgb(100 100 100 / 12%); }
 .place-story-form label small { justify-self: end; color: #707070; font-size: 9px; font-weight: 400; }
 .place-story-photo-row { display: flex; gap: 6px; }
-.place-story-photo-row button { height: 32px; padding: 0 9px; border: 1px solid #cacaca; border-radius: 7px; background: white; color: #646464; cursor: pointer; font-size: 10px; }
+.place-story-photo-row button, .place-story-photo-picker { height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0 9px; border: 1px solid #cacaca; border-radius: 7px; background: white; color: #646464; cursor: pointer; font-size: 10px; }
+.place-story-photo-picker { position: relative; overflow: hidden; }
+.place-story-photo-picker input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
 .place-story-photo-row button.remove { border-color: #dfcfca; color: #9a6456; }
 .place-story-photo-preview { width: 100%; max-height: 180px; border-radius: 9px; object-fit: cover; }
 .place-story-form > p { margin: 0; color: #707070; font-size: 9px; line-height: 1.5; }
@@ -2972,5 +2974,5 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .public-place-quick-actions :is(a, button),
   .public-location-group button,
   .public-place-archive-title button,
-  .place-story-photo-row button { min-height: 44px; }
+  .place-story-photo-row button, .place-story-photo-picker { min-height: 44px; }
 }
