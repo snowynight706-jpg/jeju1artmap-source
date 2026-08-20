@@ -62,7 +62,7 @@ export const bundledLandmarkAssets: BundledLandmarkAsset[] = [
   asset("gwandeokjeong-03", "03", "관덕정", "1BAwJbmSCauZ55GAhl4nmiA5BhR_YbSn-"),
   asset("gwandeokjeong-v07", "v07 목재 앉음단 · 석재 기단 · 잔디 디테일 최신", "관덕정", "1-6UaFKFZOWcuFa57IIXP-8xNWUkLOI-L", "approved"),
   asset("gwandeokjeong-v09", "v09 내부 그늘 · 후면 기둥 · 공통 재질 채용안", "관덕정", "1SVdDv5bLdjk9Hm6xiGfehlQrTwjtUZHt", "approved", "20260819-selected-v2"),
-  asset("chilsungro-20260820-transparent", "실사 교정 최종 채용안 · 투명 배경 재적용", "칠성로", "1P06b_cBlFIFg2xWEQv8Z9sTzhDIEzrbj", "approved", "20260820-alpha-v1"),
+  asset("chilsungro-20260820-transparent", "실사 교정 최종 채용안 · 투명 배경 · 알파 검증", "칠성로", "1P06b_cBlFIFg2xWEQv8Z9sTzhDIEzrbj", "approved", "20260820-alpha-v1"),
   asset("chilsungro-20260819", "실사 교정 최종 채용안 · 비대칭 아치", "칠성로", "1P06b_cBlFIFg2xWEQv8Z9sTzhDIEzrbj", "approved", "20260819-selected-v1"),
   asset("chilsungro", "아치프레임 두께보강 v2", "칠성로", "1qQO5eaUSUgdw1BxHpl9fXymBFgLjN5zW", "approved"),
   asset("dongmun-v08", "v08 아치형 게이트 · 현최종", "동문시장", "1v5ECHOlpAJasRl7ltQre8zln0ZNOsXft", "approved"),
