@@ -2371,14 +2371,6 @@ export default function Home() {
   const placeRequestLocationBeforePickingRef = useRef<{ x: number; y: number } | null>(null);
   const eventDialogDragRef = useRef<{ pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number } | null>(null);
   const activeTouchPointersRef = useRef(new Map<number, { clientX: number; clientY: number }>());
-  const panGestureRef = useRef<{
-    startX: number;
-    startY: number;
-    panX: number;
-    panY: number;
-    pendingPublicPlaceId?: string;
-    pendingPlaceRequestLocation?: boolean;
-  } | null>(null);
   const pinchGestureRef = useRef<{
     pointerIds: [number, number];
     startDistance: number;
@@ -2675,6 +2667,7 @@ export default function Home() {
     state: "ready" | "saving" | "saved" | "error";
   }>({ placeId: null, state: "ready" });
   const [interaction, setInteraction] = useState<
+    | { type: "pan"; startX: number; startY: number; panX: number; panY: number; pendingPublicPlaceId?: string; pendingPlaceRequestLocation?: boolean }
     | { type: "resize"; id: string; startX: number; startSize: number }
     | { type: "drag"; id: string; startX: number; startY: number; elementX: number; elementY: number; anchorX: number; anchorY: number; mode: "anchor" | "output"; calibrationPointId?: string }
     | { type: "label"; id: string; startX: number; startY: number; offsetX: number; offsetY: number }
@@ -4867,7 +4860,6 @@ export default function Home() {
     fitZoomRef.current = fitZoom;
     if (!fitZoomAppliedRef.current || wasAtFit) {
       fitZoomAppliedRef.current = true;
-      panRef.current = { x: 0, y: 0 };
       setZoom(fitZoom);
       setPan({ x: 0, y: 0 });
     }
@@ -5031,23 +5023,18 @@ export default function Home() {
     setPan({ ...panRef.current });
   }, [flushTouchMapTransform]);
 
-  const settleTouchPanTransform = useCallback(() => {
-    flushTouchMapTransform();
-    stageRef.current?.style.removeProperty("transform");
-    scheduleTouchLayerRelease();
-  }, [flushTouchMapTransform, scheduleTouchLayerRelease]);
-
   useLayoutEffect(() => {
     if (!touchTransformCommitPendingRef.current) return;
     touchTransformCommitPendingRef.current = false;
     stageRef.current?.style.removeProperty("transform");
-    if (panGestureRef.current || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
+    if (interaction?.type === "pan" || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
     scheduleTouchLayerRelease();
-  }, [pan, scheduleTouchLayerRelease, zoom]);
+  }, [interaction?.type, pan, scheduleTouchLayerRelease, zoom]);
 
   useEffect(() => {
     zoomRef.current = zoom;
-  }, [zoom]);
+    panRef.current = pan;
+  }, [pan, zoom]);
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
@@ -5057,7 +5044,6 @@ export default function Home() {
     if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
     if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
     activeTouchPointersRef.current.clear();
-    panGestureRef.current = null;
     pinchGestureRef.current = null;
     pendingTouchTransformRef.current = null;
   }, []);
@@ -5079,7 +5065,7 @@ export default function Home() {
       startPanY: panRef.current.y,
     };
     beginTouchMapTransform();
-    panGestureRef.current = null;
+    setInteraction(null);
     return true;
   }, [beginTouchMapTransform]);
 
@@ -5102,15 +5088,14 @@ export default function Home() {
     let moveFrame: number | null = null;
     let pendingMove: { clientX: number; clientY: number } | null = null;
     const applyMove = ({ clientX, clientY }: { clientX: number; clientY: number }) => {
-      const panGesture = panGestureRef.current;
-      if (panGesture) {
+      if (!interaction) return;
+      if (interaction.type === "pan") {
         queueTouchMapTransform(zoomRef.current, {
-          x: panGesture.panX + clientX - panGesture.startX,
-          y: panGesture.panY + clientY - panGesture.startY,
+          x: interaction.panX + clientX - interaction.startX,
+          y: interaction.panY + clientY - interaction.startY,
         });
         return;
       }
-      if (!interaction) return;
       if (interaction.type === "label") {
         updateElement(interaction.id, {
           labelOffsetX: clamp(interaction.offsetX + (clientX - interaction.startX) / Math.max(fitZoom, 0.22), -240, 240),
@@ -5189,7 +5174,7 @@ export default function Home() {
           return;
         }
       }
-      if (!panGestureRef.current && !interaction) return;
+      if (!interaction) return;
       pendingMove = { clientX: event.clientX, clientY: event.clientY };
       if (moveFrame !== null) return;
       moveFrame = window.requestAnimationFrame(() => {
@@ -5208,40 +5193,39 @@ export default function Home() {
         commitTouchMapTransform();
         const remaining = activeTouchPointersRef.current.values().next().value as { clientX: number; clientY: number } | undefined;
         if (remaining) {
-          panGestureRef.current = {
+          setInteraction({
+            type: "pan",
             startX: remaining.clientX,
             startY: remaining.clientY,
             panX: panRef.current.x,
             panY: panRef.current.y,
-          };
+          });
         } else {
-          panGestureRef.current = null;
+          setInteraction(null);
         }
         return;
       }
       if (trackedTouch && pinch) return;
       flushMove();
-      const panGesture = panGestureRef.current;
-      if (panGesture) settleTouchPanTransform();
-      if (panGesture?.pendingPublicPlaceId) {
-        const moved = Math.hypot(event.clientX - panGesture.startX, event.clientY - panGesture.startY);
+      if (interaction?.type === "pan") commitTouchMapTransform();
+      if (interaction?.type === "pan" && interaction.pendingPublicPlaceId) {
+        const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
         if (moved <= 6) {
           if (placeEventFormOpen && !placeEventNoPlace && placeEventMultiPlace) {
-            togglePlaceEventMapSelection(panGesture.pendingPublicPlaceId);
+            togglePlaceEventMapSelection(interaction.pendingPublicPlaceId);
           } else {
-            selectPublicMarker(panGesture.pendingPublicPlaceId);
+            selectPublicMarker(interaction.pendingPublicPlaceId);
           }
         }
       }
-      if (panGesture?.pendingPlaceRequestLocation) {
-        const moved = Math.hypot(event.clientX - panGesture.startX, event.clientY - panGesture.startY);
+      if (interaction?.type === "pan" && interaction.pendingPlaceRequestLocation) {
+        const moved = Math.hypot(event.clientX - interaction.startX, event.clientY - interaction.startY);
         if (moved <= 6) {
           const point = clientToMap(event.clientX, event.clientY);
           setPlaceRequestLocation({ x: Math.round(point.x * 1000) / 1000, y: Math.round(point.y * 1000) / 1000 });
           setToast("요청할 마커 위치를 지정했습니다. 필요하면 지도를 이동·확대한 뒤 다시 눌러 조정하세요.");
         }
       }
-      panGestureRef.current = null;
       if (interaction?.type === "drag") {
         const draggedId = interaction.id;
         window.requestAnimationFrame(() => {
@@ -5249,7 +5233,7 @@ export default function Home() {
           if (element?.placeRequestId) void syncReviewedPlaceRequestLocation(element.placeRequestId, element.x, element.y);
         });
       }
-      if (interaction) setInteraction(null);
+      setInteraction(null);
     };
     const handleCancel = (event: PointerEvent) => {
       if (event.pointerType === "touch") activeTouchPointersRef.current.delete(event.pointerId);
@@ -5257,10 +5241,8 @@ export default function Home() {
       pendingMove = null;
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
       moveFrame = null;
-      if (panGestureRef.current) settleTouchPanTransform();
-      else if (event.pointerType === "touch") commitTouchMapTransform();
-      panGestureRef.current = null;
-      if (interaction) setInteraction(null);
+      if (interaction?.type === "pan" || event.pointerType === "touch") commitTouchMapTransform();
+      setInteraction(null);
     };
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
@@ -5271,7 +5253,7 @@ export default function Home() {
       window.removeEventListener("pointercancel", handleCancel);
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
     };
-  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, selectPublicMarker, settleTouchPanTransform, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
+  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -5399,7 +5381,7 @@ export default function Home() {
       setSelectedId(null); setSelectedFacilityId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
     }
     beginTouchMapTransform();
-    panGestureRef.current = { startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId, pendingPlaceRequestLocation };
+    setInteraction({ type: "pan", startX: event.clientX, startY: event.clientY, panX: panRef.current.x, panY: panRef.current.y, pendingPublicPlaceId, pendingPlaceRequestLocation });
   };
 
   const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -8139,7 +8121,6 @@ export default function Home() {
       }
       if (event.key === "0") {
         event.preventDefault();
-        panRef.current = { x: 0, y: 0 };
         setZoom(fitZoom);
         setPan({ x: 0, y: 0 });
       }
@@ -8504,14 +8485,14 @@ export default function Home() {
         </div>
         <div className="toolbar-group zoom-tools">
           <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
-          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { panRef.current = { x: 0, y: 0 }; setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button>
+          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
         <div className="toolbar-group export-tools"><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 · 미리보기 중" : "출력"}</button></div>
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
-        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { panRef.current = { x: 0, y: 0 }; setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
+        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <button className="public-shortcut-trigger shortcut-trigger" type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
@@ -8769,7 +8750,7 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${publicLayoutAccess === "viewer" ? "is-gpu-pan-ready" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
             <div ref={stageWrapRef} className="map-stage-wrap" style={{ transform: `translate3d(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px), 0)` }}>
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
