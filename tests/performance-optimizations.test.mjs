@@ -7,6 +7,9 @@ const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url
 const publicLayoutRoute = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const baseMapRoute = await readFile(new URL("../app/api/base-map/route.ts", import.meta.url), "utf8");
 const placeEventsRoute = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
+const placeStoriesRoute = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
+const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
+const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
 test("uploaded base maps use versioned screen derivatives while exports retain the original", () => {
@@ -59,4 +62,20 @@ test("map markers, connectors, and dense labels are isolated from unrelated pane
   assert.match(pageSource, /data-render-isolation="marker-layer"/);
   assert.match(pageSource, /data-render-isolation="connector-layer"/);
   assert.match(pageSource, /data-render-isolation="dense-label-layer"/);
+});
+
+test("administrator diagnostics are code-split while anonymous performance samples stay content-free", () => {
+  const performanceTable = placeStoriesRoute.match(/const PERFORMANCE_DIAGNOSTICS_TABLE_SQL = `([\s\S]*?)`;/)?.[1] ?? "";
+  assert.match(pageSource, /const AdminDiagnosticsPanel = lazy\(\(\) => import\("\.\/admin-diagnostics-panel"\)\)/);
+  assert.match(pageSource, /sendPerformanceDiagnostic/);
+  assert.match(pageSource, /metric: "startup"/);
+  assert.match(pageSource, /recordMapSettle\("pan-settle"\)/);
+  assert.match(pageSource, /recordMapSettle\("pinch-settle"\)/);
+  assert.match(adminDiagnosticsSource, /PWA 성능 기록/);
+  assert.match(placeStoriesRoute, /map_performance_diagnostics/);
+  assert.match(placeStoriesRoute, /payload\?\.action === "performance-diagnostic"/);
+  assert.match(placeStoriesRoute, /scope === "performance-diagnostics"/);
+  assert.match(performanceMigration, /CREATE TABLE `map_performance_diagnostics`/);
+  assert.match(performanceMigration, /map_performance_diagnostics_actor_created_idx/);
+  assert.doesNotMatch(performanceTable, /place_key|user_agent|photo|review_text|author_name/);
 });

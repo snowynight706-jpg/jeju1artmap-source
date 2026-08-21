@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../public/service-worker.js", import.meta.url), "utf8");
 const storyRouteSource = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
@@ -63,12 +64,12 @@ test("review uploads bypass PWA caching and report mobile failure causes", () =>
   assert.match(storyRouteSource, /scope === "upload-diagnostics"/);
   assert.match(storyRouteSource, /user_agent AS userAgent/);
   assert.match(pageSource, /PLACE_STORIES_API}\?scope=upload-diagnostics/);
-  assert.match(pageSource, /모바일 후기 업로드 오류/);
-  assert.match(pageSource, /사진·후기 내용과 닉네임은 기록하지 않습니다/);
-  assert.match(pageSource, /uploadDiagnosticErrorLabel/);
+  assert.match(adminDiagnosticsSource, /모바일 후기 업로드 오류/);
+  assert.match(adminDiagnosticsSource, /사진·후기 내용과 닉네임은 기록하지 않습니다/);
+  assert.match(adminDiagnosticsSource, /uploadErrorLabel/);
   assert.match(pageSource, /deleteUploadDiagnostic/);
   assert.match(pageSource, /clearUploadDiagnostics/);
-  assert.match(pageSource, /전체 정리/);
+  assert.match(adminDiagnosticsSource, /전체 정리/);
   assert.match(storyRouteSource, /payload\?\.action === "clear-all"/);
   assert.match(storyRouteSource, /DELETE FROM place_story_upload_diagnostics WHERE id = \?/);
   assert.match(storyRouteSource, /owner authentication required/);

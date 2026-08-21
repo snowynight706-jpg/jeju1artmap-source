@@ -76,7 +76,25 @@ const UPLOAD_DIAGNOSTICS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS place_story_upl
   created_at TEXT NOT NULL
 )`;
 
+const PERFORMANCE_DIAGNOSTICS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS map_performance_diagnostics (
+  id TEXT PRIMARY KEY NOT NULL,
+  metric TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  element_count INTEGER NOT NULL,
+  label_count INTEGER NOT NULL,
+  viewport_width INTEGER NOT NULL,
+  viewport_height INTEGER NOT NULL,
+  device_memory REAL,
+  hardware_concurrency INTEGER NOT NULL,
+  connection_type TEXT NOT NULL,
+  standalone INTEGER NOT NULL,
+  online INTEGER NOT NULL,
+  actor_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL
+)`;
+
 let storageReady: Promise<void> | null = null;
+let performanceStorageReady: Promise<void> | null = null;
 
 async function runtimeEnv() {
   const workers = await import("cloudflare:workers");
@@ -112,6 +130,20 @@ async function ensureStorage(db: D1Database) {
     });
   }
   await storageReady;
+}
+
+async function ensurePerformanceStorage(db: D1Database) {
+  if (!performanceStorageReady) {
+    performanceStorageReady = db.batch([
+      db.prepare(PERFORMANCE_DIAGNOSTICS_TABLE_SQL),
+      db.prepare("CREATE INDEX IF NOT EXISTS map_performance_diagnostics_created_idx ON map_performance_diagnostics (created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS map_performance_diagnostics_actor_created_idx ON map_performance_diagnostics (actor_hash, created_at)"),
+    ]).then(() => undefined).catch((error) => {
+      performanceStorageReady = null;
+      throw error;
+    });
+  }
+  await performanceStorageReady;
 }
 
 function cleanText(value: FormDataEntryValue | null, maximum: number) {
@@ -219,6 +251,20 @@ export async function GET(request: Request) {
     ).all();
     return json({ diagnostics: result.results ?? [] });
   }
+  if (scope === "performance-diagnostics") {
+    if (!canModerate) return json({ error: "owner authentication required" }, 403);
+    await ensurePerformanceStorage(runtime.DB);
+    const result = await runtime.DB.prepare(
+      `SELECT id, metric, duration_ms AS durationMs, element_count AS elementCount,
+        label_count AS labelCount, viewport_width AS viewportWidth,
+        viewport_height AS viewportHeight, device_memory AS deviceMemory,
+        hardware_concurrency AS hardwareConcurrency, connection_type AS connectionType,
+        standalone, online, created_at AS createdAt
+       FROM map_performance_diagnostics
+       ORDER BY created_at DESC LIMIT 100`,
+    ).all();
+    return json({ diagnostics: result.results ?? [] });
+  }
   if (scope === "all") {
     const visibleStatuses = canModerate ? "s.status IN ('published', 'hidden')" : "s.status = 'published'";
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
@@ -274,6 +320,16 @@ export async function POST(request: Request) {
       sourceType?: unknown;
       preparedType?: unknown;
       online?: unknown;
+      metric?: unknown;
+      durationMs?: unknown;
+      elementCount?: unknown;
+      labelCount?: unknown;
+      viewportWidth?: unknown;
+      viewportHeight?: unknown;
+      deviceMemory?: unknown;
+      hardwareConcurrency?: unknown;
+      connectionType?: unknown;
+      standalone?: unknown;
     } | null;
     if (payload?.action === "upload-diagnostic") {
       const visitorId = typeof payload.visitorId === "string" ? payload.visitorId.trim().slice(0, 100) : "";
@@ -314,6 +370,49 @@ export async function POST(request: Request) {
         new Date().toISOString(),
       ).run();
       return json({ accepted: true, reference: id.slice(0, 8) }, 202);
+    }
+    if (payload?.action === "performance-diagnostic") {
+      await ensurePerformanceStorage(runtime.DB);
+      const visitorId = typeof payload.visitorId === "string" ? payload.visitorId.trim().slice(0, 100) : "";
+      const metric = payload.metric === "startup" || payload.metric === "pan-settle" || payload.metric === "pinch-settle" ? payload.metric : "";
+      const durationMs = Math.max(0, Math.min(120_000, Math.round(Number(payload.durationMs) || 0)));
+      const elementCount = Math.max(0, Math.min(2_000, Math.round(Number(payload.elementCount) || 0)));
+      const labelCount = Math.max(0, Math.min(2_000, Math.round(Number(payload.labelCount) || 0)));
+      const viewportWidth = Math.max(0, Math.min(10_000, Math.round(Number(payload.viewportWidth) || 0)));
+      const viewportHeight = Math.max(0, Math.min(10_000, Math.round(Number(payload.viewportHeight) || 0)));
+      const memoryValue = Number(payload.deviceMemory);
+      const deviceMemory = Number.isFinite(memoryValue) ? Math.max(0, Math.min(64, memoryValue)) : null;
+      const hardwareConcurrency = Math.max(0, Math.min(128, Math.round(Number(payload.hardwareConcurrency) || 0)));
+      const connectionType = typeof payload.connectionType === "string" ? payload.connectionType.replace(/[^a-z0-9-]/gi, "").slice(0, 24) : "";
+      if (!metric || !/^[a-zA-Z0-9_-]{24,100}$/.test(visitorId)) return json({ error: "valid performance diagnostic required" }, 400);
+      const hash = await actorHash(request, visitorId, "performance");
+      const recent = await runtime.DB.prepare(
+        "SELECT COUNT(*) AS count FROM map_performance_diagnostics WHERE actor_hash = ? AND created_at >= ?",
+      ).bind(hash, new Date(Date.now() - 60 * 60 * 1000).toISOString()).first() as { count?: number } | null;
+      if (Number(recent?.count ?? 0) >= 20) return json({ accepted: false }, 202);
+      const id = crypto.randomUUID();
+      await runtime.DB.prepare(
+        `INSERT INTO map_performance_diagnostics
+          (id, metric, duration_ms, element_count, label_count, viewport_width, viewport_height,
+           device_memory, hardware_concurrency, connection_type, standalone, online, actor_hash, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        metric,
+        durationMs,
+        elementCount,
+        labelCount,
+        viewportWidth,
+        viewportHeight,
+        deviceMemory,
+        hardwareConcurrency,
+        connectionType,
+        payload.standalone === true ? 1 : 0,
+        payload.online === false ? 0 : 1,
+        hash,
+        new Date().toISOString(),
+      ).run();
+      return json({ accepted: true }, 202);
     }
     const storyId = typeof payload?.storyId === "string" ? payload.storyId.trim().slice(0, 120) : "";
     const reason = typeof payload?.reason === "string" ? payload.reason.trim() : "";
@@ -443,6 +542,20 @@ export async function DELETE(request: Request) {
     const diagnosticId = typeof payload?.id === "string" ? payload.id.trim().slice(0, 120) : "";
     if (payload?.action !== "delete-one" || !diagnosticId) return json({ error: "valid diagnostic cleanup required" }, 400);
     const result = await runtime.DB.prepare("DELETE FROM place_story_upload_diagnostics WHERE id = ?").bind(diagnosticId).run();
+    if (!result.meta.changes) return json({ error: "diagnostic not found" }, 404);
+    return json({ deleted: true, id: diagnosticId });
+  }
+  if (url.searchParams.get("scope") === "performance-diagnostics") {
+    await ensureStorage(runtime.DB);
+    await ensurePerformanceStorage(runtime.DB);
+    const payload = await request.json().catch(() => null) as { action?: unknown; id?: unknown } | null;
+    if (payload?.action === "clear-all") {
+      const result = await runtime.DB.prepare("DELETE FROM map_performance_diagnostics").run();
+      return json({ deleted: true, scope: "all", count: result.meta.changes });
+    }
+    const diagnosticId = typeof payload?.id === "string" ? payload.id.trim().slice(0, 120) : "";
+    if (payload?.action !== "delete-one" || !diagnosticId) return json({ error: "valid diagnostic cleanup required" }, 400);
+    const result = await runtime.DB.prepare("DELETE FROM map_performance_diagnostics WHERE id = ?").bind(diagnosticId).run();
     if (!result.meta.changes) return json({ error: "diagnostic not found" }, 404);
     return json({ deleted: true, id: diagnosticId });
   }

@@ -73,6 +73,7 @@ import {
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 
 const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
+const AdminDiagnosticsPanel = lazy(() => import("./admin-diagnostics-panel"));
 const AdminFolder = lazy(() => import("./admin-folder"));
 
 const MAP_ASPECT = 8944 / 7324;
@@ -622,6 +623,27 @@ type PlaceStoryUploadDiagnostic = {
 
 type PlaceStoryDiagnosticsPayload = {
   diagnostics?: PlaceStoryUploadDiagnostic[];
+  error?: string;
+};
+
+type PerformanceDiagnostic = {
+  id: string;
+  metric: "startup" | "pan-settle" | "pinch-settle";
+  durationMs: number;
+  elementCount: number;
+  labelCount: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  deviceMemory: number | null;
+  hardwareConcurrency: number;
+  connectionType: string;
+  standalone: number;
+  online: number;
+  createdAt: string;
+};
+
+type PerformanceDiagnosticsPayload = {
+  diagnostics?: PerformanceDiagnostic[];
   error?: string;
 };
 
@@ -1333,40 +1355,6 @@ function storyDateLabel(value: string) {
   return Number.isNaN(date.getTime()) ? "날짜 미상" : date.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
 }
 
-function uploadDiagnosticSizeLabel(value: number | null) {
-  if (value === null || !Number.isFinite(value)) return "—";
-  if (value < 1024 * 1024) return `${Math.max(0, Math.round(value / 1024))}KB`;
-  return `${(value / (1024 * 1024)).toFixed(2)}MB`;
-}
-
-function uploadDiagnosticStageLabel(stage: PlaceStoryUploadDiagnostic["stage"]) {
-  return stage === "prepare" ? "사진 준비" : stage === "request" ? "서버 전송" : stage === "response" ? "서버 응답" : "단계 불명";
-}
-
-function uploadDiagnosticErrorLabel(code: string, status: number) {
-  if (code === "offline") return "오프라인 상태";
-  if (code === "network-error") return "네트워크 전송 실패";
-  if (code === "photo-read-failed") return "선택 사진 임시 복사 실패";
-  if (code === "photo-decode-failed") return "기기 사진 열기 실패";
-  if (code === "photo-encode-failed") return "기기 사진 변환 실패";
-  if (code === "photo-compression-target-failed") return "목표 용량 압축 실패";
-  if (code === "request-too-large" || status === 413) return "요청 용량 제한";
-  if (code === "photo-too-large") return "기기 압축 실패";
-  if (code === "photo-unsupported" || status === 415) return "지원하지 않는 사진 형식";
-  if (code === "place-not-found" || status === 404) return "장소 연결 불일치";
-  if (code === "entry-invalid" || status === 400) return "입력값 검증 실패";
-  if (code === "rate-limit" || status === 429) return "등록 횟수 제한";
-  if (code === "storage-unavailable" || status === 503) return "저장소 일시 중단";
-  if (code === "server-error" || status >= 500) return "서버 처리 오류";
-  return "분류되지 않은 업로드 오류";
-}
-
-function uploadDiagnosticDeviceLabel(userAgent: string) {
-  const platform = /iPhone/i.test(userAgent) ? "iPhone" : /iPad/i.test(userAgent) ? "iPad" : /Android/i.test(userAgent) ? "Android" : "기타 기기";
-  const browser = /EdgA|EdgiOS/i.test(userAgent) ? "Edge" : /CriOS|Chrome/i.test(userAgent) ? "Chrome" : /FxiOS|Firefox/i.test(userAgent) ? "Firefox" : /Safari/i.test(userAgent) ? "Safari" : "브라우저 불명";
-  return `${platform} · ${browser}`;
-}
-
 function storyCameraPermissionLabel(state: StoryCameraPermissionState) {
   if (state === "requesting") return "확인 중";
   if (state === "granted") return "허용됨";
@@ -1472,6 +1460,51 @@ async function sendPlaceStoryUploadDiagnostic(details: {
     return response.ok && typeof payload?.reference === "string" ? payload.reference : null;
   } catch {
     return null;
+  }
+}
+
+function sendPerformanceDiagnostic(details: {
+  metric: "startup" | "pan-settle" | "pinch-settle";
+  durationMs: number;
+  elementCount: number;
+  labelCount: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}) {
+  try {
+    const deviceNavigator = navigator as Navigator & {
+      deviceMemory?: number;
+      connection?: { effectiveType?: string };
+      standalone?: boolean;
+    };
+    const report = () => {
+      void fetch(PLACE_STORIES_API, {
+        method: "POST",
+        cache: "no-store",
+        credentials: "same-origin",
+        keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "performance-diagnostic",
+          visitorId: persistentVisitorId(),
+          metric: details.metric,
+          durationMs: Math.round(details.durationMs),
+          elementCount: details.elementCount,
+          labelCount: details.labelCount,
+          viewportWidth: Math.round(details.viewportWidth),
+          viewportHeight: Math.round(details.viewportHeight),
+          deviceMemory: Number.isFinite(deviceNavigator.deviceMemory) ? deviceNavigator.deviceMemory : null,
+          hardwareConcurrency: deviceNavigator.hardwareConcurrency || 0,
+          connectionType: deviceNavigator.connection?.effectiveType ?? "",
+          standalone: window.matchMedia("(display-mode: standalone)").matches || deviceNavigator.standalone === true,
+          online: navigator.onLine,
+        }),
+      }).catch(() => undefined);
+    };
+    if ("requestIdleCallback" in window) window.requestIdleCallback(report, { timeout: 2000 });
+    else window.setTimeout(report, 500);
+  } catch {
+    // Performance reporting must never interrupt map interaction.
   }
 }
 
@@ -2816,8 +2849,12 @@ export default function Home() {
     startExpanded: boolean;
   } | null>(null);
   const placeStoryDraftKeyRef = useRef<string | null>(null);
+  const selectedStoryKeyRef = useRef<string | null>(null);
   const placeStoryTextRef = useRef("");
   const startupLoadCompletedRef = useRef(false);
+  const performanceStartedAtRef = useRef(0);
+  const performanceStartupSentRef = useRef(false);
+  const performanceSettleSamplesRef = useRef({ pan: 0, pinch: 0 });
   const geocodeRunRef = useRef(0);
   const storyRequestRunRef = useRef(0);
   const eventRequestRunRef = useRef(0);
@@ -2962,6 +2999,11 @@ export default function Home() {
   const [uploadDiagnosticsError, setUploadDiagnosticsError] = useState(false);
   const [uploadDiagnosticsRefreshKey, setUploadDiagnosticsRefreshKey] = useState(0);
   const [uploadDiagnosticActionId, setUploadDiagnosticActionId] = useState<string | null>(null);
+  const [performanceDiagnostics, setPerformanceDiagnostics] = useState<PerformanceDiagnostic[]>([]);
+  const [performanceDiagnosticsLoading, setPerformanceDiagnosticsLoading] = useState(false);
+  const [performanceDiagnosticsError, setPerformanceDiagnosticsError] = useState(false);
+  const [performanceDiagnosticsRefreshKey, setPerformanceDiagnosticsRefreshKey] = useState(0);
+  const [performanceDiagnosticActionId, setPerformanceDiagnosticActionId] = useState<string | null>(null);
   const [placeStoryActionId, setPlaceStoryActionId] = useState<string | null>(null);
   const [placeStoryFormOpen, setPlaceStoryFormOpen] = useState(false);
   const [placeStoryAuthor, setPlaceStoryAuthor] = useState("");
@@ -3577,6 +3619,9 @@ export default function Home() {
     : selected
       ? placeContentKey(selected)
       : null;
+  useLayoutEffect(() => {
+    selectedStoryKeyRef.current = selectedStoryKey;
+  }, [selectedStoryKey]);
   const publicPlaceDetailLoading = publicLayoutAccess === "viewer"
     && Boolean(selectedStoryKey)
     && (placeStoriesLoadedKey !== selectedStoryKey || placeEventsLoadedKey !== selectedStoryKey);
@@ -3946,6 +3991,10 @@ export default function Home() {
     }));
   }, [elements, eventLinkedPlaces, reviewBadgeNow, reviewCountsByPlace]);
 
+  useLayoutEffect(() => {
+    if (!performanceStartedAtRef.current) performanceStartedAtRef.current = performance.now();
+  }, []);
+
   useEffect(() => {
     if (publicLayoutAccess !== "viewer") return;
     const timer = window.setInterval(() => setReviewBadgeNow(Date.now()), 5 * 60 * 1000);
@@ -4087,8 +4136,9 @@ export default function Home() {
       if (placeStoryPhotoRetainTokenRef.current !== token) return;
       updatePlaceStoryPhoto(null);
       const errorCode = error instanceof Error && error.message === "photo-source-too-large" ? "photo-source-too-large" : "photo-read-failed";
-      const diagnosticReference = selectedStoryKey ? await sendPlaceStoryUploadDiagnostic({
-        placeKey: selectedStoryKey,
+      const storyKey = selectedStoryKeyRef.current;
+      const diagnosticReference = storyKey ? await sendPlaceStoryUploadDiagnostic({
+        placeKey: storyKey,
         stage: "prepare",
         errorCode,
         responseStatus: 0,
@@ -4102,7 +4152,7 @@ export default function Home() {
     } finally {
       if (placeStoryPhotoRetainTokenRef.current === token) setPlaceStoryPhotoRetaining(false);
     }
-  }, [selectedStoryKey, updatePlaceStoryPhoto]);
+  }, [updatePlaceStoryPhoto]);
 
   const updatePlaceEventPhoto = useCallback((file: File | null) => {
     setPlaceEventPhotoPreview((current) => {
@@ -4456,16 +4506,20 @@ export default function Home() {
   useEffect(() => {
     if (publicLayoutAccess !== "editor" || !globalStoriesOpen || globalContentTab !== "reviews") return;
     const controller = new AbortController();
-    setUploadDiagnosticsLoading(true);
-    setUploadDiagnosticsError(false);
-    void fetch(`${PLACE_STORIES_API}?scope=upload-diagnostics`, { cache: "no-store", signal: controller.signal })
+    void Promise.resolve().then(() => {
+      if (controller.signal.aborted) return null;
+      setUploadDiagnosticsLoading(true);
+      setUploadDiagnosticsError(false);
+      return fetch(`${PLACE_STORIES_API}?scope=upload-diagnostics`, { cache: "no-store", signal: controller.signal });
+    })
       .then(async (response) => {
+        if (!response) return null;
         const payload = await response.json().catch(() => null) as PlaceStoryDiagnosticsPayload | null;
         if (!response.ok) throw new Error(payload?.error ?? "upload diagnostics load failed");
         return payload;
       })
       .then((payload) => {
-        if (!controller.signal.aborted) setUploadDiagnostics(Array.isArray(payload?.diagnostics) ? payload.diagnostics : []);
+        if (!controller.signal.aborted && payload) setUploadDiagnostics(Array.isArray(payload.diagnostics) ? payload.diagnostics : []);
       })
       .catch((error) => {
         if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
@@ -4476,6 +4530,34 @@ export default function Home() {
       });
     return () => controller.abort();
   }, [globalContentTab, globalStoriesOpen, publicLayoutAccess, uploadDiagnosticsRefreshKey]);
+
+  useEffect(() => {
+    if (publicLayoutAccess !== "editor" || !globalStoriesOpen || globalContentTab !== "reviews") return;
+    const controller = new AbortController();
+    void Promise.resolve().then(() => {
+      if (controller.signal.aborted) return null;
+      setPerformanceDiagnosticsLoading(true);
+      setPerformanceDiagnosticsError(false);
+      return fetch(`${PLACE_STORIES_API}?scope=performance-diagnostics`, { cache: "no-store", signal: controller.signal });
+    })
+      .then(async (response) => {
+        if (!response) return null;
+        const payload = await response.json().catch(() => null) as PerformanceDiagnosticsPayload | null;
+        if (!response.ok) throw new Error(payload?.error ?? "performance diagnostics load failed");
+        return payload;
+      })
+      .then((payload) => {
+        if (!controller.signal.aborted && payload) setPerformanceDiagnostics(Array.isArray(payload.diagnostics) ? payload.diagnostics : []);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+        setPerformanceDiagnosticsError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPerformanceDiagnosticsLoading(false);
+      });
+    return () => controller.abort();
+  }, [globalContentTab, globalStoriesOpen, performanceDiagnosticsRefreshKey, publicLayoutAccess]);
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !globalStoriesOpen || globalContentTab !== "events") return;
@@ -5483,6 +5565,21 @@ export default function Home() {
   }, [publicLayoutAccess, startupAssetsReady, startupInitialViewReady]);
 
   useEffect(() => {
+    if (publicLayoutAccess !== "viewer" || !startupRevealReady || performanceStartupSentRef.current) return;
+    performanceStartupSentRef.current = true;
+    const completedAt = performance.now();
+    const timer = window.setTimeout(() => sendPerformanceDiagnostic({
+      metric: "startup",
+      durationMs: completedAt - performanceStartedAtRef.current,
+      elementCount: visibleElements.length,
+      labelCount: stageLabelElements.length,
+      viewportWidth: viewportDimensions.width,
+      viewportHeight: viewportDimensions.height,
+    }), 0);
+    return () => window.clearTimeout(timer);
+  }, [publicLayoutAccess, stageLabelElements.length, startupRevealReady, viewportDimensions.height, viewportDimensions.width, visibleElements.length]);
+
+  useEffect(() => {
     if (printPreviewMode) return;
     const timer = window.setTimeout(() => {
       setForceIndividualLabels((current) => current ? labelDetailRatio >= 2.45 : labelDetailRatio >= 2.7);
@@ -5623,6 +5720,26 @@ export default function Home() {
     return true;
   }, [beginTouchMapTransform]);
 
+  const recordMapSettle = useCallback((metric: "pan-settle" | "pinch-settle") => {
+    if (publicLayoutAccess !== "viewer") return;
+    const startedAt = performance.now();
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const durationMs = performance.now() - startedAt;
+      const sampleKey = metric === "pinch-settle" ? "pinch" : "pan";
+      const existingSamples = performanceSettleSamplesRef.current[sampleKey];
+      if (existingSamples >= 2 && durationMs < 80) return;
+      performanceSettleSamplesRef.current[sampleKey] = existingSamples + 1;
+      sendPerformanceDiagnostic({
+        metric,
+        durationMs,
+        elementCount: visibleElements.length,
+        labelCount: stageLabelElements.length,
+        viewportWidth: viewportDimensions.width,
+        viewportHeight: viewportDimensions.height,
+      });
+    }));
+  }, [publicLayoutAccess, stageLabelElements.length, viewportDimensions.height, viewportDimensions.width, visibleElements.length]);
+
   useEffect(() => {
     if (publicLayoutAccess === "loading" || (publicLayoutAccess === "viewer" && baseMap !== "uploaded")) return;
     if (uploadedBaseMap?.available) return;
@@ -5746,6 +5863,7 @@ export default function Home() {
       if (pinch && pinch.pointerIds.includes(event.pointerId)) {
         pinchGestureRef.current = null;
         commitTouchMapTransform();
+        recordMapSettle("pinch-settle");
         const remaining = activeTouchPointersRef.current.values().next().value as { clientX: number; clientY: number } | undefined;
         if (remaining) {
           panInteractionRef.current = {
@@ -5765,7 +5883,10 @@ export default function Home() {
       if (trackedTouch && pinch) return;
       flushMove();
       const panInteraction = panInteractionRef.current;
-      if (panInteraction) commitTouchMapTransform();
+      if (panInteraction) {
+        commitTouchMapTransform();
+        recordMapSettle("pan-settle");
+      }
       if (panInteraction?.pendingPublicPlaceId) {
         const moved = Math.hypot(event.clientX - panInteraction.startX, event.clientY - panInteraction.startY);
         if (moved <= 6) {
@@ -5822,7 +5943,7 @@ export default function Home() {
       panInteractionRef.current = null;
       viewportRef.current?.classList.remove("is-panning");
     };
-  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, scheduleTouchLayerRelease, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
+  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, recordMapSettle, scheduleTouchLayerRelease, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -8097,6 +8218,44 @@ export default function Home() {
     }
   };
 
+  const deletePerformanceDiagnostic = async (diagnosticId: string) => {
+    if (performanceDiagnosticActionId) return;
+    setPerformanceDiagnosticActionId(diagnosticId);
+    try {
+      const response = await fetch(`${PLACE_STORIES_API}?scope=performance-diagnostics`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete-one", id: diagnosticId }),
+      });
+      if (!response.ok) throw new Error("performance diagnostic cleanup failed");
+      setPerformanceDiagnostics((current) => current.filter((diagnostic) => diagnostic.id !== diagnosticId));
+      setToast("선택한 성능 기록을 삭제했습니다.");
+    } catch {
+      setToast("성능 기록을 삭제하지 못했습니다. 관리자 권한과 연결 상태를 확인해 주세요.");
+    } finally {
+      setPerformanceDiagnosticActionId(null);
+    }
+  };
+
+  const clearPerformanceDiagnostics = async () => {
+    if (performanceDiagnosticActionId || !performanceDiagnostics.length || !window.confirm(`성능 기록 ${performanceDiagnostics.length}건을 모두 삭제할까요? 삭제 후 복구할 수 없습니다.`)) return;
+    setPerformanceDiagnosticActionId("all");
+    try {
+      const response = await fetch(`${PLACE_STORIES_API}?scope=performance-diagnostics`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "clear-all" }),
+      });
+      if (!response.ok) throw new Error("performance diagnostic cleanup failed");
+      setPerformanceDiagnostics([]);
+      setToast("성능 기록을 모두 정리했습니다.");
+    } catch {
+      setToast("성능 기록 전체 정리를 완료하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setPerformanceDiagnosticActionId(null);
+    }
+  };
+
   const closePlaceEventForm = () => {
     setPlaceEventFormOpen(false);
     setPlaceEventEditingId(null);
@@ -9158,16 +9317,18 @@ export default function Home() {
     <small>{startupAssetsReady && startupInitialViewReady ? "화면 정리" : startupLoadTotal > 0 ? `${Math.min(startupLoadDone, startupLoadTotal)} / ${startupLoadTotal}` : "연결 준비"}</small>
   </section>;
 
-  mapRenderActionsRef.current = {
-    measureAssetBounds,
-    selectPublicMarker,
-    startDenseLabelDrag,
-    startDrag,
-    startLabelDrag,
-    startPan,
-    startResize,
-    togglePlaceEventMapSelection,
-  };
+  useLayoutEffect(() => {
+    mapRenderActionsRef.current = {
+      measureAssetBounds,
+      selectPublicMarker,
+      startDenseLabelDrag,
+      startDrag,
+      startLabelDrag,
+      startPan,
+      startResize,
+      togglePlaceEventMapSelection,
+    };
+  });
 
   if (publicLayoutAccess === "loading") {
     return <main className="app-shell public-loading" data-ui-theme={uiTheme}>{startupLoadingCard}</main>;
@@ -9696,20 +9857,24 @@ export default function Home() {
               <div><strong>새 행사 등록</strong><span>장소 연결 없이 원도심 공통 행사로 등록할 수도 있습니다.</span></div>
               <button type="button" disabled={!globalEventsCanManage} onClick={openUnassignedPlaceEventForm}>{globalEventsCanManage ? "＋ 행사 등록" : "권한 확인 중…"}</button>
             </div>}
-            {publicLayoutAccess === "editor" && globalContentTab === "reviews" && <details className="upload-diagnostic-panel">
-              <summary><span><strong>모바일 후기 업로드 오류</strong><small>사진·후기 내용과 닉네임은 기록하지 않습니다.</small></span><em>{uploadDiagnosticsLoading ? "확인 중" : `${uploadDiagnostics.length}건`}</em></summary>
-              <div className="upload-diagnostic-body">
-                <header><p>최근 오류 최대 100건 · 단계·용량·형식·기기 환경만 표시</p><div className="upload-diagnostic-toolbar"><button type="button" disabled={uploadDiagnosticsLoading || uploadDiagnosticActionId !== null} onClick={() => setUploadDiagnosticsRefreshKey((current) => current + 1)}>새로고침</button><button type="button" className="danger" disabled={!uploadDiagnostics.length || uploadDiagnosticActionId !== null} onClick={() => void clearUploadDiagnostics()}>{uploadDiagnosticActionId === "all" ? "정리 중…" : "전체 정리"}</button></div></header>
-                {uploadDiagnosticsLoading ? <div className="upload-diagnostic-state"><span className="global-story-spinner" /><strong>오류 로그를 불러오는 중입니다.</strong></div>
-                  : uploadDiagnosticsError ? <div className="upload-diagnostic-state error"><strong>오류 로그를 불러오지 못했습니다.</strong><button type="button" onClick={() => setUploadDiagnosticsRefreshKey((current) => current + 1)}>다시 시도</button></div>
-                    : uploadDiagnostics.length ? <div className="upload-diagnostic-list">{uploadDiagnostics.map((diagnostic) => <article key={diagnostic.id}>
-                      <header><div><strong>{uploadDiagnosticErrorLabel(diagnostic.errorCode, diagnostic.responseStatus)}</strong><code>{diagnostic.errorCode}</code></div><div className="upload-diagnostic-card-actions"><time dateTime={diagnostic.createdAt}>{storyDateTimeLabel(diagnostic.createdAt)}</time><button type="button" disabled={uploadDiagnosticActionId !== null} onClick={() => void deleteUploadDiagnostic(diagnostic.id)}>{uploadDiagnosticActionId === diagnostic.id ? "삭제 중…" : "삭제"}</button></div></header>
-                      <dl><div><dt>실패 단계</dt><dd>{uploadDiagnosticStageLabel(diagnostic.stage)}</dd></div><div><dt>서버 응답</dt><dd>{diagnostic.responseStatus || "없음"}</dd></div><div><dt>파일 용량</dt><dd>{uploadDiagnosticSizeLabel(diagnostic.sourceSize)} → {uploadDiagnosticSizeLabel(diagnostic.preparedSize)}</dd></div><div><dt>기기 환경</dt><dd>{uploadDiagnosticDeviceLabel(diagnostic.userAgent)}</dd></div><div><dt>연결 상태</dt><dd>{diagnostic.online ? "온라인" : "오프라인"}</dd></div><div><dt>사진 형식</dt><dd>{diagnostic.sourceType || "불명"} → {diagnostic.preparedType || "변환 안 됨"}</dd></div></dl>
-                      <details><summary>기술 정보</summary><p><b>장소 키</b> {diagnostic.placeKey}</p><p><b>User-Agent</b> {diagnostic.userAgent}</p></details>
-                    </article>)}</div>
-                      : <div className="upload-diagnostic-state empty"><strong>수집된 업로드 오류가 없습니다.</strong><span>모바일 업로드가 실패하면 오류 ID와 함께 이곳에 기록됩니다.</span></div>}
-              </div>
-            </details>}
+            {publicLayoutAccess === "editor" && globalContentTab === "reviews" && <Suspense fallback={<div className="upload-diagnostic-state"><span className="global-story-spinner" /><strong>관리자 진단 도구를 불러오는 중입니다.</strong></div>}>
+              <AdminDiagnosticsPanel
+                uploadDiagnostics={uploadDiagnostics}
+                uploadLoading={uploadDiagnosticsLoading}
+                uploadError={uploadDiagnosticsError}
+                uploadActionId={uploadDiagnosticActionId}
+                onRefreshUploads={() => setUploadDiagnosticsRefreshKey((current) => current + 1)}
+                onDeleteUpload={(id) => void deleteUploadDiagnostic(id)}
+                onClearUploads={() => void clearUploadDiagnostics()}
+                performanceDiagnostics={performanceDiagnostics}
+                performanceLoading={performanceDiagnosticsLoading}
+                performanceError={performanceDiagnosticsError}
+                performanceActionId={performanceDiagnosticActionId}
+                onRefreshPerformance={() => setPerformanceDiagnosticsRefreshKey((current) => current + 1)}
+                onDeletePerformance={(id) => void deletePerformanceDiagnostic(id)}
+                onClearPerformance={() => void clearPerformanceDiagnostics()}
+              />
+            </Suspense>}
             {globalContentTab === "places" ? <section className="public-place-explorer">
               <div className="public-place-search"><span aria-hidden="true">⌕</span><input ref={publicPlaceQueryInputRef} value={publicPlaceQuery} onChange={(event) => { setPublicPlaceQuery(event.target.value); setExpandedAdditionalCategoryItemId(null); }} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => { setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }} aria-label="장소 검색어 지우기">×</button>}</div>
               <div className="public-place-filter-summary">

@@ -172,6 +172,26 @@ export const placeStoryReports = sqliteTable("place_story_reports", {
   index("place_story_reports_actor_created_idx").on(table.actorHash, table.createdAt),
 ]);
 
+export const mapPerformanceDiagnostics = sqliteTable("map_performance_diagnostics", {
+  id: text("id").primaryKey(),
+  metric: text("metric").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  elementCount: integer("element_count").notNull(),
+  labelCount: integer("label_count").notNull(),
+  viewportWidth: integer("viewport_width").notNull(),
+  viewportHeight: integer("viewport_height").notNull(),
+  deviceMemory: real("device_memory"),
+  hardwareConcurrency: integer("hardware_concurrency").notNull(),
+  connectionType: text("connection_type").notNull(),
+  standalone: integer("standalone", { mode: "boolean" }).notNull(),
+  online: integer("online", { mode: "boolean" }).notNull(),
+  actorHash: text("actor_hash").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("map_performance_diagnostics_created_idx").on(table.createdAt),
+  index("map_performance_diagnostics_actor_created_idx").on(table.actorHash, table.createdAt),
+]);
+
 export const placeEvents = sqliteTable("place_events", {
   id: text("id").primaryKey(),
   placeKey: text("place_key").notNull(),
