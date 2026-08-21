@@ -599,6 +599,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-stage { position: relative; left: 50%; overflow: visible; transform: translateX(-50%); background: #f4f2ed; box-shadow: 0 15px 45px rgb(51 51 51 / 18%); user-select: none; }
 .map-viewport.is-direct-manipulation .map-stage-wrap,
 .map-viewport.is-direct-manipulation .map-stage { will-change: transform; }
+.map-viewport.is-direct-manipulation .connector-layer { opacity: .22; }
+.map-viewport.is-direct-manipulation :is(.label, .dense-label) { box-shadow: none; }
 .map-viewport.is-programmatic-focus .map-stage-wrap { transition: transform .3s cubic-bezier(.22, .78, .28, 1); }
 .map-viewport.is-programmatic-focus .map-stage { transition: width .3s cubic-bezier(.22, .78, .28, 1); }
 .base-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
@@ -617,7 +619,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .calibration-secondary-dot { fill: #fff; stroke: #7868a3; stroke-width: .16; vector-effect: non-scaling-stroke; }
 .calibration-tertiary-line { stroke: rgb(189 128 50 / 55%); stroke-width: .11; stroke-dasharray: .2 .3; vector-effect: non-scaling-stroke; }
 .calibration-tertiary-dot { fill: #fff8eb; stroke: #bd8032; stroke-width: .15; vector-effect: non-scaling-stroke; }
-.connector-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; }
+.connector-layer { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 1; transition: opacity .12s linear; }
 .dense-label-connector line { stroke: currentColor; stroke-width: 1.1; stroke-dasharray: 3.5 2.5; transition: opacity .16s ease, stroke-width .16s ease; }
 .dense-label-connector circle { fill: currentColor; stroke: white; stroke-width: .55; opacity: .82; }
 .dense-label-connector.selected line { stroke-width: 2.5; }
@@ -626,7 +628,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-loading { position: absolute; inset: 0; display: grid; place-content: center; gap: 10px; z-index: 4; background: #f4f2ed; color: var(--muted); font-size: 11px; }
 .map-loading span { width: 24px; height: 24px; margin: auto; border: 2px solid #d3d3d3; border-top-color: var(--emerald); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.element-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.element-layer { position: absolute; inset: 0; contain: layout style; pointer-events: none; z-index: 2; }
 .map-element { position: absolute; transform: translate(-50%, -50%); aspect-ratio: 1.12; pointer-events: auto; cursor: grab; touch-action: none; user-select: none; }
 .map-element.calibration-reference { cursor: crosshair; }
 .map-viewport.is-dragging-element .map-element:not(.locked) { cursor: grabbing; }
@@ -680,7 +682,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-label-status.reviews { right: -6px; top: -5px; min-width: 10px; height: 8px; box-sizing: border-box; display: grid; place-items: center; padding: 0 2px; border: 1px solid rgb(255 255 255 / 92%); border-radius: 5px; background: rgb(67 72 70 / 78%); box-shadow: 0 1px 2px rgb(25 30 28 / 18%); color: white; font-size: 5.5px; font-variant-numeric: tabular-nums; font-weight: 800; line-height: 1; }
 .map-label-status.reviews.new { min-width: 16px; background: rgb(78 115 93 / 88%); letter-spacing: -.02em; }
 .map-viewport:is(.is-panning, .is-zooming, .is-direct-manipulation) .map-label-status { opacity: .42; }
-.dense-label-layer { position: absolute; inset: 0; z-index: 50; pointer-events: none; }
+.dense-label-layer { position: absolute; inset: 0; contain: layout style; z-index: 50; pointer-events: none; }
 .dense-label { position: absolute; transform-origin: center; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 1px; padding: 3px 4px; border: 1px solid rgb(100 100 100 / 20%); border-radius: 2px; background: rgb(255 255 255 / 94%); box-shadow: 0 1px 2px rgb(34 34 34 / 8%); color: #303030; text-align: left; line-height: 1.08; letter-spacing: -.02em; pointer-events: auto; cursor: move; touch-action: none; user-select: none; }
 .dense-label:hover, .dense-label.selected { border-color: #646464; box-shadow: 0 0 0 2px rgb(100 100 100 / 18%), 0 3px 9px rgb(55 55 55 / 17%); }
 .dense-label:active { cursor: grabbing; }

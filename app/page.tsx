@@ -2882,6 +2882,7 @@ export default function Home() {
   const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const touchTransformCommitPendingRef = useRef(false);
   const wheelFrameRef = useRef<number | null>(null);
+  const wheelCommitTimerRef = useRef<number | null>(null);
   const focusTransitionFrameRef = useRef<number | null>(null);
   const focusTransitionTimerRef = useRef<number | null>(null);
   const pendingWheelRef = useRef<{ deltaY: number; cursorX: number; cursorY: number } | null>(null);
@@ -5686,6 +5687,7 @@ export default function Home() {
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
+    if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
     if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
     if (touchLayerReleaseFrameRef.current !== null) window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
     if (touchLayerReleaseTimerRef.current !== null) window.clearTimeout(touchLayerReleaseTimerRef.current);
@@ -5835,11 +5837,20 @@ export default function Home() {
             const distance = Math.max(12, Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY));
             const centerX = (first.clientX + second.clientX) / 2 - viewport.left - viewport.width / 2;
             const centerY = (first.clientY + second.clientY) / 2 - viewport.top - viewport.height / 2;
-            const nextZoom = clamp(pinch.startZoom * distance / pinch.startDistance, 0.22, 4);
-            const ratio = nextZoom / Math.max(pinch.startZoom, 0.01);
-            const nextPan = {
+            const rawZoom = clamp(pinch.startZoom * distance / pinch.startDistance, 0.22, 4);
+            const ratio = rawZoom / Math.max(pinch.startZoom, 0.01);
+            const rawPan = {
               x: centerX - (pinch.startCenterX - pinch.startPanX) * ratio,
               y: centerY - (pinch.startCenterY - pinch.startPanY) * ratio,
+            };
+            // Touch coordinates can alternate by a fraction of a pixel even when
+            // both fingers appear stationary. A light low-pass filter keeps the
+            // map and every marker on one visual trajectory without changing the
+            // settled layout or raster quality.
+            const nextZoom = zoomRef.current + (rawZoom - zoomRef.current) * 0.82;
+            const nextPan = {
+              x: panRef.current.x + (rawPan.x - panRef.current.x) * 0.82,
+              y: panRef.current.y + (rawPan.y - panRef.current.y) * 0.82,
             };
             queueTouchMapTransform(nextZoom, nextPan);
           }
@@ -6020,6 +6031,7 @@ export default function Home() {
     event.preventDefault();
     const viewport = viewportRef.current?.getBoundingClientRect();
     if (!viewport) return;
+    if (wheelCommitTimerRef.current === null) beginTouchMapTransform();
     const cursorX = event.clientX - viewport.left - viewport.width / 2;
     const cursorY = event.clientY - viewport.top - viewport.height / 2;
     const pending = pendingWheelRef.current;
@@ -6042,17 +6054,28 @@ export default function Home() {
         x: next.cursorX - (next.cursorX - currentPan.x) * ratio,
         y: next.cursorY - (next.cursorY - currentPan.y) * ratio,
       };
-      zoomRef.current = nextZoom;
-      panRef.current = nextPan;
-      setMapPan(nextPan);
-      setZoom(nextZoom);
+      // Keep wheel zoom on the same composited coordinate system as pinch.
+      // React layout, marker labels, and dense-label collision work are committed
+      // once after the wheel stream settles instead of once per wheel frame.
+      queueTouchMapTransform(nextZoom, nextPan);
     });
+    if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
+    wheelCommitTimerRef.current = window.setTimeout(() => {
+      wheelCommitTimerRef.current = null;
+      commitTouchMapTransform();
+      recordMapSettle("pinch-settle");
+    }, 110);
   };
 
   const startPan = (event: ReactPointerEvent<HTMLElement>, pendingPublicPlaceId?: string, pendingPlaceRequestLocation = false) => {
     if (event.button !== 0 || memoMode) return;
     event.preventDefault();
     event.stopPropagation();
+    if (wheelCommitTimerRef.current !== null) {
+      window.clearTimeout(wheelCommitTimerRef.current);
+      wheelCommitTimerRef.current = null;
+      commitTouchMapTransform();
+    }
     if (event.pointerType === "touch") {
       event.currentTarget.setPointerCapture(event.pointerId);
       activeTouchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });

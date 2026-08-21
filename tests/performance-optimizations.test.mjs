@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const publicLayoutRoute = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const baseMapRoute = await readFile(new URL("../app/api/base-map/route.ts", import.meta.url), "utf8");
@@ -62,6 +63,16 @@ test("map markers, connectors, and dense labels are isolated from unrelated pane
   assert.match(pageSource, /data-render-isolation="marker-layer"/);
   assert.match(pageSource, /data-render-isolation="connector-layer"/);
   assert.match(pageSource, /data-render-isolation="dense-label-layer"/);
+});
+
+test("pinch and wheel zoom share one deferred visual transform before layout commit", () => {
+  assert.match(pageSource, /const wheelCommitTimerRef = useRef<number \| null>\(null\)/);
+  assert.match(pageSource, /if \(wheelCommitTimerRef\.current === null\) beginTouchMapTransform\(\)/);
+  assert.match(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\)/);
+  assert.match(pageSource, /wheelCommitTimerRef\.current = window\.setTimeout\(\(\) => \{/);
+  assert.match(pageSource, /const nextZoom = zoomRef\.current \+ \(rawZoom - zoomRef\.current\) \* 0\.82/);
+  assert.match(globalStyles, /\.element-layer \{[^}]*contain: layout style/);
+  assert.match(globalStyles, /\.dense-label-layer \{[^}]*contain: layout style/);
 });
 
 test("administrator diagnostics are code-split while anonymous performance samples stay content-free", () => {
