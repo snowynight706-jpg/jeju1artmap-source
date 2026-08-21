@@ -14,6 +14,10 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(pageSource, /primaryHubAsset\?\.screenSrc \?\? primaryHubAsset\?\.src/);
   assert.match(pageSource, /Promise\.all\(sources\.map\(preload\)\)/);
   assert.match(pageSource, /const \[startupInitialViewReady, setStartupInitialViewReady\] = useState\(false\)/);
+  assert.match(pageSource, /const \[startupInitialViewTarget, setStartupInitialViewTarget\] = useState/);
+  assert.match(pageSource, /Math\.abs\(settledLabelZoom - startupInitialViewTarget\.zoom\) > 0\.002/);
+  assert.match(pageSource, /Math\.abs\(stage\.offsetWidth - stageDimensions\.width \* startupInitialViewTarget\.zoom\) > 1\.5/);
+  assert.match(pageSource, /committedFrame = window\.requestAnimationFrame[\s\S]{0,160}settledFrame = window\.requestAnimationFrame\(\(\) => setStartupInitialViewReady\(true\)\)/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
   assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.png",\s*mapSource/);
@@ -41,6 +45,7 @@ test("public viewers start focused and zoomed on the main hub on desktop and mob
   assert.match(pageSource, /fitZoom \* 2\.35, viewportFillZoom \* 1\.28/);
   assert.match(pageSource, /fitZoom \* 1\.32, viewportFillZoom \* 1\.02/);
   assert.match(pageSource, /elements\.find\(\(element\) => isPrimaryHubLabel\(element\.name\) && element\.mapVisible\)/);
+  assert.match(pageSource, /setStartupInitialViewTarget\(\{ zoom: targetZoom, pan: targetPan \}\)/);
 });
 
 test("mobile public chrome floats only the main-hub return button", () => {

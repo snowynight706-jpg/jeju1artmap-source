@@ -30,9 +30,7 @@ test("touch transform handoff keeps the compositor layer through the settled fra
   assert.match(pageSource, /touchLayerReleaseTimerRef\.current = window\.setTimeout/);
   assert.match(pageSource, /activeTouchPointersRef\.current\.size > 0 \|\| pinchGestureRef\.current/);
   assert.match(pageSource, /panInteractionRef\.current = null;[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
-  assert.match(pageSource, /labelHandoffScaleRef\.current = zoomRef\.current \/ Math\.max\(touchTransformBaseZoomRef\.current, 0\.01\)/);
-  assert.match(pageSource, /restartMapLabelHandoff\(labelHandoffScaleRef\.current\)/);
-  assert.match(cssSource, /@keyframes map-label-handoff \{ from \{ scale: var\(--map-label-handoff-scale, 1\); opacity: \.86; \} to \{ scale: 1; opacity: 1; \} \}/);
+  assert.doesNotMatch(pageSource, /restartMapLabelHandoff|labelHandoffScaleRef/);
 });
 
 test("mobile high-resolution map switching and startup reveal wait for settled work only", () => {

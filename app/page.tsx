@@ -2880,9 +2880,6 @@ export default function Home() {
   const touchTransformFrameRef = useRef<number | null>(null);
   const touchLayerReleaseFrameRef = useRef<number | null>(null);
   const touchLayerReleaseTimerRef = useRef<number | null>(null);
-  const labelHandoffTimerRef = useRef<number | null>(null);
-  const labelHandoffScaleRef = useRef(1);
-  const previousSettledLabelZoomRef = useRef(0.22);
   const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const touchTransformCommitPendingRef = useRef(false);
   const wheelFrameRef = useRef<number | null>(null);
@@ -3115,6 +3112,7 @@ export default function Home() {
   const [rightOpen, setRightOpen] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [startupAssetsReady, setStartupAssetsReady] = useState(false);
+  const [startupInitialViewTarget, setStartupInitialViewTarget] = useState<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const [startupInitialViewReady, setStartupInitialViewReady] = useState(false);
   const [startupRevealReady, setStartupRevealReady] = useState(false);
   const [startupLoadDone, setStartupLoadDone] = useState(0);
@@ -5513,8 +5511,8 @@ export default function Home() {
     if (stageDimensions.width <= 0 || stageDimensions.height <= 0) return;
     if (!primaryHub) {
       publicInitialViewAppliedRef.current = true;
-      const readyFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
-      return () => window.cancelAnimationFrame(readyFrame);
+      setStartupInitialViewTarget({ zoom: zoomRef.current, pan: { ...panRef.current } });
+      return;
     }
 
     const compact = viewportDimensions.width <= 760;
@@ -5541,21 +5539,40 @@ export default function Home() {
       y: clamp(rawPan.y, -verticalTravel, verticalTravel),
     };
 
-    let settledFrame = 0;
     const frame = window.requestAnimationFrame(() => {
       if (publicInitialViewAppliedRef.current) return;
       publicInitialViewAppliedRef.current = true;
       zoomRef.current = targetZoom;
       panRef.current = targetPan;
+      setStartupInitialViewTarget({ zoom: targetZoom, pan: targetPan });
       setZoom(targetZoom);
       setMapPan(targetPan);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [elements, fitZoom, hydrated, publicLayoutAccess, setMapPan, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
+
+  useLayoutEffect(() => {
+    if (
+      publicLayoutAccess !== "viewer"
+      || !startupAssetsReady
+      || !startupInitialViewTarget
+      || startupInitialViewReady
+      || Math.abs(zoom - startupInitialViewTarget.zoom) > 0.002
+      || Math.abs(settledLabelZoom - startupInitialViewTarget.zoom) > 0.002
+      || Math.abs(panRef.current.x - startupInitialViewTarget.pan.x) > 0.5
+      || Math.abs(panRef.current.y - startupInitialViewTarget.pan.y) > 0.5
+    ) return;
+    const stage = stageRef.current;
+    if (!stage || Math.abs(stage.offsetWidth - stageDimensions.width * startupInitialViewTarget.zoom) > 1.5) return;
+    let settledFrame = 0;
+    const committedFrame = window.requestAnimationFrame(() => {
       settledFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
     });
     return () => {
-      window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(committedFrame);
       if (settledFrame) window.cancelAnimationFrame(settledFrame);
     };
-  }, [elements, fitZoom, hydrated, publicLayoutAccess, setMapPan, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
+  }, [publicLayoutAccess, settledLabelZoom, stageDimensions.width, startupAssetsReady, startupInitialViewReady, startupInitialViewTarget, zoom]);
 
   useEffect(() => {
     if (publicLayoutAccess !== "editor" || !startupAssetsReady) return;
@@ -5658,22 +5675,6 @@ export default function Home() {
     });
   }, [cancelTouchLayerRelease]);
 
-  const restartMapLabelHandoff = useCallback((scale: number) => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    if (labelHandoffTimerRef.current !== null) window.clearTimeout(labelHandoffTimerRef.current);
-    viewport.style.setProperty("--map-label-handoff-scale", clamp(scale, 0.5, 2).toFixed(4));
-    viewport.classList.remove("is-label-handoff");
-    // This is intentionally one settled-layout read, never part of the gesture frame path.
-    void viewport.offsetWidth;
-    viewport.classList.add("is-label-handoff");
-    labelHandoffTimerRef.current = window.setTimeout(() => {
-      labelHandoffTimerRef.current = null;
-      viewport.classList.remove("is-label-handoff");
-      viewport.style.removeProperty("--map-label-handoff-scale");
-    }, 150);
-  }, []);
-
   const beginTouchMapTransform = useCallback(() => {
     cancelTouchLayerRelease();
     flushTouchMapTransform();
@@ -5683,7 +5684,6 @@ export default function Home() {
 
   const commitTouchMapTransform = useCallback(() => {
     flushTouchMapTransform();
-    labelHandoffScaleRef.current = zoomRef.current / Math.max(touchTransformBaseZoomRef.current, 0.01);
     touchTransformCommitPendingRef.current = true;
     touchTransformBaseZoomRef.current = zoomRef.current;
     setZoom(zoomRef.current);
@@ -5698,18 +5698,9 @@ export default function Home() {
     if (!touchTransformCommitPendingRef.current) return;
     touchTransformCommitPendingRef.current = false;
     stageRef.current?.style.removeProperty("transform");
-    restartMapLabelHandoff(labelHandoffScaleRef.current);
-    labelHandoffScaleRef.current = 1;
     if (panInteractionRef.current || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
     scheduleTouchLayerRelease();
-  }, [interaction?.type, restartMapLabelHandoff, scheduleTouchLayerRelease, zoom]);
-
-  useLayoutEffect(() => {
-    const previousZoom = previousSettledLabelZoomRef.current;
-    previousSettledLabelZoomRef.current = settledLabelZoom;
-    if (Math.abs(previousZoom - settledLabelZoom) <= 0.002) return;
-    restartMapLabelHandoff(1);
-  }, [restartMapLabelHandoff, settledLabelZoom]);
+  }, [interaction?.type, scheduleTouchLayerRelease, zoom]);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -5721,7 +5712,6 @@ export default function Home() {
     if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
     if (touchLayerReleaseFrameRef.current !== null) window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
     if (touchLayerReleaseTimerRef.current !== null) window.clearTimeout(touchLayerReleaseTimerRef.current);
-    if (labelHandoffTimerRef.current !== null) window.clearTimeout(labelHandoffTimerRef.current);
     if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
     if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
     activeTouchPointersRef.current.clear();
