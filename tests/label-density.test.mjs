@@ -167,7 +167,7 @@ test("a clear nearby position wins and connector paths avoid landmark obstacles"
 });
 
 test("cluster placement scores labels, landmarks and existing connector lines together", () => {
-  assert.match(pageSource, /denseLabelPlacementOptions\(\{ minX, maxX, minY, maxY, width, height \}\)/);
+  assert.match(pageSource, /denseLabelPlacementOptions\(\{ minX, maxX, minY, maxY, width: placementWidth, height: placementHeight \}\)/);
   assert.match(pageSource, /placedSegments\.push\(\.\.\.best\.segments\)/);
   assert.match(pageSource, /iconObstacles: iconRects/);
   assert.match(pageSource, /culture: "#58AEB0"/);

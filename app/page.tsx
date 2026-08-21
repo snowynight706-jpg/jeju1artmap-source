@@ -39,6 +39,7 @@ import {
 } from "./label-density.mjs";
 import { denseLabelConnections } from "./dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
+import { fitDenseLabelCenter, publicDenseLabelViewport } from "./dense-label-viewport.mjs";
 import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./label-connector.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
@@ -1913,8 +1914,8 @@ function partitionDenseGroup(group: MapElement[], maximumItems = 18) {
   return chunks;
 }
 
-function compactDenseLabelLayout(group: MapElement[]) {
-  const columnCount = group.length <= 6 ? 1 : group.length <= 14 ? 2 : 3;
+function compactDenseLabelLayout(group: MapElement[], singleColumn = false) {
+  const columnCount = singleColumn ? 1 : group.length <= 6 ? 1 : group.length <= 14 ? 2 : 3;
   const byHorizontalPosition = [...group].sort((a, b) => a.x - b.x || a.y - b.y || a.name.localeCompare(b.name, "ko"));
   const perColumn = Math.ceil(byHorizontalPosition.length / columnCount);
   const columns = Array.from({ length: columnCount }, (_, columnIndex) => (
@@ -1924,7 +1925,7 @@ function compactDenseLabelLayout(group: MapElement[]) {
   )).filter((column) => column.length > 0);
   const columnWidths = columns.map((column) => {
     const longestName = Math.max(...column.map((element) => Array.from(element.name).length));
-    return Math.max(5.2, longestName * 0.72 + 0.8);
+    return Math.max(5.2, longestName * 0.72 + 1.15);
   });
   const rowCount = Math.max(...columns.map((column) => column.length));
   const width = Math.max(7.2, columnWidths.reduce((sum, value) => sum + value, 0) + Math.max(0, columns.length - 1) * 0.34 + 0.68);
@@ -1961,6 +1962,12 @@ function buildDenseLabelClusters(
   excludedElementIds: Iterable<string> = [],
   densityScale = 1,
   persistentOnly = false,
+  layoutOptions: {
+    maximumItems?: number;
+    renderScale?: { x: number; y: number };
+    singleColumn?: boolean;
+    viewportBounds?: NormalizedRect;
+  } = {},
 ): DenseLabelCluster[] {
   // A fixed label still belongs to its ordinary marker and can be represented by a
   // dense-label cluster. The lock protects the saved direction/gap/offset; it must
@@ -1984,8 +1991,14 @@ function buildDenseLabelClusters(
     const root = find(index);
     groups.set(root, [...(groups.get(root) ?? []), element]);
   });
-  const clusterGroups = [...groups.values()].filter((group) => group.length >= 2).flatMap((group) => partitionDenseGroup(group));
+  const clusterGroups = [...groups.values()]
+    .filter((group) => group.length >= 2)
+    .flatMap((group) => partitionDenseGroup(group, layoutOptions.maximumItems ?? 18));
   const clusteredCandidateIds = new Set(clusterGroups.flatMap((group) => group.map((element) => element.id)));
+  const renderScale = {
+    x: clamp(layoutOptions.renderScale?.x ?? 1, 0.02, 8),
+    y: clamp(layoutOptions.renderScale?.y ?? 1, 0.02, 8),
+  };
   const iconRects = iconElements.map((element) => {
     const displaySize = mapElementDisplaySize(element);
     const height = displaySize * MAP_ASPECT / 1.12;
@@ -2001,8 +2014,8 @@ function buildDenseLabelClusters(
     };
   });
   const labelRects = labelElements.filter((element) => !clusteredCandidateIds.has(element.id)).map((element) => {
-    const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24);
-    const height = 1.34;
+    const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24) * renderScale.x;
+    const height = 1.34 * renderScale.y;
     const displaySize = mapElementDisplaySize(element);
     const elementHeight = displaySize * MAP_ASPECT / 1.12;
     const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
@@ -2027,7 +2040,7 @@ function buildDenseLabelClusters(
     })
     .sort((a, b) => Number(Boolean(b.override)) - Number(Boolean(a.override)) || b.group.length - a.group.length)
     .map(({ group, key, override, positionKeys }) => {
-    const layout = compactDenseLabelLayout(group);
+    const layout = compactDenseLabelLayout(group, layoutOptions.singleColumn);
     const orderedGroup = layout.columns.flat();
     const names = orderedGroup.map((element) => element.name);
     const groupIds = new Set(group.map((element) => element.id));
@@ -2038,6 +2051,8 @@ function buildDenseLabelClusters(
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     const { width, height } = layout;
+    const placementWidth = width * renderScale.x;
+    const placementHeight = height * renderScale.y;
     const rowsForPlacement = (placementX: number, placementY: number) => {
       const rowTop = placementY - height / 2 + 1.17;
       const rowHeight = 0.9;
@@ -2051,26 +2066,44 @@ function buildDenseLabelClusters(
         return { element, targetX, targetY: rowTop + rowHeight * (rowIndex + 0.5), column: columnIndex, rowIndex };
       }));
     };
+    const automaticOptions = denseLabelPlacementOptions({ minX, maxX, minY, maxY, width: placementWidth, height: placementHeight });
     const rawOptions = override
-      ? [{ x: override.x, y: override.y, gap: 0 }]
-      : denseLabelPlacementOptions({ minX, maxX, minY, maxY, width, height });
+      ? layoutOptions.viewportBounds
+        ? [{ x: override.x, y: override.y, gap: -0.16 }, ...automaticOptions]
+        : [{ x: override.x, y: override.y, gap: 0 }]
+      : automaticOptions;
+    const viewportBounds = layoutOptions.viewportBounds;
+    const groupTouchesViewport = Boolean(viewportBounds && orderedGroup.some((element) => (
+      element.x >= viewportBounds.left - placementWidth / 2
+      && element.x <= viewportBounds.right + placementWidth / 2
+      && element.y >= viewportBounds.top - placementHeight / 2
+      && element.y <= viewportBounds.bottom + placementHeight / 2
+    )));
+    const placementBounds = groupTouchesViewport && viewportBounds
+      ? viewportBounds
+      : { left: 0, right: 100, top: 0, bottom: 100 };
     const options = rawOptions.map((option: { x: number; y: number; gap?: number }) => ({
       ...option,
-      x: clamp(option.x, width / 2, 100 - width / 2),
-      y: clamp(option.y, height / 2, 100 - height / 2),
+      ...fitDenseLabelCenter({
+        x: option.x,
+        y: option.y,
+        width: placementWidth,
+        height: placementHeight,
+        bounds: placementBounds,
+      }),
     }));
     const connectorSegmentsFor = (option: { x: number; y: number }) => rowsForPlacement(option.x, option.y).map(({ element, targetX, targetY }) => ({
       fromX: element.x,
       fromY: element.y,
-      toX: targetX,
-      toY: targetY,
+      toX: option.x + (targetX - option.x) * renderScale.x,
+      toY: option.y + (targetY - option.y) * renderScale.y,
       id: `${key}:${element.id}`,
       elementId: element.id,
     }));
     const best = chooseDenseLabelPlacement({
       options,
-      width,
-      height,
+      width: placementWidth,
+      height: placementHeight,
       centerX,
       centerY,
       mapAspect: MAP_ASPECT,
@@ -2858,6 +2891,7 @@ type DenseLabelLayerProps = {
   denseLabelClusters: DenseLabelCluster[];
   editingEnabled: boolean;
   mapLabelStatusByElementId: Map<string, MapLabelStatus>;
+  mobileSingleColumn: boolean;
   placeRequestPickingLocation: boolean;
   printPreviewMode: boolean;
   publicLayoutAccess: PublicLayoutAccess;
@@ -2870,6 +2904,7 @@ const DenseLabelLayer = memo(function DenseLabelLayer({
   denseLabelClusters,
   editingEnabled,
   mapLabelStatusByElementId,
+  mobileSingleColumn,
   placeRequestPickingLocation,
   printPreviewMode,
   publicLayoutAccess,
@@ -2880,7 +2915,7 @@ const DenseLabelLayer = memo(function DenseLabelLayer({
   return <div className="dense-label-layer" data-render-isolation="dense-label-layer" aria-label="통합 라벨">
     {denseLabelClusters.map((cluster) => <div
       key={cluster.id}
-      className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
+      className={`dense-label ${cluster.columnCount === 1 ? "single-column" : ""} ${mobileSingleColumn ? "mobile-single-column" : ""} ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
       style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: `translate(-50%, -50%)${publicLayoutAccess === "editor" ? ` scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` : ""}` }}
       onPointerDown={editingEnabled ? (event) => actionsRef.current?.startDenseLabelDrag(event, cluster) : undefined}
       title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
@@ -3944,6 +3979,44 @@ export default function Home() {
   }, [publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const labelRenderZoom = publicLayoutAccess === "viewer" ? settledLabelZoom : zoom;
   const labelDetailRatio = labelRenderZoom / Math.max(fitZoom, 0.22);
+  const publicDenseLabelViewportBounds = useMemo(() => {
+    if (
+      publicLayoutAccess !== "viewer"
+      || printPreviewMode
+      || viewportDimensions.width <= 0
+      || viewportDimensions.height <= 0
+      || stageDimensions.width <= 0
+      || stageDimensions.height <= 0
+    ) return undefined;
+    const compact = viewportDimensions.width <= 760;
+    return publicDenseLabelViewport({
+      panX: mapRenderPan.x,
+      panY: mapRenderPan.y,
+      zoom: labelRenderZoom,
+      stageWidth: stageDimensions.width,
+      stageHeight: stageDimensions.height,
+      viewportWidth: viewportDimensions.width,
+      viewportHeight: viewportDimensions.height,
+      paddingX: compact ? 12 : 18,
+      paddingY: compact ? 14 : 18,
+    });
+  }, [labelRenderZoom, mapRenderPan.x, mapRenderPan.y, printPreviewMode, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
+  const denseLabelLayoutOptions = useMemo(() => {
+    if (printPreviewMode || publicLayoutAccess === "loading") return undefined;
+    if (publicLayoutAccess === "editor") return {
+      maximumItems: 18,
+      renderScale: denseLabelRenderScale(labelRenderZoom, stageDimensions, true),
+      singleColumn: true,
+    };
+    if (!publicDenseLabelViewportBounds) return undefined;
+    const mobileSingleColumn = viewportDimensions.width <= 760;
+    return {
+      maximumItems: mobileSingleColumn ? 10 : 18,
+      renderScale: denseLabelRenderScale(labelRenderZoom, stageDimensions, true),
+      singleColumn: mobileSingleColumn,
+      viewportBounds: publicDenseLabelViewportBounds,
+    };
+  }, [labelRenderZoom, printPreviewMode, publicDenseLabelViewportBounds, publicLayoutAccess, stageDimensions, viewportDimensions.width]);
   const mobileOverviewSimplified = publicLayoutAccess === "viewer"
     && viewportDimensions.width > 0
     && viewportDimensions.width <= 760
@@ -4193,8 +4266,9 @@ export default function Home() {
         printPreviewMode ? denseLabelExcludedIds : displayDenseLabelExcludedIds,
         printPreviewMode ? 1 : fitZoom / Math.max(labelRenderZoom, 0.22),
         !printPreviewMode && forceIndividualLabels,
+        denseLabelLayoutOptions,
       )
-    : [], [denseLabelExcludedIds, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, labelRenderZoom, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements]);
+    : [], [denseLabelExcludedIds, denseLabelLayoutOptions, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, labelRenderZoom, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements]);
   const selectedDenseLabel = useMemo(
     () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
     [denseLabelClusters, selectedDenseLabelId],
@@ -9776,6 +9850,10 @@ export default function Home() {
     () => new Set(renderedDenseLabelClusters.flatMap((cluster) => cluster.elementIds)),
     [renderedDenseLabelClusters],
   );
+  const renderedIndividualLabelCount = useMemo(
+    () => stageLabelElements.reduce((count, element) => count + Number(!renderedClusteredLabelElementIds.has(element.id)), 0),
+    [renderedClusteredLabelElementIds, stageLabelElements],
+  );
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
   const editorSyncLabel = editorDraftSyncState === "saving"
     ? "서버 저장 중"
@@ -9956,6 +10034,7 @@ export default function Home() {
                 </div>
                 <section className="public-label-density-editor" aria-labelledby="public-label-density-title">
                   <header><span><b id="public-label-density-title">배포본 축척별 일반 라벨</b><small>랜드마크·주요 거점·현재 선택은 항상 별도 유지</small></span><button type="button" onClick={resetOptionalLabelScaleLimits}>기본값</button></header>
+                  <output className="public-label-density-live" aria-live="polite">현재 화면 · 개별 {renderedIndividualLabelCount}개 · 통합 {renderedDenseLabelClusters.length}묶음</output>
                   <div className="public-label-density-steps">{optionalLabelScaleSteps.map((step, index) => <label key={step.maximumRatio}><span><b>맞춤 ×{step.maximumRatio}</b><small>지도 약 {Math.round(100 / step.maximumRatio)}% 이상 표시</small></span><input type="number" min="0" max="1200" step="1" value={step.limit} onChange={(event) => updateOptionalLabelScaleLimit(index, Number(event.target.value))} aria-label={`맞춤 축척 ${step.maximumRatio}배 일반 라벨 개수`} /><em>개</em></label>)}</div>
                   <p>각 값은 필수 라벨을 제외한 일반 라벨 상한입니다. 4.5배를 넘는 상세 화면에서는 표시 설정된 라벨 전체를 복구합니다.</p>
                 </section>
@@ -10196,6 +10275,7 @@ export default function Home() {
                   denseLabelClusters={renderedDenseLabelClusters}
                   editingEnabled={editingEnabled}
                   mapLabelStatusByElementId={mapLabelStatusByElementId}
+                  mobileSingleColumn={Boolean(denseLabelLayoutOptions?.singleColumn)}
                   placeRequestPickingLocation={placeRequestPickingLocation}
                   printPreviewMode={printPreviewMode}
                   publicLayoutAccess={publicLayoutAccess}
