@@ -249,7 +249,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-label-density-editor > header span, .public-label-density-editor > header b, .public-label-density-editor > header small { min-width: 0; display: block; }
 .public-label-density-editor > header b { color: var(--ink); font-size: 8px; }
 .public-label-density-editor > header small { margin-top: 2px; color: var(--muted); font-size: 7px; line-height: 1.35; }
+.public-label-density-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
 .public-label-density-editor > header button { flex: 0 0 auto; min-height: 24px; padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--ui-control, #fff); color: var(--muted); cursor: pointer; font-size: 7px; font-weight: 750; }
+.public-label-density-editor > header button.server-save { border-color: color-mix(in srgb, var(--emerald) 54%, var(--line-strong)); background: color-mix(in srgb, var(--emerald) 9%, var(--ui-control, #fff)); color: var(--emerald); }
+.public-label-density-editor > header button:disabled { cursor: wait; opacity: .58; }
 .public-label-density-live { min-height: 22px; display: flex; align-items: center; margin-top: 5px; padding: 3px 6px; border: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent); border-radius: 6px; background: var(--ui-surface-raised, #fff); color: var(--ink); font-size: 7px; font-weight: 800; }
 .public-label-density-steps { display: grid; gap: 3px; margin-top: 5px; }
 .public-label-density-steps label { min-height: 31px; display: grid; grid-template-columns: minmax(0, 1fr) 48px 12px; align-items: center; gap: 4px; padding: 3px 2px; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }

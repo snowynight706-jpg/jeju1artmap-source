@@ -72,6 +72,9 @@ test("admin label budgets are editable and persist through public layout view se
   assert.match(pageSource, /배포본 축척별 일반 라벨/);
   assert.match(pageSource, /setOptionalLabelScaleSteps\(normalizeOptionalLabelScaleSteps\(view\.optionalLabelScaleSteps\)\)/);
   assert.match(pageSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(optionalLabelScaleSteps\)/);
+  assert.match(pageSource, /className="public-label-density-actions"[\s\S]{0,320}>기본값<[\s\S]{0,320}>\{optionalLabelScaleSaving \? "저장 중…" : "저장"\}</);
+  assert.match(pageSource, /const saveOptionalLabelScaleLimits = async[\s\S]{0,1200}method: "PATCH"[\s\S]{0,500}baseDraftRevision: editorDraftRevisionRef\.current/);
+  assert.match(pageSource, /서버 편집본에 저장했습니다\. 공개 지도에는 공개본 업데이트 후 반영됩니다\./);
   assert.match(publicLayoutRouteSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(raw\.optionalLabelScaleSteps\)/);
 });
 
