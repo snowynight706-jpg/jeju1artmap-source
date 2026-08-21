@@ -79,6 +79,17 @@ test("place detail exposes directions, address copy, share, and a stable history
   assert.match(pageSource, /window\.addEventListener\("keydown", handleEscape, true\)/);
 });
 
+test("closing public sheets preserves the current map scale while explicit navigation may restore it", () => {
+  const closePlace = pageSource.match(/const closePublicPlacePanel = \(\) => \{[\s\S]+?\n  \};/)?.[0] ?? "";
+  const closeExplorer = pageSource.match(/const closePublicExplorerPanel = \(\) => \{[\s\S]+?\n  \};/)?.[0] ?? "";
+  assert.match(closePlace, /publicPreserveMapViewOnNextPopRef\.current = true/);
+  assert.doesNotMatch(closePlace, /restorePublicMapView/);
+  assert.match(closeExplorer, /publicPreserveMapViewOnNextPopRef\.current = true/);
+  assert.doesNotMatch(closeExplorer, /restorePublicMapView/);
+  assert.match(pageSource, /if \(preserveCurrentMapView\) publicMapViewBeforeFocusRef\.current = null;\s*else restorePublicMapView\(panel === "map"\)/);
+  assert.match(pageSource, /const resetPublicMap = \(\) => \{[\s\S]{0,500}setZoom\(fitZoom\)/);
+});
+
 test("Escape closes the topmost PC panel even while an input has focus", () => {
   const escapeHandler = pageSource.match(/const handleEscape = \(event: KeyboardEvent\) => \{[\s\S]+?window\.addEventListener\("keydown", handleEscape, true\);/)?.[0] ?? "";
   assert.ok(escapeHandler);

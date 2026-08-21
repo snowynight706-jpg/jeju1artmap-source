@@ -2841,6 +2841,7 @@ export default function Home() {
   const publicNavigationInitializedRef = useRef(false);
   const publicNavigationApplyingRef = useRef(false);
   const publicNavigationAfterPopRef = useRef<"explorer" | null>(null);
+  const publicPreserveMapViewOnNextPopRef = useRef(false);
   const publicMapViewBeforeFocusRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const publicPanelDragRef = useRef<{
     pointerId: number;
@@ -2879,6 +2880,9 @@ export default function Home() {
   const touchTransformFrameRef = useRef<number | null>(null);
   const touchLayerReleaseFrameRef = useRef<number | null>(null);
   const touchLayerReleaseTimerRef = useRef<number | null>(null);
+  const labelHandoffTimerRef = useRef<number | null>(null);
+  const labelHandoffScaleRef = useRef(1);
+  const previousSettledLabelZoomRef = useRef(0.22);
   const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const touchTransformCommitPendingRef = useRef(false);
   const wheelFrameRef = useRef<number | null>(null);
@@ -5654,6 +5658,22 @@ export default function Home() {
     });
   }, [cancelTouchLayerRelease]);
 
+  const restartMapLabelHandoff = useCallback((scale: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    if (labelHandoffTimerRef.current !== null) window.clearTimeout(labelHandoffTimerRef.current);
+    viewport.style.setProperty("--map-label-handoff-scale", clamp(scale, 0.5, 2).toFixed(4));
+    viewport.classList.remove("is-label-handoff");
+    // This is intentionally one settled-layout read, never part of the gesture frame path.
+    void viewport.offsetWidth;
+    viewport.classList.add("is-label-handoff");
+    labelHandoffTimerRef.current = window.setTimeout(() => {
+      labelHandoffTimerRef.current = null;
+      viewport.classList.remove("is-label-handoff");
+      viewport.style.removeProperty("--map-label-handoff-scale");
+    }, 150);
+  }, []);
+
   const beginTouchMapTransform = useCallback(() => {
     cancelTouchLayerRelease();
     flushTouchMapTransform();
@@ -5663,6 +5683,7 @@ export default function Home() {
 
   const commitTouchMapTransform = useCallback(() => {
     flushTouchMapTransform();
+    labelHandoffScaleRef.current = zoomRef.current / Math.max(touchTransformBaseZoomRef.current, 0.01);
     touchTransformCommitPendingRef.current = true;
     touchTransformBaseZoomRef.current = zoomRef.current;
     setZoom(zoomRef.current);
@@ -5677,9 +5698,18 @@ export default function Home() {
     if (!touchTransformCommitPendingRef.current) return;
     touchTransformCommitPendingRef.current = false;
     stageRef.current?.style.removeProperty("transform");
+    restartMapLabelHandoff(labelHandoffScaleRef.current);
+    labelHandoffScaleRef.current = 1;
     if (panInteractionRef.current || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
     scheduleTouchLayerRelease();
-  }, [interaction?.type, scheduleTouchLayerRelease, zoom]);
+  }, [interaction?.type, restartMapLabelHandoff, scheduleTouchLayerRelease, zoom]);
+
+  useLayoutEffect(() => {
+    const previousZoom = previousSettledLabelZoomRef.current;
+    previousSettledLabelZoomRef.current = settledLabelZoom;
+    if (Math.abs(previousZoom - settledLabelZoom) <= 0.002) return;
+    restartMapLabelHandoff(1);
+  }, [restartMapLabelHandoff, settledLabelZoom]);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -5691,6 +5721,7 @@ export default function Home() {
     if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
     if (touchLayerReleaseFrameRef.current !== null) window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
     if (touchLayerReleaseTimerRef.current !== null) window.clearTimeout(touchLayerReleaseTimerRef.current);
+    if (labelHandoffTimerRef.current !== null) window.clearTimeout(labelHandoffTimerRef.current);
     if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
     if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
     activeTouchPointersRef.current.clear();
@@ -8813,12 +8844,13 @@ export default function Home() {
     if (publicPanelIsExplorer(current.wondosimPanel)) {
       setGlobalStoriesOpen(false);
       setPublicPanelExpanded(false);
-      restorePublicMapView(true);
+      publicPreserveMapViewOnNextPopRef.current = true;
       window.history.go(current.wondosimPanel === "explorer-expanded" && current.wondosimExpandedFromCollapsed ? -2 : -1);
       return;
     }
     setGlobalStoriesOpen(false);
     setPublicPanelExpanded(false);
+    publicMapViewBeforeFocusRef.current = null;
   };
 
   const toggleGlobalStories = () => {
@@ -8906,14 +8938,14 @@ export default function Home() {
       setGlobalStoriesOpen(returnToExplorer);
       setPublicPanelExpanded(current.wondosimFrom === "explorer-expanded");
       if (returnToExplorer) setGlobalContentTab("places");
-      restorePublicMapView(!returnToExplorer);
+      publicPreserveMapViewOnNextPopRef.current = true;
       window.history.go(current.wondosimPanel === "place-expanded" && current.wondosimExpandedFromCollapsed ? -2 : -1);
       return;
     }
     setSelectedId(null);
     setSelectedFacilityId(null);
     setPublicPlaceExpanded(false);
-    restorePublicMapView(true);
+    publicMapViewBeforeFocusRef.current = null;
   };
 
   const openPublicPlaceList = () => {
@@ -9046,6 +9078,8 @@ export default function Home() {
     if (publicLayoutAccess !== "viewer" || !publicPlaceItems.length) return;
 
     const applyPanel = (state: PublicHistoryState) => {
+      const preserveCurrentMapView = publicPreserveMapViewOnNextPopRef.current;
+      publicPreserveMapViewOnNextPopRef.current = false;
       const panel = state.wondosimPanel ?? "map";
       const item = publicPanelIsPlace(panel)
         ? publicPlaceItems.find((candidate) => candidate.id === state.wondosimPlaceId)
@@ -9083,7 +9117,8 @@ export default function Home() {
       setGlobalContentTab("places");
       setGlobalStoriesOpen(publicPanelIsExplorer(panel));
       setPublicPanelExpanded(panel === "explorer-expanded");
-      restorePublicMapView(panel === "map");
+      if (preserveCurrentMapView) publicMapViewBeforeFocusRef.current = null;
+      else restorePublicMapView(panel === "map");
     };
 
     const pushPendingExplorer = () => {

@@ -601,6 +601,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-viewport.is-direct-manipulation .map-stage { will-change: transform; }
 .map-viewport.is-direct-manipulation .connector-layer { opacity: .22; }
 .map-viewport.is-direct-manipulation :is(.label, .dense-label) { box-shadow: none; }
+.map-viewport.is-label-handoff :is(.label, .dense-label) { animation: map-label-handoff .14s cubic-bezier(.22, .72, .28, 1) both; }
+@keyframes map-label-handoff { from { scale: var(--map-label-handoff-scale, 1); opacity: .86; } to { scale: 1; opacity: 1; } }
 .map-viewport.is-programmatic-focus .map-stage-wrap { transition: transform .3s cubic-bezier(.22, .78, .28, 1); }
 .map-viewport.is-programmatic-focus .map-stage { transition: width .3s cubic-bezier(.22, .78, .28, 1); }
 .base-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
