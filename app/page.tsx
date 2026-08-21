@@ -5665,6 +5665,7 @@ export default function Home() {
     zoomRef.current = nextZoom;
     panRef.current = nextPan;
     pendingTouchTransformRef.current = { zoom: nextZoom, pan: nextPan };
+    viewportRef.current?.classList.add("is-map-labels-suspended");
     if (touchTransformFrameRef.current !== null) return;
     touchTransformFrameRef.current = window.requestAnimationFrame(() => {
       touchTransformFrameRef.current = null;
@@ -5692,7 +5693,7 @@ export default function Home() {
       touchLayerReleaseTimerRef.current = window.setTimeout(() => {
         touchLayerReleaseTimerRef.current = null;
         if (activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
-        viewportRef.current?.classList.remove("is-direct-manipulation");
+        viewportRef.current?.classList.remove("is-direct-manipulation", "is-map-labels-suspended");
       }, 80);
     });
   }, [cancelTouchLayerRelease]);
@@ -6323,6 +6324,7 @@ export default function Home() {
     } else {
       cancelTouchLayerRelease();
       viewportElement.classList.add("is-direct-manipulation");
+      viewportElement.classList.add("is-map-labels-suspended");
       stageWrap.style.transition = "transform .3s cubic-bezier(.22, .78, .28, 1)";
       stage.style.transition = "transform .3s cubic-bezier(.22, .78, .28, 1)";
       stage.style.transform = "translateX(-50%) scale(1)";

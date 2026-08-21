@@ -25,6 +25,14 @@ test("mobile map manipulation avoids layout-heavy effects per frame", () => {
   assert.match(cssSource, /is-direct-manipulation\) \.placed-asset \{ filter: none; \}/);
 });
 
+test("map labels leave the paint path only after drag or zoom actually starts", () => {
+  assert.match(pageSource, /pendingTouchTransformRef\.current = \{ zoom: nextZoom, pan: nextPan \};\s*viewportRef\.current\?\.classList\.add\("is-map-labels-suspended"\)/);
+  assert.match(pageSource, /classList\.remove\("is-direct-manipulation", "is-map-labels-suspended"\)/);
+  assert.match(pageSource, /viewportElement\.classList\.add\("is-map-labels-suspended"\)/);
+  assert.match(cssSource, /\.map-viewport:is\(\.is-map-labels-suspended, \.is-zooming\) :is\(\.label, \.dense-label-layer, \.dense-label-connector\) \{ visibility: hidden; pointer-events: none; \}/);
+  assert.doesNotMatch(pageSource, /beginTouchMapTransform[\s\S]{0,500}classList\.add\("is-map-labels-suspended"\)/);
+});
+
 test("touch transform handoff keeps the compositor layer through the settled frame", () => {
   assert.match(pageSource, /touchLayerReleaseFrameRef\.current = window\.requestAnimationFrame/);
   assert.match(pageSource, /touchLayerReleaseTimerRef\.current = window\.setTimeout/);
