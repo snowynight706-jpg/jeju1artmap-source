@@ -82,14 +82,17 @@ test("screen label budgets exclude offscreen places and refresh after settled ma
   assert.match(cssSource, /\.map-viewport\.is-label-viewport-settling :is\(\.label, \.dense-label-layer, \.dense-label-connector\)/);
 });
 
-test("admin label budgets are editable and persist through public layout view settings", () => {
+test("admin label budgets are editable and publish immediately as independent runtime settings", () => {
   assert.match(pageSource, /배포본 축척별 일반 라벨/);
   assert.match(pageSource, /setOptionalLabelScaleSteps\(normalizeOptionalLabelScaleSteps\(view\.optionalLabelScaleSteps\)\)/);
   assert.match(pageSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(optionalLabelScaleSteps\)/);
   assert.match(pageSource, /className="public-label-density-actions"[\s\S]{0,320}>기본값<[\s\S]{0,320}>\{optionalLabelScaleSaving \? "저장 중…" : "저장"\}</);
-  assert.match(pageSource, /const saveOptionalLabelScaleLimits = async[\s\S]{0,1200}method: "PATCH"[\s\S]{0,500}baseDraftRevision: editorDraftRevisionRef\.current/);
-  assert.match(pageSource, /서버 편집본에 저장했습니다\. 공개 지도에는 공개본 업데이트 후 반영됩니다\./);
+  assert.match(pageSource, /const saveOptionalLabelScaleLimits = async[\s\S]{0,1000}method: "PATCH"[\s\S]{0,500}action: "save-label-density-settings"[\s\S]{0,260}baseRevision: labelDensitySettingsRevisionRef\.current/);
+  assert.match(pageSource, /공개본 업데이트 없이 공개 지도에 반영됩니다\./);
   assert.match(publicLayoutRouteSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(raw\.optionalLabelScaleSteps\)/);
+  assert.match(publicLayoutRouteSource, /payload\?\.action === "save-label-density-settings"/);
+  assert.match(publicLayoutRouteSource, /INSERT INTO map_label_density_settings/);
+  assert.match(publicLayoutRouteSource, /applyLabelDensitySettings\(JSON\.parse\(row\.viewSettingsJson\), labelDensitySettings\)/);
 });
 
 test("dense label connector endpoints follow fixed-screen labels in public and admin maps", () => {

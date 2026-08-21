@@ -43,6 +43,18 @@ type StoredDraft = {
   revision: number;
 };
 
+type StoredLabelDensitySettings = {
+  optionalLabelScaleStepsJson: string;
+  updatedAt: string;
+  revision: number;
+};
+
+type LabelDensitySettings = {
+  optionalLabelScaleSteps: Array<{ maximumRatio: number; limit: number }>;
+  updatedAt: string;
+  revision: number;
+};
+
 type LayoutHistoryKind = "snapshot" | "published" | "restored" | "legacy";
 
 type StoredLayoutHistory = {
@@ -189,6 +201,30 @@ async function readDraft(db: D1Database) {
   ).first() as Promise<StoredDraft | null>;
 }
 
+async function readLabelDensitySettings(db: D1Database) {
+  return db.prepare(
+    `SELECT optional_label_scale_steps_json AS optionalLabelScaleStepsJson,
+      updated_at AS updatedAt, revision
+     FROM map_label_density_settings WHERE id = 1`,
+  ).first() as Promise<StoredLabelDensitySettings | null>;
+}
+
+function parseLabelDensitySettings(row: StoredLabelDensitySettings | null): LabelDensitySettings | null {
+  if (!row) return null;
+  return {
+    optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps(JSON.parse(row.optionalLabelScaleStepsJson)),
+    updatedAt: row.updatedAt,
+    revision: row.revision,
+  };
+}
+
+function applyLabelDensitySettings(view: unknown, settings: LabelDensitySettings | null) {
+  const normalized = normalizeViewSettings(view);
+  return settings
+    ? { ...normalized, optionalLabelScaleSteps: settings.optionalLabelScaleSteps }
+    : normalized;
+}
+
 async function readHistory(db: D1Database) {
   return db.prepare(
     `SELECT id, kind, source_revision AS sourceRevision,
@@ -312,6 +348,11 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
     placeRequestCount,
     eventPlaceIndex,
     reviewPlaceIndex,
+    db.prepare(
+      `SELECT optional_label_scale_steps_json AS optionalLabelScaleStepsJson,
+        updated_at AS updatedAt, revision
+       FROM map_label_density_settings WHERE id = 1`,
+    ),
     ...(canEdit ? [db.prepare(
       `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
         previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
@@ -319,7 +360,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
        FROM map_editor_draft WHERE id = 1`,
     )] : []),
   ];
-  const [layoutResult, reviewResult, eventResult, placeRequestResult, eventPlaceResult, reviewPlaceResult, draftResult] = await db.batch(statements);
+  const [layoutResult, reviewResult, eventResult, placeRequestResult, eventPlaceResult, reviewPlaceResult, labelDensityResult, draftResult] = await db.batch(statements);
   const contentSummary = contentSummaryFromBatchResults(reviewResult, eventResult, placeRequestResult, now);
   return {
     row: batchRow(layoutResult) as StoredLayout | null,
@@ -332,15 +373,16 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
       count: Math.max(0, Number(row.count ?? 0)),
       latestCreatedAt: typeof row.latestCreatedAt === "string" ? row.latestCreatedAt : null,
     })),
+    labelDensityRow: batchRow(labelDensityResult) as StoredLabelDensitySettings | null,
   };
 }
 
-function parseStored(row: StoredLayout, canEdit: boolean) {
+function parseStored(row: StoredLayout, canEdit: boolean, labelDensitySettings: LabelDensitySettings | null = null) {
   const storedDocument = stabilizeMainHubDocument(JSON.parse(row.documentJson) as unknown);
   const completed = completeReviewStatuses(storedDocument);
   return {
     document: canEdit ? completed.document : publicDocument(completed.document),
-    view: normalizeViewSettings(JSON.parse(row.viewSettingsJson)),
+    view: applyLabelDensitySettings(JSON.parse(row.viewSettingsJson), labelDensitySettings),
     publishedAt: row.publishedAt,
     revision: row.revision,
     hasPrevious: Boolean(row.previousDocumentJson),
@@ -348,10 +390,10 @@ function parseStored(row: StoredLayout, canEdit: boolean) {
   };
 }
 
-function parseDraft(row: StoredDraft) {
+function parseDraft(row: StoredDraft, labelDensitySettings: LabelDensitySettings | null = null) {
   return {
     document: stabilizeMainHubDocument(JSON.parse(row.documentJson) as unknown),
-    view: normalizeViewSettings(JSON.parse(row.viewSettingsJson)),
+    view: applyLabelDensitySettings(JSON.parse(row.viewSettingsJson), labelDensitySettings),
     updatedAt: row.updatedAt,
     revision: row.revision,
     hasPrevious: Boolean(row.previousDocumentJson),
@@ -380,23 +422,29 @@ export async function GET(request: Request) {
     if (!entry) return json({ error: "layout history entry unavailable" }, 404);
     return json({ historyEntry: parseHistoryDocument(entry) });
   }
-  const [{ row, draftRow, contentSummary, eventLinkedPlaces, reviewCountsByPlace }, uploadedBaseMap, historyResult] = await Promise.all([
+  const [{ row, draftRow, contentSummary, eventLinkedPlaces, reviewCountsByPlace, labelDensityRow }, uploadedBaseMap, historyResult] = await Promise.all([
     readInitialState(runtime.DB, canEdit),
     readUploadedBaseMapMetadata(runtime.BUCKET, canEdit),
     canEdit ? readHistory(runtime.DB) : Promise.resolve({ results: [] as LayoutHistoryItem[] }),
   ]);
+  let labelDensitySettings: LabelDensitySettings | null = null;
+  try {
+    labelDensitySettings = parseLabelDensitySettings(labelDensityRow);
+  } catch {
+    labelDensitySettings = null;
+  }
   const history = canEdit ? mergeHistory(historyResult.results ?? [], row) : undefined;
   let draft = null;
   try {
-    draft = draftRow ? parseDraft(draftRow) : null;
+    draft = draftRow ? parseDraft(draftRow, labelDensitySettings) : null;
   } catch {
     draft = null;
   }
-  if (!row) return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
+  if (!row) return cacheableJson(request, { document: null, draft, history, labelDensitySettings, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
   try {
-    return cacheableJson(request, { ...parseStored(row, canEdit), draft, history, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
+    return cacheableJson(request, { ...parseStored(row, canEdit, labelDensitySettings), draft, history, labelDensitySettings, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
   } catch {
-    return cacheableJson(request, { document: null, draft, history, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap }, 500);
+    return cacheableJson(request, { document: null, draft, history, labelDensitySettings, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap }, 500);
   }
 }
 
@@ -407,6 +455,36 @@ export async function PATCH(request: Request) {
   if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
 
   const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (payload?.action === "save-label-density-settings") {
+    if (!Array.isArray(payload.optionalLabelScaleSteps)) return json({ error: "valid label density settings required" }, 400);
+    const current = await readLabelDensitySettings(runtime.DB);
+    const baseRevision = typeof payload.baseRevision === "number" && Number.isInteger(payload.baseRevision) && payload.baseRevision >= 0
+      ? payload.baseRevision
+      : null;
+    if (baseRevision === null) return json({ error: "valid label density settings revision required" }, 400);
+    if (baseRevision !== (current?.revision ?? 0)) {
+      return json({ error: "label density settings changed", revision: current?.revision ?? 0 }, 409);
+    }
+    const optionalLabelScaleSteps = normalizeOptionalLabelScaleSteps(payload.optionalLabelScaleSteps);
+    const updatedAt = new Date().toISOString();
+    const revision = (current?.revision ?? 0) + 1;
+    const result = await runtime.DB.prepare(
+      `INSERT INTO map_label_density_settings
+        (id, optional_label_scale_steps_json, updated_at, updated_by, revision)
+       VALUES (1, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         optional_label_scale_steps_json = excluded.optional_label_scale_steps_json,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by,
+         revision = excluded.revision
+       WHERE map_label_density_settings.revision = ?`,
+    ).bind(JSON.stringify(optionalLabelScaleSteps), updatedAt, currentEmail, revision, baseRevision).run();
+    if (!result.success || Number(result.meta?.changes ?? 0) === 0) {
+      const latest = await readLabelDensitySettings(runtime.DB);
+      return json({ error: "label density settings changed", revision: latest?.revision ?? 0 }, 409);
+    }
+    return json({ labelDensitySettings: { optionalLabelScaleSteps, updatedAt, revision }, canEdit: true, persistent: true });
+  }
   const stableDocument = payload ? stabilizeMainHubDocument(payload.document) : null;
   if (!payload || !validDocument(stableDocument)) return json({ error: "valid draft document required" }, 400);
   const documentJson = JSON.stringify(stableDocument);

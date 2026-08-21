@@ -577,6 +577,12 @@ type EditorDraftPayload = {
   hasPrevious: boolean;
 };
 
+type LabelDensitySettingsPayload = {
+  optionalLabelScaleSteps: OptionalLabelScaleStep[];
+  updatedAt: string;
+  revision: number;
+};
+
 type PublicLayoutHistoryItem = {
   id: string;
   kind: "snapshot" | "published" | "restored" | "legacy";
@@ -596,6 +602,7 @@ type PublicLayoutPayload = {
   document?: DocumentState | null;
   view?: PublicViewSettings;
   draft?: EditorDraftPayload | null;
+  labelDensitySettings?: LabelDensitySettingsPayload | null;
   canEdit?: boolean;
   accessMethod?: "owner" | "shared" | null;
   persistent?: boolean;
@@ -3049,6 +3056,7 @@ export default function Home() {
   const editorDraftDocumentRef = useRef<DocumentState | null>(null);
   const editorDraftViewRef = useRef<PublicViewSettings | null>(null);
   const editorDraftRevisionRef = useRef(0);
+  const labelDensitySettingsRevisionRef = useRef(0);
 
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
@@ -4993,6 +5001,7 @@ export default function Home() {
         setEditorDraftUpdatedAt(payload?.draft?.updatedAt ?? null);
         setEditorDraftHasPrevious(Boolean(payload?.draft?.hasPrevious));
         setEditorDraftSyncState(serverDraft ? "saved" : "ready");
+        labelDensitySettingsRevisionRef.current = Math.max(0, Number(payload?.labelDensitySettings?.revision ?? 0));
         if (payload?.contentSummary) {
           setGlobalStoriesTotal(Math.max(0, Number(payload.contentSummary.reviews ?? 0)));
           setGlobalEventsTotal(Math.max(0, Number(payload.contentSummary.events ?? 0)));
@@ -8232,31 +8241,32 @@ export default function Home() {
   const saveOptionalLabelScaleLimits = async () => {
     if (publicLayoutAccess !== "editor" || optionalLabelScaleSaving || editorDraftSaving || publicLayoutPublishing) return;
     setOptionalLabelScaleSaving(true);
-    setEditorDraftSyncState("saving");
-    setSaveState("배포본 라벨 단계 서버 저장 중");
+    setSaveState("공개 라벨 단계 서버 저장 중");
     try {
       const response = await fetch(PUBLIC_LAYOUT_API, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          document: cloneDocument(currentDocument()),
-          view: currentPublicViewSettings(),
-          baseDraftRevision: editorDraftRevisionRef.current,
+          action: "save-label-density-settings",
+          optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps(optionalLabelScaleSteps),
+          baseRevision: labelDensitySettingsRevisionRef.current,
         }),
       });
       const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
-      if (!response.ok || !payload?.draft) {
-        throw new Error(response.status === 409 ? "draft-conflict" : (payload?.error ?? "label scale save failed"));
+      if (!response.ok || !payload?.labelDensitySettings) {
+        throw new Error(response.status === 409 ? "label-settings-conflict" : (payload?.error ?? "label scale save failed"));
       }
-      rememberEditorDraft(payload.draft);
-      setSaveState("배포본 라벨 단계 서버 저장됨");
-      setToast("축척별 일반 라벨 개수를 서버 편집본에 저장했습니다. 공개 지도에는 공개본 업데이트 후 반영됩니다.");
+      const savedSteps = normalizeOptionalLabelScaleSteps(payload.labelDensitySettings.optionalLabelScaleSteps);
+      labelDensitySettingsRevisionRef.current = payload.labelDensitySettings.revision;
+      setOptionalLabelScaleSteps(savedSteps);
+      if (publishedLayoutViewRef.current) publishedLayoutViewRef.current = { ...publishedLayoutViewRef.current, optionalLabelScaleSteps: savedSteps };
+      if (editorDraftViewRef.current) editorDraftViewRef.current = { ...editorDraftViewRef.current, optionalLabelScaleSteps: savedSteps };
+      setSaveState("공개 라벨 단계 즉시 반영됨");
+      setToast("축척별 일반 라벨 개수를 저장했습니다. 공개본 업데이트 없이 공개 지도에 반영됩니다.");
     } catch (error) {
-      if (error instanceof Error && error.message === "draft-conflict") {
-        setEditorDraftSyncState("conflict");
-        setToast("다른 화면에서 서버 편집본이 변경되었습니다. 새로고침한 뒤 라벨 개수를 다시 저장해 주세요.");
+      if (error instanceof Error && error.message === "label-settings-conflict") {
+        setToast("다른 화면에서 라벨 단계가 변경되었습니다. 새로고침한 뒤 다시 저장해 주세요.");
       } else {
-        setEditorDraftSyncState("error");
         setToast("축척별 일반 라벨 개수를 서버에 저장하지 못했습니다. 현재 입력값은 이 화면에 유지됩니다.");
       }
     } finally {
@@ -10141,7 +10151,7 @@ export default function Home() {
                   <header><span><b id="public-label-density-title">배포본 축척별 일반 라벨</b><small>랜드마크·주요 거점·현재 선택은 항상 별도 유지</small></span><div className="public-label-density-actions"><button type="button" onClick={resetOptionalLabelScaleLimits}>기본값</button><button type="button" className="server-save" disabled={optionalLabelScaleSaving || editorDraftSaving || publicLayoutPublishing} onClick={() => void saveOptionalLabelScaleLimits()}>{optionalLabelScaleSaving ? "저장 중…" : "저장"}</button></div></header>
                   <output className="public-label-density-live" aria-live="polite">현재 화면 · 개별 {renderedIndividualLabelCount}개 · 통합 {renderedDenseLabelClusters.length}묶음</output>
                   <div className="public-label-density-steps">{optionalLabelScaleSteps.map((step, index) => <label key={step.maximumRatio}><span><b>맞춤 ×{step.maximumRatio}</b><small>지도 약 {Math.round(100 / step.maximumRatio)}% 이상 표시</small></span><input type="number" min="0" max="1200" step="1" value={step.limit} onChange={(event) => updateOptionalLabelScaleLimit(index, Number(event.target.value))} aria-label={`맞춤 축척 ${step.maximumRatio}배 일반 라벨 개수`} /><em>개</em></label>)}</div>
-                  <p>각 값은 필수 라벨을 제외한 일반 라벨 상한입니다. 저장하면 서버 편집본에 즉시 보관되고, 공개 지도에는 공개본 업데이트 후 반영됩니다. 4.5배를 넘는 상세 화면에서는 표시 설정된 라벨 전체를 복구합니다.</p>
+                  <p>각 값은 필수 라벨을 제외한 일반 라벨 상한입니다. 저장하면 독립 서버 설정으로 보관되어 공개본 업데이트 없이 공개 지도에 반영됩니다. 4.5배를 넘는 상세 화면에서는 표시 설정된 라벨 전체를 복구합니다.</p>
                 </section>
                 <div className="placed-label-bulk" role="group" aria-label="배치 라벨 가시성 일괄 조절"><button type="button" onClick={() => setPlacedLabelsVisibility(true)}>배치 라벨 전체 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 OFF</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button></div>
                 <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
