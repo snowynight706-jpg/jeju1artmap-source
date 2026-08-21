@@ -16,7 +16,7 @@ test("label budgets grow from the fitted map to the full detailed view", () => {
   assert.equal(labelBudgetForScale(0.28, 0.28, 149, false), 149);
 });
 
-test("selected, main-hub and landmark labels survive every automatic cap", () => {
+test("selected, main-hub and landmark labels survive caps while recommendations do not change screen priority", () => {
   const candidates = [
     { id: "selected", name: "선택 장소", category: "cafe", z: 1 },
     { id: "hub", name: "주요 거점", category: "culture", z: 1 },
@@ -29,9 +29,8 @@ test("selected, main-hub and landmark labels survive every automatic cap", () =>
     limit: 5,
     selectedId: "selected",
     mainHubIds: ["hub"],
-    recommendedIds: ["recommended"],
   });
-  assert.deepEqual(new Set(result.ids), new Set(["selected", "hub", "landmark", "recommended", "locked"]));
+  assert.deepEqual(new Set(result.ids), new Set(["selected", "hub", "landmark", "locked", "ordinary"]));
   assert.equal(result.limited, true);
 });
 
@@ -117,6 +116,7 @@ test("cluster placement scores labels, landmarks and existing connector lines to
   assert.match(pageSource, /denseLabelPlacementOptions\(\{ minX, maxX, minY, maxY, width, height \}\)/);
   assert.match(pageSource, /placedSegments\.push\(\.\.\.best\.segments\)/);
   assert.match(pageSource, /iconObstacles: iconRects/);
-  assert.match(pageSource, /\{ id: "landmark", name: "핵심 랜드마크", color: "#4d9a91"/);
-  assert.match(pageSource, /\{ id: "culture", name: "일반 문화시설", color: "#4d9a91"/);
+  assert.match(pageSource, /culture: "#58AEB0"/);
+  assert.match(pageSource, /\{ id: "landmark", name: "핵심 랜드마크", color: markerCategoryColors\.culture/);
+  assert.match(pageSource, /\{ id: "culture", name: "일반 문화시설", color: markerCategoryColors\.culture/);
 });

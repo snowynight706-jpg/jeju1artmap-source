@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { mapStageGestureTransform } from "../app/map-stage-transform.mjs";
+import { horizontalMapFitZoom, mapStageGestureTransform } from "../app/map-stage-transform.mjs";
 import {
   HIGH_MOBILE_RENDER_BUDGET,
   LOW_MOBILE_RENDER_BUDGET,
@@ -20,6 +20,16 @@ test("desktop map scaling separates centering from the composited scale", () => 
   assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(scale, viewport\.clientWidth\)/);
   assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(targetZoom \/ currentLayoutZoom, viewportWidth\)/);
   assert.doesNotMatch(pageSource, /stage\.style\.transform = `translateX\(-50%\) scale\(\$\{scale\}\)`/);
+  assert.ok(Math.abs(horizontalMapFitZoom(1200, 1180, 34) - (1200 - 34) / 1180) < 1e-9);
+  assert.ok(Math.abs(horizontalMapFitZoom(360, 1120, 18) - (360 - 18) / 1120) < 1e-9);
+  assert.equal(horizontalMapFitZoom(100, 1180, 34), 0.22);
+  assert.ok(Math.abs(horizontalMapFitZoom(2000, 1180, 0) - 2000 / 1180) < 1e-9);
+  assert.equal(horizontalMapFitZoom(6000, 1180, 0), 4);
+  assert.match(pageSource, /return horizontalMapFitZoom\(viewportDimensions\.width, stageDimensions\.width, horizontalPadding\)/);
+  assert.match(pageSource, /pinch\.startZoom \* distance \/ pinch\.startDistance, fitZoom, 4/);
+  assert.match(pageSource, /currentZoom \* Math\.exp\(-next\.deltaY \* 0\.0012\), fitZoom, 4/);
+  assert.match(pageSource, /fitZoom, Math\.max\(fitZoom, 1\.32\)/);
+  assert.match(pageSource, /fitZoom, Math\.max\(fitZoom, 1\.42\)/);
 });
 
 test("mobile offscreen overscan follows device capacity and runtime settle cost", () => {

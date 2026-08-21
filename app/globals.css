@@ -313,7 +313,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .print-storage-status { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding-top: 6px; border-top: 1px solid #e5e5e5; color: #646464; font-size: 7px; }
 .print-storage-status a { color: #646464; font-weight: 700; }
 .category-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
-.all-dot { background: conic-gradient(#4d9a91 0 25%, #646464 0 50%, #d8974f 0 75%, #646464 0); }
+.all-dot { background: conic-gradient(#58AEB0 0 25%, #E36B58 0 50%, #D49A55 0 75%, #9A6DAE 0); }
 .asset-list-header { display: flex; justify-content: space-between; padding: 12px 14px 8px; font-size: 11px; }
 .asset-list-header small { color: var(--muted); font-size: 9px; }
 .asset-upload { margin: 10px 10px 0; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: #f9f9f9; }
@@ -638,7 +638,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .element-layer { position: absolute; inset: 0; contain: layout style; pointer-events: none; z-index: 2; }
 .mobile-marker-placeholder-layer { position: absolute; inset: 0; contain: layout style; pointer-events: none; z-index: 2; }
 .mobile-marker-placeholder { position: absolute; width: 24px; height: 24px; display: grid; place-items: center; transform: translate(-50%, -50%); padding: 0; border: 0; background: transparent; pointer-events: auto; touch-action: none; }
-.mobile-marker-placeholder::after { content: ""; width: 7px; height: 7px; border: 1px solid #1f2024; border-radius: 50%; background: var(--mobile-marker-color); transform: scale(var(--mobile-marker-gesture-scale, 1)); transform-origin: center; }
+.mobile-marker-placeholder::after { content: ""; width: 8px; height: 8px; border: .75px solid #666b6a; border-radius: 50%; background: var(--mobile-marker-color); transform: scale(var(--mobile-marker-gesture-scale, 1)); transform-origin: center; }
 .mobile-marker-placeholder:focus-visible { outline: none; }
 .mobile-marker-placeholder:focus-visible::after { outline: 2px solid #1f2024; outline-offset: 2px; }
 .map-element { position: absolute; transform: translate(-50%, -50%); aspect-ratio: 1.12; pointer-events: auto; cursor: grab; touch-action: none; user-select: none; }
@@ -895,11 +895,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-place-search input { min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: #3d3d3d; font-size: 11px; }
 .public-place-search button { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: #f3f3f3; color: #646464; cursor: pointer; }
 .public-place-category-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 3px 0 9px; }
-.public-place-category-chips button { position: relative; min-width: 0; height: 50px; display: grid; grid-template-rows: 33px auto; place-items: center; gap: 0; padding: 1px 2px 3px; border: 1px solid #dedede; border-radius: 9px; background: #fff; color: #555; cursor: pointer; font-size: 7.5px; font-weight: 800; line-height: 1; white-space: nowrap; box-shadow: 0 2px 7px rgb(56 56 56 / 4%); }
+.public-place-category-chips button { position: relative; min-width: 0; height: 50px; display: grid; grid-template-rows: 33px auto; place-items: center; gap: 0; padding: 1px 2px 3px; border: 1px solid #dedede; border-radius: 9px; background: #fff; color: #555; cursor: pointer; font-size: 7.5px; font-weight: 800; line-height: 1; white-space: nowrap; box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--category-color) 48%, transparent), 0 2px 7px rgb(56 56 56 / 4%); }
 .public-place-category-chips button img { width: 32px; height: 32px; display: block; object-fit: contain; image-rendering: auto; }
 .public-place-category-chips button span { min-width: 0; max-width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis; letter-spacing: -.04em; }
-.public-place-category-chips button em { position: absolute; top: 3px; right: 4px; min-width: 13px; padding: 1px 3px; border-radius: 8px; background: #f3f3f3; color: #707070; text-align: center; font-size: 5.5px; line-height: 1.25; font-style: normal; font-weight: 750; }
-.public-place-category-chips button.active { border-color: #999; background: #eeeeee; color: #2f2f2f; box-shadow: inset 0 -3px 0 #666, 0 3px 9px rgb(56 56 56 / 7%); }
+.public-place-category-chips button em { position: absolute; top: 3px; right: 4px; min-width: 13px; padding: 1px 3px; border: 1px solid color-mix(in srgb, var(--category-color) 42%, #dedede); border-radius: 8px; background: color-mix(in srgb, var(--category-color) 12%, #f3f3f3); color: color-mix(in srgb, var(--category-color) 76%, #333); text-align: center; font-size: 5.5px; line-height: 1.25; font-style: normal; font-weight: 750; }
+.public-place-category-chips button.active { border-color: var(--category-color); background: color-mix(in srgb, var(--category-color) 11%, #f4f4f4); color: #2f2f2f; box-shadow: inset 0 -3px 0 var(--category-color), 0 3px 9px rgb(56 56 56 / 7%); }
 .public-place-list-header { min-width: 0; display: grid; grid-template-columns: minmax(124px, 1.45fr) 60px minmax(132px, 1.2fr) 40px; align-items: stretch; border: 1px solid #dedede; border-bottom: 0; background: #f5f5f5; color: #646464; }
 .public-place-list-header span { min-width: 0; display: grid; place-items: center; padding: 3px 4px; border-left: 1px solid #e6e6e6; font-size: 8.5px; font-weight: 850; letter-spacing: -.015em; white-space: nowrap; }
 .public-place-list-header span:first-child { place-items: center start; padding-left: 9px; border-left: 0; }
@@ -2296,13 +2296,14 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .app-shell[data-ui-theme] .public-place-category-chips button {
   border-color: color-mix(in srgb, var(--palette-2) 78%, var(--palette-3));
   background: var(--ui-surface-raised);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--category-color) 48%, transparent);
 }
 
 .app-shell[data-ui-theme] .public-place-category-chips button.active {
-  border-color: var(--palette-3);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--palette-1) 42%, var(--palette-2)), var(--palette-2));
+  border-color: var(--category-color);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--category-color) 8%, var(--palette-1)), color-mix(in srgb, var(--category-color) 14%, var(--palette-2)));
   color: var(--ui-deep);
-  box-shadow: inset 0 -3px 0 var(--ui-mid), 0 3px 10px color-mix(in srgb, var(--ui-deep) 10%, transparent);
+  box-shadow: inset 0 -3px 0 var(--category-color), 0 3px 10px color-mix(in srgb, var(--ui-deep) 10%, transparent);
 }
 
 /* Bright themed selections must not inherit the dark theme's light button text. */
@@ -2315,6 +2316,12 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   border-color: color-mix(in srgb, var(--palette-3) 55%, var(--line));
   background: color-mix(in srgb, var(--palette-2) 76%, var(--ui-surface-raised));
   color: var(--ui-deep);
+}
+
+.app-shell[data-ui-theme] .public-place-category-chips button em {
+  border-color: color-mix(in srgb, var(--category-color) 42%, var(--line));
+  background: color-mix(in srgb, var(--category-color) 14%, var(--ui-surface-raised));
+  color: color-mix(in srgb, var(--category-color) 76%, var(--ui-deep));
 }
 
 .app-shell[data-ui-theme] .public-place-list-header {

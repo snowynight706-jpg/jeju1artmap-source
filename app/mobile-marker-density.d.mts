@@ -19,7 +19,6 @@ export function mobileMarkerBudgetForScale(
   fitZoom: number,
   total: number,
   tier?: MobileRenderTier,
-  fullFromZoom?: number | null,
 ): number;
 
 export function mobileLabelBudgetForScale(
@@ -36,7 +35,6 @@ export function chooseMobileMarkerRenderIds<T extends MobileMarkerDensityCandida
     limit?: number;
     selectedId?: string | null;
     mainHubIds?: string[];
-    recommendedIds?: string[];
     centerX?: number;
     centerY?: number;
   },

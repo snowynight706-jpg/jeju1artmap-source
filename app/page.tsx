@@ -38,7 +38,7 @@ import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } 
 import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./label-connector.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
-import { mapStageGestureTransform } from "./map-stage-transform.mjs";
+import { horizontalMapFitZoom, mapStageGestureTransform } from "./map-stage-transform.mjs";
 import {
   LOW_MOBILE_RENDER_BUDGET,
   STANDARD_MOBILE_RENDER_BUDGET,
@@ -234,15 +234,25 @@ function UiThemePicker({ activeTheme, compact = false, onSelect }: {
   </div>;
 }
 
+const markerCategoryColors = {
+  culture: "#58AEB0",
+  cafe: "#D49A55",
+  food: "#E36B58",
+  shop: "#9A6DAE",
+  parking: "#557AA8",
+  park: "#69A56D",
+  utility: "#8F7EA7",
+} as const;
+
 const categories = [
-  { id: "landmark", name: "핵심 랜드마크", color: "#4d9a91", glyph: "景" },
-  { id: "culture", name: "일반 문화시설", color: "#4d9a91", glyph: "文" },
-  { id: "cafe", name: "카페", color: "#b7835b", glyph: "珈" },
-  { id: "food", name: "음식점", color: "#d8974f", glyph: "食" },
-  { id: "shop", name: "소품샵", color: "#9a6dae", glyph: "物" },
-  { id: "parking", name: "주차장", color: "#667f8b", glyph: "P" },
-  { id: "park", name: "공원·광장", color: "#69a56d", glyph: "休" },
-  { id: "utility", name: "기타 편의시설", color: "#8f7ea7", glyph: "＋" },
+  { id: "landmark", name: "핵심 랜드마크", color: markerCategoryColors.culture, glyph: "景" },
+  { id: "culture", name: "일반 문화시설", color: markerCategoryColors.culture, glyph: "文" },
+  { id: "cafe", name: "카페", color: markerCategoryColors.cafe, glyph: "珈" },
+  { id: "food", name: "음식점", color: markerCategoryColors.food, glyph: "食" },
+  { id: "shop", name: "소품샵", color: markerCategoryColors.shop, glyph: "物" },
+  { id: "parking", name: "주차장", color: markerCategoryColors.parking, glyph: "P" },
+  { id: "park", name: "공원·광장", color: markerCategoryColors.park, glyph: "休" },
+  { id: "utility", name: "기타 편의시설", color: markerCategoryColors.utility, glyph: "＋" },
 ] as const;
 
 const publicListCategories: ReadonlyArray<{
@@ -251,11 +261,11 @@ const publicListCategories: ReadonlyArray<{
   color: string;
   iconSrc: string;
 }> = [
-  { id: "culture", name: "문화공간", color: "#4d9a91", iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_ui-96px.png" },
-  { id: "food", name: "음식점", color: "#d8974f", iconSrc: "/category-icons/category_ui_restaurant_v02_ui-96px.png" },
-  { id: "cafe", name: "카페", color: "#b7835b", iconSrc: "/category-icons/category_ui_cafe_v03_ui-96px.png" },
-  { id: "shop", name: "소품샵", color: "#9a6dae", iconSrc: "/category-icons/category_ui_goods_shop_v03_ui-96px.png" },
-  { id: "convenience", name: "편의시설", color: "#60958f", iconSrc: "/category-icons/category_ui_amenities_v01_ui-96px.png" },
+  { id: "culture", name: "문화공간", color: markerCategoryColors.culture, iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_ui-96px.png" },
+  { id: "food", name: "음식점", color: markerCategoryColors.food, iconSrc: "/category-icons/category_ui_restaurant_v02_ui-96px.png" },
+  { id: "cafe", name: "카페", color: markerCategoryColors.cafe, iconSrc: "/category-icons/category_ui_cafe_v03_ui-96px.png" },
+  { id: "shop", name: "소품샵", color: markerCategoryColors.shop, iconSrc: "/category-icons/category_ui_goods_shop_v03_ui-96px.png" },
+  { id: "convenience", name: "편의시설", color: markerCategoryColors.utility, iconSrc: "/category-icons/category_ui_amenities_v01_ui-96px.png" },
 ] as const;
 
 type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "shop" | "convenience";
@@ -1330,13 +1340,8 @@ function categoryOf(id: CategoryId) {
   return categories.find((category) => category.id === id) ?? categories[categories.length - 1];
 }
 
-const mobileMarkerPlaceholderColors: Partial<Record<CategoryId, string>> = {
-  cafe: "#80573f",
-  food: "#e37d35",
-};
-
 function mobileMarkerPlaceholderColor(id: CategoryId) {
-  return mobileMarkerPlaceholderColors[id] ?? categoryOf(id).color;
+  return categoryOf(id).color;
 }
 
 function directoryCategory(category: CategoryId): CategoryId {
@@ -3886,12 +3891,8 @@ export default function Home() {
     if (viewportDimensions.width <= 0 || viewportDimensions.height <= 0) return 0.72;
     const compactViewport = viewportDimensions.width <= 760;
     const horizontalPadding = compactViewport ? 18 : 34;
-    const verticalPadding = compactViewport ? 24 : 34;
-    return clamp(Math.min(
-      (viewportDimensions.width - horizontalPadding) / Math.max(stageDimensions.width, 1),
-      (viewportDimensions.height - verticalPadding) / Math.max(stageDimensions.height, 1),
-    ), 0.22, 1.12);
-  }, [stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
+    return horizontalMapFitZoom(viewportDimensions.width, stageDimensions.width, horizontalPadding);
+  }, [stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const labelDetailRatio = settledLabelZoom / Math.max(fitZoom, 0.22);
   const mobileOverviewSimplified = publicLayoutAccess === "viewer"
     && viewportDimensions.width > 0
@@ -3947,8 +3948,7 @@ export default function Home() {
     limit: scaleLabelBudget,
     selectedId,
     mainHubIds: editorLabelCandidates.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
-    recommendedIds: editorLabelCandidates.filter((element) => printPolicyFor(element).recommended).map((element) => element.id),
-  }), [editorLabelCandidates, printPolicyFor, scaleLabelBudget, selectedId]);
+  }), [editorLabelCandidates, scaleLabelBudget, selectedId]);
   const editorLabelElements = useMemo(() => {
     if (!scaleAwareLabelSelection.limited) return editorLabelCandidates;
     const selectedLabelIds = new Set(scaleAwareLabelSelection.ids);
@@ -4274,7 +4274,7 @@ export default function Home() {
 
   const restorePublicMapView = useCallback((clear = false) => {
     const previous = publicMapViewBeforeFocusRef.current;
-    const nextZoom = previous?.zoom ?? fitZoomRef.current;
+    const nextZoom = clamp(previous?.zoom ?? fitZoomRef.current, fitZoomRef.current, 4);
     const nextPan = previous?.pan ?? { x: 0, y: 0 };
     zoomRef.current = nextZoom;
     panRef.current = nextPan;
@@ -5625,7 +5625,7 @@ export default function Home() {
     const previousFitZoom = fitZoomRef.current;
     const wasAtFit = Math.abs(zoom - previousFitZoom) <= 0.018;
     fitZoomRef.current = fitZoom;
-    if (!fitZoomAppliedRef.current || wasAtFit) {
+    if (!fitZoomAppliedRef.current || wasAtFit || zoom < fitZoom - 0.002) {
       fitZoomAppliedRef.current = true;
       setZoom(fitZoom);
       setMapPan({ x: 0, y: 0 });
@@ -5655,8 +5655,8 @@ export default function Home() {
       viewportDimensions.height / stageDimensions.height,
     );
     const targetZoom = compact
-      ? clamp(Math.max(fitZoom * 2.35, viewportFillZoom * 1.28), fitZoom, 1.38)
-      : clamp(Math.max(fitZoom * 1.32, viewportFillZoom * 1.02), fitZoom, 1.32);
+      ? clamp(Math.max(fitZoom * 2.35, viewportFillZoom * 1.28), fitZoom, Math.max(fitZoom, 1.38))
+      : clamp(Math.max(fitZoom * 1.32, viewportFillZoom * 1.02), fitZoom, Math.max(fitZoom, 1.32));
     const desiredScreen = compact
       ? { x: viewportDimensions.width * 0.5, y: viewportDimensions.height * 0.48 }
       : { x: viewportDimensions.width * 0.52, y: viewportDimensions.height * 0.48 };
@@ -6055,7 +6055,7 @@ export default function Home() {
             const distance = Math.max(12, Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY));
             const centerX = (first.clientX + second.clientX) / 2 - viewport.left - viewport.width / 2;
             const centerY = (first.clientY + second.clientY) / 2 - viewport.top - viewport.height / 2;
-            const rawZoom = clamp(pinch.startZoom * distance / pinch.startDistance, 0.22, 4);
+            const rawZoom = clamp(pinch.startZoom * distance / pinch.startDistance, fitZoom, 4);
             const ratio = rawZoom / Math.max(pinch.startZoom, 0.01);
             const rawPan = {
               x: centerX - (pinch.startCenterX - pinch.startPanX) * ratio,
@@ -6270,7 +6270,7 @@ export default function Home() {
       if (!next) return;
       const currentZoom = zoomRef.current;
       const currentPan = panRef.current;
-      const nextZoom = clamp(currentZoom * Math.exp(-next.deltaY * 0.0012), 0.22, 4);
+      const nextZoom = clamp(currentZoom * Math.exp(-next.deltaY * 0.0012), fitZoom, 4);
       const ratio = nextZoom / currentZoom;
       const nextPan = {
         x: next.cursorX - (next.cursorX - currentPan.x) * ratio,
@@ -6437,8 +6437,8 @@ export default function Home() {
         stageHeight: unscaledHeight,
       })
       : compact
-        ? clamp(Math.max(currentZoom, fitZoom * 1.8), fitZoom, 1.16)
-        : clamp(Math.max(currentZoom, fitZoom * 1.38), fitZoom, 1.42);
+        ? clamp(Math.max(currentZoom, fitZoom * 1.8), fitZoom, Math.max(fitZoom, 1.16))
+        : clamp(Math.max(currentZoom, fitZoom * 1.38), fitZoom, Math.max(fitZoom, 1.42));
     let targetPan = panRef.current;
     if (unscaledWidth > 0 && unscaledHeight > 0) {
       const horizontalSafeOffset = compact
@@ -9221,12 +9221,12 @@ export default function Home() {
       }
       if (event.key === "+" || event.key === "=") {
         event.preventDefault();
-        setZoom((value) => clamp(value * 1.16, 0.22, 4));
+        setZoom((value) => clamp(value * 1.16, fitZoom, 4));
         return;
       }
       if (event.key === "-") {
         event.preventDefault();
-        setZoom((value) => clamp(value / 1.16, 0.22, 4));
+        setZoom((value) => clamp(value / 1.16, fitZoom, 4));
         return;
       }
       if (event.key === "0") {
@@ -9587,17 +9587,15 @@ export default function Home() {
       fitZoom,
       mobileMapCandidateElements.length,
       mobileRenderBudget.tier,
-      startupInitialViewTarget?.zoom ?? null,
     );
     return new Set(chooseMobileMarkerRenderIds(mobileMapCandidateElements, {
       limit: markerBudget,
       selectedId,
       mainHubIds: mobileMapCandidateElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
-      recommendedIds: mobileMapCandidateElements.filter((element) => printPolicyFor(element).recommended).map((element) => element.id),
       centerX: mobileMapRenderBounds.centerX,
       centerY: mobileMapRenderBounds.centerY,
     }));
-  }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified, mobileRenderBudget.tier, printPolicyFor, selectedId, startupInitialViewTarget?.zoom, zoom]);
+  }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified, mobileRenderBudget.tier, selectedId, zoom]);
   const renderedMapElements = useMemo(() => (
     mobileFullMarkerIds
       ? mobileMapCandidateElements.filter((element) => mobileFullMarkerIds.has(element.id))
@@ -9704,15 +9702,15 @@ export default function Home() {
           <button type="button" className="shortcut-trigger" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
         </div>
         <div className="toolbar-group zoom-tools">
-          <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
-          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button>
+          <button onClick={() => setZoom((value) => clamp(value / 1.16, fitZoom, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
+          <button onClick={() => setZoom((value) => clamp(value * 1.16, fitZoom, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
         <div className="toolbar-group export-tools"><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 · 미리보기 중" : "출력"}</button></div>
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
-        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button></div>
+        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, fitZoom, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, fitZoom, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <button className="public-shortcut-trigger shortcut-trigger" type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
@@ -10245,7 +10243,7 @@ export default function Home() {
                   return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""} ${eventListedInCulture ? "event-linked" : ""}`} key={item.id} role="listitem">
                     <button type="button" className="public-place-row-action" onClick={() => focusPublicPlaceItem(item)} aria-label={`${item.displayName} 지도에서 찾기`} aria-current={selectedItem ? "location" : undefined} />
                     <span className="public-place-identity"><i className="public-place-marker-key" style={{ background: categoryOf(item.anchor.category).color }} aria-hidden="true" /><strong title={item.displayName}>{item.displayName}</strong>{eventListedInCulture && <em className="public-place-event-badge">행사</em>}</span>
-                    <span className="public-place-primary-category" title={meta.name}>{meta.name}</span>
+                    <span className="public-place-primary-category" style={{ color: meta.color }} title={meta.name}>{meta.name}</span>
                     <div className={`public-place-additional-category ${remainingTagNames.length ? "has-more" : ""} ${expandedAdditionalCategoryItemId === item.id ? "is-expanded" : ""}`} title={remainingTagNames.length ? undefined : tagNames.length ? tagLabel : "추가분류 없음"} onPointerEnter={() => {
                       setExpandedAdditionalCategoryItemId((current) => current && current !== item.id ? null : current);
                     }} onPointerLeave={(event) => {

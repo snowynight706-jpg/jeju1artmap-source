@@ -17,11 +17,9 @@ export function chooseScaleAwareLabelIds(candidates, {
   limit,
   selectedId = null,
   mainHubIds = [],
-  recommendedIds = [],
 } = {}) {
   const uniqueCandidates = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
   const mainHubs = new Set(mainHubIds);
-  const recommended = new Set(recommendedIds);
   const safeLimit = Math.min(uniqueCandidates.length, Math.max(0, Math.floor(Number.isFinite(limit) ? limit : uniqueCandidates.length)));
   const mandatory = uniqueCandidates.filter((candidate) => (
     candidate.id === selectedId
@@ -32,8 +30,7 @@ export function chooseScaleAwareLabelIds(candidates, {
   const optional = uniqueCandidates
     .filter((candidate) => !mandatoryIds.has(candidate.id))
     .sort((a, b) => (
-      Number(recommended.has(b.id)) - Number(recommended.has(a.id))
-      || Number(Boolean(b.labelLocked)) - Number(Boolean(a.labelLocked))
+      Number(Boolean(b.labelLocked)) - Number(Boolean(a.labelLocked))
       || (b.z ?? 0) - (a.z ?? 0)
       || String(a.name ?? "").localeCompare(String(b.name ?? ""), "ko")
     ));

@@ -88,6 +88,10 @@ test("public category controls keep five compact one-row buttons with larger ico
   ]) {
     assert.match(categoryBlock, new RegExp(`id: "${id}", name: "${name}"`));
   }
+  for (const id of ["culture", "food", "cafe", "shop"]) {
+    assert.match(categoryBlock, new RegExp(`id: "${id}"[^\n]*color: markerCategoryColors\\.${id}`));
+  }
+  assert.match(categoryBlock, /id: "convenience"[^\n]*color: markerCategoryColors\.utility/);
   assert.doesNotMatch(categoryBlock, /id: "all"|id: "exhibition-performance"/);
   for (const resource of [
     "category_ui_culture_book_brush_note_v03_ui-96px.png",
@@ -116,7 +120,7 @@ test("public category controls keep five compact one-row buttons with larger ico
 test("the interface uses a bright grayscale base while preserving image resources", () => {
   assert.match(cssSource, /:root \{[^}]*--paper: #f6f6f6[^}]*--panel: #fcfcfc[^}]*--ink: #2d2d2d[^}]*--emerald: #646464[^}]*--emerald-soft: #ededed/);
   assert.doesNotMatch(cssSource, /--emerald: #3f9287|--emerald-soft: #e3f0ed/);
-  assert.match(cssSource, /\.public-place-category-chips button\.active \{[^}]*border-color: #999[^}]*background: #eeeeee[^}]*box-shadow: inset 0 -3px 0 #666/);
+  assert.match(cssSource, /\.public-place-category-chips button\.active \{[^}]*border-color: var\(--category-color\)[^}]*background: color-mix\([^}]*box-shadow: inset 0 -3px 0 var\(--category-color\)/);
   assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
 });
 
