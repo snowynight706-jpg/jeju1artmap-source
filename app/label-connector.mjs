@@ -14,7 +14,8 @@ export function distanceAwareConnectorOpacity(fromX, fromY, toX, toY, mapAspect 
   return Math.round((0.34 + eased * 0.58) * 1000) / 1000;
 }
 
-export function distanceAwareConnectorWidth(fromX, fromY, toX, toY, mapAspect = 1) {
+export function distanceAwareConnectorWidth(fromX, fromY, toX, toY, mapAspect = 1, maximumWidth = 2.5) {
   const eased = distanceProgress(fromX, fromY, toX, toY, mapAspect);
-  return Math.round((1.1 + eased * 1.4) * 1000) / 1000;
+  const safeMaximum = Math.max(1.1, Number.isFinite(maximumWidth) ? maximumWidth : 2.5);
+  return Math.round((1.1 + eased * (safeMaximum - 1.1)) * 1000) / 1000;
 }

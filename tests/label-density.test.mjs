@@ -1,19 +1,22 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { chooseScaleAwareLabelIds, labelBudgetForScale } from "../app/label-density.mjs";
+import { chooseScaleAwareLabelIds, optionalLabelBudgetForScale } from "../app/label-density.mjs";
 import { denseLabelConnections } from "../app/dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentIntersectsRect } from "../app/dense-label-placement.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
-test("label budgets grow from the fitted map to the full detailed view", () => {
-  assert.equal(labelBudgetForScale(0.28, 0.28, 149), 30);
-  assert.equal(labelBudgetForScale(0.4, 0.28, 149), 50);
-  assert.equal(labelBudgetForScale(0.58, 0.28, 149), 80);
-  assert.equal(labelBudgetForScale(0.7, 0.28, 149), 149);
-  assert.equal(labelBudgetForScale(0.28, 0.28, 18), 18);
-  assert.equal(labelBudgetForScale(0.28, 0.28, 149, false), 149);
+test("optional label budgets stay sparse while at least forty percent of the map is visible", () => {
+  assert.equal(optionalLabelBudgetForScale(0.28, 0.28, 149), 0);
+  assert.equal(optionalLabelBudgetForScale(0.45, 0.28, 149), 2);
+  assert.equal(optionalLabelBudgetForScale(0.58, 0.28, 149), 4);
+  assert.equal(optionalLabelBudgetForScale(0.7, 0.28, 149), 6);
+  assert.equal(optionalLabelBudgetForScale(0.84, 0.28, 149), 18);
+  assert.equal(optionalLabelBudgetForScale(1.0, 0.28, 149), 34);
+  assert.equal(optionalLabelBudgetForScale(1.24, 0.28, 149), 68);
+  assert.equal(optionalLabelBudgetForScale(1.4, 0.28, 149), 149);
+  assert.equal(optionalLabelBudgetForScale(0.28, 0.28, 149, false), 149);
 });
 
 test("selected, main-hub and landmark labels survive caps while recommendations do not change screen priority", () => {
@@ -40,6 +43,7 @@ test("public screen limits happen before dense-label clustering while admin labe
   assert.match(pageSource, /const stageLabelElements = printPreviewMode \? printLabelElements : editorLabelElements/);
   assert.match(pageSource, /const labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
   assert.match(pageSource, /const scaleLabelLimitActive = publicLayoutAccess === "viewer"/);
+  assert.match(pageSource, /optionalLabelBudgetForScale\(labelRenderZoom, fitZoom, optionalLabelCount, scaleLabelLimitActive\)/);
   assert.match(pageSource, /fitZoom \/ Math\.max\(labelRenderZoom, 0\.22\)/);
   assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => setSettledLabelZoom\(zoom\)\);[\s\S]{0,30}\}, 140\)/);
   assert.doesNotMatch(pageSource, /축척별 라벨 자동 제한|scaleLabelLimitEnabled/);

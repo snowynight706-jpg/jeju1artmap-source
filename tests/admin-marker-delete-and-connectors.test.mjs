@@ -22,8 +22,8 @@ test("label connector opacity becomes stronger as the label moves farther away",
 test("dense label connector lines use the distance-aware opacity", () => {
   assert.match(pageSource, /import \{ distanceAwareConnectorOpacity, distanceAwareConnectorWidth \} from "\.\/label-connector\.mjs"/);
   assert.match(pageSource, /distanceAwareConnectorOpacity\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
-  assert.match(pageSource, /distanceAwareConnectorWidth\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
-  assert.match(pageSource, /strokeWidth: selectedConnector \? 2\.5 : connectorWidth/);
+  assert.match(pageSource, /distanceAwareConnectorWidth\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT, publicConnector \? 1\.5 : 2\.5\)/);
+  assert.match(pageSource, /strokeWidth: selectedConnector \? publicConnector \? 1\.55 : 2\.5 : connectorWidth/);
   assert.match(cssSource, /\.dense-label-connector line \{[^}]*transition: opacity var\(--motion-fast\) ease, stroke-width var\(--motion-fast\) ease/);
 });
 
@@ -36,6 +36,11 @@ test("label connector width grows smoothly from 1.1 to 2.5", () => {
   assert.ok(near < medium);
   assert.ok(medium < far);
   assert.equal(far, 2.5);
+  assert.equal(distanceAwareConnectorWidth(20, 20, 34, 20, 1.2, 1.5), 1.5);
+});
+
+test("public labels keep the compact grouped-label type size", () => {
+  assert.match(cssSource, /\.public-readonly-shell \.label \{ font-size: 8px; \}/);
 });
 
 test("Delete and Backspace unlock first, then remove only the map placement", () => {

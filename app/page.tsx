@@ -32,7 +32,7 @@ import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places"
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
-import { chooseScaleAwareLabelIds, labelBudgetForScale } from "./label-density.mjs";
+import { chooseScaleAwareLabelIds, optionalLabelBudgetForScale } from "./label-density.mjs";
 import { denseLabelConnections } from "./dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
 import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./label-connector.mjs";
@@ -2787,6 +2787,7 @@ const MobileMarkerPlaceholderLayer = memo(function MobileMarkerPlaceholderLayer(
 type MapConnectorLayerProps = {
   denseLabelClusters: DenseLabelCluster[];
   printPreviewMode: boolean;
+  publicLayoutAccess: PublicLayoutAccess;
   selectedDenseLabelId: string | null;
   selectedId: string | null;
   stageDimensions: StageDimensions;
@@ -2799,6 +2800,7 @@ type MapConnectorLayerProps = {
 const MapConnectorLayer = memo(function MapConnectorLayer({
   denseLabelClusters,
   printPreviewMode,
+  publicLayoutAccess,
   selectedDenseLabelId,
   selectedId,
   stageDimensions,
@@ -2819,11 +2821,12 @@ const MapConnectorLayer = memo(function MapConnectorLayer({
     const connectorOpacity = element
       ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
       : 0.34;
+    const publicConnector = publicLayoutAccess === "viewer";
     const connectorWidth = element
-      ? distanceAwareConnectorWidth(element.x, element.y, target.x, target.y, MAP_ASPECT)
+      ? distanceAwareConnectorWidth(element.x, element.y, target.x, target.y, MAP_ASPECT, publicConnector ? 1.5 : 2.5)
       : 1.1;
     const selectedConnector = selectedDenseLabelId === cluster.id;
-    return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedConnector ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" style={{ opacity: selectedConnector ? Math.max(0.9, connectorOpacity) : connectorOpacity, strokeWidth: selectedConnector ? 2.5 : connectorWidth }} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
+    return element ? <g key={`dense-connector-${cluster.id}-${row.elementId}`} className={`dense-label-connector ${selectedConnector ? "selected" : ""}`} style={{ color }}><line x1={element.x} y1={element.y} x2={target.x} y2={target.y} stroke="currentColor" style={{ opacity: selectedConnector ? Math.max(0.9, connectorOpacity) : connectorOpacity, strokeWidth: selectedConnector ? publicConnector ? 1.55 : 2.5 : connectorWidth }} vectorEffect="non-scaling-stroke" /><circle cx={element.x} cy={element.y} r="0.16" fill="currentColor" vectorEffect="non-scaling-stroke" /></g> : null;
   }))}</svg>;
 });
 
@@ -3955,16 +3958,30 @@ export default function Home() {
       && (element.category === "landmark" || markerLabelsVisible || primaryHub || selectedLabel);
   }), [editorVisibleElements, markerLabelsVisible, mobileOverviewSimplified, publicLayoutAccess, selectedId]);
   const scaleLabelLimitActive = publicLayoutAccess === "viewer";
+  const scaleMainHubLabelIds = useMemo(
+    () => editorLabelCandidates.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
+    [editorLabelCandidates],
+  );
+  const scaleMandatoryLabelCount = useMemo(() => {
+    const mainHubIds = new Set(scaleMainHubLabelIds);
+    return editorLabelCandidates.filter((element) => (
+      element.category === "landmark"
+      || element.id === selectedId
+      || mainHubIds.has(element.id)
+    )).length;
+  }, [editorLabelCandidates, scaleMainHubLabelIds, selectedId]);
   const scaleLabelBudget = useMemo(() => {
-    const baseBudget = labelBudgetForScale(labelRenderZoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive);
+    const optionalLabelCount = Math.max(0, editorLabelCandidates.length - scaleMandatoryLabelCount);
+    const baseBudget = scaleMandatoryLabelCount
+      + optionalLabelBudgetForScale(labelRenderZoom, fitZoom, optionalLabelCount, scaleLabelLimitActive);
     if (publicLayoutAccess !== "viewer" || viewportDimensions.width <= 0 || viewportDimensions.width > 760) return baseBudget;
     return mobileLabelBudgetForScale(labelRenderZoom, fitZoom, baseBudget, editorLabelCandidates.length, mobileRenderBudget.tier);
-  }, [editorLabelCandidates.length, fitZoom, labelRenderZoom, mobileRenderBudget.tier, publicLayoutAccess, scaleLabelLimitActive, viewportDimensions.width]);
+  }, [editorLabelCandidates.length, fitZoom, labelRenderZoom, mobileRenderBudget.tier, publicLayoutAccess, scaleLabelLimitActive, scaleMandatoryLabelCount, viewportDimensions.width]);
   const scaleAwareLabelSelection = useMemo(() => chooseScaleAwareLabelIds(editorLabelCandidates, {
     limit: scaleLabelBudget,
     selectedId,
-    mainHubIds: editorLabelCandidates.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
-  }), [editorLabelCandidates, scaleLabelBudget, selectedId]);
+    mainHubIds: scaleMainHubLabelIds,
+  }), [editorLabelCandidates, scaleLabelBudget, scaleMainHubLabelIds, selectedId]);
   const editorLabelElements = useMemo(() => {
     if (!scaleAwareLabelSelection.limited) return editorLabelCandidates;
     const selectedLabelIds = new Set(scaleAwareLabelSelection.ids);
@@ -10052,6 +10069,7 @@ export default function Home() {
                 <MapConnectorLayer
                   denseLabelClusters={renderedDenseLabelClusters}
                   printPreviewMode={printPreviewMode}
+                  publicLayoutAccess={publicLayoutAccess}
                   selectedDenseLabelId={selectedDenseLabelId}
                   selectedId={selectedId}
                   stageDimensions={stageDimensions}

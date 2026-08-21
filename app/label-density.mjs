@@ -1,15 +1,19 @@
-export const LABEL_SCALE_STEPS = Object.freeze([
-  { maximumRatio: 1.05, limit: 30 },
-  { maximumRatio: 1.5, limit: 50 },
-  { maximumRatio: 2.2, limit: 80 },
+export const OPTIONAL_LABEL_SCALE_STEPS = Object.freeze([
+  { maximumRatio: 1.25, limit: 0 },
+  { maximumRatio: 1.7, limit: 2 },
+  { maximumRatio: 2.1, limit: 4 },
+  { maximumRatio: 2.5, limit: 6 },
+  { maximumRatio: 3, limit: 18 },
+  { maximumRatio: 3.6, limit: 34 },
+  { maximumRatio: 4.5, limit: 68 },
 ]);
 
-export function labelBudgetForScale(zoom, fitZoom, total, enabled = true) {
+export function optionalLabelBudgetForScale(zoom, fitZoom, total, enabled = true) {
   const safeTotal = Math.max(0, Math.floor(Number.isFinite(total) ? total : 0));
   if (!enabled || safeTotal === 0) return safeTotal;
   const ratio = Math.max(0.01, Number.isFinite(zoom) ? zoom : 0.22)
     / Math.max(0.22, Number.isFinite(fitZoom) ? fitZoom : 0.22);
-  const step = LABEL_SCALE_STEPS.find((candidate) => ratio <= candidate.maximumRatio);
+  const step = OPTIONAL_LABEL_SCALE_STEPS.find((candidate) => ratio <= candidate.maximumRatio);
   return Math.min(safeTotal, step?.limit ?? safeTotal);
 }
 
