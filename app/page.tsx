@@ -48,6 +48,7 @@ import {
   chooseMobileMarkerRenderIds,
   mobileLabelBudgetForScale,
   mobileMarkerBudgetForScale,
+  mobileOverviewIsSimplified,
 } from "./mobile-marker-density.mjs";
 import {
   publicPanelAfterDrag,
@@ -3873,6 +3874,10 @@ export default function Home() {
     ), 0.22, 1.12);
   }, [stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const labelDetailRatio = settledLabelZoom / Math.max(fitZoom, 0.22);
+  const mobileOverviewSimplified = publicLayoutAccess === "viewer"
+    && viewportDimensions.width > 0
+    && viewportDimensions.width <= 760
+    && mobileOverviewIsSimplified(settledLabelZoom, fitZoom);
 
   const printSettingsByKey = useMemo(() => new Map(printSettings.map((setting) => [setting.key, setting])), [printSettings]);
   const directoryPriorityById = useMemo(() => new Map(directoryPlaces.map((place) => [place.id, place.priority ?? ""])), [directoryPlaces]);
@@ -3907,11 +3912,12 @@ export default function Home() {
   const printMarkerElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).marker).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
   const printLabelElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).label).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
   const editorLabelCandidates = useMemo(() => editorVisibleElements.filter((element) => {
+    if (mobileOverviewSimplified && element.category !== "landmark") return false;
     const selectedLabel = selectedId === element.id;
     const primaryHub = isPrimaryHubLabel(element.name);
     return (element.labelVisible || selectedLabel || (publicLayoutAccess === "viewer" && primaryHub))
       && (element.category === "landmark" || markerLabelsVisible || primaryHub || selectedLabel);
-  }), [editorVisibleElements, markerLabelsVisible, publicLayoutAccess, selectedId]);
+  }), [editorVisibleElements, markerLabelsVisible, mobileOverviewSimplified, publicLayoutAccess, selectedId]);
   const scaleLabelLimitActive = publicLayoutAccess === "viewer" || scaleLabelLimitEnabled;
   const scaleLabelBudget = useMemo(() => {
     const baseBudget = labelBudgetForScale(settledLabelZoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive);
@@ -9542,7 +9548,7 @@ export default function Home() {
   }, [mobileMapRenderBounds, selectedId, visibleElements]);
   const mobileFullMarkerIds = useMemo(() => {
     if (!mobileMapRenderBounds) return null;
-    const markerBudget = mobileMarkerBudgetForScale(
+    const markerBudget = mobileOverviewSimplified ? 0 : mobileMarkerBudgetForScale(
       zoom,
       fitZoom,
       mobileMapCandidateElements.length,
@@ -9553,11 +9559,13 @@ export default function Home() {
       limit: markerBudget,
       selectedId,
       mainHubIds: mobileMapCandidateElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
-      recommendedIds: mobileMapCandidateElements.filter((element) => printPolicyFor(element).recommended).map((element) => element.id),
+      recommendedIds: mobileOverviewSimplified
+        ? []
+        : mobileMapCandidateElements.filter((element) => printPolicyFor(element).recommended).map((element) => element.id),
       centerX: mobileMapRenderBounds.centerX,
       centerY: mobileMapRenderBounds.centerY,
     }));
-  }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileRenderBudget.tier, printPolicyFor, selectedId, startupInitialViewTarget?.zoom, zoom]);
+  }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified, mobileRenderBudget.tier, printPolicyFor, selectedId, startupInitialViewTarget?.zoom, zoom]);
   const renderedMapElements = useMemo(() => (
     mobileFullMarkerIds
       ? mobileMapCandidateElements.filter((element) => mobileFullMarkerIds.has(element.id))

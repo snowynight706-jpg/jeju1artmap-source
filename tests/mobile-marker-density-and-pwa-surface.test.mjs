@@ -6,6 +6,7 @@ import {
   chooseMobileMarkerRenderIds,
   mobileLabelBudgetForScale,
   mobileMarkerBudgetForScale,
+  mobileOverviewIsSimplified,
 } from "../app/mobile-marker-density.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
@@ -28,6 +29,8 @@ test("mobile overview budgets stay compact while the initial detail scale keeps 
   assert.equal(mobileLabelBudgetForScale(0.5, 0.5, 30, 200, "standard"), 18);
   assert.equal(mobileLabelBudgetForScale(0.5, 0.5, 30, 200, "high"), 22);
   assert.equal(mobileLabelBudgetForScale(1.15, 0.5, 200, 200, "standard"), 60);
+  assert.equal(mobileOverviewIsSimplified(0.7, 0.5), true);
+  assert.equal(mobileOverviewIsSimplified(0.73, 0.5), false);
 });
 
 test("landmarks and the selected place stay full while recommendations win optional marker slots", () => {
@@ -45,6 +48,11 @@ test("landmarks and the selected place stay full while recommendations win optio
     centerY: 50,
   });
   assert.deepEqual(new Set(ids), new Set(["landmark", "selected", "recommended"]));
+  assert.deepEqual(new Set(chooseMobileMarkerRenderIds(candidates, {
+    limit: 0,
+    selectedId: "selected",
+    recommendedIds: ["recommended"],
+  })), new Set(["landmark", "selected"]));
   assert.deepEqual(chooseMobileMarkerRenderIds(candidates, { limit: candidates.length }), candidates.map((candidate) => candidate.id));
 });
 
@@ -58,6 +66,8 @@ test("mobile PWA uses a light root fallback and lightweight category-colored omi
   assert.match(pageSource, /zoomChanged[\s\S]{0,520}scheduleTouchLayerRelease\([\s\S]{0,120}\? 170 : 80\)/);
   assert.match(pageSource, /<MobileMarkerPlaceholderLayer[\s\S]{0,180}elements=\{mobilePlaceholderElements\}/);
   assert.match(pageSource, /mobileMarkerBudgetForScale\([\s\S]{0,180}startupInitialViewTarget\?\.zoom \?\? null/);
+  assert.match(pageSource, /mobileOverviewSimplified && element\.category !== "landmark"/);
+  assert.match(pageSource, /const markerBudget = mobileOverviewSimplified \? 0 : mobileMarkerBudgetForScale/);
 });
 
 test("the administrator event dialog stays out of the public initial bundle", () => {

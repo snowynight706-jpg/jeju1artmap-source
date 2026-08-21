@@ -13,9 +13,15 @@ const MOBILE_LABEL_SCALE_STEPS = Object.freeze([
   { maximumRatio: Number.POSITIVE_INFINITY, limits: { low: 60, standard: 84, high: Number.POSITIVE_INFINITY } },
 ]);
 
+const MOBILE_SIMPLIFIED_OVERVIEW_MAX_RATIO = 1.45;
+
 function zoomRatio(zoom, fitZoom) {
   return Math.max(0.01, Number.isFinite(zoom) ? zoom : 0.22)
     / Math.max(0.22, Number.isFinite(fitZoom) ? fitZoom : 0.22);
+}
+
+export function mobileOverviewIsSimplified(zoom, fitZoom) {
+  return zoomRatio(zoom, fitZoom) <= MOBILE_SIMPLIFIED_OVERVIEW_MAX_RATIO;
 }
 
 export function mobileMarkerBudgetForScale(zoom, fitZoom, total, tier = "standard", fullFromZoom = null) {

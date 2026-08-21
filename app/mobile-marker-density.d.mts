@@ -9,6 +9,11 @@ export type MobileMarkerDensityCandidate = {
   z?: number;
 };
 
+export function mobileOverviewIsSimplified(
+  zoom: number,
+  fitZoom: number,
+): boolean;
+
 export function mobileMarkerBudgetForScale(
   zoom: number,
   fitZoom: number,
