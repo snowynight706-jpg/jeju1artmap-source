@@ -270,11 +270,11 @@ const publicListCategories: ReadonlyArray<{
   color: string;
   iconSrc: string;
 }> = [
-  { id: "culture", name: "문화공간", color: markerCategoryColors.culture, iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_ui-96px.png" },
-  { id: "food", name: "음식점", color: markerCategoryColors.food, iconSrc: "/category-icons/category_ui_restaurant_v02_ui-96px.png" },
-  { id: "cafe", name: "카페", color: markerCategoryColors.cafe, iconSrc: "/category-icons/category_ui_cafe_v03_ui-96px.png" },
-  { id: "shop", name: "소품샵", color: markerCategoryColors.shop, iconSrc: "/category-icons/category_ui_goods_shop_v03_ui-96px.png" },
-  { id: "convenience", name: "편의시설", color: markerCategoryColors.utility, iconSrc: "/category-icons/category_ui_amenities_v01_ui-96px.png" },
+  { id: "culture", name: "문화공간", color: markerCategoryColors.culture, iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_ui-96px.webp" },
+  { id: "food", name: "음식점", color: markerCategoryColors.food, iconSrc: "/category-icons/category_ui_restaurant_v02_ui-96px.webp" },
+  { id: "cafe", name: "카페", color: markerCategoryColors.cafe, iconSrc: "/category-icons/category_ui_cafe_v03_ui-96px.webp" },
+  { id: "shop", name: "소품샵", color: markerCategoryColors.shop, iconSrc: "/category-icons/category_ui_goods_shop_v03_ui-96px.webp" },
+  { id: "convenience", name: "편의시설", color: markerCategoryColors.utility, iconSrc: "/category-icons/category_ui_amenities_v01_ui-96px.webp" },
 ] as const;
 
 type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "shop" | "convenience";
@@ -299,6 +299,7 @@ type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PrintMode = "auto" | "include" | "exclude";
 type PlacementState = "unplaced" | "deleted";
 type PublicLayoutAccess = "loading" | "editor" | "viewer";
+type PublicAssetProfile = "mobile" | "standard";
 type GlobalContentTab = "places" | "reviews" | "events" | "place-requests";
 type StoryReportReason = "inappropriate" | "privacy" | "copyright" | "spam" | "other";
 
@@ -323,6 +324,7 @@ type MapAsset = {
   status: AssetStatus;
   src: string;
   screenSrc?: string;
+  mobileSrc?: string;
   fileType: "png" | "svg" | "image";
   placeName?: string;
   address?: string;
@@ -2629,6 +2631,7 @@ type MapElementMarkerProps = {
   publicSelectedMarkerZIndex: number;
   showLabel: boolean;
   showMarker: boolean;
+  useMobileLandmarkAssets: boolean;
   viewMode: ViewMode;
   zoom: number;
 };
@@ -2657,6 +2660,7 @@ const MapElementMarker = memo(function MapElementMarker({
   publicSelectedMarkerZIndex,
   showLabel,
   showMarker,
+  useMobileLandmarkAssets,
   viewMode,
   zoom,
 }: MapElementMarkerProps) {
@@ -2687,7 +2691,7 @@ const MapElementMarker = memo(function MapElementMarker({
     } : undefined}
   >
     {editingEnabled && (viewMode === "clearance" || (viewMode === "collisions" && collisionClass)) && <span className={`clearance-zone ${viewMode === "clearance" ? "visible" : collisionClass}`} />}
-    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => actionsRef.current?.measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{metaGlyph}</span></div>}</div>}
+    {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={useMobileLandmarkAssets ? asset.mobileSrc ?? asset.screenSrc ?? asset.src : asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => actionsRef.current?.measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{metaGlyph}</span></div>}</div>}
     {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
     {editingEnabled && !element.locked && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">검수 필요</span>}
     {showLabel && !labelClustered && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : assetBounds, !printPreviewMode, publicLayoutAccess === "editor")} onPointerDown={isSelected ? (event) => actionsRef.current?.startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && (labelStatus.hasEvent || labelStatus.reviewCount > 0) && <span className="map-label-status-rail">{labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음">EVENT</span>}{labelStatus.reviewCount > 0 && <span className={`map-label-status reviews ${labelStatus.hasNewReview ? "new" : ""}`} aria-label={labelStatus.hasNewReview ? `${publicElementName} 최근 3일 내 새 후기 있음` : `${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={labelStatus.hasNewReview ? "최근 3일 내 새 후기" : `후기 ${labelStatus.reviewCount}개`}>{labelStatus.hasNewReview ? "NEW" : labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</span>}</div>}
@@ -2716,6 +2720,7 @@ type MapElementLayerProps = {
   selectedId: string | null;
   stageLabelIds: Set<string>;
   stageMarkerIds: Set<string>;
+  useMobileLandmarkAssets: boolean;
   viewMode: ViewMode;
   visibleElements: MapElement[];
   zoom: number;
@@ -2751,6 +2756,7 @@ const MapElementLayer = memo(function MapElementLayer(props: MapElementLayerProp
       publicSelectedMarkerZIndex={props.publicSelectedMarkerZIndex}
       showLabel={props.stageLabelIds.has(element.id)}
       showMarker={props.stageMarkerIds.has(element.id)}
+      useMobileLandmarkAssets={props.useMobileLandmarkAssets && element.category === "landmark"}
       viewMode={props.viewMode}
       zoom={props.zoom}
     />;
@@ -3224,6 +3230,9 @@ export default function Home() {
   const [startupRevealReady, setStartupRevealReady] = useState(false);
   const [startupLoadDone, setStartupLoadDone] = useState(0);
   const [startupLoadTotal, setStartupLoadTotal] = useState(0);
+  const [publicAssetProfile] = useState<PublicAssetProfile>(() => (
+    typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches ? "mobile" : "standard"
+  ));
   const [memoMode, setMemoMode] = useState(false);
   const [landmarkGroupSize, setLandmarkGroupSize] = useState(6.2);
   const [markerGroupSize, setMarkerGroupSize] = useState(1.7);
@@ -5661,6 +5670,7 @@ export default function Home() {
     && mobileRenderBudget.tier === "low"
     && baseMapViewportWidth > 0
     && baseMapViewportWidth <= 760;
+  const useMobileLandmarkAssets = publicLayoutAccess === "viewer" && publicAssetProfile === "mobile";
   const highResolutionBaseMapSource = uploadedBaseMap?.screen4096Url ?? "";
   const compactBaseMapPreferred = lowTierMobileBaseMap
     && (!highResolutionBaseMapSource || decodedHighResolutionBaseMapSource !== highResolutionBaseMapSource);
@@ -5719,9 +5729,11 @@ export default function Home() {
     const primaryHub = visibleElements.find((element) => isPrimaryHubLabel(element.name));
     const primaryHubAsset = primaryHub?.assetId ? assetsById.get(primaryHub.assetId) : undefined;
     const sources = [...new Set([
-      "/jfac-signature-b.png",
+      "/jfac-signature-b.webp",
       mapSource,
-      primaryHubAsset?.screenSrc ?? primaryHubAsset?.src,
+      useMobileLandmarkAssets
+        ? primaryHubAsset?.mobileSrc ?? primaryHubAsset?.screenSrc ?? primaryHubAsset?.src
+        : primaryHubAsset?.screenSrc ?? primaryHubAsset?.src,
     ].filter((source): source is string => Boolean(source)))];
     const preload = (source: string) => new Promise<void>((resolve) => {
       const image = new Image();
@@ -5761,7 +5773,7 @@ export default function Home() {
       });
     });
     return () => { cancelled = true; };
-  }, [activeBaseMapSrc, assetsById, hydrated, publicLayoutAccess, viewportDimensions.width, visibleElements]);
+  }, [activeBaseMapSrc, assetsById, hydrated, publicAssetProfile, publicLayoutAccess, useMobileLandmarkAssets, viewportDimensions.width, visibleElements]);
 
   useEffect(() => {
     const stageWrap = stageWrapRef.current;
@@ -9849,7 +9861,7 @@ export default function Home() {
         ? "주요 거점을 중심으로 지도를 맞추고 있습니다."
         : "화면을 안정화하고 있습니다.";
   const startupLoadingCard = <section className="public-loading-card" aria-live="polite" aria-busy="true">
-    <img className="public-loading-symbol" src="/jfac-signature-b.png" alt="제주문화예술재단 국문 시그니처 B" />
+    <img className="public-loading-symbol" src="/jfac-signature-b.webp" width={1182} height={626} alt="제주문화예술재단 국문 시그니처 B" decoding="async" />
     <div className="public-loading-status"><span aria-hidden="true" /><b>로딩 중</b></div>
     <p>{startupLoadingMessage}</p>
     <div className="public-loading-track" aria-hidden="true"><span style={{ width: `${startupLoadPercent}%` }} /></div>
@@ -9878,7 +9890,7 @@ export default function Home() {
       <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""} ${publicLayoutAccess === "viewer" && selected ? "public-place-selected" : ""}`} data-ui-theme={uiTheme}>
       {!startupRevealReady && <div className="public-loading public-loading-overlay">{startupLoadingCard}</div>}
       {publicLayoutAccess === "editor" ? <header className="topbar">
-        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
+        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.webp" width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
             <summary aria-label={`현재 ${activeUiTheme.name} 테마 · 테마 선택 열기`} title="UI 테마 선택">
               <span>테마</span><UiThemeSwatch colors={activeUiTheme.colors} />
             </summary>
@@ -9901,7 +9913,7 @@ export default function Home() {
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
-        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
+        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.webp" width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, fitZoom, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, fitZoom, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
@@ -10222,6 +10234,7 @@ export default function Home() {
                   selectedId={selectedId}
                   stageLabelIds={labelContentReady ? stageLabelIds : EMPTY_MAP_ELEMENT_IDS}
                   stageMarkerIds={stageMarkerIds}
+                  useMobileLandmarkAssets={useMobileLandmarkAssets}
                   viewMode={viewMode}
                   visibleElements={renderedMapElements}
                   zoom={labelRenderZoom}
@@ -10431,7 +10444,7 @@ export default function Home() {
                 <span role="status">검색 결과 <strong>{filteredPublicPlaceItems.length}</strong>곳</span>
                 {(publicPlaceCategory !== "all" || publicPlaceQuery) && <button type="button" className="public-place-filter-reset" onClick={() => { setPublicPlaceCategory("all"); setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }}>조건 초기화</button>}
               </div>
-              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => { setPublicPlaceCategory(category.id); setExpandedAdditionalCategoryItemId(null); }} key={category.id}><img src={category.iconSrc} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
+              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => { setPublicPlaceCategory(category.id); setExpandedAdditionalCategoryItemId(null); }} key={category.id}><img src={category.iconSrc} width={96} height={96} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
               <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span className="public-place-detail-heading" title="상세보기"><MagnifierIcon /></span></div>
               <div className="public-place-list" role="list" aria-label={`${publicPlaceCategory === "all" ? "전체 장소" : publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "장소"} 목록`}>
                 {filteredPublicPlaceItems.map((item) => {

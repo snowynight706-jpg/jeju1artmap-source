@@ -5,12 +5,14 @@ export type BundledLandmarkAsset = {
   status: "approved" | "review";
   src: string;
   screenSrc: string;
+  mobileSrc: string;
   fileName: string;
   sourceUrl: string;
 };
 
 const drive = (id: string) => `https://drive.google.com/file/d/${id}/view?usp=drivesdk`;
 const SCREEN_REVISION = "20260819-renewed-v1";
+const MOBILE_REVISION = "20260821-mobile-384-v1";
 const asset = (id: string, name: string, placeName: string, sourceId: string, status: "approved" | "review" = "review", revision?: string): BundledLandmarkAsset => ({
   id,
   name,
@@ -18,6 +20,7 @@ const asset = (id: string, name: string, placeName: string, sourceId: string, st
   status,
   src: `/landmarks-hq/${id}.webp${revision ? `?v=${revision}` : ""}`,
   screenSrc: `/landmarks-screen/${id}.webp?v=${SCREEN_REVISION}`,
+  mobileSrc: `/landmarks-mobile-384/${id}.webp?v=${MOBILE_REVISION}`,
   fileName: `${id}.webp`,
   sourceUrl: sourceId ? drive(sourceId) : "",
 });

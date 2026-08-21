@@ -27,8 +27,11 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
     assert.match(landmarkSource, new RegExp(`asset\\("${id}",[^\\n]+"${placeName}"[^\\n]+"approved"(?:,[^\\n]+)?\\)`));
     const hq = await stat(new URL(`../public/landmarks-hq/${id}.webp`, import.meta.url));
     const screen = await stat(new URL(`../public/landmarks-screen/${id}.webp`, import.meta.url));
+    const mobile = await stat(new URL(`../public/landmarks-mobile-384/${id}.webp`, import.meta.url));
     assert.ok(hq.size > 10_000);
     assert.ok(screen.size > 5_000);
+    assert.ok(mobile.size > 2_000);
+    assert.ok(mobile.size < screen.size);
   }
 
   assert.match(pageSource, /const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06"/);
@@ -60,7 +63,7 @@ test("the latest redesigned landmark assets are bundled, approved and made the d
 
 test("the current Chilseong-ro screen and export assets retain a real alpha channel", async () => {
   const id = "chilsungro-20260820-transparent";
-  for (const variant of ["landmarks-hq", "landmarks-screen"]) {
+  for (const variant of ["landmarks-hq", "landmarks-screen", "landmarks-mobile-384"]) {
     const bytes = await readFile(new URL(`../public/${variant}/${id}.webp`, import.meta.url));
     const isLosslessAlphaWebP = bytes.includes(Buffer.from("VP8L"));
     const isLossyAlphaWebP = bytes.includes(Buffer.from("ALPH"));

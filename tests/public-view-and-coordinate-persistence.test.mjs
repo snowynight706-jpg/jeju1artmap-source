@@ -5,13 +5,14 @@ import test from "node:test";
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const focusSource = await readFile(new URL("../app/public-place-focus.mjs", import.meta.url), "utf8");
-const signatureB = await readFile(new URL("../public/jfac-signature-b.png", import.meta.url));
+const signatureB = await readFile(new URL("../public/jfac-signature-b.webp", import.meta.url));
+const signatureBPng = await readFile(new URL("../public/jfac-signature-b.png", import.meta.url));
 
 test("the first screen waits only for the critical map and main-hub assets before settling", () => {
   const loaderBlock = pageSource.match(/const startupLoadingCard =[\s\S]*?<\/section>;/)?.[0] ?? "";
   assert.match(pageSource, /const startupLoadCompletedRef = useRef\(false\)/);
   assert.doesNotMatch(pageSource, /visibleElements\.flatMap\(\(element\) =>/);
-  assert.match(pageSource, /primaryHubAsset\?\.screenSrc \?\? primaryHubAsset\?\.src/);
+  assert.match(pageSource, /primaryHubAsset\?\.mobileSrc \?\? primaryHubAsset\?\.screenSrc \?\? primaryHubAsset\?\.src/);
   assert.match(pageSource, /Promise\.all\(sources\.map\(preload\)\)/);
   assert.match(pageSource, /const \[startupInitialViewReady, setStartupInitialViewReady\] = useState\(false\)/);
   assert.match(pageSource, /const \[startupInitialViewTarget, setStartupInitialViewTarget\] = useState/);
@@ -21,17 +22,18 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(pageSource, /committedFrame = window\.requestAnimationFrame[\s\S]{0,260}settledFrame = window\.requestAnimationFrame\(\(\) =>/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
-  assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.png",\s*mapSource/);
-  assert.match(loaderBlock, /src="\/jfac-signature-b\.png" alt="제주문화예술재단 국문 시그니처 B"/);
-  assert.doesNotMatch(loaderBlock, /jfac-symbol\.png|jfac-signature-c\.png|제주 원도심 아트맵/);
+  assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.webp",\s*mapSource/);
+  assert.match(loaderBlock, /src="\/jfac-signature-b\.webp" width=\{1182\} height=\{626\} alt="제주문화예술재단 국문 시그니처 B"/);
+  assert.doesNotMatch(loaderBlock, /jfac-symbol\.(?:png|webp)|jfac-signature-c\.(?:png|webp)|제주 원도심 아트맵/);
   assert.match(loaderBlock, />로딩 중</);
   assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
   assert.match(cssSource, /\.public-loading \{[^}]*min-height: 100dvh[^}]*background: #fff/);
   assert.match(cssSource, /\.public-loading-card \{[^}]*width: min\(450px, 100%\)[^}]*border: 0[^}]*border-radius: 0[^}]*background: transparent[^}]*box-shadow: none/);
   assert.match(cssSource, /\.public-loading-symbol \{ width: min\(230px, 72vw\)/);
   assert.match(cssSource, /\.public-loading-track \{ width: min\(270px, 82%\)/);
-  assert.equal(signatureB.readUInt32BE(16), 1182);
-  assert.equal(signatureB.readUInt32BE(20), 626);
+  assert.equal(signatureB.subarray(0, 4).toString("ascii"), "RIFF");
+  assert.equal(signatureB.subarray(8, 12).toString("ascii"), "WEBP");
+  assert.ok(signatureB.length < signatureBPng.length);
 });
 
 test("cached PWA startup assets cannot reset completed progress back to zero", () => {
@@ -64,7 +66,7 @@ test("public viewers start focused and zoomed on the main hub on desktop and mob
 });
 
 test("mobile public chrome floats only the main-hub return button", () => {
-  assert.match(pageSource, /<img src="\/jfac-symbol\.png" alt="" aria-hidden="true" \/>/);
+  assert.match(pageSource, /<img src="\/jfac-symbol\.webp" width=\{446\} height=\{140\} alt="" aria-hidden="true" \/>/);
   assert.doesNotMatch(pageSource, /<div className="brand-mark">W<\/div>/);
   assert.match(cssSource, /\.public-topbar \{[^}]*position: absolute;[^}]*right: 9px;[^}]*background: transparent/);
   assert.match(cssSource, /\.public-topbar \.brand-block, \.public-topbar \.zoom-tools, \.public-topbar \.readonly-badge, \.public-topbar \.public-shortcut-trigger, \.public-topbar \.owner-signin \{ display: none; \}/);

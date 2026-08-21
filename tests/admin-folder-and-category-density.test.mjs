@@ -94,11 +94,11 @@ test("public category controls keep five compact one-row buttons with larger ico
   assert.match(categoryBlock, /id: "convenience"[^\n]*color: markerCategoryColors\.utility/);
   assert.doesNotMatch(categoryBlock, /id: "all"|id: "exhibition-performance"/);
   for (const resource of [
-    "category_ui_culture_book_brush_note_v03_ui-96px.png",
-    "category_ui_restaurant_v02_ui-96px.png",
-    "category_ui_cafe_v03_ui-96px.png",
-    "category_ui_goods_shop_v03_ui-96px.png",
-    "category_ui_amenities_v01_ui-96px.png",
+    "category_ui_culture_book_brush_note_v03_ui-96px.webp",
+    "category_ui_restaurant_v02_ui-96px.webp",
+    "category_ui_cafe_v03_ui-96px.webp",
+    "category_ui_goods_shop_v03_ui-96px.webp",
+    "category_ui_amenities_v01_ui-96px.webp",
   ]) {
     assert.match(categoryBlock, new RegExp(`/category-icons/${resource.replace(".", "\\.")}`));
   }
@@ -112,7 +112,7 @@ test("public category controls keep five compact one-row buttons with larger ico
   assert.match(cssSource, /\.public-place-list article \{[^}]*min-height: 26px/);
   assert.match(cssSource, /\.global-story-panel-scroll \{[^}]*scrollbar-gutter: stable/);
   assert.match(cssSource, /\.global-story-panel \{[^}]*min-width: min\(410px, calc\(100vw - 36px\)\)[^}]*max-width: min\(410px, calc\(100vw - 36px\)\)/);
-  assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
+  assert.match(pageSource, /<img src=\{category\.iconSrc\} width=\{96\} height=\{96\} alt="" aria-hidden="true" \/>/);
   assert.match(pageSource, /if \(primary === "shop"\) return "shop";/);
   assert.match(pageSource, /return "convenience";/);
 });
@@ -121,7 +121,7 @@ test("the interface uses a bright grayscale base while preserving image resource
   assert.match(cssSource, /:root \{[^}]*--paper: #f6f6f6[^}]*--panel: #fcfcfc[^}]*--ink: #2d2d2d[^}]*--emerald: #646464[^}]*--emerald-soft: #ededed/);
   assert.doesNotMatch(cssSource, /--emerald: #3f9287|--emerald-soft: #e3f0ed/);
   assert.match(cssSource, /\.public-place-category-chips button\.active \{[^}]*border-color: var\(--category-color\)[^}]*background: color-mix\([^}]*box-shadow: inset 0 -3px 0 var\(--category-color\)/);
-  assert.match(pageSource, /<img src=\{category\.iconSrc\} alt="" aria-hidden="true" \/>/);
+  assert.match(pageSource, /<img src=\{category\.iconSrc\} width=\{96\} height=\{96\} alt="" aria-hidden="true" \/>/);
 });
 
 test("themed category selections and list headings keep legible text on light fills", () => {
