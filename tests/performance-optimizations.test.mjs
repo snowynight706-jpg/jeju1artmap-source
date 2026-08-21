@@ -12,6 +12,7 @@ const placeStoriesRoute = await readFile(new URL("../app/api/place-stories/route
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
 const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
 const publicExplorerActivitySource = await readFile(new URL("../app/public-explorer-activity-content.tsx", import.meta.url), "utf8");
+const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
 const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
@@ -95,6 +96,14 @@ test("administrator diagnostics are code-split while anonymous performance sampl
   assert.match(performanceMigration, /CREATE TABLE `map_performance_diagnostics`/);
   assert.match(performanceMigration, /map_performance_diagnostics_actor_created_idx/);
   assert.doesNotMatch(performanceTable, /place_key|user_agent|photo|review_text|author_name/);
+});
+
+test("administrator place request cards load only when their management tab is opened", () => {
+  assert.match(pageSource, /const AdminPlaceRequestList = lazy\(\(\) => import\("\.\/admin-place-request-list"\)\)/);
+  assert.match(pageSource, /<Suspense fallback=\{<div className="global-story-state"><span className="global-story-spinner" \/><strong>장소 요청 관리 화면을 준비하는 중입니다\.<\/strong><\/div>\}>/);
+  assert.match(pageSource, /<AdminPlaceRequestList/);
+  assert.match(adminPlaceRequestSource, /place-request-admin-card/);
+  assert.doesNotMatch(pageSource, /className=\{`place-request-admin-card/);
 });
 
 test("public place details, events, and review UI load only after a place is opened", () => {

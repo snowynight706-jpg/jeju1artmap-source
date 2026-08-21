@@ -9,6 +9,7 @@ const directoryRouteSource = await readFile(new URL("../app/api/place-directory/
 const markerAssetSource = await readFile(new URL("../app/marker-assets.ts", import.meta.url), "utf8");
 const registrationRouteSource = await readFile(new URL("../app/api/place-registration-requests/route.ts", import.meta.url), "utf8");
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
 
 test("Chilseong shopping street and the placed Chilseong landmark converge on one DB identity", () => {
   assert.equal((masterDirectorySource.match(/"id": "master-v13-chilseong-ro"/g) ?? []).length, 1);
@@ -46,6 +47,6 @@ test("the approved v2 marker set registers all nine borderless final SVG assets 
   assert.match(registrationRouteSource, /MARKER_STYLES = new Set\(\["01", "02", "03", "v2"\]\)/);
   assert.match(pageSource, /\["v2", "리뉴얼 최종 원형"\]/);
   assert.match(pageSource, /\["v2", "01", "02", "03"\]/);
-  assert.match(pageSource, /markerAssetSrc\(request\.markerStyle, request\.category\)/);
+  assert.match(adminPlaceRequestSource, /markerAssetSrc\(request\.markerStyle, request\.category\)/);
   assert.equal((pageSource.match(/markerAssetSrc\(placeRequestMarkerStyle, placeRequestCategory\)/g) ?? []).length, 2);
 });

@@ -75,23 +75,31 @@ export function denseLabelPlacementOptions({ minX, maxX, minY, maxY, width, heig
   return options;
 }
 
-export function chooseDenseLabelPlacement({
-  options,
-  width,
-  height,
-  centerX,
-  centerY,
-  mapAspect = 1,
-  groupIds = [],
-  connectorSegmentsFor,
-  iconObstacles = [],
-  labelObstacles = [],
-  placedRects = [],
-  placedSegments = [],
-}) {
+/**
+ * The placement scorer is shared with TypeScript UI code while remaining a
+ * plain module for Node regression tests. Keep its structural inputs open.
+ * @param {any} configuration
+ * @returns {any}
+ */
+export function chooseDenseLabelPlacement(configuration) {
+  const {
+    options,
+    width,
+    height,
+    centerX,
+    centerY,
+    mapAspect = 1,
+    groupIds = [],
+    connectorSegmentsFor,
+    iconObstacles = [],
+    labelObstacles = [],
+    placedRects = [],
+    placedSegments = [],
+  } = configuration;
   if (!options.length) return null;
   const groupIdSet = new Set(groupIds);
-  return options.map((option, optionIndex) => {
+  let best = null;
+  options.forEach((option, optionIndex) => {
     const rect = {
       left: option.x - width / 2,
       right: option.x + width / 2,
@@ -99,23 +107,50 @@ export function chooseDenseLabelPlacement({
       bottom: option.y + height / 2,
     };
     const segments = connectorSegmentsFor(option);
-    const iconBoxHits = iconObstacles.filter((obstacle) => rectsOverlap(rect, obstacle.rect, 0.65));
-    const labelBoxHits = labelObstacles.filter((obstacle) => !groupIdSet.has(obstacle.id) && rectsOverlap(rect, obstacle.rect, 0.45));
-    const placedBoxHits = placedRects.filter((obstacle) => rectsOverlap(rect, obstacle, 0.45));
-    const connectorIconHits = segments.reduce((count, segment) => count + iconObstacles.filter((obstacle) => (
-      obstacle.id !== segment.elementId && segmentIntersectsRect(segment, obstacle.rect, obstacle.category === "landmark" ? 0.28 : 0.14)
-    )).length, 0);
-    const connectorLandmarkHits = segments.reduce((count, segment) => count + iconObstacles.filter((obstacle) => (
-      obstacle.category === "landmark" && obstacle.id !== segment.elementId && segmentIntersectsRect(segment, obstacle.rect, 0.28)
-    )).length, 0);
-    const connectorLabelHits = segments.reduce((count, segment) => count + labelObstacles.filter((obstacle) => (
-      !groupIdSet.has(obstacle.id) && segmentIntersectsRect(segment, obstacle.rect, 0.12)
-    )).length, 0);
-    const connectorPlacedBoxHits = segments.reduce((count, segment) => count + placedRects.filter((obstacle) => (
-      segmentIntersectsRect(segment, obstacle, 0.16)
-    )).length, 0);
-    const placedConnectorBoxHits = placedSegments.filter((segment) => segmentIntersectsRect(segment, rect, 0.16)).length;
-    const priorConnectorCrossings = segments.reduce((count, segment) => count + placedSegments.filter((placed) => segmentsCross(segment, placed)).length, 0);
+    let iconBoxHits = 0;
+    let iconBoxPenalty = 0;
+    for (const obstacle of iconObstacles) {
+      if (!rectsOverlap(rect, obstacle.rect, 0.65)) continue;
+      iconBoxHits += 1;
+      iconBoxPenalty += obstacle.category === "landmark" ? 50000 : 18000;
+    }
+    let labelBoxHits = 0;
+    for (const obstacle of labelObstacles) {
+      if (!groupIdSet.has(obstacle.id) && rectsOverlap(rect, obstacle.rect, 0.45)) labelBoxHits += 1;
+    }
+    let placedBoxHits = 0;
+    for (const obstacle of placedRects) {
+      if (rectsOverlap(rect, obstacle, 0.45)) placedBoxHits += 1;
+    }
+    let connectorIconHits = 0;
+    let connectorLandmarkHits = 0;
+    let connectorLabelHits = 0;
+    let connectorPlacedBoxHits = 0;
+    let priorConnectorCrossings = 0;
+    let connectorDistance = 0;
+    for (const segment of segments) {
+      connectorDistance += segmentLength(segment, mapAspect);
+      for (const obstacle of iconObstacles) {
+        if (obstacle.id === segment.elementId) continue;
+        const landmark = obstacle.category === "landmark";
+        if (!segmentIntersectsRect(segment, obstacle.rect, landmark ? 0.28 : 0.14)) continue;
+        connectorIconHits += 1;
+        if (landmark) connectorLandmarkHits += 1;
+      }
+      for (const obstacle of labelObstacles) {
+        if (!groupIdSet.has(obstacle.id) && segmentIntersectsRect(segment, obstacle.rect, 0.12)) connectorLabelHits += 1;
+      }
+      for (const obstacle of placedRects) {
+        if (segmentIntersectsRect(segment, obstacle, 0.16)) connectorPlacedBoxHits += 1;
+      }
+      for (const placed of placedSegments) {
+        if (segmentsCross(segment, placed)) priorConnectorCrossings += 1;
+      }
+    }
+    let placedConnectorBoxHits = 0;
+    for (const segment of placedSegments) {
+      if (segmentIntersectsRect(segment, rect, 0.16)) placedConnectorBoxHits += 1;
+    }
     let internalConnectorCrossings = 0;
     for (let index = 0; index < segments.length; index += 1) {
       for (let other = index + 1; other < segments.length; other += 1) {
@@ -123,20 +158,18 @@ export function chooseDenseLabelPlacement({
       }
     }
     const overflow = Math.max(0, -rect.left) + Math.max(0, rect.right - 100) + Math.max(0, -rect.top) + Math.max(0, rect.bottom - 100);
-    const connectorDistance = segments.reduce((sum, segment) => sum + segmentLength(segment, mapAspect), 0);
     const centerDistance = Math.hypot(option.x - centerX, (option.y - centerY) / mapAspect);
-    const iconBoxPenalty = iconBoxHits.reduce((score, obstacle) => score + (obstacle.category === "landmark" ? 50000 : 18000), 0);
-    const collisionCount = iconBoxHits.length + labelBoxHits.length + placedBoxHits.length
+    const collisionCount = iconBoxHits + labelBoxHits + placedBoxHits
       + connectorIconHits + connectorLabelHits + connectorPlacedBoxHits + placedConnectorBoxHits
       + priorConnectorCrossings + internalConnectorCrossings + Number(overflow > 0);
-    return {
+    const candidate = {
       ...option,
       rect,
       segments,
       hasCollision: collisionCount > 0,
       score: iconBoxPenalty
-        + labelBoxHits.length * 16000
-        + placedBoxHits.length * 22000
+        + labelBoxHits * 16000
+        + placedBoxHits * 22000
         + connectorIconHits * 5200
         + connectorLandmarkHits * 7200
         + connectorLabelHits * 6800
@@ -150,5 +183,7 @@ export function chooseDenseLabelPlacement({
         + connectorDistance * 12
         + optionIndex * 0.01,
     };
-  }).sort((a, b) => a.score - b.score)[0];
+    if (!best || candidate.score < best.score) best = candidate;
+  });
+  return best;
 }

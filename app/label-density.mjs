@@ -36,11 +36,17 @@ export function optionalLabelBudgetForScale(
   return Math.min(safeTotal, step?.limit ?? safeTotal);
 }
 
-export function chooseScaleAwareLabelIds(candidates, {
-  limit,
-  selectedId = null,
-  mainHubIds = [],
-} = {}) {
+/**
+ * @param {Array<any>} candidates
+ * @param {any} configuration
+ * @returns {{ ids: string[], limit: number, limited: boolean }}
+ */
+export function chooseScaleAwareLabelIds(candidates, configuration = {}) {
+  const {
+    limit,
+    selectedId = null,
+    mainHubIds = [],
+  } = configuration;
   const uniqueCandidates = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
   const mainHubs = new Set(mainHubIds);
   const safeLimit = Math.min(uniqueCandidates.length, Math.max(0, Math.floor(Number.isFinite(limit) ? limit : uniqueCandidates.length)));

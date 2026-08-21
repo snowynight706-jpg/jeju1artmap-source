@@ -56,6 +56,24 @@ test("selected, main-hub and landmark labels survive caps while recommendations 
   assert.equal(result.limited, true);
 });
 
+test("scale limits include mandatory landmark and main-hub labels in the total", () => {
+  const candidates = [
+    ...Array.from({ length: 8 }, (_, index) => ({ id: `landmark-${index}`, name: `랜드마크 ${index}`, category: "landmark", z: index })),
+    { id: "hub", name: "주요 거점", category: "culture", z: 20 },
+    { id: "selected", name: "선택 장소", category: "cafe", z: 19 },
+    ...Array.from({ length: 50 }, (_, index) => ({ id: `ordinary-${index}`, name: `일반 ${index}`, category: "food", z: index })),
+  ];
+  const result = chooseScaleAwareLabelIds(candidates, {
+    limit: 40,
+    selectedId: "selected",
+    mainHubIds: ["hub"],
+  });
+  assert.equal(result.ids.length, 40);
+  assert.equal(result.ids.filter((id) => id.startsWith("landmark-")).length, 8);
+  assert.ok(result.ids.includes("hub"));
+  assert.ok(result.ids.includes("selected"));
+});
+
 test("public limits always apply and the admin can opt into the same scale steps", () => {
   assert.match(pageSource, /const editorLabelCandidates = useMemo/);
   assert.match(pageSource, /const scaleAwareLabelSelection = useMemo/);
@@ -83,7 +101,7 @@ test("screen label budgets exclude offscreen places and refresh after settled ma
 });
 
 test("admin label budgets are editable and publish immediately as independent runtime settings", () => {
-  assert.match(pageSource, /배포본 축척별 일반 라벨/);
+  assert.match(pageSource, /배포본 축척별 전체 라벨/);
   assert.match(pageSource, /setOptionalLabelScaleSteps\(normalizeOptionalLabelScaleSteps\(view\.optionalLabelScaleSteps\)\)/);
   assert.match(pageSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(optionalLabelScaleSteps\)/);
   assert.match(pageSource, /className="public-label-density-actions"[\s\S]{0,320}>기본값<[\s\S]{0,320}>\{optionalLabelScaleSaving \? "저장 중…" : "저장"\}</);
@@ -93,6 +111,12 @@ test("admin label budgets are editable and publish immediately as independent ru
   assert.match(publicLayoutRouteSource, /payload\?\.action === "save-label-density-settings"/);
   assert.match(publicLayoutRouteSource, /INSERT INTO map_label_density_settings/);
   assert.match(publicLayoutRouteSource, /applyLabelDensitySettings\(JSON\.parse\(row\.viewSettingsJson\), labelDensitySettings\)/);
+});
+
+test("page passes the saved step limit to the total candidate count without adding mandatory labels", () => {
+  assert.match(pageSource, /const scaleLabelBudget = useMemo\(\(\) => \{[\s\S]{0,280}optionalLabelBudgetForScale\([\s\S]{0,120}editorLabelCandidates\.length/);
+  assert.doesNotMatch(pageSource, /const baseBudget = scaleMandatoryLabelCount\s*\+/);
+  assert.match(pageSource, /랜드마크·주요 거점·현재 선택을 포함한 화면 전체 라벨 목표 수/);
 });
 
 test("dense label connector endpoints follow fixed-screen labels in public and admin maps", () => {

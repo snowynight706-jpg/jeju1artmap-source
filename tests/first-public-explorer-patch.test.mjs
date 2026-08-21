@@ -29,7 +29,7 @@ test("same-building facilities share one anchor but remain separate selectable r
   assert.match(taxonomySource, /ART_PLATFORM_GROUP_ID = "jeju-art-platform-building"/);
   assert.match(taxonomySource, /"제주아트플랫폼"[\s\S]+"아르코공연연습센터@제주"[\s\S]+"제주예술인복지센터"/);
   assert.match(pageSource, /selectedLocationGroupPlaces\.map/);
-  assert.match(pageSource, /const candidates = ownPlace\?\.locationGroupId[\s\S]+placesByGroup\.get\(ownPlace\.locationGroupId\)/);
+  assert.match(pageSource, /const candidates = ownPlace\?\.locationGroupId[\s\S]+directoryPlacesByGroup\.get\(ownPlace\.locationGroupId\)/);
   assert.doesNotMatch(pageSource, /location-group-badge/);
   assert.doesNotMatch(cssSource, /\.location-group-badge/);
   assert.match(metadataMigration, /map_anchor_id` = 'jeju-art-platform'/);

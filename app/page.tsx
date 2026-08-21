@@ -89,11 +89,13 @@ import {
   type ConvenienceAttributeId,
 } from "./place-taxonomy";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
+import type { AdminPlaceRequestRecord } from "./admin-place-request-list";
 
 const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
 const AdminDiagnosticsPanel = lazy(() => import("./admin-diagnostics-panel"));
 const AdminFolder = lazy(() => import("./admin-folder"));
 const AdminPlaceEventDialog = lazy(() => import("./admin-place-event-dialog"));
+const AdminPlaceRequestList = lazy(() => import("./admin-place-request-list"));
 const PublicPlaceDetailContent = lazy(() => import("./public-place-detail-content"));
 const PublicExplorerActivityContent = lazy(() => import("./public-explorer-activity-content"));
 
@@ -749,32 +751,7 @@ type PlaceEventsPayload = {
   error?: string;
 };
 
-type PlaceRegistrationRequest = {
-  id: string;
-  submittedName: string;
-  submittedArea: string;
-  submittedAddress: string;
-  submittedDescription: string;
-  submittedCategory: BundledMarkerCategory;
-  submittedMarkerStyle: BundledMarkerStyle;
-  submittedX: number | null;
-  submittedY: number | null;
-  name: string;
-  area: string;
-  address: string;
-  description: string;
-  category: BundledMarkerCategory;
-  markerStyle: BundledMarkerStyle;
-  markerX: number | null;
-  markerY: number | null;
-  status: "pending" | "reviewing" | "approved" | "rejected";
-  directoryId: string | null;
-  rejectionNote: string;
-  createdAt: string;
-  updatedAt: string;
-  reviewStartedAt: string | null;
-  reviewedAt: string | null;
-};
+type PlaceRegistrationRequest = AdminPlaceRequestRecord;
 
 type PlaceRegistrationRequestsPayload = {
   requests?: PlaceRegistrationRequest[];
@@ -2608,46 +2585,6 @@ function coordinatesToMap(latitude: number, longitude: number, calibrationPoints
   return calibratedCoordinates(x, y, calibrationPoints);
 }
 
-function parseMasterDatabase(value: unknown): MasterDirectoryRow[] {
-  if (!value || typeof value !== "object") throw new Error("invalid database");
-  const root = value as Record<string, unknown>;
-  const operation = root.operation_status as { records?: Array<{ name?: string; status?: string }> } | undefined;
-  const closed = new Set((operation?.records ?? []).filter((record) => record.status === "운영 종료").map((record) => record.name ?? ""));
-  const rows: MasterDirectoryRow[] = [];
-  const readSection = (section: "culture" | "food") => {
-    const values = root[section];
-    if (!Array.isArray(values)) return;
-    values.forEach((raw, index) => {
-      if (!Array.isArray(raw) || raw.length < 4) return;
-      const name = normalizePlaceName(String(raw[1] ?? ""));
-      const address = String(raw[2] ?? "");
-      const subtype = String(raw[3] ?? "");
-      if (!name || !address || closed.has(name) || DELETED_PLACE_NAMES.has(name)) return;
-      const isShop = section === "food" && /소품샵|편집숍|기념품|굿즈숍|상업공간/.test(subtype) && !/식음|카페|커피|음식/.test(subtype);
-      rows.push({
-        id: `import-${section}-${index + 1}`,
-        name,
-        address,
-        area: String(raw[0] ?? "기타"),
-        subtype,
-        priority: String(raw[6] ?? ""),
-        description: String(raw[4] ?? ""),
-        operatingInfo: String(raw[5] ?? ""),
-        notes: String(raw[7] ?? ""),
-        sourceUrl: String(raw[section === "culture" ? 11 : 10] ?? ""),
-        mapUrl: "",
-        checkedAt: "",
-        sourceSheet: section === "culture" ? "문화공간" : "카페·음식점·소품샵",
-        category: section === "culture" ? "culture" : isShop ? "shop" : /카페|커피|로스터|티하우스|북카페|디저트/.test(subtype) ? "cafe" : "food",
-      });
-    });
-  };
-  readSection("culture");
-  readSection("food");
-  if (!rows.length) throw new Error("no supported rows");
-  return [...new Map(rows.map((row) => [row.name, row])).values()];
-}
-
 type MapRenderActions = {
   measureAssetBounds: (assetId: string, image: HTMLImageElement) => void;
   selectPublicMarker: (elementId: string) => void;
@@ -2958,7 +2895,6 @@ export default function Home() {
   const baseMapImgRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
-  const dbInputRef = useRef<HTMLInputElement>(null);
   const placeQueryInputRef = useRef<HTMLInputElement>(null);
   const publicPlaceQueryInputRef = useRef<HTMLInputElement>(null);
   const databaseEditorQueryInputRef = useRef<HTMLInputElement>(null);
@@ -3140,11 +3076,8 @@ export default function Home() {
   const [publicLayoutAccess, setPublicLayoutAccess] = useState<PublicLayoutAccess>("loading");
   const [publicLayoutPublishedAt, setPublicLayoutPublishedAt] = useState<string | null>(null);
   const [publicLayoutRevision, setPublicLayoutRevision] = useState(0);
-  const [publicLayoutHasPrevious, setPublicLayoutHasPrevious] = useState(false);
   const [publicLayoutPublishing, setPublicLayoutPublishing] = useState(false);
   const [editorDraftUpdatedAt, setEditorDraftUpdatedAt] = useState<string | null>(null);
-  const [editorDraftRevision, setEditorDraftRevision] = useState(0);
-  const [editorDraftHasPrevious, setEditorDraftHasPrevious] = useState(false);
   const [editorDraftSaving, setEditorDraftSaving] = useState(false);
   const [optionalLabelScaleSaving, setOptionalLabelScaleSaving] = useState(false);
   const [editorDraftSyncState, setEditorDraftSyncState] = useState<"ready" | "saving" | "saved" | "error" | "conflict">("ready");
@@ -3261,7 +3194,6 @@ export default function Home() {
     park: false,
     utility: false,
   });
-  const [placedMarkerQuery, setPlacedMarkerQuery] = useState("");
   const [expandedPlacedMarkerGroups, setExpandedPlacedMarkerGroups] = useState<Record<CategoryId, boolean>>({
     landmark: true,
     culture: true,
@@ -3771,14 +3703,56 @@ export default function Home() {
     }
   }, []);
 
-  const selected = elements.find((element) => element.id === selectedId) ?? null;
+  const elementsById = useMemo(() => new Map(elements.map((element) => [element.id, element])), [elements]);
+  const mapVisibleElements = useMemo(() => elements.filter((element) => element.mapVisible), [elements]);
+  const elementsByNormalizedName = useMemo(() => {
+    const index = new Map<string, MapElement>();
+    elements.forEach((element) => {
+      const name = normalizePlaceName(element.name);
+      if (!index.has(name)) index.set(name, element);
+    });
+    return index;
+  }, [elements]);
+  const requestMarkerByRequestId = useMemo(() => {
+    const index = new Map<string, MapElement>();
+    elements.forEach((element) => {
+      if (element.placeRequestId && !element.directoryId && !index.has(element.placeRequestId)) index.set(element.placeRequestId, element);
+    });
+    return index;
+  }, [elements]);
+  const directoryPlacesById = useMemo(() => new Map(directoryPlaces.map((place) => [place.id, place])), [directoryPlaces]);
+  const directoryPlacesByNormalizedName = useMemo(() => {
+    const index = new Map<string, DirectoryPlace>();
+    directoryPlaces.forEach((place) => {
+      const name = normalizePlaceName(place.name);
+      if (!index.has(name)) index.set(name, place);
+    });
+    return index;
+  }, [directoryPlaces]);
+  const directoryPlacesByGroup = useMemo(() => {
+    const groups = new Map<string, DirectoryPlace[]>();
+    directoryPlaces.forEach((place) => {
+      if (!place.locationGroupId) return;
+      const group = groups.get(place.locationGroupId) ?? [];
+      group.push(place);
+      groups.set(place.locationGroupId, group);
+    });
+    groups.forEach((group) => group.sort((a, b) => {
+      const order = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(a.name));
+      const otherOrder = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(b.name));
+      return (order < 0 ? 99 : order) - (otherOrder < 0 ? 99 : otherOrder) || a.name.localeCompare(b.name, "ko");
+    }));
+    return groups;
+  }, [directoryPlaces]);
+  const selected = selectedId ? elementsById.get(selectedId) ?? null : null;
   const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
-  const selectedAnchorDirectoryPlace = selected ? directoryPlaces.find((place) => (
-    (selected.directoryId && place.id === selected.directoryId)
-    || normalizePlaceName(place.name) === normalizePlaceName(selected.name)
-  )) ?? null : null;
+  const selectedAnchorDirectoryPlace = selected
+    ? (selected.directoryId ? directoryPlacesById.get(selected.directoryId) : undefined)
+      ?? directoryPlacesByNormalizedName.get(normalizePlaceName(selected.name))
+      ?? null
+    : null;
   const selectedFacilityPlace = selectedFacilityId
-    ? directoryPlaces.find((place) => place.id === selectedFacilityId) ?? null
+    ? directoryPlacesById.get(selectedFacilityId) ?? null
     : null;
   const selectedDirectoryPlace = selectedFacilityPlace?.locationGroupId
     && selectedFacilityPlace.locationGroupId === selectedAnchorDirectoryPlace?.locationGroupId
@@ -3822,17 +3796,9 @@ export default function Home() {
   const activeUiTheme = uiThemes.find((theme) => theme.id === uiTheme) ?? uiThemes[0];
   const selectedHasThemeEasterEgg = UI_THEME_EASTER_EGG_PLACES.has(normalizePlaceName(selectedDirectoryPlace?.name ?? selectedDisplayName));
   const selectedLocationGroupId = selectedDirectoryPlace?.locationGroupId ?? null;
-  const selectedLocationGroupPlaces = (() => {
-    const groupId = selectedLocationGroupId;
-    if (!groupId) return [];
-    return directoryPlaces
-      .filter((place) => place.locationGroupId === groupId)
-      .sort((a, b) => {
-        const order = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(a.name));
-        const otherOrder = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(b.name));
-        return (order < 0 ? 99 : order) - (otherOrder < 0 ? 99 : otherOrder) || a.name.localeCompare(b.name, "ko");
-      });
-  })();
+  const selectedLocationGroupPlaces = selectedLocationGroupId
+    ? directoryPlacesByGroup.get(selectedLocationGroupId) ?? []
+    : [];
   const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces), [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions]);
   const secondaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"), [effectiveCalibrationPoints]);
   const tertiaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"), [effectiveCalibrationPoints]);
@@ -3966,28 +3932,11 @@ export default function Home() {
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [databaseDraftPlaces, databaseEditorCategory, databaseEditorQuery]);
 
-  const placedCategoryCounts = useMemo(() => categories.reduce<Record<CategoryId, number>>((counts, category) => {
-    counts[category.id] = elements.filter((element) => element.category === category.id && element.mapVisible).length;
+  const placedCategoryCounts = useMemo(() => mapVisibleElements.reduce<Record<CategoryId, number>>((counts, element) => {
+    counts[element.category] += 1;
     return counts;
-  }, { landmark: 0, culture: 0, cafe: 0, food: 0, shop: 0, parking: 0, park: 0, utility: 0 }), [elements]);
+  }, { landmark: 0, culture: 0, cafe: 0, food: 0, shop: 0, parking: 0, park: 0, utility: 0 }), [mapVisibleElements]);
 
-  const placedMarkerElements = useMemo(() => {
-    const query = placedMarkerQuery.trim().toLocaleLowerCase("ko-KR");
-    return [...elements]
-      .filter((element) => element.mapVisible)
-      .filter((element) => !query || `${element.name} ${element.address} ${categoryOf(element.category).name}`.toLocaleLowerCase("ko-KR").includes(query))
-      .sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
-  }, [elements, placedMarkerQuery]);
-
-  const placedMarkerGroups = useMemo(() => categories.map((category) => ({
-    category,
-    elements: placedMarkerElements.filter((element) => element.category === category.id),
-  })).filter((group) => group.elements.length > 0), [placedMarkerElements]);
-
-  const placedLabelCount = useMemo(
-    () => elements.filter((element) => element.mapVisible && element.labelVisible).length,
-    [elements],
-  );
   const fitZoom = useMemo(() => {
     if (viewportDimensions.width <= 0 || viewportDimensions.height <= 0) return 0.72;
     const compactViewport = viewportDimensions.width <= 760;
@@ -4093,18 +4042,21 @@ export default function Home() {
     };
   }, [directoryPriorityById, directoryPriorityByName, printLabels, printLandmarks, printMarkers, printRecommendedOnly, printSettingsByKey]);
 
-  const recommendedPlaceCount = useMemo(() => elements.filter((element) => element.mapVisible && element.category !== "landmark" && printPolicyFor(element).recommended).length, [elements, printPolicyFor]);
-  const screenHiddenMarkerCount = useMemo(() => elements.filter((element) => element.mapVisible && element.category !== "landmark" && !printPolicyFor(element).recommended).length, [elements, printPolicyFor]);
+  const { recommendedPlaceCount, screenHiddenMarkerCount } = useMemo(() => mapVisibleElements.reduce((counts, element) => {
+    if (element.category === "landmark") return counts;
+    if (printPolicyFor(element).recommended) counts.recommendedPlaceCount += 1;
+    else counts.screenHiddenMarkerCount += 1;
+    return counts;
+  }, { recommendedPlaceCount: 0, screenHiddenMarkerCount: 0 }), [mapVisibleElements, printPolicyFor]);
 
-  const editorVisibleElements = useMemo(() => [...elements]
-    .filter((element) => element.mapVisible)
+  const editorVisibleElements = useMemo(() => [...mapVisibleElements]
     .filter((element) => activeCategory === "all" || element.category === activeCategory)
     .filter((element) => !screenRecommendedOnly || element.category === "landmark" || printPolicyFor(element).recommended)
     .filter((element) => viewMode !== "landmarks" || element.category === "landmark")
     .filter((element) => viewMode !== "markers" || element.category !== "landmark")
-    .sort((a, b) => a.z - b.z), [activeCategory, elements, printPolicyFor, screenRecommendedOnly, viewMode]);
-  const printMarkerElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).marker).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
-  const printLabelElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).label).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
+    .sort((a, b) => a.z - b.z), [activeCategory, mapVisibleElements, printPolicyFor, screenRecommendedOnly, viewMode]);
+  const printMarkerElements = useMemo(() => mapVisibleElements.filter((element) => printPolicyFor(element).marker).sort((a, b) => a.z - b.z), [mapVisibleElements, printPolicyFor]);
+  const printLabelElements = useMemo(() => mapVisibleElements.filter((element) => printPolicyFor(element).label).sort((a, b) => a.z - b.z), [mapVisibleElements, printPolicyFor]);
   const editorLabelCandidates = useMemo(() => editorVisibleElements.filter((element) => {
     if (labelViewportBounds && (
       element.x < labelViewportBounds.left
@@ -4125,27 +4077,17 @@ export default function Home() {
     () => editorLabelCandidates.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
     [editorLabelCandidates],
   );
-  const scaleMandatoryLabelCount = useMemo(() => {
-    const mainHubIds = new Set(scaleMainHubLabelIds);
-    return editorLabelCandidates.filter((element) => (
-      element.category === "landmark"
-      || element.id === selectedId
-      || mainHubIds.has(element.id)
-    )).length;
-  }, [editorLabelCandidates, scaleMainHubLabelIds, selectedId]);
   const scaleLabelBudget = useMemo(() => {
-    const optionalLabelCount = Math.max(0, editorLabelCandidates.length - scaleMandatoryLabelCount);
-    const baseBudget = scaleMandatoryLabelCount
-      + optionalLabelBudgetForScale(
-        labelRenderZoom,
-        fitZoom,
-        optionalLabelCount,
-        scaleLabelLimitActive,
-        optionalLabelScaleSteps,
-      );
+    const baseBudget = optionalLabelBudgetForScale(
+      labelRenderZoom,
+      fitZoom,
+      editorLabelCandidates.length,
+      scaleLabelLimitActive,
+      optionalLabelScaleSteps,
+    );
     if (publicLayoutAccess !== "viewer" || viewportDimensions.width <= 0 || viewportDimensions.width > 760) return baseBudget;
     return mobileLabelBudgetForScale(labelRenderZoom, fitZoom, baseBudget, editorLabelCandidates.length, mobileRenderBudget.tier);
-  }, [editorLabelCandidates.length, fitZoom, labelRenderZoom, mobileRenderBudget.tier, optionalLabelScaleSteps, publicLayoutAccess, scaleLabelLimitActive, scaleMandatoryLabelCount, viewportDimensions.width]);
+  }, [editorLabelCandidates.length, fitZoom, labelRenderZoom, mobileRenderBudget.tier, optionalLabelScaleSteps, publicLayoutAccess, scaleLabelLimitActive, viewportDimensions.width]);
   const scaleAwareLabelSelection = useMemo(() => chooseScaleAwareLabelIds(editorLabelCandidates, {
     limit: scaleLabelBudget,
     selectedId,
@@ -4173,21 +4115,12 @@ export default function Home() {
   );
 
   const publicPlaceItems = useMemo<PublicPlaceListItem[]>(() => {
-    const placesById = new Map(directoryPlaces.map((place) => [place.id, place]));
-    const placesByName = new Map(directoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
-    const placesByGroup = new Map<string, DirectoryPlace[]>();
-    directoryPlaces.forEach((place) => {
-      if (!place.locationGroupId) return;
-      const group = placesByGroup.get(place.locationGroupId) ?? [];
-      group.push(place);
-      placesByGroup.set(place.locationGroupId, group);
-    });
     const items = new Map<string, PublicPlaceListItem>();
     visibleElements.forEach((anchor) => {
-      const ownPlace = (anchor.directoryId ? placesById.get(anchor.directoryId) : undefined)
-        ?? placesByName.get(normalizePlaceName(anchor.name));
+      const ownPlace = (anchor.directoryId ? directoryPlacesById.get(anchor.directoryId) : undefined)
+        ?? directoryPlacesByNormalizedName.get(normalizePlaceName(anchor.name));
       const candidates = ownPlace?.locationGroupId
-        ? placesByGroup.get(ownPlace.locationGroupId) ?? [ownPlace]
+        ? directoryPlacesByGroup.get(ownPlace.locationGroupId) ?? [ownPlace]
         : ownPlace
           ? [ownPlace]
           : [{
@@ -4223,7 +4156,7 @@ export default function Home() {
       || Number(a.place.locationGroupId !== ART_PLATFORM_GROUP_ID) - Number(b.place.locationGroupId !== ART_PLATFORM_GROUP_ID)
       || a.displayName.localeCompare(b.displayName, "ko")
     ));
-  }, [directoryPlaces, visibleElements]);
+  }, [directoryPlacesByGroup, directoryPlacesById, directoryPlacesByNormalizedName, visibleElements]);
 
   const eventLinkedPublicPlaceIds = useMemo(() => {
     if (!eventLinkedPlaces.length) return new Set<string>();
@@ -4294,24 +4227,24 @@ export default function Home() {
     return counts;
   }, Object.fromEntries(publicListCategories.map((category) => [category.id, 0])) as Record<PublicPlaceCategoryFilter, number>), [eventLinkedPublicPlaceIds, publicPlaceItems]);
 
+  const publicPlacePresentationById = useMemo(() => new Map(publicPlaceItems.map((item) => {
+    const additionalIds = new Set(sanitizeAdditionalCategories(item.place.additionalCategories));
+    const convenienceIds = new Set(sanitizeConvenienceAttributes(item.place.convenienceAttributes));
+    const tagNames = additionalCategoryDefinitions.flatMap((definition) => additionalIds.has(definition.id) ? [definition.name] : []);
+    const convenienceNames = convenienceAttributeDefinitions.flatMap((definition) => convenienceIds.has(definition.id) ? [definition.name] : []);
+    const searchText = `${item.displayName} ${item.place.name} ${(item.place.aliases ?? []).join(" ")} ${item.place.address} ${item.place.area} ${tagNames.join(" ")} ${convenienceNames.join(" ")}`.toLocaleLowerCase("ko-KR");
+    return [item.id, { tagNames, searchText }] as const;
+  })), [publicPlaceItems]);
+
   const filteredPublicPlaceItems = useMemo(() => {
     const query = publicPlaceQuery.trim().toLocaleLowerCase("ko-KR");
     const scopedItems: PublicPlaceListItem[] = publicPlaceCategory === "all"
       ? publicPlaceItems
       : placesForPublicCategory(publicPlaceItems, publicPlaceCategory, eventLinkedPublicPlaceIds) as PublicPlaceListItem[];
-    return scopedItems.filter((item) => {
-      if (!query) return true;
-      const tags = additionalCategoryDefinitions
-        .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
-        .map((definition) => definition.name)
-        .join(" ");
-      const conveniences = convenienceAttributeDefinitions
-        .filter((definition) => sanitizeConvenienceAttributes(item.place.convenienceAttributes).includes(definition.id))
-        .map((definition) => definition.name)
-        .join(" ");
-      return `${item.displayName} ${item.place.name} ${(item.place.aliases ?? []).join(" ")} ${item.place.address} ${item.place.area} ${tags} ${conveniences}`.toLocaleLowerCase("ko-KR").includes(query);
-    });
-  }, [eventLinkedPublicPlaceIds, publicPlaceCategory, publicPlaceItems, publicPlaceQuery]);
+    return query
+      ? scopedItems.filter((item) => publicPlacePresentationById.get(item.id)?.searchText.includes(query))
+      : scopedItems;
+  }, [eventLinkedPublicPlaceIds, publicPlaceCategory, publicPlaceItems, publicPlacePresentationById, publicPlaceQuery]);
 
   const displayDenseLabelExcludedIds = useMemo(() => [...new Set([
     ...denseLabelExcludedIds,
@@ -4329,16 +4262,6 @@ export default function Home() {
         denseLabelLayoutOptions,
       )
     : [], [denseLabelExcludedIds, denseLabelLayoutOptions, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, labelRenderZoom, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements]);
-  const selectedDenseLabel = useMemo(
-    () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
-    [denseLabelClusters, selectedDenseLabelId],
-  );
-  const denseLabelCollisionCount = useMemo(() => denseLabelClusters.filter((cluster) => cluster.hasCollision).length, [denseLabelClusters]);
-  const detachedDenseLabelElements = useMemo(() => denseLabelExcludedIds.flatMap((id) => {
-    const element = elements.find((item) => item.id === id);
-    return element && element.category !== "landmark" ? [element] : [];
-  }).sort((a, b) => a.name.localeCompare(b.name, "ko")), [denseLabelExcludedIds, elements]);
-
   const printDenseLabelClusters = useMemo(() => mergeDenseLabels
     ? buildDenseLabelClusters(printLabelElements, printMarkerElements, denseLabelPositions, denseLabelExcludedIds)
     : [], [denseLabelExcludedIds, denseLabelPositions, mergeDenseLabels, printLabelElements, printMarkerElements]);
@@ -4988,7 +4911,6 @@ export default function Home() {
         const revision = typeof payload?.revision === "number" ? payload.revision : 0;
         publishedLayoutRevisionRef.current = revision;
         setPublicLayoutRevision(revision);
-        setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
         setPublicHistory(Array.isArray(payload?.history) ? payload.history : []);
         const serverDraft = payload?.draft?.document && Array.isArray(payload.draft.document.elements)
           ? sanitizeDocument(payload.draft.document)
@@ -4997,9 +4919,7 @@ export default function Home() {
         editorDraftViewRef.current = payload?.draft?.view ?? null;
         const draftRevision = typeof payload?.draft?.revision === "number" ? payload.draft.revision : 0;
         editorDraftRevisionRef.current = draftRevision;
-        setEditorDraftRevision(draftRevision);
         setEditorDraftUpdatedAt(payload?.draft?.updatedAt ?? null);
-        setEditorDraftHasPrevious(Boolean(payload?.draft?.hasPrevious));
         setEditorDraftSyncState(serverDraft ? "saved" : "ready");
         labelDensitySettingsRevisionRef.current = Math.max(0, Number(payload?.labelDensitySettings?.revision ?? 0));
         if (payload?.contentSummary) {
@@ -6957,27 +6877,6 @@ export default function Home() {
     window.requestAnimationFrame(() => printPanelRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
   };
 
-  const importMasterDatabase = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const rows = parseMasterDatabase(JSON.parse(String(reader.result)));
-        const importedPlaces = buildDirectoryPlaces(rows);
-        replaceDirectoryPlaces(() => importedPlaces);
-        setLeftPanelMode("places");
-        setPlaceQuery("");
-        setToast(`마스터 DB ${importedPlaces.length}곳을 등록하고 주소 위치 찾기를 시작합니다.`);
-        void runAddressLookup(importedPlaces);
-      } catch {
-        setToast("문화공간·식음 장소 배열을 확인할 수 없는 DB입니다.");
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = "";
-  };
-
   const openDirectoryPlace = (place: DirectoryPlace) => {
     setActiveCategory("all");
     setViewMode("all");
@@ -8204,7 +8103,7 @@ export default function Home() {
     setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(undefined));
     setSaveState("배포본 라벨 단계 기본값 복원됨");
     setEditorDraftSyncState("ready");
-    setToast("배포본 축척별 일반 라벨 개수를 기본값으로 복원했습니다.");
+    setToast("배포본 축척별 전체 라벨 개수를 기본값으로 복원했습니다.");
   };
 
   const currentPublicViewSettings = (): PublicViewSettings => ({
@@ -8231,9 +8130,7 @@ export default function Home() {
     editorDraftDocumentRef.current = document;
     editorDraftViewRef.current = draft.view;
     editorDraftRevisionRef.current = draft.revision;
-    setEditorDraftRevision(draft.revision);
     setEditorDraftUpdatedAt(draft.updatedAt);
-    setEditorDraftHasPrevious(draft.hasPrevious);
     setEditorDraftSyncState("saved");
     return document;
   };
@@ -8262,12 +8159,12 @@ export default function Home() {
       if (publishedLayoutViewRef.current) publishedLayoutViewRef.current = { ...publishedLayoutViewRef.current, optionalLabelScaleSteps: savedSteps };
       if (editorDraftViewRef.current) editorDraftViewRef.current = { ...editorDraftViewRef.current, optionalLabelScaleSteps: savedSteps };
       setSaveState("공개 라벨 단계 즉시 반영됨");
-      setToast("축척별 일반 라벨 개수를 저장했습니다. 공개본 업데이트 없이 공개 지도에 반영됩니다.");
+      setToast("축척별 전체 라벨 개수를 저장했습니다. 공개본 업데이트 없이 공개 지도에 반영됩니다.");
     } catch (error) {
       if (error instanceof Error && error.message === "label-settings-conflict") {
         setToast("다른 화면에서 라벨 단계가 변경되었습니다. 새로고침한 뒤 다시 저장해 주세요.");
       } else {
-        setToast("축척별 일반 라벨 개수를 서버에 저장하지 못했습니다. 현재 입력값은 이 화면에 유지됩니다.");
+        setToast("축척별 전체 라벨 개수를 서버에 저장하지 못했습니다. 현재 입력값은 이 화면에 유지됩니다.");
       }
     } finally {
       setOptionalLabelScaleSaving(false);
@@ -8382,49 +8279,6 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleAdminShortcut);
   }, [adminLoginOpen, databaseEditorOpen, editorDraftSaving, placeEventFormOpen, placeRequestFormOpen, publicHistoryOpen, publicLayoutAccess, shortcutHelpOpen]);
 
-  const loadEditorDraft = () => {
-    const draft = editorDraftDocumentRef.current;
-    if (!draft) {
-      setToast("아직 저장된 서버 초안이 없습니다.");
-      return;
-    }
-    if (!window.confirm("현재 편집 상태를 서버 초안으로 바꿀까요? 현재 기기 상태는 임시 복구본에 남습니다.")) return;
-    pushHistory();
-    setDocument(cloneDocument(draft));
-    applyPublicViewSettings(editorDraftViewRef.current);
-    setLayoutName("서버 초안");
-    setSaveState("서버 초안 불러옴");
-    setToast("서버 초안을 현재 편집 화면에 불러왔습니다.");
-  };
-
-  const restorePreviousEditorDraft = async () => {
-    if (publicLayoutAccess !== "editor" || editorDraftSaving || !editorDraftHasPrevious) return;
-    if (!window.confirm("직전 서버 초안으로 되돌릴까요? 현재 초안은 다시 복원할 수 있도록 교체 보관됩니다.")) return;
-    setEditorDraftSaving(true);
-    setEditorDraftSyncState("saving");
-    try {
-      const response = await fetch(PUBLIC_LAYOUT_API, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "restore-previous-draft", baseDraftRevision: editorDraftRevisionRef.current }),
-      });
-      const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
-      if (!response.ok || !payload?.draft) throw new Error(payload?.error ?? "draft restore failed");
-      const restored = rememberEditorDraft(payload.draft);
-      pushHistory();
-      setDocument(restored);
-      applyPublicViewSettings(payload.draft.view);
-      setLayoutName("이전 서버 초안");
-      setSaveState("이전 서버 초안 복원됨");
-      setToast("직전 서버 초안으로 복원했습니다.");
-    } catch {
-      setEditorDraftSyncState("error");
-      setToast("이전 서버 초안을 복원하지 못했습니다. 새로고침 후 다시 시도해 주세요.");
-    } finally {
-      setEditorDraftSaving(false);
-    }
-  };
-
   const publishCurrentLayout = async () => {
     if (publicLayoutAccess !== "editor" || publicLayoutPublishing) return;
     if (elementsRef.current.some((element) => element.placeRequestId && !element.directoryId)) {
@@ -8454,7 +8308,6 @@ export default function Home() {
       const nextRevision = payload?.revision ?? publicLayoutRevision + 1;
       publishedLayoutRevisionRef.current = nextRevision;
       setPublicLayoutRevision(nextRevision);
-      setPublicLayoutHasPrevious(Boolean(payload?.hasPrevious));
       setDocument(publishedDocument);
       if (payload?.draft) rememberEditorDraft(payload.draft);
       rememberPublicHistoryItem(payload?.historyEntry as PublicLayoutHistoryItem | undefined);
@@ -8472,20 +8325,6 @@ export default function Home() {
     } finally {
       setPublicLayoutPublishing(false);
     }
-  };
-
-  const loadPublishedLayoutIntoDraft = () => {
-    const published = publishedLayoutDocumentRef.current;
-    if (!published) {
-      setToast("아직 불러올 공개 배치본이 없습니다.");
-      return;
-    }
-    if (!window.confirm("현재 기기 초안을 공개 배치본으로 바꿀까요? 이 작업 전 상태는 자동복구에 다시 저장될 수 없습니다.")) return;
-    pushHistory();
-    setDocument(published);
-    applyPublicViewSettings(publishedLayoutViewRef.current);
-    setSaveState("공개본을 편집 초안으로 불러옴");
-    setToast("공개 배치본을 현재 편집 초안으로 불러왔습니다.");
   };
 
   const loadPublicHistoryEntry = async (item: PublicLayoutHistoryItem) => {
@@ -8508,39 +8347,6 @@ export default function Home() {
       setToast("선택한 공개본 기록을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.");
     } finally {
       setPublicHistoryActionId(null);
-    }
-  };
-
-  const restorePreviousPublicLayout = async () => {
-    if (publicLayoutAccess !== "editor" || !publicLayoutHasPrevious || publicLayoutPublishing) return;
-    if (!window.confirm("직전 공개 배치본으로 되돌릴까요? 현재 공개본도 다시 복원할 수 있도록 교체 보관됩니다.")) return;
-    setPublicLayoutPublishing(true);
-    try {
-      const response = await fetch(PUBLIC_LAYOUT_API, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "restore-previous", baseRevision: publicLayoutRevision }),
-      });
-      const payload = await response.json().catch(() => null) as PublicLayoutPayload | null;
-      if (!response.ok || !payload?.document) throw new Error(payload?.error ?? "restore failed");
-      const restored = sanitizeDocument(payload.document);
-      publishedLayoutDocumentRef.current = restored;
-      publishedLayoutViewRef.current = payload.view ?? null;
-      setPublicLayoutPublishedAt(payload.publishedAt ?? new Date().toISOString());
-      const nextRevision = payload.revision ?? publicLayoutRevision + 1;
-      publishedLayoutRevisionRef.current = nextRevision;
-      setPublicLayoutRevision(nextRevision);
-      setPublicLayoutHasPrevious(Boolean(payload.hasPrevious));
-      setDocument(restored);
-      applyPublicViewSettings(payload.view);
-      if (payload.draft) rememberEditorDraft(payload.draft);
-      rememberPublicHistoryItem(payload.historyEntry as PublicLayoutHistoryItem | undefined);
-      await refreshPublicHistory();
-      setToast("직전 공개 배치본으로 복원했습니다.");
-    } catch {
-      setToast("이전 공개 배치본을 복원하지 못했습니다. 새로고침 후 다시 시도해 주세요.");
-    } finally {
-      setPublicLayoutPublishing(false);
     }
   };
 
@@ -8861,34 +8667,6 @@ export default function Home() {
     setPlaceEventExistingPhotoUrl(null);
     updatePlaceEventPhoto(null);
     eventDialogDragRef.current = null;
-  };
-
-  const togglePlaceEventForm = () => {
-    if (placeEventFormOpen) {
-      closePlaceEventForm();
-      return;
-    }
-    if (!selected || !selectedStoryKey) {
-      setToast("행사를 등록할 장소를 먼저 선택해 주세요.");
-      return;
-    }
-    const start = new Date();
-    const eventEnd = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-    const visibilityEnd = new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000);
-    setPlaceEventEditingId(null);
-    setPlaceEventNoPlace(false);
-    setPlaceEventMultiPlace(false);
-    setPlaceEventPlaces([{ placeKey: selectedStoryKey, placeName: selected.name }]);
-    setPlaceEventName("");
-    setPlaceEventInfo("");
-    setPlaceEventStartsAt(localDateTimeInputValue(start));
-    setPlaceEventEndsAt(localDateTimeInputValue(eventEnd));
-    setPlaceEventVisibleFrom(localDateTimeInputValue(start));
-    setPlaceEventVisibleUntil(localDateTimeInputValue(visibilityEnd));
-    setPlaceEventExistingPhotoUrl(null);
-    updatePlaceEventPhoto(null);
-    setPlaceEventDialogOffset({ x: 0, y: 0 });
-    setPlaceEventFormOpen(true);
   };
 
   const openUnassignedPlaceEventForm = () => {
@@ -9939,16 +9717,18 @@ export default function Home() {
       centerY: mobileMapRenderBounds.centerY,
     }));
   }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified, mobileRenderBudget.tier, selectedId, zoom]);
-  const renderedMapElements = useMemo(() => (
-    mobileFullMarkerIds
-      ? mobileMapCandidateElements.filter((element) => mobileFullMarkerIds.has(element.id))
-      : mobileMapCandidateElements
-  ), [mobileFullMarkerIds, mobileMapCandidateElements]);
-  const mobilePlaceholderElements = useMemo(() => (
-    mobileFullMarkerIds
-      ? mobileMapCandidateElements.filter((element) => element.category !== "landmark" && !mobileFullMarkerIds.has(element.id))
-      : []
-  ), [mobileFullMarkerIds, mobileMapCandidateElements]);
+  const mobileMapElementPartition = useMemo(() => {
+    if (!mobileFullMarkerIds) return { rendered: mobileMapCandidateElements, placeholders: [] as MapElement[] };
+    const rendered: MapElement[] = [];
+    const placeholders: MapElement[] = [];
+    mobileMapCandidateElements.forEach((element) => {
+      if (mobileFullMarkerIds.has(element.id)) rendered.push(element);
+      else if (element.category !== "landmark") placeholders.push(element);
+    });
+    return { rendered, placeholders };
+  }, [mobileFullMarkerIds, mobileMapCandidateElements]);
+  const renderedMapElements = mobileMapElementPartition.rendered;
+  const mobilePlaceholderElements = mobileMapElementPartition.placeholders;
   const renderedMapElementsById = useMemo(
     () => new Map(renderedMapElements.map((element) => [element.id, element])),
     [renderedMapElements],
@@ -10110,7 +9890,7 @@ export default function Home() {
           <div className="asset-grid compact-assets">
             <div className="landmark-resource-heading"><strong>랜드마크 후보 리소스</strong><small>한 장소에서 여러 안을 선택할 수 있습니다.</small></div>
             {landmarkAssetGroups.map(({ placeName, candidates }) => {
-              const activeAssetId = elements.find((element) => normalizePlaceName(element.name) === normalizePlaceName(placeName))?.assetId;
+              const activeAssetId = elementsByNormalizedName.get(normalizePlaceName(placeName))?.assetId;
               return <article className="landmark-resource-group" key={placeName}>
                 <div><strong>{placeName}</strong><small>{candidates.length}개 후보 · 1024px</small></div>
                 <div className="landmark-candidate-row">{candidates.map((asset) => <div className="project-asset-candidate" key={asset.id}><button className={activeAssetId === asset.id ? "active" : ""} onClick={() => applyLandmarkCandidate(asset)} title={`${placeName} ${asset.name}`}><img src={asset.screenSrc ?? asset.src} alt="" loading="lazy" decoding="async" /><span>{asset.name}</span></button>{asset.sourceUrl && <a className="project-asset-source-link" href={asset.sourceUrl} target="_blank" rel="noreferrer" title={`${asset.name} Drive 원본 보기`}>Drive 원본 ↗</a>}</div>)}</div>
@@ -10148,10 +9928,10 @@ export default function Home() {
                   <label className={editorScaleLabelLimitsEnabled ? "active" : ""}><input type="checkbox" checked={editorScaleLabelLimitsEnabled} onChange={(event) => setEditorScaleLabelLimitsEnabled(event.target.checked)} /><span><b>관리자 지도에 축척별 라벨 수 적용</b><small>아래 배포본 단계값으로 현재 화면을 미리 봅니다.</small></span></label>
                 </div>
                 <section className="public-label-density-editor" aria-labelledby="public-label-density-title">
-                  <header><span><b id="public-label-density-title">배포본 축척별 일반 라벨</b><small>랜드마크·주요 거점·현재 선택은 항상 별도 유지</small></span><div className="public-label-density-actions"><button type="button" onClick={resetOptionalLabelScaleLimits}>기본값</button><button type="button" className="server-save" disabled={optionalLabelScaleSaving || editorDraftSaving || publicLayoutPublishing} onClick={() => void saveOptionalLabelScaleLimits()}>{optionalLabelScaleSaving ? "저장 중…" : "저장"}</button></div></header>
+                  <header><span><b id="public-label-density-title">배포본 축척별 전체 라벨</b><small>랜드마크·주요 거점을 포함한 화면 총량</small></span><div className="public-label-density-actions"><button type="button" onClick={resetOptionalLabelScaleLimits}>기본값</button><button type="button" className="server-save" disabled={optionalLabelScaleSaving || editorDraftSaving || publicLayoutPublishing} onClick={() => void saveOptionalLabelScaleLimits()}>{optionalLabelScaleSaving ? "저장 중…" : "저장"}</button></div></header>
                   <output className="public-label-density-live" aria-live="polite">현재 화면 · 개별 {renderedIndividualLabelCount}개 · 통합 {renderedDenseLabelClusters.length}묶음</output>
-                  <div className="public-label-density-steps">{optionalLabelScaleSteps.map((step, index) => <label key={step.maximumRatio}><span><b>맞춤 ×{step.maximumRatio}</b><small>지도 약 {Math.round(100 / step.maximumRatio)}% 이상 표시</small></span><input type="number" min="0" max="1200" step="1" value={step.limit} onChange={(event) => updateOptionalLabelScaleLimit(index, Number(event.target.value))} aria-label={`맞춤 축척 ${step.maximumRatio}배 일반 라벨 개수`} /><em>개</em></label>)}</div>
-                  <p>각 값은 필수 라벨을 제외한 일반 라벨 상한입니다. 저장하면 독립 서버 설정으로 보관되어 공개본 업데이트 없이 공개 지도에 반영됩니다. 4.5배를 넘는 상세 화면에서는 표시 설정된 라벨 전체를 복구합니다.</p>
+                  <div className="public-label-density-steps">{optionalLabelScaleSteps.map((step, index) => <label key={step.maximumRatio}><span><b>맞춤 ×{step.maximumRatio}</b><small>지도 약 {Math.round(100 / step.maximumRatio)}% 이상 표시</small></span><input type="number" min="0" max="1200" step="1" value={step.limit} onChange={(event) => updateOptionalLabelScaleLimit(index, Number(event.target.value))} aria-label={`맞춤 축척 ${step.maximumRatio}배 전체 라벨 개수`} /><em>개</em></label>)}</div>
+                  <p>각 값은 랜드마크·주요 거점·현재 선택을 포함한 화면 전체 라벨 목표 수입니다. 필수 라벨만 목표 수보다 많을 때는 필수 라벨을 모두 유지합니다. 저장하면 독립 서버 설정으로 보관되어 공개본 업데이트 없이 공개 지도에 반영됩니다.</p>
                 </section>
                 <div className="placed-label-bulk" role="group" aria-label="배치 라벨 가시성 일괄 조절"><button type="button" onClick={() => setPlacedLabelsVisibility(true)}>배치 라벨 전체 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 OFF</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button></div>
                 <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
@@ -10236,8 +10016,8 @@ export default function Home() {
               <p>화면 가시성, 지도 배치, 출력 포함 여부는 서로 독립적으로 유지됩니다.</p>
               <div className="print-storage-status"><span>{printSyncLabel}</span>{(!printSettingsCanEdit || !denseLabelSettingsCanEdit) && <a href="/signin-with-chatgpt?return_to=/">소유자 로그인</a>}</div>
             </AdminFolder>
-            <AdminFolder className="side-admin-folder print-target-panel" title="장소별 출력 항목" meta={`${elements.filter((element) => element.mapVisible).length}곳`} defaultOpen>
-              <div className="print-target-list">{elements.filter((element) => element.mapVisible).map((element) => {
+            <AdminFolder className="side-admin-folder print-target-panel" title="장소별 출력 항목" meta={`${mapVisibleElements.length}곳`} defaultOpen>
+              <div className="print-target-list">{mapVisibleElements.map((element) => {
                 const setting = printSettingsByKey.get(printSettingKey(element));
                 return <div className="print-target-row" key={element.id}><button type="button" onClick={() => selectPlacedElement(element)}><i style={{ background: categoryOf(element.category).color }} /><span><b>{element.name}</b><small>{printPolicyFor(element).marker ? "마커 출력" : "마커 제외"} · {printPolicyFor(element).label ? "라벨 출력" : "라벨 제외"}</small></span></button><select aria-label={`${element.name} 마커 출력`} value={setting?.markerMode ?? "auto"} onChange={(event) => void savePrintSetting(element, { markerMode: event.target.value as PrintMode })}><option value="auto">마커 자동</option><option value="include">마커 포함</option><option value="exclude">마커 제외</option></select><select aria-label={`${element.name} 라벨 출력`} value={setting?.labelMode ?? "auto"} onChange={(event) => void savePrintSetting(element, { labelMode: event.target.value as PrintMode })}><option value="auto">라벨 자동</option><option value="include">라벨 포함</option><option value="exclude">라벨 제외</option></select></div>;
               })}</div>
@@ -10255,7 +10035,7 @@ export default function Home() {
               </button>
               {expandedCalibrationGroups.primary && <div id="calibration-group-primary" className="calibration-folder-items calibration-list">
                 {calibrationPoints.map((point, index) => {
-                  const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
+                  const element = elementsByNormalizedName.get(point.name);
                   return <article key={point.id} className={`calibration-card ${selectedId === element?.id ? "active" : ""}`}>
                     <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
                       <b>{index + 1}</b><span><strong>{point.name}</strong><small>보정 ΔX {(point.targetX - point.sourceX).toFixed(1)} · ΔY {(point.targetY - point.sourceY).toFixed(1)}</small></span>
@@ -10280,7 +10060,7 @@ export default function Home() {
               </button>
               {expandedCalibrationGroups.secondary && <div id="calibration-group-secondary" className="calibration-folder-items">
                 {secondaryCalibrationPoints.length ? secondaryCalibrationPoints.map((point) => {
-                  const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
+                  const element = elementsByNormalizedName.get(point.name);
                   return <article key={point.id} className={`calibration-card secondary ${selectedId === element?.id ? "active" : ""}`}>
                     <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
                       <b>S</b><span><strong>{point.name}</strong><small>기본 앵커 {point.targetX.toFixed(1)}, {point.targetY.toFixed(1)} · 주변 보정 고정점</small></span>
@@ -10295,7 +10075,7 @@ export default function Home() {
               </button>
               {expandedCalibrationGroups.tertiary && <div id="calibration-group-tertiary" className="calibration-folder-items">
                 {tertiaryCalibrationPoints.length ? tertiaryCalibrationPoints.map((point) => {
-                  const element = elements.find((item) => normalizePlaceName(item.name) === point.name);
+                  const element = elementsByNormalizedName.get(point.name);
                   return <article key={point.id} className={`calibration-card tertiary ${selectedId === element?.id ? "active" : ""}`}>
                     <button className="calibration-focus" onClick={() => { if (!element) return; setSelectedId(element.id); setSelectedNoteId(null); setRightOpen(true); focusMapPosition(point.targetX, point.targetY, element.id); }}>
                       <b>3</b><span><strong>{point.name}</strong><small>고정 앵커 {point.targetX.toFixed(1)}, {point.targetY.toFixed(1)} · 근거리 보정</small></span>
@@ -10593,9 +10373,7 @@ export default function Home() {
                   const meta = publicCategoryMetaForPlace(item.place, item.anchor);
                   const selectedItem = selectedId === item.anchor.id && selectedDirectoryPlace?.id === item.place.id;
                   const eventListedInCulture = publicPlaceCategory === "culture" && item.categoryId !== "culture" && eventLinkedPublicPlaceIds.has(item.id);
-                  const tagNames = additionalCategoryDefinitions
-                    .filter((definition) => sanitizeAdditionalCategories(item.place.additionalCategories).includes(definition.id))
-                    .map((definition) => definition.name);
+                  const tagNames = publicPlacePresentationById.get(item.id)?.tagNames ?? [];
                   const tagLabel = tagNames.length ? tagNames.join(" · ") : "—";
                   const representativeTagNames = tagNames.slice(0, 2);
                   const remainingTagNames = tagNames.slice(2);
@@ -10653,27 +10431,24 @@ export default function Home() {
                 onDeleteEvent={deletePlaceEvent}
               />
             </Suspense>
-                : (placeRequestsLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>장소 등록 요청을 불러오는 중입니다.</strong></div>
-                  : placeRequestsError ? <div className="global-story-state error"><strong>장소 등록 요청을 불러오지 못했습니다.</strong><button type="button" onClick={() => setPlaceRequestsRefreshKey((current) => current + 1)}>다시 시도</button></div>
-                    : placeRequests.length ? <div className="place-request-admin-list">{placeRequests.map((request) => {
-                      const statusLabel = request.status === "pending" ? "검수 대기" : request.status === "reviewing" ? "지도 검수 중" : request.status === "approved" ? "승인 완료" : "반려";
-                      const closed = request.status === "approved" || request.status === "rejected";
-                      const disabled = closed || placeRequestActionId !== null;
-                      const linkedMarker = elements.find((element) => element.placeRequestId === request.id && !element.directoryId);
-                      return <article className={`place-request-admin-card ${request.status}`} key={request.id}>
-                        <header><div><span className={`place-request-status ${request.status}`}>{statusLabel}</span><time dateTime={request.createdAt}>{storyDateTimeLabel(request.createdAt)}</time></div><img src={markerAssetSrc(request.markerStyle, request.category)} alt="요청 마커 미리보기" loading="lazy" decoding="async" /></header>
-                        <label>장소명<input value={request.name} maxLength={120} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { name: event.target.value })} /></label>
-                        <div className="place-request-admin-row"><label>마커 분류<select value={request.category} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { category: event.target.value as BundledMarkerCategory })}>{categories.filter((category) => category.id !== "landmark").map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><label>형태<select value={request.markerStyle} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { markerStyle: event.target.value as BundledMarkerStyle })}><option value="v2">리뉴얼 최종</option><option value="01">형태 01</option><option value="02">형태 02</option><option value="03">형태 03</option></select></label></div>
-                        <label>권역·세부지역<select value={request.area} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { area: event.target.value })}><option value="">선택해 주세요</option>{[...new Set([request.area, ...placeRequestAreaOptions])].filter(Boolean).map((area) => <option value={area} key={area}>{area}</option>)}</select></label>
-                        <label>주소<input value={request.address} maxLength={260} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { address: event.target.value })} /></label>
-                        <label>설명<textarea value={request.description} maxLength={800} disabled={closed} onChange={(event) => updatePlaceRequestDraft(request.id, { description: event.target.value })} /></label>
-                        <div className="place-request-coordinate-summary"><span>요청 위치</span><strong>{typeof request.submittedX === "number" && typeof request.submittedY === "number" ? `${request.submittedX.toFixed(2)}, ${request.submittedY.toFixed(2)}` : "기존 요청 · 위치 정보 없음"}</strong>{linkedMarker && <em>현재 검수 위치 {linkedMarker.x.toFixed(2)}, {linkedMarker.y.toFixed(2)}</em>}</div>
-                        {(request.submittedName !== request.name || request.submittedArea !== request.area || request.submittedAddress !== request.address || request.submittedDescription !== request.description || request.submittedCategory !== request.category || request.submittedMarkerStyle !== request.markerStyle) && <details><summary>요청자가 보낸 원문 보기</summary><p><b>{request.submittedName}</b><br />{request.submittedArea || "권역 미선택"}<br />{request.submittedAddress}<br />{request.submittedDescription}</p></details>}
-                        {request.rejectionNote && <p className="place-request-rejection-note"><b>반려 메모</b>{request.rejectionNote}</p>}
-                        {request.status === "approved" && <p className="place-request-approved-note">장소 DB와 검수한 지도 위치 반영 완료</p>}
-                        <footer><button type="button" className="review-start" disabled={disabled} onClick={() => void startPlaceRequestReview(request)}>{placeRequestActionId === request.id ? "처리 중…" : request.status === "reviewing" ? "지도 검수 계속" : "검수 시작"}</button><button type="button" disabled={disabled} onClick={() => void savePlaceRequestEdits(request)}>수정 저장</button><button type="button" className="approve" disabled={disabled || request.status !== "reviewing" || !linkedMarker} onClick={() => void approvePlaceRequest(request)}>검수 완료·DB 반영</button><button type="button" disabled={disabled} onClick={() => void rejectPlaceRequest(request)}>반려</button><button type="button" className="danger" disabled={placeRequestActionId !== null} onClick={() => void deletePlaceRequest(request)}>기록 삭제</button></footer>
-                      </article>;
-                    })}</div> : <div className="global-story-state"><strong>대기 중인 장소 등록 요청이 없습니다.</strong><span>방문자가 요청을 보내면 이 목록에서 수정·검수하고 편집 초안에 반영할 수 있습니다.</span></div>)}
+                : <Suspense fallback={<div className="global-story-state"><span className="global-story-spinner" /><strong>장소 요청 관리 화면을 준비하는 중입니다.</strong></div>}>
+                  <AdminPlaceRequestList
+                    loading={placeRequestsLoading}
+                    error={placeRequestsError}
+                    requests={placeRequests}
+                    actionId={placeRequestActionId}
+                    areaOptions={placeRequestAreaOptions}
+                    linkedMarkers={requestMarkerByRequestId}
+                    formatDateTime={storyDateTimeLabel}
+                    onRetry={() => setPlaceRequestsRefreshKey((current) => current + 1)}
+                    onUpdate={updatePlaceRequestDraft}
+                    onStartReview={startPlaceRequestReview}
+                    onSave={savePlaceRequestEdits}
+                    onApprove={approvePlaceRequest}
+                    onReject={rejectPlaceRequest}
+                    onDelete={deletePlaceRequest}
+                  />
+                </Suspense>}
           </div>
           {globalContentTab === "places" ? null : globalContentTab === "reviews" ? globalStoriesPageCount > 1 && <footer className="global-story-pagination" aria-label="최신 리뷰 페이지 이동"><button type="button" disabled={globalStoriesPage <= 1 || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalStoriesPage}</b> / {globalStoriesPageCount}</span><button type="button" disabled={globalStoriesPage >= globalStoriesPageCount || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.min(globalStoriesPageCount, page + 1))}>다음</button></footer>
             : globalContentTab === "events" ? globalEventsPageCount > 1 && <footer className="global-story-pagination" aria-label="행사 페이지 이동"><button type="button" disabled={globalEventsPage <= 1 || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalEventsPage}</b> / {globalEventsPageCount}</span><button type="button" disabled={globalEventsPage >= globalEventsPageCount || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.min(globalEventsPageCount, page + 1))}>다음</button></footer>
