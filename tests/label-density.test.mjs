@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { chooseScaleAwareLabelIds, optionalLabelBudgetForScale } from "../app/label-density.mjs";
+import {
+  chooseScaleAwareLabelIds,
+  normalizeOptionalLabelScaleSteps,
+  optionalLabelBudgetForScale,
+} from "../app/label-density.mjs";
 import { denseLabelConnections } from "../app/dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentIntersectsRect } from "../app/dense-label-placement.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const publicLayoutRouteSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 
 test("optional label budgets stay sparse while at least forty percent of the map is visible", () => {
   assert.equal(optionalLabelBudgetForScale(0.28, 0.28, 149), 0);
@@ -17,6 +22,19 @@ test("optional label budgets stay sparse while at least forty percent of the map
   assert.equal(optionalLabelBudgetForScale(1.24, 0.28, 149), 68);
   assert.equal(optionalLabelBudgetForScale(1.4, 0.28, 149), 149);
   assert.equal(optionalLabelBudgetForScale(0.28, 0.28, 149, false), 149);
+});
+
+test("admin-adjusted optional label budgets keep fixed ratio boundaries and sanitize counts", () => {
+  const customized = normalizeOptionalLabelScaleSteps([
+    { maximumRatio: 99, limit: 1.9 },
+    { maximumRatio: 99, limit: -4 },
+    { maximumRatio: 99, limit: 2000 },
+    { maximumRatio: 99, limit: Number.NaN },
+  ]);
+  assert.deepEqual(customized.map((step) => step.maximumRatio), [1.25, 1.7, 2.1, 2.5, 3, 3.6, 4.5]);
+  assert.deepEqual(customized.map((step) => step.limit), [1, 0, 1200, 6, 18, 34, 68]);
+  assert.equal(optionalLabelBudgetForScale(0.45, 0.28, 149, true, customized), 0);
+  assert.equal(optionalLabelBudgetForScale(0.7, 0.28, 149, true, customized), 6);
 });
 
 test("selected, main-hub and landmark labels survive caps while recommendations do not change screen priority", () => {
@@ -43,10 +61,23 @@ test("public screen limits happen before dense-label clustering while admin labe
   assert.match(pageSource, /const stageLabelElements = printPreviewMode \? printLabelElements : editorLabelElements/);
   assert.match(pageSource, /const labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
   assert.match(pageSource, /const scaleLabelLimitActive = publicLayoutAccess === "viewer"/);
-  assert.match(pageSource, /optionalLabelBudgetForScale\(labelRenderZoom, fitZoom, optionalLabelCount, scaleLabelLimitActive\)/);
+  assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,180}optionalLabelScaleSteps,[\s\S]{0,20}\)/);
   assert.match(pageSource, /fitZoom \/ Math\.max\(labelRenderZoom, 0\.22\)/);
   assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => setSettledLabelZoom\(zoom\)\);[\s\S]{0,30}\}, 140\)/);
   assert.doesNotMatch(pageSource, /축척별 라벨 자동 제한|scaleLabelLimitEnabled/);
+});
+
+test("admin label budgets are editable and persist through public layout view settings", () => {
+  assert.match(pageSource, /배포본 축척별 일반 라벨/);
+  assert.match(pageSource, /setOptionalLabelScaleSteps\(normalizeOptionalLabelScaleSteps\(view\.optionalLabelScaleSteps\)\)/);
+  assert.match(pageSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(optionalLabelScaleSteps\)/);
+  assert.match(publicLayoutRouteSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(raw\.optionalLabelScaleSteps\)/);
+});
+
+test("dense label connector endpoints use inverse zoom only for public layout zoom", () => {
+  assert.match(pageSource, /const inverseZoom = stageUsesLayoutZoom \? 1 \/ Math\.max\(zoom, 0\.22\) : 1/);
+  assert.match(pageSource, /publicLayoutAccess === "viewer",[\s\S]{0,20}\);/);
+  assert.match(pageSource, /denseLabelRenderScale\(zoom, stageDimensions, false\)/);
 });
 
 test("four labels around one dense point stay grouped at detailed zoom", () => {

@@ -244,6 +244,20 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .view-label-refresh span { display: inline-block; font-size: 12px; line-height: 1; }
 .view-label-refresh.refreshing span { animation: spin .65s linear infinite; }
 .view-label-refresh:disabled { cursor: wait; opacity: .62; }
+.public-label-density-editor { margin-top: 7px; padding-top: 8px; border-top: 1px solid var(--line); }
+.public-label-density-editor > header { min-height: 30px; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.public-label-density-editor > header span, .public-label-density-editor > header b, .public-label-density-editor > header small { min-width: 0; display: block; }
+.public-label-density-editor > header b { color: var(--ink); font-size: 8px; }
+.public-label-density-editor > header small { margin-top: 2px; color: var(--muted); font-size: 7px; line-height: 1.35; }
+.public-label-density-editor > header button { flex: 0 0 auto; min-height: 24px; padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--ui-control, #fff); color: var(--muted); cursor: pointer; font-size: 7px; font-weight: 750; }
+.public-label-density-steps { display: grid; gap: 3px; margin-top: 5px; }
+.public-label-density-steps label { min-height: 31px; display: grid; grid-template-columns: minmax(0, 1fr) 48px 12px; align-items: center; gap: 4px; padding: 3px 2px; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+.public-label-density-steps label > span, .public-label-density-steps label b, .public-label-density-steps label small { min-width: 0; display: block; }
+.public-label-density-steps label b { color: var(--ink); font-size: 7px; }
+.public-label-density-steps label small { margin-top: 1px; color: var(--muted); font-size: 6.5px; }
+.public-label-density-steps input { width: 48px; height: 24px; padding: 0 4px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--ui-control, #fff); color: var(--ink); font-size: 8px; text-align: right; }
+.public-label-density-steps em { color: var(--muted); font-size: 7px; font-style: normal; }
+.public-label-density-editor > p { margin: 6px 2px 0; color: var(--muted); font-size: 6.5px; line-height: 1.45; }
 .dense-label-control { min-height: 38px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 7px; margin-top: 7px; padding: 6px; border: 1px solid #c4c4c4; border-radius: 7px; background: #f5f5f5; }
 .dense-label-control span, .dense-label-control b, .dense-label-control small { min-width: 0; display: block; }
 .dense-label-control b { color: #555555; font-size: 8px; }

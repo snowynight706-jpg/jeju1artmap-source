@@ -32,7 +32,11 @@ import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places"
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
-import { chooseScaleAwareLabelIds, optionalLabelBudgetForScale } from "./label-density.mjs";
+import {
+  chooseScaleAwareLabelIds,
+  normalizeOptionalLabelScaleSteps,
+  optionalLabelBudgetForScale,
+} from "./label-density.mjs";
 import { denseLabelConnections } from "./dense-label-density.mjs";
 import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
 import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./label-connector.mjs";
@@ -550,12 +554,18 @@ type DocumentState = {
   placementOverrides?: PlacementOverride[];
 };
 
+type OptionalLabelScaleStep = {
+  maximumRatio: number;
+  limit: number;
+};
+
 type PublicViewSettings = {
   baseMap: BaseMapMode;
   markerLabelsVisible: boolean;
   mergeDenseLabels: boolean;
   screenRecommendedOnly: boolean;
   defaultMarkerSize: number;
+  optionalLabelScaleSteps?: OptionalLabelScaleStep[];
 };
 
 type EditorDraftPayload = {
@@ -1847,8 +1857,12 @@ function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
   return elements.map((element) => element.id).sort().join("|");
 }
 
-function denseLabelRenderScale(zoom: number, stageDimensions: StageDimensions) {
-  const inverseZoom = 1 / Math.max(zoom, 0.22);
+function denseLabelRenderScale(
+  zoom: number,
+  stageDimensions: StageDimensions,
+  stageUsesLayoutZoom = true,
+) {
+  const inverseZoom = stageUsesLayoutZoom ? 1 / Math.max(zoom, 0.22) : 1;
   return {
     x: EXPORT_CANONICAL_WIDTH / Math.max(stageDimensions.width, 1) * inverseZoom,
     y: (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) / Math.max(stageDimensions.height, 1) * inverseZoom,
@@ -1860,8 +1874,9 @@ function denseLabelScreenTarget(
   row: Pick<DenseLabelRow, "targetX" | "targetY">,
   zoom: number,
   stageDimensions: StageDimensions,
+  stageUsesLayoutZoom = true,
 ) {
-  const scale = denseLabelRenderScale(zoom, stageDimensions);
+  const scale = denseLabelRenderScale(zoom, stageDimensions, stageUsesLayoutZoom);
   return {
     x: cluster.x + (row.targetX - cluster.x) * scale.x,
     y: cluster.y + (row.targetY - cluster.y) * scale.y,
@@ -2817,7 +2832,13 @@ const MapConnectorLayer = memo(function MapConnectorLayer({
   })}{denseLabelClusters.flatMap((cluster) => cluster.rows.map((row) => {
     const element = visibleElementsById.get(row.elementId);
     const color = categoryOf(row.category).color;
-    const target = denseLabelScreenTarget(cluster, row, zoom, stageDimensions);
+    const target = denseLabelScreenTarget(
+      cluster,
+      row,
+      zoom,
+      stageDimensions,
+      publicLayoutAccess === "viewer",
+    );
     const connectorOpacity = element
       ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
       : 0.34;
@@ -3029,6 +3050,9 @@ export default function Home() {
   const [screenRecommendedOnly, setScreenRecommendedOnly] = useState(false);
   const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
   const [mergeDenseLabels, setMergeDenseLabels] = useState(true);
+  const [optionalLabelScaleSteps, setOptionalLabelScaleSteps] = useState<OptionalLabelScaleStep[]>(
+    () => normalizeOptionalLabelScaleSteps(undefined),
+  );
   const [printRecommendedOnly, setPrintRecommendedOnly] = useState(true);
   const [printLandmarks, setPrintLandmarks] = useState(true);
   const [printMarkers, setPrintMarkers] = useState(true);
@@ -3973,10 +3997,16 @@ export default function Home() {
   const scaleLabelBudget = useMemo(() => {
     const optionalLabelCount = Math.max(0, editorLabelCandidates.length - scaleMandatoryLabelCount);
     const baseBudget = scaleMandatoryLabelCount
-      + optionalLabelBudgetForScale(labelRenderZoom, fitZoom, optionalLabelCount, scaleLabelLimitActive);
+      + optionalLabelBudgetForScale(
+        labelRenderZoom,
+        fitZoom,
+        optionalLabelCount,
+        scaleLabelLimitActive,
+        optionalLabelScaleSteps,
+      );
     if (publicLayoutAccess !== "viewer" || viewportDimensions.width <= 0 || viewportDimensions.width > 760) return baseBudget;
     return mobileLabelBudgetForScale(labelRenderZoom, fitZoom, baseBudget, editorLabelCandidates.length, mobileRenderBudget.tier);
-  }, [editorLabelCandidates.length, fitZoom, labelRenderZoom, mobileRenderBudget.tier, publicLayoutAccess, scaleLabelLimitActive, scaleMandatoryLabelCount, viewportDimensions.width]);
+  }, [editorLabelCandidates.length, fitZoom, labelRenderZoom, mobileRenderBudget.tier, optionalLabelScaleSteps, publicLayoutAccess, scaleLabelLimitActive, scaleMandatoryLabelCount, viewportDimensions.width]);
   const scaleAwareLabelSelection = useMemo(() => chooseScaleAwareLabelIds(editorLabelCandidates, {
     limit: scaleLabelBudget,
     selectedId,
@@ -4859,6 +4889,7 @@ export default function Home() {
             setMergeDenseLabels(payload.view.mergeDenseLabels);
             setScreenRecommendedOnly(payload.view.screenRecommendedOnly);
             setMarkerGroupSize(clamp(payload.view.defaultMarkerSize, 0.8, 15));
+            setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(payload.view.optionalLabelScaleSteps));
           }
           setSaveState("공개 배치본");
         } else {
@@ -5068,6 +5099,7 @@ export default function Home() {
                 setMergeDenseLabels(draftView.mergeDenseLabels);
                 setScreenRecommendedOnly(draftView.screenRecommendedOnly);
                 setMarkerGroupSize(clamp(draftView.defaultMarkerSize, 0.8, 15));
+                setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(draftView.optionalLabelScaleSteps));
               }
               setSaveState("서버 초안에서 편집 시작");
             } else {
@@ -5082,6 +5114,7 @@ export default function Home() {
             setMergeDenseLabels(publishedView.mergeDenseLabels);
             setScreenRecommendedOnly(publishedView.screenRecommendedOnly);
             setMarkerGroupSize(clamp(publishedView.defaultMarkerSize, 0.8, 15));
+            setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(publishedView.optionalLabelScaleSteps));
           }
           setSaveState("공개 배치본에서 편집 시작");
         } else if (persistentCalibration?.calibrationPoints?.length || persistentDenseLabels || persistentPlacement?.settings?.length) {
@@ -6455,7 +6488,7 @@ export default function Home() {
     setSelectedNoteId(null);
     setSelectedDenseLabelId(cluster.id);
     pushHistory();
-    const renderScale = denseLabelRenderScale(zoom, stageDimensions);
+    const renderScale = denseLabelRenderScale(zoom, stageDimensions, false);
     setInteraction({
       type: "dense-label",
       key: cluster.id,
@@ -7993,12 +8026,29 @@ export default function Home() {
     download("제주원도심_골목검토메모.csv", `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`, "text/csv;charset=utf-8");
   };
 
+  const updateOptionalLabelScaleLimit = (index: number, value: number) => {
+    if (!Number.isFinite(value)) return;
+    setOptionalLabelScaleSteps((current) => normalizeOptionalLabelScaleSteps(current.map((step, stepIndex) => (
+      stepIndex === index ? { ...step, limit: value } : step
+    ))));
+    setSaveState("배포본 라벨 단계 변경됨");
+    setEditorDraftSyncState("ready");
+  };
+
+  const resetOptionalLabelScaleLimits = () => {
+    setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(undefined));
+    setSaveState("배포본 라벨 단계 기본값 복원됨");
+    setEditorDraftSyncState("ready");
+    setToast("배포본 축척별 일반 라벨 개수를 기본값으로 복원했습니다.");
+  };
+
   const currentPublicViewSettings = (): PublicViewSettings => ({
     baseMap,
     markerLabelsVisible,
     mergeDenseLabels,
     screenRecommendedOnly,
     defaultMarkerSize: markerGroupSize,
+    optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps(optionalLabelScaleSteps),
   });
 
   const applyPublicViewSettings = (view: PublicViewSettings | null | undefined) => {
@@ -8008,6 +8058,7 @@ export default function Home() {
     setMergeDenseLabels(view.mergeDenseLabels);
     setScreenRecommendedOnly(view.screenRecommendedOnly);
     setMarkerGroupSize(clamp(view.defaultMarkerSize, 0.8, 15));
+    setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(view.optionalLabelScaleSteps));
   };
 
   const rememberEditorDraft = (draft: EditorDraftPayload) => {
@@ -9880,6 +9931,11 @@ export default function Home() {
                   <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>일반 마커 라벨</b><small>화면 표시만 한 번에 전환합니다.</small></span></label>
                   <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
                 </div>
+                <section className="public-label-density-editor" aria-labelledby="public-label-density-title">
+                  <header><span><b id="public-label-density-title">배포본 축척별 일반 라벨</b><small>랜드마크·주요 거점·현재 선택은 항상 별도 유지</small></span><button type="button" onClick={resetOptionalLabelScaleLimits}>기본값</button></header>
+                  <div className="public-label-density-steps">{optionalLabelScaleSteps.map((step, index) => <label key={step.maximumRatio}><span><b>맞춤 ×{step.maximumRatio}</b><small>지도 약 {Math.round(100 / step.maximumRatio)}% 이상 표시</small></span><input type="number" min="0" max="1200" step="1" value={step.limit} onChange={(event) => updateOptionalLabelScaleLimit(index, Number(event.target.value))} aria-label={`맞춤 축척 ${step.maximumRatio}배 일반 라벨 개수`} /><em>개</em></label>)}</div>
+                  <p>각 값은 필수 라벨을 제외한 일반 라벨 상한입니다. 4.5배를 넘는 상세 화면에서는 표시 설정된 라벨 전체를 복구합니다.</p>
+                </section>
                 <div className="placed-label-bulk" role="group" aria-label="배치 라벨 가시성 일괄 조절"><button type="button" onClick={() => setPlacedLabelsVisibility(true)}>배치 라벨 전체 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 OFF</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button></div>
                 <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
               </div>

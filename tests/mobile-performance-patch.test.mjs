@@ -55,10 +55,10 @@ test("programmatic focus animates compositor transforms and commits layout once"
   assert.doesNotMatch(pageSource, /style=\{\{ aspectRatio: `\$\{MAP_ASPECT\}`, width:/);
 });
 
-test("public label density work is deferred while admin labels follow direct zoom", () => {
+test("public label density follows settled zoom while admin labels follow direct zoom", () => {
   assert.match(pageSource, /labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
   assert.match(pageSource, /labelDetailRatio = labelRenderZoom \/ Math\.max\(fitZoom, 0\.22\)/);
-  assert.match(pageSource, /optionalLabelBudgetForScale\(labelRenderZoom, fitZoom/);
+  assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,80}labelRenderZoom,[\s\S]{0,40}fitZoom,/);
   assert.match(pageSource, /startTransition\(\(\) => setSettledLabelZoom\(zoom\)\)/);
   assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}\s+zoom=\{labelRenderZoom\}/);
 });

@@ -1,6 +1,7 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 import { readUploadedBaseMapMetadata } from "../../base-map-storage";
 import { contentSummaryFromBatchResults } from "../../content-summary.mjs";
+import { normalizeOptionalLabelScaleSteps } from "../../label-density.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
 import { stabilizeMainHubDocument } from "../../main-hub-persistence.mjs";
 
@@ -21,6 +22,7 @@ type PublicViewSettings = {
   mergeDenseLabels: boolean;
   screenRecommendedOnly: boolean;
   defaultMarkerSize: number;
+  optionalLabelScaleSteps: Array<{ maximumRatio: number; limit: number }>;
 };
 
 type StoredLayout = {
@@ -129,6 +131,7 @@ function normalizeViewSettings(value: unknown): PublicViewSettings {
     mergeDenseLabels: raw.mergeDenseLabels !== false,
     screenRecommendedOnly: raw.screenRecommendedOnly === true,
     defaultMarkerSize: finiteNumber(raw.defaultMarkerSize, 0.8, 15) ? Number(raw.defaultMarkerSize) : 1.7,
+    optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps(raw.optionalLabelScaleSteps),
   };
 }
 
