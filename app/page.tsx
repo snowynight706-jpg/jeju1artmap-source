@@ -1598,6 +1598,7 @@ function labelStyle(
   fitZoom: number,
   bounds: VisualBounds = { left: 0, top: 0, right: 1, bottom: 1 },
   adaptive = true,
+  keepScreenSize = false,
 ) {
   const safeZoom = Math.max(zoom, 0.22);
   const safeFitZoom = Math.max(fitZoom, 0.22);
@@ -1621,10 +1622,11 @@ function labelStyle(
   const pixelY = mix(offsetY + startGapY, endGapY) * screenDistanceScale;
   const translateX = mix(start.translateX, end.translateX);
   const translateY = mix(start.translateY, end.translateY);
+  const inverseScale = keepScreenSize ? ` scale(${(1 / safeZoom).toFixed(4)})` : "";
   return {
     left: `calc(${anchorX.toFixed(4)}% + ${pixelX.toFixed(3)}px)`,
     top: `calc(${anchorY.toFixed(4)}% + ${pixelY.toFixed(3)}px)`,
-    transform: `translate(${translateX.toFixed(3)}%, ${translateY.toFixed(3)}%)`,
+    transform: `translate(${translateX.toFixed(3)}%, ${translateY.toFixed(3)}%)${inverseScale}`,
   };
 }
 
@@ -1860,9 +1862,9 @@ function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
 function denseLabelRenderScale(
   zoom: number,
   stageDimensions: StageDimensions,
-  stageUsesLayoutZoom = true,
+  labelKeepsScreenSize = true,
 ) {
-  const inverseZoom = stageUsesLayoutZoom ? 1 / Math.max(zoom, 0.22) : 1;
+  const inverseZoom = labelKeepsScreenSize ? 1 / Math.max(zoom, 0.22) : 1;
   return {
     x: EXPORT_CANONICAL_WIDTH / Math.max(stageDimensions.width, 1) * inverseZoom,
     y: (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) / Math.max(stageDimensions.height, 1) * inverseZoom,
@@ -1874,9 +1876,9 @@ function denseLabelScreenTarget(
   row: Pick<DenseLabelRow, "targetX" | "targetY">,
   zoom: number,
   stageDimensions: StageDimensions,
-  stageUsesLayoutZoom = true,
+  labelKeepsScreenSize = true,
 ) {
-  const scale = denseLabelRenderScale(zoom, stageDimensions, stageUsesLayoutZoom);
+  const scale = denseLabelRenderScale(zoom, stageDimensions, labelKeepsScreenSize);
   return {
     x: cluster.x + (row.targetX - cluster.x) * scale.x,
     y: cluster.y + (row.targetY - cluster.y) * scale.y,
@@ -2698,7 +2700,7 @@ const MapElementMarker = memo(function MapElementMarker({
     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => actionsRef.current?.measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{metaGlyph}</span></div>}</div>}
     {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
     {editingEnabled && !element.locked && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">검수 필요</span>}
-    {showLabel && !labelClustered && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : assetBounds, !printPreviewMode)} onPointerDown={isSelected ? (event) => actionsRef.current?.startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && (labelStatus.hasEvent || labelStatus.reviewCount > 0) && <span className="map-label-status-rail">{labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음">EVENT</span>}{labelStatus.reviewCount > 0 && <span className={`map-label-status reviews ${labelStatus.hasNewReview ? "new" : ""}`} aria-label={labelStatus.hasNewReview ? `${publicElementName} 최근 3일 내 새 후기 있음` : `${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={labelStatus.hasNewReview ? "최근 3일 내 새 후기" : `후기 ${labelStatus.reviewCount}개`}>{labelStatus.hasNewReview ? "NEW" : labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</span>}</div>}
+    {showLabel && !labelClustered && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : assetBounds, !printPreviewMode, publicLayoutAccess === "editor")} onPointerDown={isSelected ? (event) => actionsRef.current?.startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && (labelStatus.hasEvent || labelStatus.reviewCount > 0) && <span className="map-label-status-rail">{labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음">EVENT</span>}{labelStatus.reviewCount > 0 && <span className={`map-label-status reviews ${labelStatus.hasNewReview ? "new" : ""}`} aria-label={labelStatus.hasNewReview ? `${publicElementName} 최근 3일 내 새 후기 있음` : `${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={labelStatus.hasNewReview ? "최근 3일 내 새 후기" : `후기 ${labelStatus.reviewCount}개`}>{labelStatus.hasNewReview ? "NEW" : labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</span>}</div>}
     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => actionsRef.current?.startResize(event, element)} />}
   </div>;
 });
@@ -2837,7 +2839,7 @@ const MapConnectorLayer = memo(function MapConnectorLayer({
       row,
       zoom,
       stageDimensions,
-      publicLayoutAccess === "viewer",
+      publicLayoutAccess !== "loading",
     );
     const connectorOpacity = element
       ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
@@ -2860,6 +2862,7 @@ type DenseLabelLayerProps = {
   printPreviewMode: boolean;
   publicLayoutAccess: PublicLayoutAccess;
   selectedDenseLabelId: string | null;
+  zoom: number;
 };
 
 const DenseLabelLayer = memo(function DenseLabelLayer({
@@ -2871,20 +2874,22 @@ const DenseLabelLayer = memo(function DenseLabelLayer({
   printPreviewMode,
   publicLayoutAccess,
   selectedDenseLabelId,
+  zoom,
 }: DenseLabelLayerProps) {
   if (!denseLabelClusters.length) return null;
   return <div className="dense-label-layer" data-render-isolation="dense-label-layer" aria-label="통합 라벨">
     {denseLabelClusters.map((cluster) => <div
       key={cluster.id}
       className={`dense-label ${cluster.manuallyPositioned ? "manual" : ""} ${cluster.hasCollision ? "collision" : ""} ${selectedDenseLabelId === cluster.id ? "selected" : ""}`}
-      style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: "translate(-50%, -50%)" }}
+      style={{ left: `${cluster.x}%`, top: `${cluster.y}%`, width: `${cluster.width / 100 * EXPORT_CANONICAL_WIDTH}px`, height: `${cluster.height / 100 * (EXPORT_CANONICAL_WIDTH / MAP_ASPECT)}px`, transform: `translate(-50%, -50%)${publicLayoutAccess === "editor" ? ` scale(${(1 / Math.max(zoom, 0.22)).toFixed(4)})` : ""}` }}
       onPointerDown={editingEnabled ? (event) => actionsRef.current?.startDenseLabelDrag(event, cluster) : undefined}
       title={editingEnabled ? `${cluster.names.join(" · ")} · 드래그하여 위치 조절` : cluster.names.join(" · ")}
       role={editingEnabled ? "button" : undefined}
       aria-label={editingEnabled ? `${cluster.names.length}곳 묶음 라벨. 드래그하여 위치 조절` : `${cluster.names.length}곳 묶음 라벨`}
     ><span className="dense-label-count">{cluster.names.length}곳</span><strong style={{ gridTemplateColumns: cluster.columnWidths.map((width) => `${width / 100 * EXPORT_CANONICAL_WIDTH}px`).join(" "), gridTemplateRows: `repeat(${cluster.rowCount}, minmax(0, 1fr))` }}>{cluster.rows.map((row) => {
       const rowStatus = mapLabelStatusByElementId.get(row.elementId) ?? EMPTY_MAP_LABEL_STATUS;
-      return <span key={row.elementId} className={publicLayoutAccess === "viewer" ? "public-dense-row" : ""} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => actionsRef.current?.startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); actionsRef.current?.selectPublicMarker(row.elementId); } } : undefined}><i style={{ background: categoryOf(row.category).color }} />{row.name}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.hasEvent && <em className="dense-map-event" aria-label={`${row.name} 행사 있음`}>EVENT</em>}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.reviewCount > 0 && <em className={`dense-map-reviews ${rowStatus.hasNewReview ? "new" : ""}`} aria-label={rowStatus.hasNewReview ? `${row.name} 최근 3일 내 새 후기 있음` : `${row.name} 후기 ${rowStatus.reviewCount}개`}>{rowStatus.hasNewReview ? "NEW" : rowStatus.reviewCount > 99 ? "99+" : rowStatus.reviewCount}</em>}</span>;
+      const dotOnRight = row.targetX > cluster.x;
+      return <span key={row.elementId} className={`${publicLayoutAccess === "viewer" ? "public-dense-row " : ""}${dotOnRight ? "dense-row-dot-right" : ""}`} style={{ gridColumn: row.column + 1, gridRow: row.rowIndex + 1 }} onPointerDown={publicLayoutAccess === "viewer" ? (event) => actionsRef.current?.startPan(event, placeRequestPickingLocation ? undefined : row.elementId, placeRequestPickingLocation) : undefined} role={publicLayoutAccess === "viewer" ? "button" : undefined} tabIndex={publicLayoutAccess === "viewer" ? 0 : undefined} onKeyDown={publicLayoutAccess === "viewer" && !placeRequestPickingLocation ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); actionsRef.current?.selectPublicMarker(row.elementId); } } : undefined}><i style={{ background: categoryOf(row.category).color }} /><b className="dense-row-name">{row.name}</b>{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.hasEvent && <em className="dense-map-event" aria-label={`${row.name} 행사 있음`}>EVENT</em>}{publicLayoutAccess === "viewer" && !printPreviewMode && rowStatus.reviewCount > 0 && <em className={`dense-map-reviews ${rowStatus.hasNewReview ? "new" : ""}`} aria-label={rowStatus.hasNewReview ? `${row.name} 최근 3일 내 새 후기 있음` : `${row.name} 후기 ${rowStatus.reviewCount}개`}>{rowStatus.hasNewReview ? "NEW" : rowStatus.reviewCount > 99 ? "99+" : rowStatus.reviewCount}</em>}</span>;
     })}</strong></div>)}
   </div>;
 });
@@ -2977,6 +2982,8 @@ export default function Home() {
   const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const wheelFrameRef = useRef<number | null>(null);
   const wheelCommitTimerRef = useRef<number | null>(null);
+  const editorLabelRevealTimerRef = useRef<number | null>(null);
+  const editorLabelZoomRef = useRef(0.72);
   const wheelGestureAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const focusTransitionFrameRef = useRef<number | null>(null);
   const focusTransitionTimerRef = useRef<number | null>(null);
@@ -5961,9 +5968,22 @@ export default function Home() {
     if (publicLayoutAccess === "viewer") setMapLayoutZoom(zoom);
   }, [publicLayoutAccess, setMapLayoutZoom, zoom]);
 
+  useEffect(() => {
+    const previousZoom = editorLabelZoomRef.current;
+    editorLabelZoomRef.current = zoom;
+    if (publicLayoutAccess !== "editor" || Math.abs(previousZoom - zoom) <= 0.0001) return;
+    viewportRef.current?.classList.add("is-map-labels-suspended");
+    if (editorLabelRevealTimerRef.current !== null) window.clearTimeout(editorLabelRevealTimerRef.current);
+    editorLabelRevealTimerRef.current = window.setTimeout(() => {
+      editorLabelRevealTimerRef.current = null;
+      viewportRef.current?.classList.remove("is-map-labels-suspended");
+    }, 150);
+  }, [publicLayoutAccess, zoom]);
+
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
     if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
+    if (editorLabelRevealTimerRef.current !== null) window.clearTimeout(editorLabelRevealTimerRef.current);
     if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
     if (touchLayerReleaseFrameRef.current !== null) window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
     if (touchLayerReleaseTimerRef.current !== null) window.clearTimeout(touchLayerReleaseTimerRef.current);
@@ -6488,7 +6508,7 @@ export default function Home() {
     setSelectedNoteId(null);
     setSelectedDenseLabelId(cluster.id);
     pushHistory();
-    const renderScale = denseLabelRenderScale(zoom, stageDimensions, false);
+    const renderScale = denseLabelRenderScale(zoom, stageDimensions, true);
     setInteraction({
       type: "dense-label",
       key: cluster.id,
@@ -7703,8 +7723,11 @@ export default function Home() {
   const refreshLabelPositions = () => {
     if (labelsRefreshing) return;
     setLabelsRefreshing(true);
+    pushHistory();
+    replaceDenseLabelPositions(() => []);
+    setSelectedDenseLabelId(null);
     window.requestAnimationFrame(() => {
-      autoArrangeLabels(true, true);
+      autoArrangeLabels(false, true);
     });
   };
 
@@ -10105,7 +10128,7 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${publicLayoutAccess === "viewer" && Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${publicLayoutAccess === "editor" ? "editor-label-motion" : ""} ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${publicLayoutAccess === "viewer" && Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
             <div
               ref={stageWrapRef}
@@ -10177,6 +10200,7 @@ export default function Home() {
                   printPreviewMode={printPreviewMode}
                   publicLayoutAccess={publicLayoutAccess}
                   selectedDenseLabelId={selectedDenseLabelId}
+                  zoom={labelRenderZoom}
                 />
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>

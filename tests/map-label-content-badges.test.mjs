@@ -26,6 +26,10 @@ test("map labels show quiet event and review indicators only in public interacti
   assert.doesNotMatch(cssSource, /\.map-label-status\.event \{[^}]*left:/);
   assert.doesNotMatch(cssSource, /\.map-label-status\.reviews \{[^}]*right:/);
   assert.match(cssSource, /\.dense-label strong span \{[^}]*grid-template-columns: 6px max-content auto auto/);
+  assert.match(pageSource, /const dotOnRight = row\.targetX > cluster\.x/);
+  assert.match(pageSource, /dotOnRight \? "dense-row-dot-right" : ""/);
+  assert.match(cssSource, /\.dense-label strong span\.dense-row-dot-right \{ grid-template-columns: max-content auto auto 6px; \}/);
+  assert.match(cssSource, /\.dense-label strong span\.dense-row-dot-right > i \{ grid-column: 4; \}/);
   assert.match(cssSource, /\.map-viewport:is\(\.is-panning, \.is-zooming, \.is-direct-manipulation\) \.map-label-status \{ opacity: \.42;/);
 });
 

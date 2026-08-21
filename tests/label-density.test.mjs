@@ -11,6 +11,7 @@ import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentIntersect
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const publicLayoutRouteSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
+const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("optional label budgets stay sparse while at least forty percent of the map is visible", () => {
   assert.equal(optionalLabelBudgetForScale(0.28, 0.28, 149), 0);
@@ -74,10 +75,26 @@ test("admin label budgets are editable and persist through public layout view se
   assert.match(publicLayoutRouteSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(raw\.optionalLabelScaleSteps\)/);
 });
 
-test("dense label connector endpoints use inverse zoom only for public layout zoom", () => {
-  assert.match(pageSource, /const inverseZoom = stageUsesLayoutZoom \? 1 \/ Math\.max\(zoom, 0\.22\) : 1/);
-  assert.match(pageSource, /publicLayoutAccess === "viewer",[\s\S]{0,20}\);/);
-  assert.match(pageSource, /denseLabelRenderScale\(zoom, stageDimensions, false\)/);
+test("dense label connector endpoints follow fixed-screen labels in public and admin maps", () => {
+  assert.match(pageSource, /const inverseZoom = labelKeepsScreenSize \? 1 \/ Math\.max\(zoom, 0\.22\) : 1/);
+  assert.match(pageSource, /publicLayoutAccess !== "loading",[\s\S]{0,20}\);/);
+  assert.match(pageSource, /denseLabelRenderScale\(zoom, stageDimensions, true\)/);
+});
+
+test("admin labels keep a compact screen size and fade back after pan or wheel zoom", () => {
+  assert.match(pageSource, /const inverseScale = keepScreenSize \? ` scale\(\$\{\(1 \/ safeZoom\)\.toFixed\(4\)\}\)` : ""/);
+  assert.match(pageSource, /!printPreviewMode, publicLayoutAccess === "editor"\)/);
+  assert.match(pageSource, /publicLayoutAccess === "editor" \? ` scale\(\$\{\(1 \/ Math\.max\(zoom, 0\.22\)\)\.toFixed\(4\)\}\)` : ""/);
+  assert.match(pageSource, /publicLayoutAccess === "editor" \? "editor-label-motion" : ""/);
+  assert.match(pageSource, /const previousZoom = editorLabelZoomRef\.current;[\s\S]{0,180}publicLayoutAccess !== "editor"[\s\S]{0,180}classList\.add\("is-map-labels-suspended"\)/);
+  assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,120}classList\.remove\("is-map-labels-suspended"\);[\s\S]{0,20}\}, 150\)/);
+  assert.match(cssSource, /\.map-viewport\.editor-label-motion\.is-panning :is\(\.label, \.dense-label-layer, \.dense-label-connector\)/);
+  assert.match(cssSource, /\.map-viewport\.editor-label-motion \.label \{ font-size: 9\.5px; \}/);
+});
+
+test("label refresh clears manual dense positions before automatic collision-aware placement", () => {
+  assert.match(pageSource, /const refreshLabelPositions = \(\) => \{[\s\S]{0,180}pushHistory\(\);[\s\S]{0,80}replaceDenseLabelPositions\(\(\) => \[\]\);[\s\S]{0,100}autoArrangeLabels\(false, true\)/);
+  assert.match(pageSource, /chooseDenseLabelPlacement\(\{[\s\S]{0,300}iconObstacles: iconRects,[\s\S]{0,80}labelObstacles: labelRects/);
 });
 
 test("four labels around one dense point stay grouped at detailed zoom", () => {
