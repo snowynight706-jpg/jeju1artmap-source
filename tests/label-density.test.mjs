@@ -62,6 +62,8 @@ test("public screen limits happen before dense-label clustering while admin labe
   assert.match(pageSource, /const stageLabelElements = printPreviewMode \? printLabelElements : editorLabelElements/);
   assert.match(pageSource, /const labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
   assert.match(pageSource, /const scaleLabelLimitActive = publicLayoutAccess === "viewer"/);
+  assert.match(pageSource, /const publicLandmarkLabel = publicLayoutAccess === "viewer" && element\.category === "landmark"/);
+  assert.match(pageSource, /element\.labelVisible \|\| selectedLabel \|\| publicLandmarkLabel/);
   assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,180}optionalLabelScaleSteps,[\s\S]{0,20}\)/);
   assert.match(pageSource, /fitZoom \/ Math\.max\(labelRenderZoom, 0\.22\)/);
   assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => setSettledLabelZoom\(zoom\)\);[\s\S]{0,30}\}, 140\)/);

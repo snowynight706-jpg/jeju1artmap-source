@@ -815,6 +815,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-readonly-shell .map-scale { left: 14px; top: 14px; bottom: auto; }
 .app-shell:not(.public-readonly-shell) .map-scale { bottom: 68px; }
 .public-statusbar { color: #646464; }
+.public-statusbar .public-scale-status { font-variant-numeric: tabular-nums; font-weight: 750; white-space: nowrap; }
 .public-statusbar .status-end { color: #646464; }
 .public-place-sheet { position: absolute; right: 18px; top: 18px; bottom: 48px; z-index: 90; width: min(380px, calc(100% - 36px)); display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; border: 1px solid rgb(206 206 206 / 92%); border-radius: 16px; background: rgb(253 253 253 / 97%); box-shadow: 0 18px 55px rgb(50 50 50 / 24%); backdrop-filter: blur(12px); }
 .public-place-sheet-head { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 14px 13px 18px; border-bottom: 1px solid #e7e7e7; }

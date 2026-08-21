@@ -71,7 +71,12 @@ test("public explorer starts with all places and reports the filtered result cou
   assert.match(pageSource, /className="public-place-search-row"[\s\S]{0,420}className=\{`public-place-all-button[\s\S]{0,420}className="public-place-search"/);
   assert.match(cssSource, /\.public-place-search-row \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)/);
   assert.match(cssSource, /\.public-place-filter-summary \{[^}]*min-height: 21px[^}]*margin-top: 1px/);
-  assert.match(pageSource, /장소 \{publicPlaceItems\.length\} · 마커 \{visibleElements\.length\}/);
+  assert.doesNotMatch(pageSource, /장소 \{publicPlaceItems\.length\} · 마커 \{visibleElements\.length\}/);
+  assert.match(pageSource, /const publicScaleRatio = Math\.max\(1, labelDetailRatio\)/);
+  assert.match(pageSource, /const publicMapVisiblePercent = Math\.max\(1, Math\.min\(100, Math\.round\(100 \/ publicScaleRatio\)\)\)/);
+  assert.match(pageSource, /const publicOutputLabelCount = stageLabelElements\.length/);
+  assert.match(pageSource, /맞춤 ×\{publicScaleRatioLabel\} · 지도 \{publicMapVisiblePercent\}% · 라벨 \{publicOutputLabelCount\}개/);
+  assert.match(cssSource, /\.public-statusbar \.public-scale-status \{[^}]*font-variant-numeric: tabular-nums[^}]*white-space: nowrap/);
 });
 
 test("place detail exposes directions, address copy, share, and a stable history state", () => {

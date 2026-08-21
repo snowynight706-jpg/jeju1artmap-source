@@ -3992,6 +3992,9 @@ export default function Home() {
   }, [publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const labelRenderZoom = publicLayoutAccess === "viewer" ? settledLabelZoom : zoom;
   const labelDetailRatio = labelRenderZoom / Math.max(fitZoom, 0.22);
+  const publicScaleRatio = Math.max(1, labelDetailRatio);
+  const publicScaleRatioLabel = publicScaleRatio.toFixed(2).replace(/\.?0+$/, "");
+  const publicMapVisiblePercent = Math.max(1, Math.min(100, Math.round(100 / publicScaleRatio)));
   const publicDenseLabelViewportBounds = useMemo(() => {
     if (
       publicLayoutAccess !== "viewer"
@@ -4072,7 +4075,8 @@ export default function Home() {
     if (mobileOverviewSimplified && element.category !== "landmark") return false;
     const selectedLabel = selectedId === element.id;
     const primaryHub = isPrimaryHubLabel(element.name);
-    return (element.labelVisible || selectedLabel || (publicLayoutAccess === "viewer" && primaryHub))
+    const publicLandmarkLabel = publicLayoutAccess === "viewer" && element.category === "landmark";
+    return (element.labelVisible || selectedLabel || publicLandmarkLabel || (publicLayoutAccess === "viewer" && primaryHub))
       && (element.category === "landmark" || markerLabelsVisible || primaryHub || selectedLabel);
   }), [editorVisibleElements, markerLabelsVisible, mobileOverviewSimplified, publicLayoutAccess, selectedId]);
   const scaleLabelLimitActive = publicLayoutAccess === "viewer";
@@ -4118,6 +4122,7 @@ export default function Home() {
   }, [editorVisibleElements, printLabelElements, printMarkerElements, printPreviewMode]);
   const stageMarkerElements = printPreviewMode ? printMarkerElements : editorVisibleElements;
   const stageLabelElements = printPreviewMode ? printLabelElements : editorLabelElements;
+  const publicOutputLabelCount = stageLabelElements.length;
   const stageMarkerIds = useMemo(() => new Set(stageMarkerElements.map((element) => element.id)), [stageMarkerElements]);
   const stageLabelIds = useMemo(() => new Set(stageLabelElements.map((element) => element.id)), [stageLabelElements]);
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
@@ -10399,7 +10404,7 @@ export default function Home() {
               </Suspense>
             </div>
           </aside>}
-          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {publicPlaceItems.length} · 마커 {visibleElements.length}</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
+          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span className="public-scale-status">맞춤 ×{publicScaleRatioLabel} · 지도 {publicMapVisiblePercent}% · 라벨 {publicOutputLabelCount}개</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
         </section>
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
