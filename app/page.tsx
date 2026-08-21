@@ -1860,6 +1860,9 @@ function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
   return elements.map((element) => element.id).sort().join("|");
 }
 
+const DENSE_LABEL_SINGLE_COLUMN_CONNECTOR_INSET_X = 0.46;
+const PUBLIC_DENSE_LABEL_CONNECTOR_OPACITY = 0.84;
+
 function denseLabelRenderScale(
   zoom: number,
   stageDimensions: StageDimensions,
@@ -1914,7 +1917,7 @@ function partitionDenseGroup(group: MapElement[], maximumItems = 18) {
   return chunks;
 }
 
-function compactDenseLabelLayout(group: MapElement[], singleColumn = false) {
+function compactDenseLabelLayout(group: MapElement[], singleColumn = false, compactSingleColumn = false) {
   const columnCount = singleColumn ? 1 : group.length <= 6 ? 1 : group.length <= 14 ? 2 : 3;
   const byHorizontalPosition = [...group].sort((a, b) => a.x - b.x || a.y - b.y || a.name.localeCompare(b.name, "ko"));
   const perColumn = Math.ceil(byHorizontalPosition.length / columnCount);
@@ -1925,10 +1928,13 @@ function compactDenseLabelLayout(group: MapElement[], singleColumn = false) {
   )).filter((column) => column.length > 0);
   const columnWidths = columns.map((column) => {
     const longestName = Math.max(...column.map((element) => Array.from(element.name).length));
-    return Math.max(5.2, longestName * 0.72 + 1.15);
+    return compactSingleColumn
+      ? Math.max(3.2, longestName * 0.64 + 0.72)
+      : Math.max(5.2, longestName * 0.72 + 1.15);
   });
   const rowCount = Math.max(...columns.map((column) => column.length));
-  const width = Math.max(7.2, columnWidths.reduce((sum, value) => sum + value, 0) + Math.max(0, columns.length - 1) * 0.34 + 0.68);
+  const measuredWidth = columnWidths.reduce((sum, value) => sum + value, 0) + Math.max(0, columns.length - 1) * 0.34 + 0.68;
+  const width = compactSingleColumn ? measuredWidth : Math.max(7.2, measuredWidth);
   const height = Math.max(3.2, 1.48 + rowCount * 0.9);
   return { columns, columnCount: columns.length, rowCount, columnWidths, width, height };
 }
@@ -1966,6 +1972,7 @@ function buildDenseLabelClusters(
     maximumItems?: number;
     renderScale?: { x: number; y: number };
     singleColumn?: boolean;
+    compactSingleColumn?: boolean;
     viewportBounds?: NormalizedRect;
   } = {},
 ): DenseLabelCluster[] {
@@ -2040,7 +2047,7 @@ function buildDenseLabelClusters(
     })
     .sort((a, b) => Number(Boolean(b.override)) - Number(Boolean(a.override)) || b.group.length - a.group.length)
     .map(({ group, key, override, positionKeys }) => {
-    const layout = compactDenseLabelLayout(group, layoutOptions.singleColumn);
+    const layout = compactDenseLabelLayout(group, layoutOptions.singleColumn, layoutOptions.compactSingleColumn);
     const orderedGroup = layout.columns.flat();
     const names = orderedGroup.map((element) => element.name);
     const groupIds = new Set(group.map((element) => element.id));
@@ -2058,11 +2065,14 @@ function buildDenseLabelClusters(
       const rowHeight = 0.9;
       return layout.columns.flatMap((columnElements, columnIndex) => columnElements.map((element, rowIndex) => {
         const midpoint = (layout.columnCount - 1) / 2;
-        const targetX = columnIndex < midpoint
+        const rawTargetX = columnIndex < midpoint
           ? placementX - width / 2
           : columnIndex > midpoint
             ? placementX + width / 2
             : element.x <= placementX ? placementX - width / 2 : placementX + width / 2;
+        const targetX = layoutOptions.compactSingleColumn && layout.columnCount === 1
+          ? rawTargetX + (rawTargetX < placementX ? DENSE_LABEL_SINGLE_COLUMN_CONNECTOR_INSET_X : -DENSE_LABEL_SINGLE_COLUMN_CONNECTOR_INSET_X)
+          : rawTargetX;
         return { element, targetX, targetY: rowTop + rowHeight * (rowIndex + 0.5), column: columnIndex, rowIndex };
       }));
     };
@@ -2874,10 +2884,12 @@ const MapConnectorLayer = memo(function MapConnectorLayer({
       stageDimensions,
       publicLayoutAccess !== "loading",
     );
-    const connectorOpacity = element
-      ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
-      : 0.34;
     const publicConnector = publicLayoutAccess === "viewer";
+    const connectorOpacity = publicConnector
+      ? PUBLIC_DENSE_LABEL_CONNECTOR_OPACITY
+      : element
+        ? distanceAwareConnectorOpacity(element.x, element.y, target.x, target.y, MAP_ASPECT)
+        : 0.34;
     const connectorWidth = element
       ? distanceAwareConnectorWidth(element.x, element.y, target.x, target.y, MAP_ASPECT, publicConnector ? 1.5 : 2.5)
       : 1.1;
@@ -4008,6 +4020,7 @@ export default function Home() {
       maximumItems: 18,
       renderScale: denseLabelRenderScale(labelRenderZoom, stageDimensions, true),
       singleColumn: true,
+      compactSingleColumn: true,
     };
     if (!publicDenseLabelViewportBounds) return undefined;
     const mobileSingleColumn = viewportDimensions.width <= 760;

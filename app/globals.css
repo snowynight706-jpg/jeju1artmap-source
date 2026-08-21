@@ -738,6 +738,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .dense-label.single-column strong span.dense-row-dot-right > .dense-map-reviews { order: 3; }
 .dense-label.single-column strong span.dense-row-dot-right > i { order: 4; }
 .map-viewport.editor-label-motion .dense-label strong { font-size: 8.5px; }
+.map-viewport.editor-label-motion .dense-label.single-column strong span > .dense-row-name { text-align: left; }
+.map-viewport.editor-label-motion .dense-label.single-column strong span.dense-row-dot-right > i { margin-left: auto; }
 .dense-label strong span.public-dense-row { border-radius: 2px; cursor: pointer; }
 .dense-label strong span.public-dense-row:hover, .dense-label strong span.public-dense-row:focus-visible { background: #f0f0f0; color: #5c5c5c; outline: 1px solid #b5b5b5; }
 .dense-label strong i { width: 5px; height: 5px; border-radius: 50%; }

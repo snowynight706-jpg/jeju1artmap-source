@@ -19,9 +19,10 @@ test("label connector opacity becomes stronger as the label moves farther away",
   assert.equal(distanceAwareConnectorOpacity(20, 20, 20, 40, 1.2), 0.92);
 });
 
-test("dense label connector lines use the distance-aware opacity", () => {
+test("public dense label connectors stay clearly visible while admin opacity remains distance-aware", () => {
   assert.match(pageSource, /import \{ distanceAwareConnectorOpacity, distanceAwareConnectorWidth \} from "\.\/label-connector\.mjs"/);
-  assert.match(pageSource, /distanceAwareConnectorOpacity\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
+  assert.match(pageSource, /const PUBLIC_DENSE_LABEL_CONNECTOR_OPACITY = 0\.84/);
+  assert.match(pageSource, /const connectorOpacity = publicConnector[\s\S]{0,100}PUBLIC_DENSE_LABEL_CONNECTOR_OPACITY[\s\S]{0,180}distanceAwareConnectorOpacity\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
   assert.match(pageSource, /distanceAwareConnectorWidth\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT, publicConnector \? 1\.5 : 2\.5\)/);
   assert.match(pageSource, /strokeWidth: selectedConnector \? publicConnector \? 1\.55 : 2\.5 : connectorWidth/);
   assert.match(cssSource, /\.dense-label-connector line \{[^}]*transition: opacity var\(--motion-fast\) ease, stroke-width var\(--motion-fast\) ease/);
