@@ -68,6 +68,9 @@ test("public explorer starts with all places and reports the filtered result cou
   assert.match(pageSource, /useState<PublicPlaceCategoryScope>\("all"\)/);
   assert.match(pageSource, /publicPlaceCategory === "all"\s*\? publicPlaceItems/);
   assert.match(pageSource, /검색 결과 <strong>\{filteredPublicPlaceItems\.length\}<\/strong>곳/);
+  assert.match(pageSource, /className="public-place-search-row"[\s\S]{0,420}className=\{`public-place-all-button[\s\S]{0,420}className="public-place-search"/);
+  assert.match(cssSource, /\.public-place-search-row \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)/);
+  assert.match(cssSource, /\.public-place-filter-summary \{[^}]*min-height: 21px[^}]*margin-top: 1px/);
   assert.match(pageSource, /장소 \{publicPlaceItems\.length\} · 마커 \{visibleElements\.length\}/);
 });
 

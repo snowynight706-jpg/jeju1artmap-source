@@ -2588,6 +2588,7 @@ type MapRenderActions = {
 };
 
 type MapRenderActionsRef = { current: MapRenderActions | null };
+type MobileMarkerPlaceholderLayerRef = { current: HTMLDivElement | null };
 type MapLabelStatus = { hasEvent: boolean; reviewCount: number; hasNewReview: boolean };
 
 const EMPTY_MAP_LABEL_STATUS: MapLabelStatus = Object.freeze({ hasEvent: false, reviewCount: 0, hasNewReview: false });
@@ -2747,23 +2748,20 @@ const MapElementLayer = memo(function MapElementLayer(props: MapElementLayerProp
 type MobileMarkerPlaceholderLayerProps = {
   actionsRef: MapRenderActionsRef;
   elements: MapElement[];
-  fitZoom: number;
-  zoom: number;
+  layerRef: MobileMarkerPlaceholderLayerRef;
 };
 
 const MobileMarkerPlaceholderLayer = memo(function MobileMarkerPlaceholderLayer({
   actionsRef,
   elements,
-  fitZoom,
-  zoom,
+  layerRef,
 }: MobileMarkerPlaceholderLayerProps) {
   if (!elements.length) return null;
-  const markerScale = clamp(zoom / Math.max(fitZoom, 0.22), 0.72, 2.2);
   return <div
+    ref={layerRef}
     className="mobile-marker-placeholder-layer"
     data-render-isolation="mobile-marker-placeholder-layer"
     aria-label="간략 장소 마커"
-    style={{ "--mobile-marker-scale": markerScale } as CSSProperties}
   >
     {elements.map((element) => <button
       type="button"
@@ -2866,6 +2864,7 @@ export default function Home() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageWrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const mobileMarkerPlaceholderLayerRef = useRef<HTMLDivElement>(null);
   const leftPanelRef = useRef<HTMLElement>(null);
   const printPanelRef = useRef<HTMLElement>(null);
   const baseMapImgRef = useRef<HTMLImageElement>(null);
@@ -2949,6 +2948,7 @@ export default function Home() {
   const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const wheelFrameRef = useRef<number | null>(null);
   const wheelCommitTimerRef = useRef<number | null>(null);
+  const wheelGestureAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const focusTransitionFrameRef = useRef<number | null>(null);
   const focusTransitionTimerRef = useRef<number | null>(null);
   const focusTransitionTargetRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
@@ -5776,6 +5776,7 @@ export default function Home() {
     const scale = nextZoom / Math.max(touchTransformBaseZoomRef.current, 0.01);
     stageWrap.style.transform = `translate3d(calc(-50% + ${nextPan.x}px), calc(-50% + ${nextPan.y}px), 0)`;
     stage.style.transform = mapStageGestureTransform(scale, viewport.clientWidth);
+    mobileMarkerPlaceholderLayerRef.current?.style.setProperty("--mobile-marker-gesture-scale", `${1 / scale}`);
     viewport.classList.add("is-direct-manipulation");
   }, []);
 
@@ -5845,6 +5846,7 @@ export default function Home() {
       stage.style.removeProperty("transition");
       stage.style.removeProperty("transform");
     }
+    mobileMarkerPlaceholderLayerRef.current?.style.removeProperty("--mobile-marker-gesture-scale");
     setMapLayoutZoom(target.zoom);
     setMapPan(target.pan);
     setMapRenderPan(target.pan);
@@ -5871,6 +5873,7 @@ export default function Home() {
     const zoomChanged = Math.abs(committedZoom - touchTransformBaseZoomRef.current) > 0.002;
     setMapLayoutZoom(committedZoom);
     stageRef.current?.style.removeProperty("transform");
+    mobileMarkerPlaceholderLayerRef.current?.style.removeProperty("--mobile-marker-gesture-scale");
     touchTransformBaseZoomRef.current = committedZoom;
     setMapPan(committedPan);
     setMapRenderPan((current) => (
@@ -5903,6 +5906,7 @@ export default function Home() {
     panInteractionRef.current = null;
     pinchGestureRef.current = null;
     pendingTouchTransformRef.current = null;
+    wheelGestureAnchorRef.current = null;
     focusTransitionTargetRef.current = null;
   }, []);
 
@@ -6245,14 +6249,18 @@ export default function Home() {
     event.preventDefault();
     const viewport = viewportRef.current?.getBoundingClientRect();
     if (!viewport) return;
-    if (wheelCommitTimerRef.current === null) beginTouchMapTransform();
     const cursorX = event.clientX - viewport.left - viewport.width / 2;
     const cursorY = event.clientY - viewport.top - viewport.height / 2;
+    if (wheelCommitTimerRef.current === null) {
+      beginTouchMapTransform();
+      wheelGestureAnchorRef.current = { x: cursorX, y: cursorY };
+    }
+    const wheelAnchor = wheelGestureAnchorRef.current ?? { x: cursorX, y: cursorY };
     const pending = pendingWheelRef.current;
     pendingWheelRef.current = {
       deltaY: (pending?.deltaY ?? 0) + event.deltaY,
-      cursorX,
-      cursorY,
+      cursorX: wheelAnchor.x,
+      cursorY: wheelAnchor.y,
     };
     if (wheelFrameRef.current !== null) return;
     wheelFrameRef.current = window.requestAnimationFrame(() => {
@@ -6276,6 +6284,7 @@ export default function Home() {
     if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
     wheelCommitTimerRef.current = window.setTimeout(() => {
       wheelCommitTimerRef.current = null;
+      wheelGestureAnchorRef.current = null;
       commitTouchMapTransform();
       recordMapSettle("pinch-settle");
     }, 110);
@@ -6288,6 +6297,7 @@ export default function Home() {
     if (wheelCommitTimerRef.current !== null) {
       window.clearTimeout(wheelCommitTimerRef.current);
       wheelCommitTimerRef.current = null;
+      wheelGestureAnchorRef.current = null;
       commitTouchMapTransform();
     }
     if (event.pointerType === "touch") {
@@ -9989,8 +9999,7 @@ export default function Home() {
                 <MobileMarkerPlaceholderLayer
                   actionsRef={mapRenderActionsRef}
                   elements={mobilePlaceholderElements}
-                  fitZoom={fitZoom}
-                  zoom={zoom}
+                  layerRef={mobileMarkerPlaceholderLayerRef}
                 />
                 <MapElementLayer
                   actionsRef={mapRenderActionsRef}
@@ -10212,9 +10221,11 @@ export default function Home() {
               />
             </Suspense>}
             {globalContentTab === "places" ? <section className="public-place-explorer">
-              <div className="public-place-search"><span aria-hidden="true">⌕</span><input ref={publicPlaceQueryInputRef} value={publicPlaceQuery} onChange={(event) => { setPublicPlaceQuery(event.target.value); setExpandedAdditionalCategoryItemId(null); }} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => { setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }} aria-label="장소 검색어 지우기">×</button>}</div>
+              <div className="public-place-search-row">
+                <button type="button" className={`public-place-all-button ${publicPlaceCategory === "all" ? "active" : ""}`} onClick={() => { setPublicPlaceCategory("all"); setExpandedAdditionalCategoryItemId(null); }} aria-pressed={publicPlaceCategory === "all"}>전체 <em>{publicPlaceItems.length}</em></button>
+                <div className="public-place-search"><span aria-hidden="true">⌕</span><input ref={publicPlaceQueryInputRef} value={publicPlaceQuery} onChange={(event) => { setPublicPlaceQuery(event.target.value); setExpandedAdditionalCategoryItemId(null); }} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => { setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }} aria-label="장소 검색어 지우기">×</button>}</div>
+              </div>
               <div className="public-place-filter-summary">
-                <button type="button" className={publicPlaceCategory === "all" ? "active" : ""} onClick={() => { setPublicPlaceCategory("all"); setExpandedAdditionalCategoryItemId(null); }} aria-pressed={publicPlaceCategory === "all"}>전체 <em>{publicPlaceItems.length}</em></button>
                 <span role="status">검색 결과 <strong>{filteredPublicPlaceItems.length}</strong>곳</span>
                 {(publicPlaceCategory !== "all" || publicPlaceQuery) && <button type="button" className="public-place-filter-reset" onClick={() => { setPublicPlaceCategory("all"); setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }}>조건 초기화</button>}
               </div>

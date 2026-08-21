@@ -638,7 +638,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .element-layer { position: absolute; inset: 0; contain: layout style; pointer-events: none; z-index: 2; }
 .mobile-marker-placeholder-layer { position: absolute; inset: 0; contain: layout style; pointer-events: none; z-index: 2; }
 .mobile-marker-placeholder { position: absolute; width: 24px; height: 24px; display: grid; place-items: center; transform: translate(-50%, -50%); padding: 0; border: 0; background: transparent; pointer-events: auto; touch-action: none; }
-.mobile-marker-placeholder::after { content: ""; width: 10.2px; height: 10.2px; border: 1px solid #1f2024; border-radius: 50%; background: var(--mobile-marker-color); transform: scale(var(--mobile-marker-scale, 1)); transform-origin: center; }
+.mobile-marker-placeholder::after { content: ""; width: 7px; height: 7px; border: 1px solid #1f2024; border-radius: 50%; background: var(--mobile-marker-color); transform: scale(var(--mobile-marker-gesture-scale, 1)); transform-origin: center; }
 .mobile-marker-placeholder:focus-visible { outline: none; }
 .mobile-marker-placeholder:focus-visible::after { outline: 2px solid #1f2024; outline-offset: 2px; }
 .map-element { position: absolute; transform: translate(-50%, -50%); aspect-ratio: 1.12; pointer-events: auto; cursor: grab; touch-action: none; user-select: none; }
@@ -887,10 +887,14 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 }
 .global-story-card, .place-event-card, .editor-place-event-list article, .editor-place-story-list article { content-visibility: auto; contain-intrinsic-size: auto 160px; }
 .public-place-explorer { width: 100%; min-width: 0; min-height: 100%; }
+.public-place-search-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: stretch; gap: 6px; }
+.public-place-all-button { min-height: 40px; padding: 0 10px; border: 1px solid var(--line, #d6d6d6); border-radius: 11px; background: var(--ui-control, #fff); color: var(--muted, #666); cursor: pointer; font-weight: 800; white-space: nowrap; }
+.public-place-all-button.active { border-color: var(--ui-accent-strong, #747474); background: var(--ui-active, #ededed); color: var(--ink, #333); box-shadow: inset 0 -2px 0 var(--ui-accent-strong, #747474); }
+.public-place-all-button em { min-width: 20px; display: inline-grid; place-items: center; margin-left: 3px; padding: 1px 4px; border-radius: 8px; background: var(--ui-surface-soft, #f2f2f2); font-style: normal; }
 .public-place-search { height: 40px; display: grid; grid-template-columns: 20px minmax(0, 1fr) 28px; align-items: center; gap: 4px; padding: 0 7px 0 10px; border: 1px solid #dedede; border-radius: 11px; background: white; color: #707070; box-shadow: 0 2px 8px rgb(58 58 58 / 4%); }
 .public-place-search input { min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: #3d3d3d; font-size: 11px; }
 .public-place-search button { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: #f3f3f3; color: #646464; cursor: pointer; }
-.public-place-category-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 8px 0 9px; }
+.public-place-category-chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 3px 0 9px; }
 .public-place-category-chips button { position: relative; min-width: 0; height: 50px; display: grid; grid-template-rows: 33px auto; place-items: center; gap: 0; padding: 1px 2px 3px; border: 1px solid #dedede; border-radius: 9px; background: #fff; color: #555; cursor: pointer; font-size: 7.5px; font-weight: 800; line-height: 1; white-space: nowrap; box-shadow: 0 2px 7px rgb(56 56 56 / 4%); }
 .public-place-category-chips button img { width: 32px; height: 32px; display: block; object-fit: contain; image-rendering: auto; }
 .public-place-category-chips button span { min-width: 0; max-width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis; letter-spacing: -.04em; }
@@ -1617,7 +1621,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .global-content-tabs { padding: 5px 8px; }
   .global-content-tabs button { min-height: 34px; height: 34px; }
   .global-story-panel-scroll { padding: 9px; }
-  .public-place-category-chips { gap: 3px; margin-top: 6px; margin-bottom: 7px; }
+  .public-place-category-chips { gap: 3px; margin-top: 2px; margin-bottom: 7px; }
   .public-place-category-chips button { height: 48px; grid-template-rows: 30px auto; padding: 1px 1px 3px; font-size: 8.5px; }
   .public-place-category-chips button img { width: 30px; height: 30px; }
   .public-place-category-chips button em { top: 2px; right: 2px; min-width: 13px; padding-right: 2px; padding-left: 2px; font-size: 6px; }
@@ -3022,13 +3026,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .public-place-quick-actions .public-place-map-link { margin-top: 0; }
 .public-place-quick-actions :is(a, button):hover { border-color: var(--line-strong, #a9a9a9); background: var(--ui-active, #f1f1f1); }
 
-.public-place-filter-summary { min-height: 34px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin-top: 7px; }
-.public-place-filter-summary > button { min-height: 30px; padding: 0 9px; border: 1px solid var(--line, #d6d6d6); border-radius: 9px; background: var(--ui-control, #fff); color: var(--muted, #666); cursor: pointer; font-weight: 800; white-space: nowrap; }
-.public-place-filter-summary > button.active { border-color: var(--ui-accent-strong, #747474); background: var(--ui-active, #ededed); color: var(--ink, #333); box-shadow: inset 0 -2px 0 var(--ui-accent-strong, #747474); }
-.public-place-filter-summary button em { min-width: 20px; display: inline-grid; place-items: center; margin-left: 3px; padding: 1px 4px; border-radius: 8px; background: var(--ui-surface-soft, #f2f2f2); font-style: normal; }
+.public-place-filter-summary { min-height: 21px; display: flex; align-items: center; justify-content: space-between; gap: 7px; margin-top: 1px; }
 .public-place-filter-summary > span { min-width: 0; color: var(--muted, #6b6b6b); font-size: var(--font-ui-control, 10px); }
 .public-place-filter-summary > span strong { color: var(--ink, #333); }
-.public-place-filter-summary .public-place-filter-reset { border-color: transparent; background: transparent; text-decoration: underline; text-underline-offset: 2px; }
+.public-place-filter-summary .public-place-filter-reset { min-height: 21px; padding: 0 3px; border: 0; background: transparent; color: var(--muted, #666); cursor: pointer; font-size: 9px; font-weight: 800; white-space: nowrap; text-decoration: underline; text-underline-offset: 2px; }
 
 @media (max-width: 760px) {
   .public-map-reset { position: absolute; top: calc(9px + env(safe-area-inset-top)); left: max(9px, env(safe-area-inset-left)); z-index: 129; min-height: 44px; display: inline-flex; align-items: center; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--line-strong, #aaa) 72%, transparent); border-radius: 11px; background: color-mix(in srgb, var(--ui-surface-raised, #fff) 94%, transparent); box-shadow: 0 5px 18px rgb(45 45 45 / 16%); color: var(--ink, #424242); cursor: pointer; font-size: 11px; font-weight: 850; backdrop-filter: blur(9px); }
@@ -3045,9 +3046,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
   .public-place-sheet-head .public-place-sheet-actions button:last-child,
   .global-story-panel-head-actions .global-panel-close { width: 44px; }
   .public-place-search { height: 44px; grid-template-columns: 20px minmax(0, 1fr) 36px; }
+  .public-place-search-row { gap: 5px; }
+  .public-place-all-button { min-height: 44px; padding-right: 7px; padding-left: 7px; }
   .public-place-search button { width: 36px; height: 36px; }
-  .public-place-filter-summary { min-height: 38px; gap: 5px; }
-  .public-place-filter-summary > button { min-height: 36px; padding-right: 7px; padding-left: 7px; }
+  .public-place-filter-summary { min-height: 22px; gap: 5px; }
   .public-place-filter-summary > span { font-size: 10px; }
   .public-place-quick-actions :is(a, button),
   .public-location-group button,

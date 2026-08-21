@@ -71,7 +71,9 @@ test("map markers, connectors, and dense labels are isolated from unrelated pane
 
 test("pinch and wheel zoom share one deferred visual transform before layout commit", () => {
   assert.match(pageSource, /const wheelCommitTimerRef = useRef<number \| null>\(null\)/);
-  assert.match(pageSource, /if \(wheelCommitTimerRef\.current === null\) beginTouchMapTransform\(\)/);
+  assert.match(pageSource, /const wheelGestureAnchorRef = useRef<\{ x: number; y: number \} \| null>\(null\)/);
+  assert.match(pageSource, /if \(wheelCommitTimerRef\.current === null\) \{[\s\S]{0,140}wheelGestureAnchorRef\.current = \{ x: cursorX, y: cursorY \}/);
+  assert.match(pageSource, /cursorX: wheelAnchor\.x,[\s\S]{0,60}cursorY: wheelAnchor\.y/);
   assert.match(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\)/);
   assert.match(pageSource, /wheelCommitTimerRef\.current = window\.setTimeout\(\(\) => \{/);
   assert.match(pageSource, /const nextZoom = zoomRef\.current \+ \(rawZoom - zoomRef\.current\) \* 0\.82/);
