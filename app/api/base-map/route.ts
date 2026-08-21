@@ -1,5 +1,7 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 import {
+  BUNDLED_V20_PRINT_NAME,
+  BUNDLED_V20_PRINT_REVISION,
   BUNDLED_V20_SCREEN_REVISION,
   CURRENT_MAP_KEY,
   readUploadedBaseMapMetadata,
@@ -75,11 +77,31 @@ async function bundledScreenResponse(request: Request, assets: Fetcher | undefin
   return new Response(asset.body, { headers });
 }
 
+async function bundledOriginalResponse(request: Request, assets: Fetcher | undefined) {
+  if (!assets) return json({ error: "static asset storage unavailable" }, 503);
+  const requestedRevision = new URL(request.url).searchParams.get("v")?.trim() ?? "";
+  if (requestedRevision !== BUNDLED_V20_PRINT_REVISION) return json({ error: "base map print revision unavailable" }, 404);
+  const assetUrl = new URL("/maps/wondosim-base-map-v20-print-lossless.webp", request.url);
+  const asset = await assets.fetch(new Request(assetUrl, { method: "GET" }));
+  if (!asset.ok) return json({ error: "base map print asset unavailable" }, 404);
+  const headers = new Headers(asset.headers);
+  const etag = headers.get("etag") ?? `"${BUNDLED_V20_PRINT_REVISION}-original"`;
+  headers.set("cache-control", "public, max-age=31536000, immutable");
+  headers.set("content-type", "image/webp");
+  headers.set("etag", etag);
+  headers.set("x-base-map-name", encodeURIComponent(BUNDLED_V20_PRINT_NAME));
+  headers.set("x-base-map-version", encodeURIComponent(BUNDLED_V20_PRINT_REVISION));
+  headers.set("x-content-type-options", "nosniff");
+  if (etagMatches(request, etag)) return new Response(null, { status: 304, headers });
+  return new Response(asset.body, { headers });
+}
+
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const canUpload = adminAccess(request, runtime).allowed;
   const url = new URL(request.url);
   const bundledVariant = url.searchParams.get("bundled");
+  if (bundledVariant === "original") return bundledOriginalResponse(request, runtime.ASSETS);
   if (isScreenVariant(bundledVariant)) return bundledScreenResponse(request, runtime.ASSETS, bundledVariant);
   const bucket = runtime.BUCKET;
   if (!bucket) return json({ available: false, canUpload }, 404);

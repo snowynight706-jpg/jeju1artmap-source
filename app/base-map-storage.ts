@@ -20,6 +20,9 @@ export type UploadedBaseMapMetadata = {
 
 export const BUNDLED_V20_SOURCE_VERSION = "2026-08-11T08:17:08.055Z";
 export const BUNDLED_V20_SCREEN_REVISION = "20260818-v1";
+export const BUNDLED_V20_PRINT_REVISION = "20260821-lossless-v1";
+export const BUNDLED_V20_PRINT_SIZE = 1_959_996;
+export const BUNDLED_V20_PRINT_NAME = "제주원도심_랜드마크탐색_베이스맵_v20_출력무손실.webp";
 
 export function uploadedMapVersion(object: Pick<R2Object, "customMetadata" | "uploaded">) {
   return object.customMetadata?.uploadedAt ?? object.uploaded.toISOString();
@@ -35,9 +38,10 @@ function versionedMapUrl(version: string, variant?: BaseMapScreenVariant) {
   return `/api/base-map?${params.toString()}`;
 }
 
-function bundledScreenUrls(version: string) {
+function bundledMapUrls(version: string) {
   if (version !== BUNDLED_V20_SOURCE_VERSION) return null;
   return {
+    originalUrl: `/api/base-map?bundled=original&v=${BUNDLED_V20_PRINT_REVISION}`,
     screen2048Url: `/api/base-map?bundled=screen-2048&v=${BUNDLED_V20_SCREEN_REVISION}`,
     screen4096Url: `/api/base-map?bundled=screen-4096&v=${BUNDLED_V20_SCREEN_REVISION}`,
   };
@@ -54,18 +58,17 @@ export async function readUploadedBaseMapMetadata(bucket: R2Bucket | undefined, 
   if (!original) return null;
 
   const uploadedAt = uploadedMapVersion(original);
-  const bundled = bundledScreenUrls(uploadedAt);
+  const bundled = bundledMapUrls(uploadedAt);
   if (bundled) {
     return {
       available: true,
       canUpload,
-      name: original.customMetadata?.name ?? "업로드 베이스맵",
+      name: BUNDLED_V20_PRINT_NAME,
       width: Number(original.customMetadata?.width ?? 0),
       height: Number(original.customMetadata?.height ?? 0),
       uploadedAt,
-      size: original.size,
-      contentType: original.httpMetadata?.contentType ?? "image/png",
-      originalUrl: versionedMapUrl(uploadedAt),
+      size: BUNDLED_V20_PRINT_SIZE,
+      contentType: "image/webp",
       ...bundled,
     };
   }

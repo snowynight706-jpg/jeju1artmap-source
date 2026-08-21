@@ -7,6 +7,7 @@ const globalStyles = await readFile(new URL("../app/globals.css", import.meta.ur
 const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const publicLayoutRoute = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const baseMapRoute = await readFile(new URL("../app/api/base-map/route.ts", import.meta.url), "utf8");
+const baseMapStorage = await readFile(new URL("../app/base-map-storage.ts", import.meta.url), "utf8");
 const placeEventsRoute = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const placeStoriesRoute = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
@@ -26,6 +27,9 @@ test("uploaded base maps use versioned screen derivatives while exports retain t
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 2048, 0\.86\)/);
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 4096, 0\.88\)/);
   assert.match(baseMapRoute, /bundledScreenResponse/);
+  assert.match(baseMapRoute, /bundledOriginalResponse/);
+  assert.match(baseMapRoute, /wondosim-base-map-v20-print-lossless\.webp/);
+  assert.match(baseMapStorage, /originalUrl: `\/api\/base-map\?bundled=original&v=\$\{BUNDLED_V20_PRINT_REVISION\}`/);
   assert.match(baseMapRoute, /headers\.set\("content-type", "image\/webp"\)/);
   assert.match(baseMapRoute, /max-age=31536000, immutable/);
   assert.match(baseMapRoute, /if \(etagMatches\(request, object\.httpEtag\)\) return new Response\(null, \{ status: 304/);
@@ -55,9 +59,11 @@ test("screen landmarks and build assets use lightweight, immutable delivery path
   assert.match(workerSource, /max-age=31536000, immutable/);
   const map2048 = await stat(new URL("../public/maps/wondosim-base-map-v20-screen-2048.webp", import.meta.url));
   const map4096 = await stat(new URL("../public/maps/wondosim-base-map-v20-screen-4096.webp", import.meta.url));
+  const mapPrint = await stat(new URL("../public/maps/wondosim-base-map-v20-print-lossless.webp", import.meta.url));
   const mainHub = await stat(new URL("../public/landmarks-screen/jeju-communication-center-a02.webp", import.meta.url));
   assert.ok(map2048.size < 300_000);
   assert.ok(map4096.size < 700_000);
+  assert.ok(mapPrint.size < 2_100_000);
   assert.ok(mainHub.size < 100_000);
 });
 
