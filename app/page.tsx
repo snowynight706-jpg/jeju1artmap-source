@@ -9,6 +9,7 @@ import {
   PointerEvent as ReactPointerEvent,
   lazy,
   Suspense,
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -2881,11 +2882,11 @@ export default function Home() {
   const touchLayerReleaseFrameRef = useRef<number | null>(null);
   const touchLayerReleaseTimerRef = useRef<number | null>(null);
   const pendingTouchTransformRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
-  const touchTransformCommitPendingRef = useRef(false);
   const wheelFrameRef = useRef<number | null>(null);
   const wheelCommitTimerRef = useRef<number | null>(null);
   const focusTransitionFrameRef = useRef<number | null>(null);
   const focusTransitionTimerRef = useRef<number | null>(null);
+  const focusTransitionTargetRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
   const pendingWheelRef = useRef<{ deltaY: number; cursorX: number; cursorY: number } | null>(null);
   const placeDirectoryLoadedRef = useRef(false);
   const directoryTaxonomySaveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -2987,7 +2988,6 @@ export default function Home() {
   const [publicPlaceQuery, setPublicPlaceQuery] = useState("");
   const [publicPlaceCategory, setPublicPlaceCategory] = useState<PublicPlaceCategoryScope>("all");
   const [expandedAdditionalCategoryItemId, setExpandedAdditionalCategoryItemId] = useState<string | null>(null);
-  const [mapFocusAnimating, setMapFocusAnimating] = useState(false);
   const [globalStories, setGlobalStories] = useState<PlaceStory[]>([]);
   const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
   const [globalStoriesPageCount, setGlobalStoriesPageCount] = useState(0);
@@ -3160,6 +3160,10 @@ export default function Home() {
     if (stageWrap) {
       stageWrap.style.transform = `translate3d(calc(-50% + ${nextPan.x}px), calc(-50% + ${nextPan.y}px), 0)`;
     }
+  }, []);
+
+  const setMapLayoutZoom = useCallback((nextZoom: number) => {
+    stageWrapRef.current?.style.setProperty("--map-stage-width", `${nextZoom * 100}%`);
   }, []);
 
   const currentDocument = useCallback((): DocumentState => ({
@@ -3814,7 +3818,7 @@ export default function Home() {
       (viewportDimensions.height - verticalPadding) / Math.max(stageDimensions.height, 1),
     ), 0.22, 1.12);
   }, [stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
-  const labelDetailRatio = zoom / Math.max(fitZoom, 0.22);
+  const labelDetailRatio = settledLabelZoom / Math.max(fitZoom, 0.22);
 
   const printSettingsByKey = useMemo(() => new Map(printSettings.map((setting) => [setting.key, setting])), [printSettings]);
   const directoryPriorityById = useMemo(() => new Map(directoryPlaces.map((place) => [place.id, place.priority ?? ""])), [directoryPlaces]);
@@ -3856,8 +3860,8 @@ export default function Home() {
   }), [editorVisibleElements, markerLabelsVisible, publicLayoutAccess, selectedId]);
   const scaleLabelLimitActive = publicLayoutAccess === "viewer" || scaleLabelLimitEnabled;
   const scaleLabelBudget = useMemo(
-    () => labelBudgetForScale(zoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive),
-    [editorLabelCandidates.length, fitZoom, scaleLabelLimitActive, zoom],
+    () => labelBudgetForScale(settledLabelZoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive),
+    [editorLabelCandidates.length, fitZoom, scaleLabelLimitActive, settledLabelZoom],
   );
   const scaleAwareLabelSelection = useMemo(() => chooseScaleAwareLabelIds(editorLabelCandidates, {
     limit: scaleLabelBudget,
@@ -5559,20 +5563,31 @@ export default function Home() {
       || startupInitialViewReady
       || Math.abs(zoom - startupInitialViewTarget.zoom) > 0.002
       || Math.abs(settledLabelZoom - startupInitialViewTarget.zoom) > 0.002
-      || Math.abs(panRef.current.x - startupInitialViewTarget.pan.x) > 0.5
-      || Math.abs(panRef.current.y - startupInitialViewTarget.pan.y) > 0.5
     ) return;
+    const target = startupInitialViewTarget;
+    panRef.current = target.pan;
+    setMapPan(target.pan);
     const stage = stageRef.current;
-    if (!stage || Math.abs(stage.offsetWidth - stageDimensions.width * startupInitialViewTarget.zoom) > 1.5) return;
+    const stageWrap = stageWrapRef.current;
+    if (!stage || !stageWrap || stageWrap.offsetWidth <= 0) return;
+    // Mobile PWA viewport changes can leave a percentage width one layout frame
+    // behind the target state. Apply the already calculated target directly so
+    // the loading overlay cannot wait forever on a stale rounded measurement.
+    setMapLayoutZoom(target.zoom);
     let settledFrame = 0;
     const committedFrame = window.requestAnimationFrame(() => {
-      settledFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
+      setMapPan(target.pan);
+      setMapLayoutZoom(target.zoom);
+      settledFrame = window.requestAnimationFrame(() => {
+        const expectedWidth = stageWrap.offsetWidth * target.zoom;
+        if (Math.abs(stage.offsetWidth - expectedWidth) <= 2.5) setStartupInitialViewReady(true);
+      });
     });
     return () => {
       window.cancelAnimationFrame(committedFrame);
       if (settledFrame) window.cancelAnimationFrame(settledFrame);
     };
-  }, [publicLayoutAccess, settledLabelZoom, stageDimensions.width, startupAssetsReady, startupInitialViewReady, startupInitialViewTarget, zoom]);
+  }, [publicLayoutAccess, setMapLayoutZoom, setMapPan, settledLabelZoom, startupAssetsReady, startupInitialViewReady, startupInitialViewTarget, zoom]);
 
   useEffect(() => {
     if (publicLayoutAccess !== "editor" || !startupAssetsReady) return;
@@ -5610,7 +5625,9 @@ export default function Home() {
   }, [labelDetailRatio, printPreviewMode]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setSettledLabelZoom(zoom), 140);
+    const timer = window.setTimeout(() => {
+      startTransition(() => setSettledLabelZoom(zoom));
+    }, 140);
     return () => window.clearTimeout(timer);
   }, [zoom]);
 
@@ -5675,36 +5692,61 @@ export default function Home() {
     });
   }, [cancelTouchLayerRelease]);
 
+  const finishProgrammaticMapFocus = useCallback(() => {
+    const target = focusTransitionTargetRef.current;
+    if (!target) return;
+    focusTransitionTargetRef.current = null;
+    if (focusTransitionFrameRef.current !== null) {
+      window.cancelAnimationFrame(focusTransitionFrameRef.current);
+      focusTransitionFrameRef.current = null;
+    }
+    if (focusTransitionTimerRef.current !== null) {
+      window.clearTimeout(focusTransitionTimerRef.current);
+      focusTransitionTimerRef.current = null;
+    }
+    const stageWrap = stageWrapRef.current;
+    const stage = stageRef.current;
+    if (stageWrap) stageWrap.style.removeProperty("transition");
+    if (stage) {
+      stage.style.removeProperty("transition");
+      stage.style.removeProperty("transform");
+    }
+    setMapLayoutZoom(target.zoom);
+    setMapPan(target.pan);
+    touchTransformBaseZoomRef.current = target.zoom;
+    zoomRef.current = target.zoom;
+    startTransition(() => setZoom(target.zoom));
+    scheduleTouchLayerRelease();
+  }, [scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan]);
+
   const beginTouchMapTransform = useCallback(() => {
+    finishProgrammaticMapFocus();
     cancelTouchLayerRelease();
     flushTouchMapTransform();
     touchTransformBaseZoomRef.current = zoomRef.current;
     applyTouchMapTransform(zoomRef.current, panRef.current);
-  }, [applyTouchMapTransform, cancelTouchLayerRelease, flushTouchMapTransform]);
+  }, [applyTouchMapTransform, cancelTouchLayerRelease, finishProgrammaticMapFocus, flushTouchMapTransform]);
 
   const commitTouchMapTransform = useCallback(() => {
     flushTouchMapTransform();
-    touchTransformCommitPendingRef.current = true;
-    touchTransformBaseZoomRef.current = zoomRef.current;
-    setZoom(zoomRef.current);
-    setMapPan({ ...panRef.current });
-  }, [flushTouchMapTransform, setMapPan]);
+    const committedZoom = zoomRef.current;
+    const committedPan = { ...panRef.current };
+    setMapLayoutZoom(committedZoom);
+    stageRef.current?.style.removeProperty("transform");
+    touchTransformBaseZoomRef.current = committedZoom;
+    setMapPan(committedPan);
+    startTransition(() => setZoom(committedZoom));
+    scheduleTouchLayerRelease();
+  }, [flushTouchMapTransform, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan]);
 
   useLayoutEffect(() => {
     setMapPan(panRef.current);
   }, [setMapPan]);
 
   useLayoutEffect(() => {
-    if (!touchTransformCommitPendingRef.current) return;
-    touchTransformCommitPendingRef.current = false;
-    stageRef.current?.style.removeProperty("transform");
-    if (panInteractionRef.current || activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
-    scheduleTouchLayerRelease();
-  }, [interaction?.type, scheduleTouchLayerRelease, zoom]);
-
-  useEffect(() => {
     zoomRef.current = zoom;
-  }, [zoom]);
+    setMapLayoutZoom(zoom);
+  }, [setMapLayoutZoom, zoom]);
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
@@ -5718,6 +5760,7 @@ export default function Home() {
     panInteractionRef.current = null;
     pinchGestureRef.current = null;
     pendingTouchTransformRef.current = null;
+    focusTransitionTargetRef.current = null;
   }, []);
 
   const beginPinchGesture = useCallback(() => {
@@ -6263,21 +6306,30 @@ export default function Home() {
         y: clamp(rawPan.y, -verticalTravel, verticalTravel),
       };
     }
-    if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
-    if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
+    finishProgrammaticMapFocus();
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    setMapFocusAnimating(!reduceMotion);
-    focusTransitionFrameRef.current = window.requestAnimationFrame(() => {
-      zoomRef.current = targetZoom;
-      panRef.current = targetPan;
-      setMapPan(targetPan);
-      setZoom(targetZoom);
-      focusTransitionFrameRef.current = null;
-    });
-    focusTransitionTimerRef.current = window.setTimeout(() => {
-      setMapFocusAnimating(false);
-      focusTransitionTimerRef.current = null;
-    }, reduceMotion ? 0 : 320);
+    const stageWrap = stageWrapRef.current;
+    const stage = stageRef.current;
+    const viewportElement = viewportRef.current;
+    const currentLayoutZoom = Math.max(zoomRef.current, 0.01);
+    focusTransitionTargetRef.current = { zoom: targetZoom, pan: targetPan };
+    if (reduceMotion || !stageWrap || !stage || !viewportElement) {
+      finishProgrammaticMapFocus();
+    } else {
+      cancelTouchLayerRelease();
+      viewportElement.classList.add("is-direct-manipulation");
+      stageWrap.style.transition = "transform .3s cubic-bezier(.22, .78, .28, 1)";
+      stage.style.transition = "transform .3s cubic-bezier(.22, .78, .28, 1)";
+      stage.style.transform = "translateX(-50%) scale(1)";
+      void stage.offsetWidth;
+      focusTransitionFrameRef.current = window.requestAnimationFrame(() => {
+        focusTransitionFrameRef.current = null;
+        if (!focusTransitionTargetRef.current) return;
+        stageWrap.style.transform = `translate3d(calc(-50% + ${targetPan.x}px), calc(-50% + ${targetPan.y}px), 0)`;
+        stage.style.transform = `translateX(-50%) scale(${targetZoom / currentLayoutZoom})`;
+      });
+      focusTransitionTimerRef.current = window.setTimeout(finishProgrammaticMapFocus, 320);
+    }
     setFocusPulseId(elementId);
     window.setTimeout(() => setFocusPulseId((current) => current === elementId ? null : current), reduceMotion ? 80 : 900);
   };
@@ -9671,10 +9723,10 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${mapFocusAnimating ? "is-programmatic-focus" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
             <div ref={stageWrapRef} className="map-stage-wrap">
-              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}`, width: `${zoom * 100}%` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
+              <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
                 <div className="base-map-edge-fade" data-south-edge-fade="on" aria-hidden="true" />
@@ -9693,7 +9745,7 @@ export default function Home() {
                   viewMode={viewMode}
                   visibleElements={visibleElements}
                   visibleElementsById={visibleElementsById}
-                  zoom={zoom}
+                  zoom={settledLabelZoom}
                 />
                 <MapElementLayer
                   actionsRef={mapRenderActionsRef}
@@ -9718,7 +9770,7 @@ export default function Home() {
                   stageMarkerIds={stageMarkerIds}
                   viewMode={viewMode}
                   visibleElements={visibleElements}
-                  zoom={zoom}
+                  zoom={settledLabelZoom}
                 />
                 {placeRequestPickingLocation && placeRequestLocation && <div className="place-request-location-marker" style={{ left: `${placeRequestLocation.x}%`, top: `${placeRequestLocation.y}%` }} aria-label="요청할 마커 위치">
                   <img src={markerAssetSrc(placeRequestMarkerStyle, placeRequestCategory)} alt="" draggable={false} decoding="async" />

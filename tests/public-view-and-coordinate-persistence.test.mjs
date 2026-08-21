@@ -16,8 +16,9 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(pageSource, /const \[startupInitialViewReady, setStartupInitialViewReady\] = useState\(false\)/);
   assert.match(pageSource, /const \[startupInitialViewTarget, setStartupInitialViewTarget\] = useState/);
   assert.match(pageSource, /Math\.abs\(settledLabelZoom - startupInitialViewTarget\.zoom\) > 0\.002/);
-  assert.match(pageSource, /Math\.abs\(stage\.offsetWidth - stageDimensions\.width \* startupInitialViewTarget\.zoom\) > 1\.5/);
-  assert.match(pageSource, /committedFrame = window\.requestAnimationFrame[\s\S]{0,160}settledFrame = window\.requestAnimationFrame\(\(\) => setStartupInitialViewReady\(true\)\)/);
+  assert.match(pageSource, /setMapLayoutZoom\(target\.zoom\)/);
+  assert.match(pageSource, /expectedWidth = stageWrap\.offsetWidth \* target\.zoom/);
+  assert.match(pageSource, /committedFrame = window\.requestAnimationFrame[\s\S]{0,260}settledFrame = window\.requestAnimationFrame\(\(\) =>/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
   assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.png",\s*mapSource/);
@@ -31,6 +32,11 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(cssSource, /\.public-loading-track \{ width: min\(270px, 82%\)/);
   assert.equal(signatureB.readUInt32BE(16), 1182);
   assert.equal(signatureB.readUInt32BE(20), 626);
+});
+
+test("map wrappers start centered before the first admin drag", () => {
+  assert.match(cssSource, /\.map-stage-wrap \{[^}]*left: 50%;[^}]*top: 50%;[^}]*transform: translate3d\(-50%, -50%, 0\)/);
+  assert.match(pageSource, /setMapPan = useCallback[\s\S]{0,280}translate3d\(calc\(-50% \+ \$\{nextPan\.x\}px\), calc\(-50% \+ \$\{nextPan\.y\}px\), 0\)/);
 });
 
 test("a partial coordinate snapshot never clears a lock stored in the layout", () => {

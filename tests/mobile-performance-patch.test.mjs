@@ -30,7 +30,26 @@ test("touch transform handoff keeps the compositor layer through the settled fra
   assert.match(pageSource, /touchLayerReleaseTimerRef\.current = window\.setTimeout/);
   assert.match(pageSource, /activeTouchPointersRef\.current\.size > 0 \|\| pinchGestureRef\.current/);
   assert.match(pageSource, /panInteractionRef\.current = null;[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
+  assert.match(pageSource, /setMapLayoutZoom\(committedZoom\)[\s\S]{0,180}stageRef\.current\?\.style\.removeProperty\("transform"\)/);
+  assert.match(pageSource, /startTransition\(\(\) => setZoom\(committedZoom\)\)/);
   assert.doesNotMatch(pageSource, /restartMapLabelHandoff|labelHandoffScaleRef/);
+});
+
+test("programmatic focus animates compositor transforms and commits layout once", () => {
+  assert.match(cssSource, /\.map-stage \{[^}]*width: var\(--map-stage-width, 72%\)/);
+  assert.match(pageSource, /stageWrap\.style\.transition = "transform \.3s/);
+  assert.match(pageSource, /stage\.style\.transition = "transform \.3s/);
+  assert.match(pageSource, /stage\.style\.transform = `translateX\(-50%\) scale\(\$\{targetZoom \/ currentLayoutZoom\}\)`/);
+  assert.match(pageSource, /setMapLayoutZoom\(target\.zoom\)/);
+  assert.doesNotMatch(cssSource, /\.map-viewport\.is-programmatic-focus \.map-stage \{ transition: width/);
+  assert.doesNotMatch(pageSource, /style=\{\{ aspectRatio: `\$\{MAP_ASPECT\}`, width:/);
+});
+
+test("label density work is deferred from the map layout commit", () => {
+  assert.match(pageSource, /labelDetailRatio = settledLabelZoom \/ Math\.max\(fitZoom, 0\.22\)/);
+  assert.match(pageSource, /labelBudgetForScale\(settledLabelZoom, fitZoom/);
+  assert.match(pageSource, /startTransition\(\(\) => setSettledLabelZoom\(zoom\)\)/);
+  assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{visibleElements\}\s+zoom=\{settledLabelZoom\}/);
 });
 
 test("mobile high-resolution map switching and startup reveal wait for settled work only", () => {

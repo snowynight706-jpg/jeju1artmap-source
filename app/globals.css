@@ -595,14 +595,12 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-viewport.is-panning { cursor: grabbing; }
 .map-viewport.memo-cursor { cursor: crosshair; }
 .map-viewport.place-request-location-selecting { cursor: crosshair; }
-.map-stage-wrap { position: absolute; left: 50%; top: 50%; width: min(1180px, 84vw); transform-origin: center; will-change: auto; }
-.map-stage { position: relative; left: 50%; overflow: visible; transform: translateX(-50%); background: #f4f2ed; box-shadow: 0 15px 45px rgb(51 51 51 / 18%); user-select: none; }
+.map-stage-wrap { position: absolute; left: 50%; top: 50%; width: min(1180px, 84vw); transform: translate3d(-50%, -50%, 0); transform-origin: center; will-change: auto; }
+.map-stage { position: relative; left: 50%; width: var(--map-stage-width, 72%); overflow: visible; transform: translateX(-50%); background: #f4f2ed; box-shadow: 0 15px 45px rgb(51 51 51 / 18%); user-select: none; }
 .map-viewport.is-direct-manipulation .map-stage-wrap,
 .map-viewport.is-direct-manipulation .map-stage { will-change: transform; }
 .map-viewport.is-direct-manipulation .connector-layer { opacity: .22; }
 .map-viewport.is-direct-manipulation :is(.label, .dense-label) { box-shadow: none; }
-.map-viewport.is-programmatic-focus .map-stage-wrap { transition: transform .3s cubic-bezier(.22, .78, .28, 1); }
-.map-viewport.is-programmatic-focus .map-stage { transition: width .3s cubic-bezier(.22, .78, .28, 1); }
 .base-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
 .base-map-edge-fade { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .base-map-edge-fade::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 5.5%; background: linear-gradient(90deg, rgb(232 232 232 / 0%) 0%, rgb(232 232 232 / 3%) 22%, rgb(232 232 232 / 12%) 45%, rgb(232 232 232 / 34%) 68%, rgb(232 232 232 / 68%) 86%, #e8e8e8 100%); }
