@@ -24,7 +24,7 @@ button, input, select, textarea { font: inherit; }
 button { color: inherit; }
 
 @media (display-mode: standalone) {
-  html { background: var(--app-status-bar-color); }
+  html, body { background: var(--paper); }
   body::before {
     content: "";
     position: fixed;
@@ -636,6 +636,11 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-loading span { width: 24px; height: 24px; margin: auto; border: 2px solid #d3d3d3; border-top-color: var(--emerald); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .element-layer { position: absolute; inset: 0; contain: layout style; pointer-events: none; z-index: 2; }
+.mobile-marker-placeholder-layer { position: absolute; inset: 0; contain: layout style; pointer-events: none; z-index: 2; }
+.mobile-marker-placeholder { position: absolute; width: 16px; height: 16px; display: grid; place-items: center; transform: translate(-50%, -50%); padding: 0; border: 0; background: transparent; pointer-events: auto; touch-action: none; }
+.mobile-marker-placeholder::after { content: ""; width: 6px; height: 6px; border: 1px solid rgb(255 255 255 / 92%); border-radius: 50%; background: var(--mobile-marker-color); box-shadow: 0 0 0 1px color-mix(in srgb, var(--mobile-marker-color) 58%, transparent); }
+.mobile-marker-placeholder:focus-visible { outline: none; }
+.mobile-marker-placeholder:focus-visible::after { box-shadow: 0 0 0 2px white, 0 0 0 4px var(--mobile-marker-color); }
 .map-element { position: absolute; transform: translate(-50%, -50%); aspect-ratio: 1.12; pointer-events: auto; cursor: grab; touch-action: none; user-select: none; }
 .map-element.calibration-reference { cursor: crosshair; }
 .map-viewport.is-dragging-element .map-element:not(.locked) { cursor: grabbing; }

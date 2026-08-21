@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const eventDialogSource = await readFile(new URL("../app/admin-place-event-dialog.tsx", import.meta.url), "utf8");
 const explorerActivitySource = await readFile(new URL("../app/public-explorer-activity-content.tsx", import.meta.url), "utf8");
 const eventRouteSource = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const storyRouteSource = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
@@ -16,8 +17,8 @@ test("event schedule and public visibility are stored and validated independentl
   assert.match(eventRouteSource, /const endsAt = validIsoDate\(cleanText\(form\.get\("endsAt"\), 60\)\)/);
   assert.match(eventRouteSource, /starts_at, ends_at, visible_from, visible_until/);
   assert.match(eventRouteSource, /e\.status = 'active' AND e\.visible_from <= \? AND e\.visible_until > \?/);
-  assert.match(pageSource, /실제 행사 일시/);
-  assert.match(pageSource, /화면 노출 기간/);
+  assert.match(eventDialogSource, /실제 행사 일시/);
+  assert.match(eventDialogSource, /화면 노출 기간/);
   assert.match(pageSource, /eventScheduleLabel\(event\.startsAt, event\.endsAt\)/);
   assert.match(pageSource, /form\.set\("startsAt", startsAtDate\.toISOString\(\)\)/);
   assert.match(pageSource, /form\.set\("visibleFrom", visibleFromDate\.toISOString\(\)\)/);
