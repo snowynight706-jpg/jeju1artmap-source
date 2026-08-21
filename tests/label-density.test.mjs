@@ -56,18 +56,21 @@ test("selected, main-hub and landmark labels survive caps while recommendations 
   assert.equal(result.limited, true);
 });
 
-test("public screen limits happen before dense-label clustering while admin labels stay uncapped", () => {
+test("public limits always apply and the admin can opt into the same scale steps", () => {
   assert.match(pageSource, /const editorLabelCandidates = useMemo/);
   assert.match(pageSource, /const scaleAwareLabelSelection = useMemo/);
   assert.match(pageSource, /const stageLabelElements = printPreviewMode \? printLabelElements : editorLabelElements/);
   assert.match(pageSource, /const labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
-  assert.match(pageSource, /const scaleLabelLimitActive = publicLayoutAccess === "viewer"/);
+  assert.match(pageSource, /const \[editorScaleLabelLimitsEnabled, setEditorScaleLabelLimitsEnabled\] = useState\(false\)/);
+  assert.match(pageSource, /const scaleLabelLimitActive = publicLayoutAccess === "viewer"[\s\S]{0,120}publicLayoutAccess === "editor" && editorScaleLabelLimitsEnabled/);
   assert.match(pageSource, /const publicLandmarkLabel = publicLayoutAccess === "viewer" && element\.category === "landmark"/);
   assert.match(pageSource, /element\.labelVisible \|\| selectedLabel \|\| publicLandmarkLabel/);
   assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,180}optionalLabelScaleSteps,[\s\S]{0,20}\)/);
   assert.match(pageSource, /fitZoom \/ Math\.max\(labelRenderZoom, 0\.22\)/);
   assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => setSettledLabelZoom\(zoom\)\);[\s\S]{0,30}\}, 140\)/);
-  assert.doesNotMatch(pageSource, /축척별 라벨 자동 제한|scaleLabelLimitEnabled/);
+  assert.match(pageSource, /관리자 지도에 축척별 라벨 수 적용/);
+  assert.match(pageSource, /checked=\{editorScaleLabelLimitsEnabled\}/);
+  assert.match(pageSource, /setEditorScaleLabelLimitsEnabled\(event\.target\.checked\)/);
 });
 
 test("admin label budgets are editable and persist through public layout view settings", () => {

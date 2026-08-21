@@ -3104,6 +3104,7 @@ export default function Home() {
   const [screenRecommendedOnly, setScreenRecommendedOnly] = useState(false);
   const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
   const [mergeDenseLabels, setMergeDenseLabels] = useState(true);
+  const [editorScaleLabelLimitsEnabled, setEditorScaleLabelLimitsEnabled] = useState(false);
   const [optionalLabelScaleSteps, setOptionalLabelScaleSteps] = useState<OptionalLabelScaleStep[]>(
     () => normalizeOptionalLabelScaleSteps(undefined),
   );
@@ -3992,9 +3993,9 @@ export default function Home() {
   }, [publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const labelRenderZoom = publicLayoutAccess === "viewer" ? settledLabelZoom : zoom;
   const labelDetailRatio = labelRenderZoom / Math.max(fitZoom, 0.22);
-  const publicScaleRatio = Math.max(1, labelDetailRatio);
-  const publicScaleRatioLabel = publicScaleRatio.toFixed(2).replace(/\.?0+$/, "");
-  const publicMapVisiblePercent = Math.max(1, Math.min(100, Math.round(100 / publicScaleRatio)));
+  const mapScaleRatio = Math.max(1, labelDetailRatio);
+  const mapScaleRatioLabel = mapScaleRatio.toFixed(2).replace(/\.?0+$/, "");
+  const mapVisiblePercent = Math.max(1, Math.min(100, Math.round(100 / mapScaleRatio)));
   const publicDenseLabelViewportBounds = useMemo(() => {
     if (
       publicLayoutAccess !== "viewer"
@@ -4079,7 +4080,8 @@ export default function Home() {
     return (element.labelVisible || selectedLabel || publicLandmarkLabel || (publicLayoutAccess === "viewer" && primaryHub))
       && (element.category === "landmark" || markerLabelsVisible || primaryHub || selectedLabel);
   }), [editorVisibleElements, markerLabelsVisible, mobileOverviewSimplified, publicLayoutAccess, selectedId]);
-  const scaleLabelLimitActive = publicLayoutAccess === "viewer";
+  const scaleLabelLimitActive = publicLayoutAccess === "viewer"
+    || (publicLayoutAccess === "editor" && editorScaleLabelLimitsEnabled);
   const scaleMainHubLabelIds = useMemo(
     () => editorLabelCandidates.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
     [editorLabelCandidates],
@@ -4122,7 +4124,7 @@ export default function Home() {
   }, [editorVisibleElements, printLabelElements, printMarkerElements, printPreviewMode]);
   const stageMarkerElements = printPreviewMode ? printMarkerElements : editorVisibleElements;
   const stageLabelElements = printPreviewMode ? printLabelElements : editorLabelElements;
-  const publicOutputLabelCount = stageLabelElements.length;
+  const outputLabelCount = stageLabelElements.length;
   const stageMarkerIds = useMemo(() => new Set(stageMarkerElements.map((element) => element.id)), [stageMarkerElements]);
   const stageLabelIds = useMemo(() => new Set(stageLabelElements.map((element) => element.id)), [stageLabelElements]);
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
@@ -10085,6 +10087,7 @@ export default function Home() {
                   <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 임시 표시</b><small>배치와 출력 포함 설정은 유지됩니다.</small></span></label>
                   <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>일반 마커 라벨</b><small>화면 표시만 한 번에 전환합니다.</small></span></label>
                   <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
+                  <label className={editorScaleLabelLimitsEnabled ? "active" : ""}><input type="checkbox" checked={editorScaleLabelLimitsEnabled} onChange={(event) => setEditorScaleLabelLimitsEnabled(event.target.checked)} /><span><b>관리자 지도에 축척별 라벨 수 적용</b><small>아래 배포본 단계값으로 현재 화면을 미리 봅니다.</small></span></label>
                 </div>
                 <section className="public-label-density-editor" aria-labelledby="public-label-density-title">
                   <header><span><b id="public-label-density-title">배포본 축척별 일반 라벨</b><small>랜드마크·주요 거점·현재 선택은 항상 별도 유지</small></span><div className="public-label-density-actions"><button type="button" onClick={resetOptionalLabelScaleLimits}>기본값</button><button type="button" className="server-save" disabled={optionalLabelScaleSaving || editorDraftSaving || publicLayoutPublishing} onClick={() => void saveOptionalLabelScaleLimits()}>{optionalLabelScaleSaving ? "저장 중…" : "저장"}</button></div></header>
@@ -10404,7 +10407,7 @@ export default function Home() {
               </Suspense>
             </div>
           </aside>}
-          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span className="public-scale-status">맞춤 ×{publicScaleRatioLabel} · 지도 {publicMapVisiblePercent}% · 라벨 {publicOutputLabelCount}개</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
+          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span className="map-scale-status">맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span className="map-scale-status">맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
         </section>
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
