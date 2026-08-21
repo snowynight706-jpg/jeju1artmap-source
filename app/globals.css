@@ -13,7 +13,7 @@
   --app-status-bar-color: #2b2d33;
   --motion-fast: .16s;
   --motion-standard: .24s;
-  --motion-label: .28s;
+  --motion-label: .12s;
   --motion-ease: cubic-bezier(.22, .78, .28, 1);
 }
 
@@ -621,6 +621,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-viewport.is-direct-manipulation .map-stage { will-change: transform; }
 .map-viewport.is-direct-manipulation .connector-layer { opacity: .22; }
 .map-viewport.is-direct-manipulation :is(.label, .dense-label) { box-shadow: none; }
+.map-viewport.editor-label-motion { --motion-label: .28s; }
 .label, .dense-label-layer, .dense-label-connector { transition: opacity var(--motion-label) cubic-bezier(.22, .72, .28, 1); }
 .map-viewport:is(.is-map-labels-suspended, .is-zooming) :is(.label, .dense-label-layer, .dense-label-connector) { visibility: hidden; opacity: 0; pointer-events: none; transition-duration: 0s; }
 .map-viewport.is-label-viewport-settling :is(.label, .dense-label-layer, .dense-label-connector) { visibility: hidden; opacity: 0; pointer-events: none; transition-duration: 0s; }

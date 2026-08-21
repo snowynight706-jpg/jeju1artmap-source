@@ -3036,7 +3036,6 @@ export default function Home() {
   });
   const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
   const [settledLabelPan, setSettledLabelPan] = useState({ x: 0, y: 0 });
-  const [labelRenderPhase, setLabelRenderPhase] = useState<0 | 1 | 2 | 3>(3);
   const [mapRenderRefreshRevision, setMapRenderRefreshRevision] = useState(0);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
     width: EXPORT_CANONICAL_WIDTH,
@@ -3964,11 +3963,9 @@ export default function Home() {
     && Math.abs(settledLabelPan.x - mapRenderPan.x) <= 0.5
     && Math.abs(settledLabelPan.y - mapRenderPan.y) <= 0.5;
   const labelContentReady = publicLayoutAccess !== "viewer"
-    || (labelCompositionSettled && labelRenderPhase >= 1);
-  const labelDetailsReady = publicLayoutAccess !== "viewer"
-    || (labelCompositionSettled && labelRenderPhase >= 2);
-  const labelViewportSettled = labelCompositionSettled
-    && (publicLayoutAccess !== "viewer" || labelRenderPhase >= 3);
+    || labelCompositionSettled;
+  const labelDetailsReady = labelContentReady;
+  const labelViewportSettled = labelCompositionSettled;
   const labelViewportBounds = useMemo(() => {
     if (
       publicLayoutAccess === "loading"
@@ -5957,54 +5954,21 @@ export default function Home() {
               ? current
               : { x: mapRenderPan.x, y: mapRenderPan.y }
           ));
-          setLabelRenderPhase(3);
         });
       }, 140);
       return () => window.clearTimeout(timer);
     }
 
-    let labelFrame = 0;
-    const markerFrame = window.requestAnimationFrame(() => {
-      setLabelRenderPhase(0);
-      labelFrame = window.requestAnimationFrame(() => {
-        startTransition(() => {
-          setSettledLabelZoom(zoom);
-          setSettledLabelPan((current) => (
-            current.x === mapRenderPan.x && current.y === mapRenderPan.y
-              ? current
-              : { x: mapRenderPan.x, y: mapRenderPan.y }
-          ));
-          setLabelRenderPhase(1);
-        });
-      });
+    const labelFrame = window.requestAnimationFrame(() => {
+      setSettledLabelZoom(zoom);
+      setSettledLabelPan((current) => (
+        current.x === mapRenderPan.x && current.y === mapRenderPan.y
+          ? current
+          : { x: mapRenderPan.x, y: mapRenderPan.y }
+      ));
     });
-    return () => {
-      window.cancelAnimationFrame(markerFrame);
-      if (labelFrame) window.cancelAnimationFrame(labelFrame);
-    };
+    return () => window.cancelAnimationFrame(labelFrame);
   }, [mapRenderPan.x, mapRenderPan.y, publicLayoutAccess, zoom]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "viewer" || !labelCompositionSettled || labelRenderPhase !== 1) return;
-    let frame = 0;
-    let idleId: number | null = null;
-    const mountLabelDetails = () => setLabelRenderPhase(2);
-    if ("requestIdleCallback" in window) {
-      idleId = window.requestIdleCallback(mountLabelDetails, { timeout: 120 });
-    } else {
-      frame = window.requestAnimationFrame(mountLabelDetails);
-    }
-    return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      if (idleId !== null && "cancelIdleCallback" in window) window.cancelIdleCallback(idleId);
-    };
-  }, [labelCompositionSettled, labelRenderPhase, publicLayoutAccess]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "viewer" || !labelCompositionSettled || labelRenderPhase !== 2) return;
-    const revealFrame = window.requestAnimationFrame(() => setLabelRenderPhase(3));
-    return () => window.cancelAnimationFrame(revealFrame);
-  }, [labelCompositionSettled, labelRenderPhase, publicLayoutAccess]);
 
   useEffect(() => {
     calibrationLiveApplyRef.current = calibrationLiveApply;
