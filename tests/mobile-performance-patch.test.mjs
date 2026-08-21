@@ -9,7 +9,7 @@ const serviceWorkerSource = await readFile(new URL("../public/service-worker.js"
 test("touch pan and pinch stay on a requestAnimationFrame composited path until commit", () => {
   assert.match(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\)/);
   assert.match(pageSource, /touchTransformFrameRef\.current = window\.requestAnimationFrame/);
-  assert.match(pageSource, /stage\.style\.transform = `translateX\(-50%\) scale\(\$\{scale\}\)`/);
+  assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(scale, viewport\.clientWidth\)/);
   assert.match(pageSource, /commitTouchMapTransform\(\)/);
   assert.match(pageSource, /applyTouchMapTransform\(zoomRef\.current, panRef\.current\)/);
   assert.doesNotMatch(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\);\s*setZoom\(nextZoom\)/);
@@ -48,7 +48,7 @@ test("programmatic focus animates compositor transforms and commits layout once"
   assert.match(cssSource, /\.map-stage \{[^}]*width: var\(--map-stage-width, 72%\)/);
   assert.match(pageSource, /stageWrap\.style\.transition = "transform \.3s/);
   assert.match(pageSource, /stage\.style\.transition = "transform \.3s/);
-  assert.match(pageSource, /stage\.style\.transform = `translateX\(-50%\) scale\(\$\{targetZoom \/ currentLayoutZoom\}\)`/);
+  assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(targetZoom \/ currentLayoutZoom, viewportWidth\)/);
   assert.match(pageSource, /setMapLayoutZoom\(target\.zoom\)/);
   assert.doesNotMatch(cssSource, /\.map-viewport\.is-programmatic-focus \.map-stage \{ transition: width/);
   assert.doesNotMatch(pageSource, /style=\{\{ aspectRatio: `\$\{MAP_ASPECT\}`, width:/);
@@ -72,7 +72,7 @@ test("public mobile map culls only far-offscreen render nodes after a settled ge
   assert.match(pageSource, /const \[mapRenderPan, setMapRenderPan\] = useState\(\{ x: 0, y: 0 \}\)/);
   assert.match(pageSource, /setMapRenderPan\(\(current\) => \([\s\S]{0,160}current\.x === committedPan\.x && current\.y === committedPan\.y \? current : committedPan/);
   assert.match(pageSource, /publicLayoutAccess !== "viewer"[\s\S]{0,180}viewportDimensions\.width > 760/);
-  assert.match(pageSource, /const overscanX = Math\.max\(120, viewportDimensions\.width \* 0\.72\)/);
+  assert.match(pageSource, /const overscanX = Math\.max\(mobileRenderBudget\.minimumOverscan, viewportDimensions\.width \* mobileRenderBudget\.overscanRatio\)/);
   assert.match(pageSource, /const renderedMapElements = useMemo/);
   assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}/);
   assert.match(pageSource, /const publicPlaceItems = useMemo<[\s\S]{0,900}visibleElements\.forEach/);

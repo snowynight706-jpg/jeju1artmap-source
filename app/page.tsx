@@ -38,6 +38,12 @@ import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } 
 import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./label-connector.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
+import { mapStageGestureTransform } from "./map-stage-transform.mjs";
+import {
+  LOW_MOBILE_RENDER_BUDGET,
+  STANDARD_MOBILE_RENDER_BUDGET,
+  mobileRenderBudgetForDevice,
+} from "./mobile-render-budget.mjs";
 import {
   publicPanelAfterDrag,
   publicPanelIsExpanded,
@@ -491,6 +497,12 @@ type DenseLabelCluster = {
 type StageDimensions = {
   width: number;
   height: number;
+};
+
+type MobileRenderBudget = {
+  tier: "low" | "standard" | "high";
+  overscanRatio: number;
+  minimumOverscan: number;
 };
 
 type PrintAuditIssue = {
@@ -2857,6 +2869,7 @@ export default function Home() {
   const performanceStartedAtRef = useRef(0);
   const performanceStartupSentRef = useRef(false);
   const performanceSettleSamplesRef = useRef({ pan: 0, pinch: 0 });
+  const mobileSlowSettleSamplesRef = useRef(0);
   const geocodeRunRef = useRef(0);
   const storyRequestRunRef = useRef(0);
   const eventRequestRunRef = useRef(0);
@@ -2931,6 +2944,14 @@ export default function Home() {
     && document.cookie.split(";").some((item) => item.trim() === `${PUBLIC_VIEW_COOKIE}=1`));
   const [zoom, setZoom] = useState(0.72);
   const [mapRenderPan, setMapRenderPan] = useState({ x: 0, y: 0 });
+  const [mobileRenderBudget, setMobileRenderBudget] = useState<MobileRenderBudget>(() => {
+    if (typeof navigator === "undefined") return STANDARD_MOBILE_RENDER_BUDGET;
+    const deviceNavigator = navigator as Navigator & { deviceMemory?: number };
+    return mobileRenderBudgetForDevice(
+      deviceNavigator.deviceMemory,
+      deviceNavigator.hardwareConcurrency,
+    );
+  });
   const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
     width: EXPORT_CANONICAL_WIDTH,
@@ -5697,7 +5718,7 @@ export default function Home() {
     if (!stageWrap || !stage || !viewport) return;
     const scale = nextZoom / Math.max(touchTransformBaseZoomRef.current, 0.01);
     stageWrap.style.transform = `translate3d(calc(-50% + ${nextPan.x}px), calc(-50% + ${nextPan.y}px), 0)`;
-    stage.style.transform = `translateX(-50%) scale(${scale})`;
+    stage.style.transform = mapStageGestureTransform(scale, viewport.clientWidth);
     viewport.classList.add("is-direct-manipulation");
   }, []);
 
@@ -5855,6 +5876,13 @@ export default function Home() {
     const startedAt = performance.now();
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       const durationMs = performance.now() - startedAt;
+      if (viewportDimensions.width > 0 && viewportDimensions.width <= 760) {
+        if (durationMs >= 80) mobileSlowSettleSamplesRef.current = Math.min(2, mobileSlowSettleSamplesRef.current + 1);
+        else if (durationMs <= 50) mobileSlowSettleSamplesRef.current = Math.max(0, mobileSlowSettleSamplesRef.current - 1);
+        if (mobileSlowSettleSamplesRef.current >= 2) {
+          setMobileRenderBudget((current) => current.tier === "low" ? current : LOW_MOBILE_RENDER_BUDGET);
+        }
+      }
       const sampleKey = metric === "pinch-settle" ? "pinch" : "pan";
       const existingSamples = performanceSettleSamplesRef.current[sampleKey];
       if (existingSamples >= 2 && durationMs < 80) return;
@@ -6385,13 +6413,13 @@ export default function Home() {
       viewportElement.classList.add("is-map-labels-suspended");
       stageWrap.style.transition = "transform .3s cubic-bezier(.22, .78, .28, 1)";
       stage.style.transition = "transform .3s cubic-bezier(.22, .78, .28, 1)";
-      stage.style.transform = "translateX(-50%) scale(1)";
+      stage.style.transform = mapStageGestureTransform(1, viewportWidth);
       void stage.offsetWidth;
       focusTransitionFrameRef.current = window.requestAnimationFrame(() => {
         focusTransitionFrameRef.current = null;
         if (!focusTransitionTargetRef.current) return;
         stageWrap.style.transform = `translate3d(calc(-50% + ${targetPan.x}px), calc(-50% + ${targetPan.y}px), 0)`;
-        stage.style.transform = `translateX(-50%) scale(${targetZoom / currentLayoutZoom})`;
+        stage.style.transform = mapStageGestureTransform(targetZoom / currentLayoutZoom, viewportWidth);
       });
       focusTransitionTimerRef.current = window.setTimeout(finishProgrammaticMapFocus, 320);
     }
@@ -9454,15 +9482,15 @@ export default function Home() {
     const renderZoom = Math.max(zoom, 0.22);
     const renderedWidth = stageDimensions.width * renderZoom;
     const renderedHeight = stageDimensions.height * renderZoom;
-    const overscanX = Math.max(120, viewportDimensions.width * 0.72);
-    const overscanY = Math.max(120, viewportDimensions.height * 0.72);
+    const overscanX = Math.max(mobileRenderBudget.minimumOverscan, viewportDimensions.width * mobileRenderBudget.overscanRatio);
+    const overscanY = Math.max(mobileRenderBudget.minimumOverscan, viewportDimensions.height * mobileRenderBudget.overscanRatio);
     return {
       left: 50 + (-viewportDimensions.width / 2 - overscanX - mapRenderPan.x) / renderedWidth * 100,
       right: 50 + (viewportDimensions.width / 2 + overscanX - mapRenderPan.x) / renderedWidth * 100,
       top: 50 + (-viewportDimensions.height / 2 - overscanY - mapRenderPan.y) / renderedHeight * 100,
       bottom: 50 + (viewportDimensions.height / 2 + overscanY - mapRenderPan.y) / renderedHeight * 100,
     };
-  }, [mapRenderPan.x, mapRenderPan.y, printPreviewMode, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width, zoom]);
+  }, [mapRenderPan.x, mapRenderPan.y, mobileRenderBudget.minimumOverscan, mobileRenderBudget.overscanRatio, printPreviewMode, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width, zoom]);
   const renderedMapElements = useMemo(() => {
     if (!mobileMapRenderBounds) return visibleElements;
     return visibleElements.filter((element) => (
