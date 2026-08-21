@@ -29,7 +29,8 @@ test("map labels leave the paint path only after drag or zoom actually starts", 
   assert.match(pageSource, /pendingTouchTransformRef\.current = \{ zoom: nextZoom, pan: nextPan \};\s*viewportRef\.current\?\.classList\.add\("is-map-labels-suspended"\)/);
   assert.match(pageSource, /classList\.remove\("is-direct-manipulation", "is-map-labels-suspended"\)/);
   assert.match(pageSource, /viewportElement\.classList\.add\("is-map-labels-suspended"\)/);
-  assert.match(cssSource, /\.map-viewport:is\(\.is-map-labels-suspended, \.is-zooming\) :is\(\.label, \.dense-label-layer, \.dense-label-connector\) \{ visibility: hidden; pointer-events: none; \}/);
+  assert.match(cssSource, /\.label, \.dense-label-layer, \.dense-label-connector \{ transition: opacity \.18s/);
+  assert.match(cssSource, /\.map-viewport:is\(\.is-map-labels-suspended, \.is-zooming\) :is\(\.label, \.dense-label-layer, \.dense-label-connector\) \{ visibility: hidden; opacity: 0; pointer-events: none; transition-duration: 0s; \}/);
   assert.doesNotMatch(pageSource, /beginTouchMapTransform[\s\S]{0,500}classList\.add\("is-map-labels-suspended"\)/);
 });
 
@@ -39,7 +40,7 @@ test("touch transform handoff keeps the compositor layer through the settled fra
   assert.match(pageSource, /activeTouchPointersRef\.current\.size > 0 \|\| pinchGestureRef\.current/);
   assert.match(pageSource, /panInteractionRef\.current = null;[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
   assert.match(pageSource, /setMapLayoutZoom\(committedZoom\)[\s\S]{0,180}stageRef\.current\?\.style\.removeProperty\("transform"\)/);
-  assert.match(pageSource, /startTransition\(\(\) => setZoom\(committedZoom\)\)/);
+  assert.match(pageSource, /startTransition\(\(\) => \{\s*setZoom\(committedZoom\);\s*\}\)/);
   assert.doesNotMatch(pageSource, /restartMapLabelHandoff|labelHandoffScaleRef/);
 });
 
@@ -57,13 +58,24 @@ test("label density work is deferred from the map layout commit", () => {
   assert.match(pageSource, /labelDetailRatio = settledLabelZoom \/ Math\.max\(fitZoom, 0\.22\)/);
   assert.match(pageSource, /labelBudgetForScale\(settledLabelZoom, fitZoom/);
   assert.match(pageSource, /startTransition\(\(\) => setSettledLabelZoom\(zoom\)\)/);
-  assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{visibleElements\}\s+zoom=\{settledLabelZoom\}/);
+  assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}\s+zoom=\{settledLabelZoom\}/);
 });
 
 test("mobile high-resolution map switching and startup reveal wait for settled work only", () => {
-  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap,[\s\S]{0,180}settledLabelZoom \/ Math\.max\(fitZoom, 0\.22\)/);
+  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap\) \|\| MAP_SVG/);
+  assert.doesNotMatch(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap,[^)]*settledLabelZoom/);
   assert.doesNotMatch(pageSource, /setTimeout\(\(\) => setStartupRevealReady\(true\), 320\)/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
+});
+
+test("public mobile map culls only far-offscreen render nodes after a settled gesture", () => {
+  assert.match(pageSource, /const \[mapRenderPan, setMapRenderPan\] = useState\(\{ x: 0, y: 0 \}\)/);
+  assert.match(pageSource, /setMapRenderPan\(\(current\) => \([\s\S]{0,160}current\.x === committedPan\.x && current\.y === committedPan\.y \? current : committedPan/);
+  assert.match(pageSource, /publicLayoutAccess !== "viewer"[\s\S]{0,180}viewportDimensions\.width > 760/);
+  assert.match(pageSource, /const overscanX = Math\.max\(120, viewportDimensions\.width \* 0\.72\)/);
+  assert.match(pageSource, /const renderedMapElements = useMemo/);
+  assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}/);
+  assert.match(pageSource, /const publicPlaceItems = useMemo<[\s\S]{0,900}visibleElements\.forEach/);
 });
 
 test("versioned immutable images use cache-first without caching mutable APIs", () => {

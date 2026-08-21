@@ -1607,9 +1607,12 @@ function uploadedBaseMapOriginalSource(metadata: UploadedBaseMap | null) {
   return metadata.originalUrl ?? `${UPLOADED_MAP_API}?v=${encodeURIComponent(metadata.uploadedAt)}`;
 }
 
-function uploadedBaseMapDisplaySource(metadata: UploadedBaseMap | null, compact = false, detailRatio = 1) {
+function uploadedBaseMapDisplaySource(metadata: UploadedBaseMap | null) {
   if (!metadata?.available) return "";
-  if (compact && detailRatio < 2.7 && metadata.screen2048Url) return metadata.screen2048Url;
+  // Keep one decoded base-map image for the whole session. Swapping the same
+  // <img> between 2048px and 4096px variants after zoom settle can briefly
+  // clear its painted texture on mobile. The 4096px screen derivative stays
+  // sharp during compositor scaling without retaining a second map layer.
   return metadata.screen4096Url ?? metadata.screen2048Url ?? uploadedBaseMapOriginalSource(metadata);
 }
 
@@ -2930,6 +2933,7 @@ export default function Home() {
   const [publicViewOverride] = useState(() => typeof document !== "undefined"
     && document.cookie.split(";").some((item) => item.trim() === `${PUBLIC_VIEW_COOKIE}=1`));
   const [zoom, setZoom] = useState(0.72);
+  const [mapRenderPan, setMapRenderPan] = useState({ x: 0, y: 0 });
   const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
     width: EXPORT_CANONICAL_WIDTH,
@@ -3885,7 +3889,6 @@ export default function Home() {
   const stageMarkerIds = useMemo(() => new Set(stageMarkerElements.map((element) => element.id)), [stageMarkerElements]);
   const stageLabelIds = useMemo(() => new Set(stageLabelElements.map((element) => element.id)), [stageLabelElements]);
   const visibleElementIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
-  const visibleElementsById = useMemo(() => new Map(visibleElements.map((element) => [element.id, element])), [visibleElements]);
   const publicSelectedMarkerZIndex = useMemo(
     () => visibleElements.reduce((highest, element) => Math.max(highest, element.z), 0) + 1,
     [visibleElements],
@@ -4202,6 +4205,7 @@ export default function Home() {
     panRef.current = nextPan;
     setZoom(nextZoom);
     setMapPan(nextPan);
+    setMapRenderPan(nextPan);
     if (clear) publicMapViewBeforeFocusRef.current = null;
   }, [setMapPan]);
 
@@ -5400,12 +5404,11 @@ export default function Home() {
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !hydrated || startupLoadCompletedRef.current) return;
     let cancelled = false;
-    const compact = viewportDimensions.width > 0 && viewportDimensions.width <= 760;
     const mapSource = baseMap === "svg"
       ? MAP_SVG
       : baseMap === "png"
         ? MAP_PNG
-        : uploadedBaseMapDisplaySource(uploadedBaseMap, compact, 1);
+        : uploadedBaseMapDisplaySource(uploadedBaseMap);
     if (!mapSource) return;
     const primaryHub = visibleElements.find((element) => isPrimaryHubLabel(element.name));
     const primaryHubAsset = primaryHub?.assetId ? assetsById.get(primaryHub.assetId) : undefined;
@@ -5554,6 +5557,7 @@ export default function Home() {
       setStartupInitialViewTarget({ zoom: targetZoom, pan: targetPan });
       setZoom(targetZoom);
       setMapPan(targetPan);
+      setMapRenderPan(targetPan);
     });
     return () => window.cancelAnimationFrame(frame);
   }, [elements, fitZoom, hydrated, publicLayoutAccess, setMapPan, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
@@ -5719,9 +5723,12 @@ export default function Home() {
     }
     setMapLayoutZoom(target.zoom);
     setMapPan(target.pan);
+    setMapRenderPan(target.pan);
     touchTransformBaseZoomRef.current = target.zoom;
     zoomRef.current = target.zoom;
-    startTransition(() => setZoom(target.zoom));
+    startTransition(() => {
+      setZoom(target.zoom);
+    });
     scheduleTouchLayerRelease();
   }, [scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan]);
 
@@ -5741,7 +5748,12 @@ export default function Home() {
     stageRef.current?.style.removeProperty("transform");
     touchTransformBaseZoomRef.current = committedZoom;
     setMapPan(committedPan);
-    startTransition(() => setZoom(committedZoom));
+    setMapRenderPan((current) => (
+      current.x === committedPan.x && current.y === committedPan.y ? current : committedPan
+    ));
+    startTransition(() => {
+      setZoom(committedZoom);
+    });
     scheduleTouchLayerRelease();
   }, [flushTouchMapTransform, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan]);
 
@@ -9029,6 +9041,7 @@ export default function Home() {
     panRef.current = nextPan;
     setZoom(fitZoom);
     setMapPan(nextPan);
+    setMapRenderPan(nextPan);
     setSelectedId(null);
     setSelectedFacilityId(null);
     setSelectedDenseLabelId(null);
@@ -9078,6 +9091,7 @@ export default function Home() {
         event.preventDefault();
         setZoom(fitZoom);
         setMapPan({ x: 0, y: 0 });
+        setMapRenderPan({ x: 0, y: 0 });
       }
     };
 
@@ -9380,7 +9394,53 @@ export default function Home() {
     ? MAP_SVG
     : baseMap === "png"
       ? MAP_PNG
-      : uploadedBaseMapDisplaySource(uploadedBaseMap, viewportDimensions.width > 0 && viewportDimensions.width <= 760, settledLabelZoom / Math.max(fitZoom, 0.22)) || MAP_SVG;
+      : uploadedBaseMapDisplaySource(uploadedBaseMap) || MAP_SVG;
+  const mobileMapRenderBounds = useMemo(() => {
+    if (
+      publicLayoutAccess !== "viewer"
+      || printPreviewMode
+      || viewportDimensions.width <= 0
+      || viewportDimensions.height <= 0
+      || viewportDimensions.width > 760
+      || stageDimensions.width <= 0
+      || stageDimensions.height <= 0
+    ) return null;
+    const renderZoom = Math.max(zoom, 0.22);
+    const renderedWidth = stageDimensions.width * renderZoom;
+    const renderedHeight = stageDimensions.height * renderZoom;
+    const overscanX = Math.max(120, viewportDimensions.width * 0.72);
+    const overscanY = Math.max(120, viewportDimensions.height * 0.72);
+    return {
+      left: 50 + (-viewportDimensions.width / 2 - overscanX - mapRenderPan.x) / renderedWidth * 100,
+      right: 50 + (viewportDimensions.width / 2 + overscanX - mapRenderPan.x) / renderedWidth * 100,
+      top: 50 + (-viewportDimensions.height / 2 - overscanY - mapRenderPan.y) / renderedHeight * 100,
+      bottom: 50 + (viewportDimensions.height / 2 + overscanY - mapRenderPan.y) / renderedHeight * 100,
+    };
+  }, [mapRenderPan.x, mapRenderPan.y, printPreviewMode, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width, zoom]);
+  const renderedMapElements = useMemo(() => {
+    if (!mobileMapRenderBounds) return visibleElements;
+    return visibleElements.filter((element) => (
+      element.id === selectedId
+      || isPrimaryHubLabel(element.name)
+      || (
+        element.x >= mobileMapRenderBounds.left
+        && element.x <= mobileMapRenderBounds.right
+        && element.y >= mobileMapRenderBounds.top
+        && element.y <= mobileMapRenderBounds.bottom
+      )
+    ));
+  }, [mobileMapRenderBounds, selectedId, visibleElements]);
+  const renderedMapElementsById = useMemo(
+    () => new Map(renderedMapElements.map((element) => [element.id, element])),
+    [renderedMapElements],
+  );
+  const renderedDenseLabelClusters = useMemo(() => {
+    if (!mobileMapRenderBounds) return denseLabelClusters;
+    return denseLabelClusters.filter((cluster) => (
+      cluster.id === selectedDenseLabelId
+      || cluster.elementIds.some((elementId) => renderedMapElementsById.has(elementId))
+    ));
+  }, [denseLabelClusters, mobileMapRenderBounds, renderedMapElementsById, selectedDenseLabelId]);
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
   const editorSyncLabel = editorDraftSyncState === "saving"
     ? "서버 저장 중"
@@ -9463,14 +9523,14 @@ export default function Home() {
         </div>
         <div className="toolbar-group zoom-tools">
           <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
-          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); }}>맞춤</button>
+          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
         <div className="toolbar-group export-tools"><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 · 미리보기 중" : "출력"}</button></div>
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
         <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.png" alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
-        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); }}>맞춤</button></div>
+        <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
         <button className="public-shortcut-trigger shortcut-trigger" type="button" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
@@ -9744,14 +9804,14 @@ export default function Home() {
                   {tertiaryCalibrationPoints.map((point) => <g key={`tertiary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-tertiary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.4" className="calibration-tertiary-dot" /></g>)}
                 </svg>}
                 <MapConnectorLayer
-                  denseLabelClusters={denseLabelClusters}
+                  denseLabelClusters={renderedDenseLabelClusters}
                   printPreviewMode={printPreviewMode}
                   selectedDenseLabelId={selectedDenseLabelId}
                   selectedId={selectedId}
                   stageDimensions={stageDimensions}
                   viewMode={viewMode}
-                  visibleElements={visibleElements}
-                  visibleElementsById={visibleElementsById}
+                  visibleElements={renderedMapElements}
+                  visibleElementsById={renderedMapElementsById}
                   zoom={settledLabelZoom}
                 />
                 <MapElementLayer
@@ -9776,7 +9836,7 @@ export default function Home() {
                   stageLabelIds={stageLabelIds}
                   stageMarkerIds={stageMarkerIds}
                   viewMode={viewMode}
-                  visibleElements={visibleElements}
+                  visibleElements={renderedMapElements}
                   zoom={settledLabelZoom}
                 />
                 {placeRequestPickingLocation && placeRequestLocation && <div className="place-request-location-marker" style={{ left: `${placeRequestLocation.x}%`, top: `${placeRequestLocation.y}%` }} aria-label="요청할 마커 위치">
@@ -9785,7 +9845,7 @@ export default function Home() {
                 </div>}
                 <DenseLabelLayer
                   actionsRef={mapRenderActionsRef}
-                  denseLabelClusters={denseLabelClusters}
+                  denseLabelClusters={renderedDenseLabelClusters}
                   editingEnabled={editingEnabled}
                   mapLabelStatusByElementId={mapLabelStatusByElementId}
                   placeRequestPickingLocation={placeRequestPickingLocation}
