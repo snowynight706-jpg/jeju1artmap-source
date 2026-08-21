@@ -78,6 +78,9 @@ test("public explorer starts with all places and reports the filtered result cou
   assert.equal((pageSource.match(/맞춤 ×\{mapScaleRatioLabel\} · 지도 \{mapVisiblePercent\}% · 라벨 \{outputLabelCount\}개/g) ?? []).length, 2);
   assert.match(pageSource, /publicLayoutAccess === "editor"[\s\S]{0,1800}className="map-scale-status"/);
   assert.match(cssSource, /\.statusbar \.map-scale-status \{[^}]*font-variant-numeric: tabular-nums[^}]*white-space: nowrap/);
+  assert.match(pageSource, /className="map-render-refresh"[\s\S]{0,180}aria-label="현재 화면 라벨과 마커 정보 새로고침"/);
+  assert.match(pageSource, /const refreshVisibleMapRenderInfo = \(\) => \{[\s\S]{0,360}setMapRenderRefreshRevision/);
+  assert.match(cssSource, /\.map-render-refresh \{[^}]*width: 20px[^}]*height: 20px/);
 });
 
 test("place detail exposes directions, address copy, share, and a stable history state", () => {

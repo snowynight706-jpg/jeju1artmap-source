@@ -67,10 +67,19 @@ test("public limits always apply and the admin can opt into the same scale steps
   assert.match(pageSource, /element\.labelVisible \|\| selectedLabel \|\| publicLandmarkLabel/);
   assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,180}optionalLabelScaleSteps,[\s\S]{0,20}\)/);
   assert.match(pageSource, /fitZoom \/ Math\.max\(labelRenderZoom, 0\.22\)/);
-  assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => setSettledLabelZoom\(zoom\)\);[\s\S]{0,30}\}, 140\)/);
+  assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => \{[\s\S]{0,80}setSettledLabelZoom\(zoom\);[\s\S]{0,240}\}, 140\)/);
   assert.match(pageSource, /관리자 지도에 축척별 라벨 수 적용/);
   assert.match(pageSource, /checked=\{editorScaleLabelLimitsEnabled\}/);
   assert.match(pageSource, /setEditorScaleLabelLimitsEnabled\(event\.target\.checked\)/);
+});
+
+test("screen label budgets exclude offscreen places and refresh after settled map movement", () => {
+  assert.match(pageSource, /const \[settledLabelPan, setSettledLabelPan\] = useState\(\{ x: 0, y: 0 \}\)/);
+  assert.match(pageSource, /const labelViewportBounds = useMemo[\s\S]{0,700}publicDenseLabelViewport/);
+  assert.match(pageSource, /const editorLabelCandidates = useMemo[\s\S]{0,260}element\.x < labelViewportBounds\.left[\s\S]{0,260}mobileOverviewSimplified/);
+  assert.match(pageSource, /setSettledLabelZoom\(zoom\);[\s\S]{0,180}setSettledLabelPan/);
+  assert.match(pageSource, /is-label-viewport-settling/);
+  assert.match(cssSource, /\.map-viewport\.is-label-viewport-settling :is\(\.label, \.dense-label-layer, \.dense-label-connector\)/);
 });
 
 test("admin label budgets are editable and persist through public layout view settings", () => {

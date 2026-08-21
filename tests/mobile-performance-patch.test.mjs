@@ -59,7 +59,7 @@ test("public label density follows settled zoom while admin labels follow direct
   assert.match(pageSource, /labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
   assert.match(pageSource, /labelDetailRatio = labelRenderZoom \/ Math\.max\(fitZoom, 0\.22\)/);
   assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,80}labelRenderZoom,[\s\S]{0,40}fitZoom,/);
-  assert.match(pageSource, /startTransition\(\(\) => setSettledLabelZoom\(zoom\)\)/);
+  assert.match(pageSource, /startTransition\(\(\) => \{[\s\S]{0,80}setSettledLabelZoom\(zoom\);[\s\S]{0,180}setSettledLabelPan/);
   assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}\s+zoom=\{labelRenderZoom\}/);
 });
 

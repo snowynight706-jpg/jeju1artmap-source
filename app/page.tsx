@@ -3088,6 +3088,8 @@ export default function Home() {
     );
   });
   const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
+  const [settledLabelPan, setSettledLabelPan] = useState({ x: 0, y: 0 });
+  const [mapRenderRefreshRevision, setMapRenderRefreshRevision] = useState(0);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
     width: EXPORT_CANONICAL_WIDTH,
     height: EXPORT_CANONICAL_WIDTH / MAP_ASPECT,
@@ -3996,6 +3998,29 @@ export default function Home() {
   const mapScaleRatio = Math.max(1, labelDetailRatio);
   const mapScaleRatioLabel = mapScaleRatio.toFixed(2).replace(/\.?0+$/, "");
   const mapVisiblePercent = Math.max(1, Math.min(100, Math.round(100 / mapScaleRatio)));
+  const labelViewportSettled = Math.abs(settledLabelZoom - zoom) <= 0.002
+    && Math.abs(settledLabelPan.x - mapRenderPan.x) <= 0.5
+    && Math.abs(settledLabelPan.y - mapRenderPan.y) <= 0.5;
+  const labelViewportBounds = useMemo(() => {
+    if (
+      publicLayoutAccess === "loading"
+      || printPreviewMode
+      || viewportDimensions.width <= 0
+      || viewportDimensions.height <= 0
+      || stageDimensions.width <= 0
+      || stageDimensions.height <= 0
+    ) return null;
+    void mapRenderRefreshRevision;
+    return publicDenseLabelViewport({
+      panX: settledLabelPan.x,
+      panY: settledLabelPan.y,
+      zoom: settledLabelZoom,
+      stageWidth: stageDimensions.width,
+      stageHeight: stageDimensions.height,
+      viewportWidth: viewportDimensions.width,
+      viewportHeight: viewportDimensions.height,
+    });
+  }, [mapRenderRefreshRevision, printPreviewMode, publicLayoutAccess, settledLabelPan.x, settledLabelPan.y, settledLabelZoom, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const publicDenseLabelViewportBounds = useMemo(() => {
     if (
       publicLayoutAccess !== "viewer"
@@ -4007,8 +4032,8 @@ export default function Home() {
     ) return undefined;
     const compact = viewportDimensions.width <= 760;
     return publicDenseLabelViewport({
-      panX: mapRenderPan.x,
-      panY: mapRenderPan.y,
+      panX: settledLabelPan.x,
+      panY: settledLabelPan.y,
       zoom: labelRenderZoom,
       stageWidth: stageDimensions.width,
       stageHeight: stageDimensions.height,
@@ -4017,7 +4042,7 @@ export default function Home() {
       paddingX: compact ? 12 : 18,
       paddingY: compact ? 14 : 18,
     });
-  }, [labelRenderZoom, mapRenderPan.x, mapRenderPan.y, printPreviewMode, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
+  }, [labelRenderZoom, printPreviewMode, publicLayoutAccess, settledLabelPan.x, settledLabelPan.y, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const denseLabelLayoutOptions = useMemo(() => {
     if (printPreviewMode || publicLayoutAccess === "loading") return undefined;
     if (publicLayoutAccess === "editor") return {
@@ -4073,13 +4098,19 @@ export default function Home() {
   const printMarkerElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).marker).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
   const printLabelElements = useMemo(() => elements.filter((element) => element.mapVisible && printPolicyFor(element).label).sort((a, b) => a.z - b.z), [elements, printPolicyFor]);
   const editorLabelCandidates = useMemo(() => editorVisibleElements.filter((element) => {
+    if (labelViewportBounds && (
+      element.x < labelViewportBounds.left
+      || element.x > labelViewportBounds.right
+      || element.y < labelViewportBounds.top
+      || element.y > labelViewportBounds.bottom
+    )) return false;
     if (mobileOverviewSimplified && element.category !== "landmark") return false;
     const selectedLabel = selectedId === element.id;
     const primaryHub = isPrimaryHubLabel(element.name);
     const publicLandmarkLabel = publicLayoutAccess === "viewer" && element.category === "landmark";
     return (element.labelVisible || selectedLabel || publicLandmarkLabel || (publicLayoutAccess === "viewer" && primaryHub))
       && (element.category === "landmark" || markerLabelsVisible || primaryHub || selectedLabel);
-  }), [editorVisibleElements, markerLabelsVisible, mobileOverviewSimplified, publicLayoutAccess, selectedId]);
+  }), [editorVisibleElements, labelViewportBounds, markerLabelsVisible, mobileOverviewSimplified, publicLayoutAccess, selectedId]);
   const scaleLabelLimitActive = publicLayoutAccess === "viewer"
     || (publicLayoutAccess === "editor" && editorScaleLabelLimitsEnabled);
   const scaleMainHubLabelIds = useMemo(
@@ -5928,10 +5959,17 @@ export default function Home() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      startTransition(() => setSettledLabelZoom(zoom));
+      startTransition(() => {
+        setSettledLabelZoom(zoom);
+        setSettledLabelPan((current) => (
+          current.x === mapRenderPan.x && current.y === mapRenderPan.y
+            ? current
+            : { x: mapRenderPan.x, y: mapRenderPan.y }
+        ));
+      });
     }, 140);
     return () => window.clearTimeout(timer);
-  }, [zoom]);
+  }, [mapRenderPan.x, mapRenderPan.y, zoom]);
 
   useEffect(() => {
     calibrationLiveApplyRef.current = calibrationLiveApply;
@@ -9479,6 +9517,16 @@ export default function Home() {
     setToast("전체 지도로 돌아왔습니다.");
   };
 
+  const refreshVisibleMapRenderInfo = () => {
+    const currentPan = { ...panRef.current };
+    startTransition(() => {
+      setSettledLabelZoom(zoomRef.current);
+      setSettledLabelPan(currentPan);
+      setMapRenderRefreshRevision((current) => current + 1);
+    });
+    setToast("현재 화면의 라벨·마커 표시를 새로고침했습니다.");
+  };
+
   useEffect(() => {
     if (publicLayoutAccess !== "viewer") return;
 
@@ -10264,7 +10312,7 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${publicLayoutAccess === "editor" ? "editor-label-motion" : ""} ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${publicLayoutAccess === "viewer" && Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${publicLayoutAccess === "editor" ? "editor-label-motion" : ""} ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${publicLayoutAccess === "viewer" && Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${labelViewportSettled ? "" : "is-label-viewport-settling"} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
             <div
               ref={stageWrapRef}
@@ -10407,7 +10455,7 @@ export default function Home() {
               </Suspense>
             </div>
           </aside>}
-          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span className="map-scale-status">맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span className="map-scale-status">맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
+          {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span className="map-scale-status">맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span className="map-scale-status"><span>맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><button type="button" className="map-render-refresh" onClick={refreshVisibleMapRenderInfo} aria-label="현재 화면 라벨과 마커 정보 새로고침" title="현재 화면 표시만 다시 계산">↻</button></span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
         </section>
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
 
