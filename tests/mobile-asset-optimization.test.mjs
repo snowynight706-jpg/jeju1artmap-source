@@ -45,7 +45,7 @@ test("mobile landmarks use one fixed 384px derivative without zoom-time source p
   assert.ok(mobileBytes < screenBytes * 0.3);
 });
 
-test("screen UI swaps only pixel-equivalent raster files while install icons remain PNG", async () => {
+test("illustrated screen UI stays WebP while official CI uses SVG and install icons remain PNG", async () => {
   const iconStems = [
     "category_ui_culture_book_brush_note_v03_ui-96px",
     "category_ui_restaurant_v02_ui-96px",
@@ -59,8 +59,9 @@ test("screen UI swaps only pixel-equivalent raster files while install icons rem
     const webp = await stat(new URL(`../public/category-icons/${stem}.webp`, import.meta.url));
     assert.ok(webp.size < png.size);
   }
-  assert.match(pageSource, /\/jfac-signature-b\.webp/);
-  assert.match(pageSource, /\/jfac-symbol\.webp/);
+  assert.match(pageSource, /const JFAC_SIGNATURE_B_SVG = "\/jfac-signature-b\.svg\?v=20260821-svg1"/);
+  assert.match(pageSource, /const JFAC_SYMBOL_SVG = "\/jfac-symbol\.svg\?v=20260821-svg1"/);
+  assert.doesNotMatch(pageSource, /\/jfac-(?:signature-b|symbol)\.webp/);
   assert.match(manifestSource, /\/icons\/icon-192\.png/);
   assert.match(manifestSource, /\/icons\/icon-512\.png/);
   assert.match(manifestSource, /\/icons\/icon-maskable-512\.png/);

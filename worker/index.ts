@@ -31,13 +31,19 @@ const worker = {
 
     const immutableBuildAsset = url.pathname.startsWith("/assets/");
     const immutableVersionedImage = Boolean(url.searchParams.get("v"))
-      && (url.pathname.startsWith("/landmarks-screen/") || url.pathname.startsWith("/maps/wondosim-base-map-v20-screen-"));
+      && (
+        url.pathname.startsWith("/landmarks-screen/")
+        || url.pathname.startsWith("/maps/wondosim-base-map-v20-screen-")
+        || url.pathname === "/jfac-signature-b.svg"
+        || url.pathname === "/jfac-symbol.svg"
+      );
     if ((request.method === "GET" || request.method === "HEAD") && (immutableBuildAsset || immutableVersionedImage)) {
       const asset = await env.ASSETS.fetch(request);
       if (!asset.ok) return asset;
       const headers = new Headers(asset.headers);
       headers.set("cache-control", "public, max-age=31536000, immutable");
       if (url.pathname.endsWith(".webp")) headers.set("content-type", "image/webp");
+      if (url.pathname.endsWith(".svg")) headers.set("content-type", "image/svg+xml; charset=utf-8");
       return new Response(asset.body, { status: asset.status, statusText: asset.statusText, headers });
     }
 

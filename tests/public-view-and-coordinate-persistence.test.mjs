@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const focusSource = await readFile(new URL("../app/public-place-focus.mjs", import.meta.url), "utf8");
-const signatureB = await readFile(new URL("../public/jfac-signature-b.webp", import.meta.url));
-const signatureBPng = await readFile(new URL("../public/jfac-signature-b.png", import.meta.url));
+const signatureBSvg = await readFile(new URL("../public/jfac-signature-b.svg", import.meta.url));
+const signatureBWebp = await readFile(new URL("../public/jfac-signature-b.webp", import.meta.url));
+const symbolSvg = await readFile(new URL("../public/jfac-symbol.svg", import.meta.url));
+const symbolWebp = await readFile(new URL("../public/jfac-symbol.webp", import.meta.url));
 
 test("the first screen waits only for the critical map and main-hub assets before settling", () => {
   const loaderBlock = pageSource.match(/const startupLoadingCard =[\s\S]*?<\/section>;/)?.[0] ?? "";
@@ -22,18 +25,21 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(pageSource, /committedFrame = window\.requestAnimationFrame[\s\S]{0,260}settledFrame = window\.requestAnimationFrame\(\(\) =>/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
-  assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*"\/jfac-signature-b\.webp",\s*mapSource/);
-  assert.match(loaderBlock, /src="\/jfac-signature-b\.webp" width=\{1182\} height=\{626\} alt="제주문화예술재단 국문 시그니처 B"/);
-  assert.doesNotMatch(loaderBlock, /jfac-symbol\.(?:png|webp)|jfac-signature-c\.(?:png|webp)|제주 원도심 아트맵/);
+  assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*JFAC_SIGNATURE_B_SVG,\s*mapSource/);
+  assert.match(loaderBlock, /src=\{JFAC_SIGNATURE_B_SVG\} width=\{1182\} height=\{626\} alt="제주문화예술재단 국문 시그니처 B"/);
+  assert.doesNotMatch(loaderBlock, /JFAC_SYMBOL_SVG|jfac-symbol\.(?:png|webp|svg)|jfac-signature-c\.(?:png|webp|svg)|제주 원도심 아트맵/);
   assert.match(loaderBlock, />로딩 중</);
   assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
   assert.match(cssSource, /\.public-loading \{[^}]*min-height: 100dvh[^}]*background: #fff/);
   assert.match(cssSource, /\.public-loading-card \{[^}]*width: min\(450px, 100%\)[^}]*border: 0[^}]*border-radius: 0[^}]*background: transparent[^}]*box-shadow: none/);
   assert.match(cssSource, /\.public-loading-symbol \{ width: min\(230px, 72vw\)/);
   assert.match(cssSource, /\.public-loading-track \{ width: min\(270px, 82%\)/);
-  assert.equal(signatureB.subarray(0, 4).toString("ascii"), "RIFF");
-  assert.equal(signatureB.subarray(8, 12).toString("ascii"), "WEBP");
-  assert.ok(signatureB.length < signatureBPng.length);
+  assert.match(signatureBSvg.toString("utf8"), /^<\?xml[\s\S]*<svg[^>]+viewBox="372\.283 296\.767164 377\.9537 200\.168372"[\s\S]*<path/);
+  assert.match(symbolSvg.toString("utf8"), /^<\?xml[\s\S]*<svg[^>]+preserveAspectRatio="none"[\s\S]*<path/);
+  assert.doesNotMatch(signatureBSvg.toString("utf8"), /<image\b|data:image\//);
+  assert.doesNotMatch(symbolSvg.toString("utf8"), /<image\b|data:image\//);
+  assert.ok(gzipSync(signatureBSvg, { level: 9 }).length < signatureBWebp.length);
+  assert.ok(gzipSync(symbolSvg, { level: 9 }).length < symbolWebp.length);
 });
 
 test("cached PWA startup assets cannot reset completed progress back to zero", () => {
@@ -66,7 +72,7 @@ test("public viewers start focused and zoomed on the main hub on desktop and mob
 });
 
 test("mobile public chrome floats only the main-hub return button", () => {
-  assert.match(pageSource, /<img src="\/jfac-symbol\.webp" width=\{446\} height=\{140\} alt="" aria-hidden="true" \/>/);
+  assert.match(pageSource, /<img src=\{JFAC_SYMBOL_SVG\} width=\{446\} height=\{140\} alt="" aria-hidden="true" \/>/);
   assert.doesNotMatch(pageSource, /<div className="brand-mark">W<\/div>/);
   assert.match(cssSource, /\.public-topbar \{[^}]*position: absolute;[^}]*right: 9px;[^}]*background: transparent/);
   assert.match(cssSource, /\.public-topbar \.brand-block, \.public-topbar \.zoom-tools, \.public-topbar \.readonly-badge, \.public-topbar \.public-shortcut-trigger, \.public-topbar \.owner-signin \{ display: none; \}/);

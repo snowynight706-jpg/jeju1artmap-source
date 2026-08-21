@@ -104,6 +104,8 @@ const PublicExplorerActivityContent = lazy(() => import("./public-explorer-activ
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
 const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_초고해상도.png";
+const JFAC_SIGNATURE_B_SVG = "/jfac-signature-b.svg?v=20260821-svg1";
+const JFAC_SYMBOL_SVG = "/jfac-symbol.svg?v=20260821-svg1";
 const UPLOADED_MAP_API = "/api/base-map";
 const CALIBRATION_SETTINGS_API = "/api/calibration-settings";
 const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
@@ -5729,7 +5731,7 @@ export default function Home() {
     const primaryHub = visibleElements.find((element) => isPrimaryHubLabel(element.name));
     const primaryHubAsset = primaryHub?.assetId ? assetsById.get(primaryHub.assetId) : undefined;
     const sources = [...new Set([
-      "/jfac-signature-b.webp",
+      JFAC_SIGNATURE_B_SVG,
       mapSource,
       useMobileLandmarkAssets
         ? primaryHubAsset?.mobileSrc ?? primaryHubAsset?.screenSrc ?? primaryHubAsset?.src
@@ -9861,7 +9863,7 @@ export default function Home() {
         ? "주요 거점을 중심으로 지도를 맞추고 있습니다."
         : "화면을 안정화하고 있습니다.";
   const startupLoadingCard = <section className="public-loading-card" aria-live="polite" aria-busy="true">
-    <img className="public-loading-symbol" src="/jfac-signature-b.webp" width={1182} height={626} alt="제주문화예술재단 국문 시그니처 B" decoding="async" />
+    <img className="public-loading-symbol" src={JFAC_SIGNATURE_B_SVG} width={1182} height={626} alt="제주문화예술재단 국문 시그니처 B" decoding="async" />
     <div className="public-loading-status"><span aria-hidden="true" /><b>로딩 중</b></div>
     <p>{startupLoadingMessage}</p>
     <div className="public-loading-track" aria-hidden="true"><span style={{ width: `${startupLoadPercent}%` }} /></div>
@@ -9890,7 +9892,7 @@ export default function Home() {
       <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""} ${publicLayoutAccess === "viewer" && selected ? "public-place-selected" : ""}`} data-ui-theme={uiTheme}>
       {!startupRevealReady && <div className="public-loading public-loading-overlay">{startupLoadingCard}</div>}
       {publicLayoutAccess === "editor" ? <header className="topbar">
-        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.webp" width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
+        <div className="brand-block"><div className="brand-mark"><img src={JFAC_SYMBOL_SVG} width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
             <summary aria-label={`현재 ${activeUiTheme.name} 테마 · 테마 선택 열기`} title="UI 테마 선택">
               <span>테마</span><UiThemeSwatch colors={activeUiTheme.colors} />
             </summary>
@@ -9913,7 +9915,7 @@ export default function Home() {
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
-        <div className="brand-block"><div className="brand-mark"><img src="/jfac-symbol.webp" width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
+        <div className="brand-block"><div className="brand-mark"><img src={JFAC_SYMBOL_SVG} width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, fitZoom, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, fitZoom, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>

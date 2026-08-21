@@ -56,6 +56,9 @@ test("screen landmarks and build assets use lightweight, immutable delivery path
   assert.match(pageSource, /asset\.screenSrc \?\? asset\.src/);
   assert.doesNotMatch(layoutSource, /next\/font\/google|Geist_Mono|geistSans/);
   assert.match(workerSource, /url\.pathname\.startsWith\("\/assets\/"\)/);
+  assert.match(workerSource, /url\.pathname === "\/jfac-signature-b\.svg"/);
+  assert.match(workerSource, /url\.pathname === "\/jfac-symbol\.svg"/);
+  assert.match(workerSource, /image\/svg\+xml; charset=utf-8/);
   assert.match(workerSource, /max-age=31536000, immutable/);
   const map2048 = await stat(new URL("../public/maps/wondosim-base-map-v20-screen-2048.webp", import.meta.url));
   const map4096 = await stat(new URL("../public/maps/wondosim-base-map-v20-screen-4096.webp", import.meta.url));
