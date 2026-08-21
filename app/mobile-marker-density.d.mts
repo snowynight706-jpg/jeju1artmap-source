@@ -14,9 +14,12 @@ export function mobileMarkerBudgetForScale(
   fitZoom: number,
   total: number,
   tier?: MobileRenderTier,
+  fullFromZoom?: number | null,
 ): number;
 
-export function mobileLabelBudgetForTier(
+export function mobileLabelBudgetForScale(
+  zoom: number,
+  fitZoom: number,
   baseLimit: number,
   total: number,
   tier?: MobileRenderTier,

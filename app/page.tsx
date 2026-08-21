@@ -46,7 +46,7 @@ import {
 } from "./mobile-render-budget.mjs";
 import {
   chooseMobileMarkerRenderIds,
-  mobileLabelBudgetForTier,
+  mobileLabelBudgetForScale,
   mobileMarkerBudgetForScale,
 } from "./mobile-marker-density.mjs";
 import {
@@ -3916,7 +3916,7 @@ export default function Home() {
   const scaleLabelBudget = useMemo(() => {
     const baseBudget = labelBudgetForScale(settledLabelZoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive);
     if (publicLayoutAccess !== "viewer" || viewportDimensions.width <= 0 || viewportDimensions.width > 760) return baseBudget;
-    return mobileLabelBudgetForTier(baseBudget, editorLabelCandidates.length, mobileRenderBudget.tier);
+    return mobileLabelBudgetForScale(settledLabelZoom, fitZoom, baseBudget, editorLabelCandidates.length, mobileRenderBudget.tier);
   }, [editorLabelCandidates.length, fitZoom, mobileRenderBudget.tier, publicLayoutAccess, scaleLabelLimitActive, settledLabelZoom, viewportDimensions.width]);
   const scaleAwareLabelSelection = useMemo(() => chooseScaleAwareLabelIds(editorLabelCandidates, {
     limit: scaleLabelBudget,
@@ -9542,7 +9542,13 @@ export default function Home() {
   }, [mobileMapRenderBounds, selectedId, visibleElements]);
   const mobileFullMarkerIds = useMemo(() => {
     if (!mobileMapRenderBounds) return null;
-    const markerBudget = mobileMarkerBudgetForScale(zoom, fitZoom, mobileMapCandidateElements.length, mobileRenderBudget.tier);
+    const markerBudget = mobileMarkerBudgetForScale(
+      zoom,
+      fitZoom,
+      mobileMapCandidateElements.length,
+      mobileRenderBudget.tier,
+      startupInitialViewTarget?.zoom ?? null,
+    );
     return new Set(chooseMobileMarkerRenderIds(mobileMapCandidateElements, {
       limit: markerBudget,
       selectedId,
@@ -9551,7 +9557,7 @@ export default function Home() {
       centerX: mobileMapRenderBounds.centerX,
       centerY: mobileMapRenderBounds.centerY,
     }));
-  }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileRenderBudget.tier, printPolicyFor, selectedId, zoom]);
+  }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileRenderBudget.tier, printPolicyFor, selectedId, startupInitialViewTarget?.zoom, zoom]);
   const renderedMapElements = useMemo(() => (
     mobileFullMarkerIds
       ? mobileMapCandidateElements.filter((element) => mobileFullMarkerIds.has(element.id))
