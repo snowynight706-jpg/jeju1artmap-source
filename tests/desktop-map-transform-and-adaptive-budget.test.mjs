@@ -3,12 +3,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { horizontalMapFitZoom, mapStageGestureTransform } from "../app/map-stage-transform.mjs";
+import { lowTierBaseMapNeedsHighResolution } from "../app/base-map-quality.mjs";
 import {
   HIGH_MOBILE_RENDER_BUDGET,
   LOW_MOBILE_RENDER_BUDGET,
   STANDARD_MOBILE_RENDER_BUDGET,
   mobileRenderBudgetForDevice,
 } from "../app/mobile-render-budget.mjs";
+import { shouldSendMapSettleDiagnostic } from "../app/performance-diagnostics.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -36,6 +38,8 @@ test("public desktop scaling stays composited while admin restores direct wheel 
 });
 
 test("mobile offscreen overscan follows device capacity and runtime settle cost", () => {
+  assert.equal(LOW_MOBILE_RENDER_BUDGET.overscanRatio, 0.35);
+  assert.equal(LOW_MOBILE_RENDER_BUDGET.minimumOverscan, 72);
   assert.equal(mobileRenderBudgetForDevice(4, 8), LOW_MOBILE_RENDER_BUDGET);
   assert.equal(mobileRenderBudgetForDevice(8, 4), LOW_MOBILE_RENDER_BUDGET);
   assert.equal(mobileRenderBudgetForDevice(8, 8), HIGH_MOBILE_RENDER_BUDGET);
@@ -44,4 +48,21 @@ test("mobile offscreen overscan follows device capacity and runtime settle cost"
   assert.match(pageSource, /durationMs >= 80[\s\S]{0,360}mobileSlowSettleSamplesRef\.current >= 2/);
   assert.match(pageSource, /current\.tier === "low" \? current : LOW_MOBILE_RENDER_BUDGET/);
   assert.match(pageSource, /mobileRenderBudget\.minimumOverscan, viewportDimensions\.width \* mobileRenderBudget\.overscanRatio/);
+});
+
+test("low-tier map quality upgrades only when rendered pixels need it", () => {
+  assert.equal(lowTierBaseMapNeedsHighResolution({ tier: "low", viewportWidth: 390, stageWidth: 328, zoom: 1.38, devicePixelRatio: 3 }), false);
+  assert.equal(lowTierBaseMapNeedsHighResolution({ tier: "low", viewportWidth: 390, stageWidth: 328, zoom: 2.1, devicePixelRatio: 3 }), true);
+  assert.equal(lowTierBaseMapNeedsHighResolution({ tier: "standard", viewportWidth: 390, stageWidth: 328, zoom: 4, devicePixelRatio: 3 }), false);
+  assert.equal(lowTierBaseMapNeedsHighResolution({ tier: "low", viewportWidth: 900, stageWidth: 756, zoom: 4, devicePixelRatio: 2 }), false);
+  assert.match(pageSource, /compactBaseMapPreferred/);
+  assert.match(pageSource, /await image\.decode\(\)/);
+});
+
+test("gesture diagnostics sample one in five while retaining slow outliers", () => {
+  assert.equal(shouldSendMapSettleDiagnostic(1, 24), true);
+  assert.equal(shouldSendMapSettleDiagnostic(2, 24), false);
+  assert.equal(shouldSendMapSettleDiagnostic(5, 24), true);
+  assert.equal(shouldSendMapSettleDiagnostic(3, 200), true);
+  assert.match(pageSource, /shouldSendMapSettleDiagnostic\(sampleNumber, durationMs\)/);
 });

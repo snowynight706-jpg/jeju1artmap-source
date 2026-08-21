@@ -35,7 +35,7 @@ test("the first screen waits only for the critical map and main-hub assets befor
 });
 
 test("cached PWA startup assets cannot reset completed progress back to zero", () => {
-  const startupBlock = pageSource.match(/if \(publicLayoutAccess === "loading"[\s\S]*?\}, \[assetsById, baseMap, hydrated/)?.[0] ?? "";
+  const startupBlock = pageSource.match(/if \(publicLayoutAccess === "loading"[\s\S]*?\}, \[activeBaseMapSrc, assetsById, hydrated/)?.[0] ?? "";
   assert.match(startupBlock, /queueMicrotask\(\(\) => \{[\s\S]*?setStartupLoadDone\(0\);[\s\S]*?Promise\.all\(sources\.map\(preload\)\)/);
   assert.match(startupBlock, /Promise\.all\(sources\.map\(preload\)\)[\s\S]*?setStartupLoadDone\(sources\.length\)/);
   assert.doesNotMatch(startupBlock, /queueMicrotask\([\s\S]*?setStartupLoadDone\(0\)[\s\S]*?\}\);\s*const preload/);

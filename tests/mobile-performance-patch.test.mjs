@@ -60,12 +60,19 @@ test("public label density follows settled zoom while admin labels follow direct
   assert.match(pageSource, /labelDetailRatio = labelRenderZoom \/ Math\.max\(fitZoom, 0\.22\)/);
   assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,80}labelRenderZoom,[\s\S]{0,40}fitZoom,/);
   assert.match(pageSource, /startTransition\(\(\) => \{[\s\S]{0,80}setSettledLabelZoom\(zoom\);[\s\S]{0,180}setSettledLabelPan/);
+  assert.match(pageSource, /const markerFrame = window\.requestAnimationFrame\(\(\) => \{[\s\S]{0,80}setLabelRenderPhase\(0\);[\s\S]{0,120}requestAnimationFrame/);
+  assert.match(pageSource, /requestIdleCallback\(mountLabelDetails, \{ timeout: 120 \}\)/);
+  assert.match(pageSource, /stageLabelIds=\{labelContentReady \? stageLabelIds : EMPTY_MAP_ELEMENT_IDS\}/);
+  assert.match(pageSource, /labelDetailsReady && <MapConnectorLayer/);
+  assert.match(pageSource, /labelDetailsReady && <DenseLabelLayer/);
   assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}\s+zoom=\{labelRenderZoom\}/);
 });
 
-test("mobile high-resolution map switching and startup reveal wait for settled work only", () => {
-  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap\) \|\| MAP_SVG/);
-  assert.doesNotMatch(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap,[^)]*settledLabelZoom/);
+test("low-tier mobile starts compact and upgrades the map only after decode", () => {
+  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap, compactBaseMapPreferred\) \|\| MAP_SVG/);
+  assert.match(pageSource, /lowTierBaseMapNeedsHighResolution\(\{/);
+  assert.match(pageSource, /await image\.decode\(\)/);
+  assert.match(pageSource, /setDecodedHighResolutionBaseMapSource\(highResolutionBaseMapSource\)/);
   assert.doesNotMatch(pageSource, /setTimeout\(\(\) => setStartupRevealReady\(true\), 320\)/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
 });

@@ -85,7 +85,8 @@ test("public limits always apply and the admin can opt into the same scale steps
   assert.match(pageSource, /element\.labelVisible \|\| selectedLabel \|\| publicLandmarkLabel/);
   assert.match(pageSource, /optionalLabelBudgetForScale\([\s\S]{0,180}optionalLabelScaleSteps,[\s\S]{0,20}\)/);
   assert.match(pageSource, /fitZoom \/ Math\.max\(labelRenderZoom, 0\.22\)/);
-  assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => \{[\s\S]{0,80}setSettledLabelZoom\(zoom\);[\s\S]{0,240}\}, 140\)/);
+  assert.match(pageSource, /if \(publicLayoutAccess !== "viewer"\) \{[\s\S]{0,180}setTimeout\(\(\) => \{[\s\S]{0,180}setSettledLabelZoom\(zoom\)/);
+  assert.match(pageSource, /const markerFrame = window\.requestAnimationFrame\(\(\) => \{[\s\S]{0,180}requestAnimationFrame\(\(\) => \{[\s\S]{0,180}setSettledLabelZoom\(zoom\)/);
   assert.match(pageSource, /관리자 지도에 축척별 라벨 수 적용/);
   assert.match(pageSource, /checked=\{editorScaleLabelLimitsEnabled\}/);
   assert.match(pageSource, /setEditorScaleLabelLimitsEnabled\(event\.target\.checked\)/);

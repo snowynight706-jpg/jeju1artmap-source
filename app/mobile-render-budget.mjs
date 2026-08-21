@@ -1,7 +1,7 @@
 export const LOW_MOBILE_RENDER_BUDGET = Object.freeze({
   tier: "low",
-  overscanRatio: 0.5,
-  minimumOverscan: 96,
+  overscanRatio: 0.35,
+  minimumOverscan: 72,
 });
 
 export const STANDARD_MOBILE_RENDER_BUDGET = Object.freeze({

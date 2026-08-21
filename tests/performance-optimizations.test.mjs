@@ -17,9 +17,11 @@ const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galact
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
 test("uploaded base maps use versioned screen derivatives while exports retain the original", () => {
-  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap/);
+  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap, compactBaseMapPreferred\)/);
+  assert.match(pageSource, /metadata\.screen2048Url \?\? metadata\.screen4096Url/);
   assert.match(pageSource, /return metadata\.screen4096Url \?\? metadata\.screen2048Url \?\?/);
-  assert.doesNotMatch(pageSource, /compact && detailRatio < 2\.7/);
+  assert.match(pageSource, /lowTierBaseMapNeedsHighResolution/);
+  assert.match(pageSource, /decodedHighResolutionBaseMapSource/);
   assert.match(pageSource, /uploadedBaseMapOriginalSource\(uploadedBaseMap\) \|\| MAP_SVG/);
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 2048, 0\.86\)/);
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 4096, 0\.88\)/);

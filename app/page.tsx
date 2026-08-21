@@ -44,11 +44,13 @@ import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./la
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
 import { horizontalMapFitZoom, mapStageGestureTransform } from "./map-stage-transform.mjs";
+import { lowTierBaseMapNeedsHighResolution } from "./base-map-quality.mjs";
 import {
   LOW_MOBILE_RENDER_BUDGET,
   STANDARD_MOBILE_RENDER_BUDGET,
   mobileRenderBudgetForDevice,
 } from "./mobile-render-budget.mjs";
+import { shouldSendMapSettleDiagnostic } from "./performance-diagnostics.mjs";
 import {
   chooseMobileMarkerRenderIds,
   mobileLabelBudgetForScale,
@@ -1630,12 +1632,11 @@ function uploadedBaseMapOriginalSource(metadata: UploadedBaseMap | null) {
   return metadata.originalUrl ?? `${UPLOADED_MAP_API}?v=${encodeURIComponent(metadata.uploadedAt)}`;
 }
 
-function uploadedBaseMapDisplaySource(metadata: UploadedBaseMap | null) {
+function uploadedBaseMapDisplaySource(metadata: UploadedBaseMap | null, preferCompact = false) {
   if (!metadata?.available) return "";
-  // Keep one decoded base-map image for the whole session. Swapping the same
-  // <img> between 2048px and 4096px variants after zoom settle can briefly
-  // clear its painted texture on mobile. The 4096px screen derivative stays
-  // sharp during compositor scaling without retaining a second map layer.
+  if (preferCompact) {
+    return metadata.screen2048Url ?? metadata.screen4096Url ?? uploadedBaseMapOriginalSource(metadata);
+  }
   return metadata.screen4096Url ?? metadata.screen2048Url ?? uploadedBaseMapOriginalSource(metadata);
 }
 
@@ -2601,6 +2602,8 @@ type MobileMarkerPlaceholderLayerRef = { current: HTMLDivElement | null };
 type MapLabelStatus = { hasEvent: boolean; reviewCount: number; hasNewReview: boolean };
 
 const EMPTY_MAP_LABEL_STATUS: MapLabelStatus = Object.freeze({ hasEvent: false, reviewCount: 0, hasNewReview: false });
+const EMPTY_MAP_LABEL_STATUS_BY_ELEMENT_ID = new Map<string, MapLabelStatus>();
+const EMPTY_MAP_ELEMENT_IDS = new Set<string>();
 
 type MapElementMarkerProps = {
   actionsRef: MapRenderActionsRef;
@@ -3033,6 +3036,7 @@ export default function Home() {
   });
   const [settledLabelZoom, setSettledLabelZoom] = useState(0.22);
   const [settledLabelPan, setSettledLabelPan] = useState({ x: 0, y: 0 });
+  const [labelRenderPhase, setLabelRenderPhase] = useState<0 | 1 | 2 | 3>(3);
   const [mapRenderRefreshRevision, setMapRenderRefreshRevision] = useState(0);
   const [stageDimensions, setStageDimensions] = useState<StageDimensions>({
     width: EXPORT_CANONICAL_WIDTH,
@@ -3041,6 +3045,7 @@ export default function Home() {
   const [viewportDimensions, setViewportDimensions] = useState<StageDimensions>({ width: 0, height: 0 });
   const [baseMap, setBaseMap] = useState<BaseMapMode>("svg");
   const [uploadedBaseMap, setUploadedBaseMap] = useState<UploadedBaseMap | null>(null);
+  const [decodedHighResolutionBaseMapSource, setDecodedHighResolutionBaseMapSource] = useState("");
   const [baseMapCanUpload, setBaseMapCanUpload] = useState<boolean | null>(null);
   const [baseMapUploading, setBaseMapUploading] = useState(false);
   const [exportWidth, setExportWidth] = useState<8944 | 12000>(12000);
@@ -3955,9 +3960,15 @@ export default function Home() {
   const mapScaleRatio = Math.max(1, labelDetailRatio);
   const mapScaleRatioLabel = mapScaleRatio.toFixed(2).replace(/\.?0+$/, "");
   const mapVisiblePercent = Math.max(1, Math.min(100, Math.round(100 / mapScaleRatio)));
-  const labelViewportSettled = Math.abs(settledLabelZoom - zoom) <= 0.002
+  const labelCompositionSettled = Math.abs(settledLabelZoom - zoom) <= 0.002
     && Math.abs(settledLabelPan.x - mapRenderPan.x) <= 0.5
     && Math.abs(settledLabelPan.y - mapRenderPan.y) <= 0.5;
+  const labelContentReady = publicLayoutAccess !== "viewer"
+    || (labelCompositionSettled && labelRenderPhase >= 1);
+  const labelDetailsReady = publicLayoutAccess !== "viewer"
+    || (labelCompositionSettled && labelRenderPhase >= 2);
+  const labelViewportSettled = labelCompositionSettled
+    && (publicLayoutAccess !== "viewer" || labelRenderPhase >= 3);
   const labelViewportBounds = useMemo(() => {
     if (
       publicLayoutAccess === "loading"
@@ -5644,19 +5655,69 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  const baseMapViewportWidth = viewportDimensions.width > 0
+    ? viewportDimensions.width
+    : typeof window !== "undefined"
+      ? window.innerWidth
+      : 0;
+  const lowTierMobileBaseMap = publicLayoutAccess === "viewer"
+    && mobileRenderBudget.tier === "low"
+    && baseMapViewportWidth > 0
+    && baseMapViewportWidth <= 760;
+  const highResolutionBaseMapSource = uploadedBaseMap?.screen4096Url ?? "";
+  const compactBaseMapPreferred = lowTierMobileBaseMap
+    && (!highResolutionBaseMapSource || decodedHighResolutionBaseMapSource !== highResolutionBaseMapSource);
+  const activeBaseMapSrc = baseMap === "svg"
+    ? MAP_SVG
+    : baseMap === "png"
+      ? MAP_PNG
+      : uploadedBaseMapDisplaySource(uploadedBaseMap, compactBaseMapPreferred) || MAP_SVG;
+  const lowTierBaseMapUpgradeNeeded = baseMap === "uploaded"
+    && lowTierMobileBaseMap
+    && Boolean(highResolutionBaseMapSource)
+    && decodedHighResolutionBaseMapSource !== highResolutionBaseMapSource
+    && stageDimensions.width <= 1600
+    && lowTierBaseMapNeedsHighResolution({
+      tier: mobileRenderBudget.tier,
+      viewportWidth: baseMapViewportWidth,
+      stageWidth: stageDimensions.width,
+      zoom,
+      devicePixelRatio: typeof window !== "undefined" ? window.devicePixelRatio : 1,
+    });
+
+  useEffect(() => {
+    if (!lowTierBaseMapUpgradeNeeded || !highResolutionBaseMapSource) return;
+    let cancelled = false;
+    let finished = false;
+    const image = new Image();
+    const finish = async () => {
+      if (finished) return;
+      finished = true;
+      try {
+        await image.decode();
+      } catch {
+        // A completed image can still be reused when explicit decode is unavailable.
+      }
+      if (!cancelled) setDecodedHighResolutionBaseMapSource(highResolutionBaseMapSource);
+    };
+    image.decoding = "async";
+    image.fetchPriority = "low";
+    image.onload = () => { void finish(); };
+    image.onerror = () => { finished = true; };
+    image.src = highResolutionBaseMapSource;
+    if (image.complete && image.naturalWidth > 0) void finish();
+    return () => { cancelled = true; };
+  }, [decodedHighResolutionBaseMapSource, highResolutionBaseMapSource, lowTierBaseMapUpgradeNeeded]);
+
   useEffect(() => {
     const image = baseMapImgRef.current;
     if (image?.complete && image.naturalWidth > 0) setMapLoaded(true);
-  }, [baseMap]);
+  }, [activeBaseMapSrc]);
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || !hydrated || startupLoadCompletedRef.current) return;
     let cancelled = false;
-    const mapSource = baseMap === "svg"
-      ? MAP_SVG
-      : baseMap === "png"
-        ? MAP_PNG
-        : uploadedBaseMapDisplaySource(uploadedBaseMap);
+    const mapSource = activeBaseMapSrc;
     if (!mapSource) return;
     const primaryHub = visibleElements.find((element) => isPrimaryHubLabel(element.name));
     const primaryHubAsset = primaryHub?.assetId ? assetsById.get(primaryHub.assetId) : undefined;
@@ -5703,7 +5764,7 @@ export default function Home() {
       });
     });
     return () => { cancelled = true; };
-  }, [assetsById, baseMap, hydrated, publicLayoutAccess, uploadedBaseMap, viewportDimensions.width, visibleElements]);
+  }, [activeBaseMapSrc, assetsById, hydrated, publicLayoutAccess, viewportDimensions.width, visibleElements]);
 
   useEffect(() => {
     const stageWrap = stageWrapRef.current;
@@ -5887,18 +5948,63 @@ export default function Home() {
   }, [labelDetailRatio, printPreviewMode]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      startTransition(() => {
-        setSettledLabelZoom(zoom);
-        setSettledLabelPan((current) => (
-          current.x === mapRenderPan.x && current.y === mapRenderPan.y
-            ? current
-            : { x: mapRenderPan.x, y: mapRenderPan.y }
-        ));
+    if (publicLayoutAccess !== "viewer") {
+      const timer = window.setTimeout(() => {
+        startTransition(() => {
+          setSettledLabelZoom(zoom);
+          setSettledLabelPan((current) => (
+            current.x === mapRenderPan.x && current.y === mapRenderPan.y
+              ? current
+              : { x: mapRenderPan.x, y: mapRenderPan.y }
+          ));
+          setLabelRenderPhase(3);
+        });
+      }, 140);
+      return () => window.clearTimeout(timer);
+    }
+
+    let labelFrame = 0;
+    const markerFrame = window.requestAnimationFrame(() => {
+      setLabelRenderPhase(0);
+      labelFrame = window.requestAnimationFrame(() => {
+        startTransition(() => {
+          setSettledLabelZoom(zoom);
+          setSettledLabelPan((current) => (
+            current.x === mapRenderPan.x && current.y === mapRenderPan.y
+              ? current
+              : { x: mapRenderPan.x, y: mapRenderPan.y }
+          ));
+          setLabelRenderPhase(1);
+        });
       });
-    }, 140);
-    return () => window.clearTimeout(timer);
-  }, [mapRenderPan.x, mapRenderPan.y, zoom]);
+    });
+    return () => {
+      window.cancelAnimationFrame(markerFrame);
+      if (labelFrame) window.cancelAnimationFrame(labelFrame);
+    };
+  }, [mapRenderPan.x, mapRenderPan.y, publicLayoutAccess, zoom]);
+
+  useEffect(() => {
+    if (publicLayoutAccess !== "viewer" || !labelCompositionSettled || labelRenderPhase !== 1) return;
+    let frame = 0;
+    let idleId: number | null = null;
+    const mountLabelDetails = () => setLabelRenderPhase(2);
+    if ("requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(mountLabelDetails, { timeout: 120 });
+    } else {
+      frame = window.requestAnimationFrame(mountLabelDetails);
+    }
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      if (idleId !== null && "cancelIdleCallback" in window) window.cancelIdleCallback(idleId);
+    };
+  }, [labelCompositionSettled, labelRenderPhase, publicLayoutAccess]);
+
+  useEffect(() => {
+    if (publicLayoutAccess !== "viewer" || !labelCompositionSettled || labelRenderPhase !== 2) return;
+    const revealFrame = window.requestAnimationFrame(() => setLabelRenderPhase(3));
+    return () => window.cancelAnimationFrame(revealFrame);
+  }, [labelCompositionSettled, labelRenderPhase, publicLayoutAccess]);
 
   useEffect(() => {
     calibrationLiveApplyRef.current = calibrationLiveApply;
@@ -6095,9 +6201,9 @@ export default function Home() {
         }
       }
       const sampleKey = metric === "pinch-settle" ? "pinch" : "pan";
-      const existingSamples = performanceSettleSamplesRef.current[sampleKey];
-      if (existingSamples >= 2 && durationMs < 80) return;
-      performanceSettleSamplesRef.current[sampleKey] = existingSamples + 1;
+      const sampleNumber = performanceSettleSamplesRef.current[sampleKey] + 1;
+      performanceSettleSamplesRef.current[sampleKey] = sampleNumber;
+      if (!shouldSendMapSettleDiagnostic(sampleNumber, durationMs)) return;
       sendPerformanceDiagnostic({
         metric,
         durationMs,
@@ -9653,11 +9759,6 @@ export default function Home() {
         : placeRequestsTotal;
   const eventPlaceSelectionMode = editingEnabled && placeEventFormOpen && !placeEventNoPlace && placeEventMultiPlace;
   const eventPlaceKeySet = useMemo(() => new Set(placeEventPlaces.map((place) => place.placeKey)), [placeEventPlaces]);
-  const activeBaseMapSrc = baseMap === "svg"
-    ? MAP_SVG
-    : baseMap === "png"
-      ? MAP_PNG
-      : uploadedBaseMapDisplaySource(uploadedBaseMap) || MAP_SVG;
   const mobileMapRenderBounds = useMemo(() => {
     if (
       publicLayoutAccess !== "viewer"
@@ -10119,7 +10220,7 @@ export default function Home() {
                   {secondaryCalibrationPoints.map((point) => <g key={`secondary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-secondary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.45" className="calibration-secondary-dot" /></g>)}
                   {tertiaryCalibrationPoints.map((point) => <g key={`tertiary-${point.id}`}><line x1={point.sourceX} y1={point.sourceY} x2={point.targetX} y2={point.targetY} className="calibration-tertiary-line" /><circle cx={point.targetX} cy={point.targetY} r="0.4" className="calibration-tertiary-dot" /></g>)}
                 </svg>}
-                <MapConnectorLayer
+                {labelDetailsReady && <MapConnectorLayer
                   denseLabelClusters={renderedDenseLabelClusters}
                   printPreviewMode={printPreviewMode}
                   publicLayoutAccess={publicLayoutAccess}
@@ -10130,7 +10231,7 @@ export default function Home() {
                   visibleElements={renderedMapElements}
                   visibleElementsById={renderedMapElementsById}
                   zoom={labelRenderZoom}
-                />
+                />}
                 <MobileMarkerPlaceholderLayer
                   actionsRef={mapRenderActionsRef}
                   elements={mobilePlaceholderElements}
@@ -10149,13 +10250,13 @@ export default function Home() {
                   eventPlaceSelectionMode={eventPlaceSelectionMode}
                   fitZoom={fitZoom}
                   focusPulseId={focusPulseId}
-                  mapLabelStatusByElementId={mapLabelStatusByElementId}
+                  mapLabelStatusByElementId={labelDetailsReady ? mapLabelStatusByElementId : EMPTY_MAP_LABEL_STATUS_BY_ELEMENT_ID}
                   placeRequestPickingLocation={placeRequestPickingLocation}
                   printPreviewMode={printPreviewMode}
                   publicLayoutAccess={publicLayoutAccess}
                   publicSelectedMarkerZIndex={publicSelectedMarkerZIndex}
                   selectedId={selectedId}
-                  stageLabelIds={stageLabelIds}
+                  stageLabelIds={labelContentReady ? stageLabelIds : EMPTY_MAP_ELEMENT_IDS}
                   stageMarkerIds={stageMarkerIds}
                   viewMode={viewMode}
                   visibleElements={renderedMapElements}
@@ -10165,7 +10266,7 @@ export default function Home() {
                   <img src={markerAssetSrc(placeRequestMarkerStyle, placeRequestCategory)} alt="" draggable={false} decoding="async" />
                   <span>제안 위치</span>
                 </div>}
-                <DenseLabelLayer
+                {labelDetailsReady && <DenseLabelLayer
                   actionsRef={mapRenderActionsRef}
                   denseLabelClusters={renderedDenseLabelClusters}
                   editingEnabled={editingEnabled}
@@ -10176,7 +10277,7 @@ export default function Home() {
                   publicLayoutAccess={publicLayoutAccess}
                   selectedDenseLabelId={selectedDenseLabelId}
                   zoom={labelRenderZoom}
-                />
+                />}
                 {editingEnabled && selected?.mapVisible && visibleElementIds.has(selected.id) && <svg className="active-anchor-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label={`${selected.name} 편집 앵커`}>
                   <g opacity={selected.opacity / 100}>
                     <circle cx={selected.anchorX} cy={selected.anchorY} r="0.72" className="active-anchor-halo" vectorEffect="non-scaling-stroke" />
