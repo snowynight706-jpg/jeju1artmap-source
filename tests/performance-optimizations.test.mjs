@@ -11,6 +11,7 @@ const placeEventsRoute = await readFile(new URL("../app/api/place-events/route.t
 const placeStoriesRoute = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
 const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
+const publicExplorerActivitySource = await readFile(new URL("../app/public-explorer-activity-content.tsx", import.meta.url), "utf8");
 const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
@@ -101,4 +102,17 @@ test("public place details, events, and review UI load only after a place is ope
   assert.match(publicPlaceDetailSource, /className="public-place-summary"/);
   assert.match(publicPlaceDetailSource, /className="public-place-events"/);
   assert.match(publicPlaceDetailSource, /className="public-place-archive"/);
+});
+
+test("mobile panel motion avoids height animation and explorer activity tabs are code-split", () => {
+  assert.match(pageSource, /const PublicExplorerActivityContent = lazy\(\(\) => import\("\.\/public-explorer-activity-content"\)\)/);
+  assert.match(pageSource, /panel\.animate\(\[[\s\S]+duration: PUBLIC_PANEL_MOTION_MS/);
+  assert.match(globalStyles, /--motion-standard: \.24s/);
+  assert.match(globalStyles, /\.public-place-sheet \{[^}]+transition: none/);
+  assert.match(globalStyles, /\.global-story-panel\.public-explorer-panel \{[^}]+transition: none/);
+  assert.match(globalStyles, /\.app-shell \.public-place-sheet,[\s\S]+backdrop-filter: none/);
+  assert.match(globalStyles, /\.global-activity-tab \{[^}]+global-activity-reveal/);
+  assert.match(publicExplorerActivitySource, /data-tab="reviews"/);
+  assert.match(publicExplorerActivitySource, /data-tab="events"/);
+  assert.match(publicExplorerActivitySource, /global-story-card/);
 });

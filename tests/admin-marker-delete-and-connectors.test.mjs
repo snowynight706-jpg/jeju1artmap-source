@@ -24,7 +24,7 @@ test("dense label connector lines use the distance-aware opacity", () => {
   assert.match(pageSource, /distanceAwareConnectorOpacity\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
   assert.match(pageSource, /distanceAwareConnectorWidth\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
   assert.match(pageSource, /strokeWidth: selectedConnector \? 2\.5 : connectorWidth/);
-  assert.match(cssSource, /\.dense-label-connector line \{[^}]*transition: opacity \.16s ease, stroke-width \.16s ease/);
+  assert.match(cssSource, /\.dense-label-connector line \{[^}]*transition: opacity var\(--motion-fast\) ease, stroke-width var\(--motion-fast\) ease/);
 });
 
 test("label connector width grows smoothly from 1.1 to 2.5", () => {

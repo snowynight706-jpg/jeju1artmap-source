@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const explorerActivitySource = await readFile(new URL("../app/public-explorer-activity-content.tsx", import.meta.url), "utf8");
 const eventRouteSource = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const storyRouteSource = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
 const migrationSource = await readFile(new URL("../drizzle/0019_late_morph.sql", import.meta.url), "utf8");
@@ -33,8 +34,8 @@ test("public visitors can report a review or photo once without automatic deleti
   assert.doesNotMatch(storyRouteSource.match(/if \(request\.headers\.get\("content-type"\)\?\.includes\("application\/json"\)\) \{[\s\S]*?return json\(\{ reported: true, storyId \}, 201\);/)?.[0] ?? "", /UPDATE place_stories SET status = 'hidden'/);
   assert.match(pageSource, /후기·사진 신고/);
   assert.match(pageSource, /action: "report"/);
-  assert.match(pageSource, /신고 \{story\.reportCount\}건/);
-  assert.match(pageSource, /신고 내용 보기/);
+  assert.match(explorerActivitySource, /신고 \{story\.reportCount\}건/);
+  assert.match(explorerActivitySource, /신고 내용 보기/);
   assert.match(pageSource, /관리자가 확인한 뒤 조치합니다/);
 });
 

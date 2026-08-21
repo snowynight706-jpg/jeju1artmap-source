@@ -77,6 +77,7 @@ const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
 const AdminDiagnosticsPanel = lazy(() => import("./admin-diagnostics-panel"));
 const AdminFolder = lazy(() => import("./admin-folder"));
 const PublicPlaceDetailContent = lazy(() => import("./public-place-detail-content"));
+const PublicExplorerActivityContent = lazy(() => import("./public-explorer-activity-content"));
 
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -154,6 +155,7 @@ const STORY_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const STORY_PHOTO_MAX_SOURCE_BYTES = 30 * 1024 * 1024;
 const STORY_PHOTO_MAX_EDGE = 1280;
 const STORY_PHOTO_TARGET_BYTES = 1.5 * 1024 * 1024;
+const PUBLIC_PANEL_MOTION_MS = 240;
 const RECENT_REVIEW_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 const STORY_PHOTO_ENCODING_ATTEMPTS = [
   { maximumEdge: STORY_PHOTO_MAX_EDGE, type: "image/webp", quality: 0.82 },
@@ -1398,16 +1400,6 @@ function eventPlaceList(event: PlaceEvent): PlaceEventPlace[] {
   return Array.isArray(event.places) && event.places.length
     ? event.places
     : event.placeKey && event.placeName ? [{ placeKey: event.placeKey, placeName: event.placeName }] : [];
-}
-
-function eventVisibilityState(event: PlaceEvent) {
-  if (event.status === "hidden") return "숨김";
-  const now = Date.now();
-  const start = Date.parse(event.visibleFrom);
-  const end = Date.parse(event.visibleUntil);
-  if (Number.isFinite(start) && start > now) return "노출 예정";
-  if (Number.isFinite(end) && end <= now) return "기간 종료";
-  return "노출 중";
 }
 
 let volatileVisitorId = "";
@@ -2854,6 +2846,10 @@ export default function Home() {
     target: "place" | "explorer";
     startExpanded: boolean;
   } | null>(null);
+  const publicPlacePanelRef = useRef<HTMLElement>(null);
+  const publicExplorerPanelRef = useRef<HTMLElement>(null);
+  const publicPanelMotionFrameRef = useRef<Record<"place" | "explorer", number | null>>({ place: null, explorer: null });
+  const publicPanelMotionAnimationRef = useRef<Record<"place" | "explorer", Animation | null>>({ place: null, explorer: null });
   const placeStoryDraftKeyRef = useRef<string | null>(null);
   const selectedStoryKeyRef = useRef<string | null>(null);
   const placeStoryTextRef = useRef("");
@@ -4235,7 +4231,42 @@ export default function Home() {
     window.history[mode === "push" ? "pushState" : "replaceState"](state, "", url);
   }, []);
 
+  const queuePublicPanelSnap = useCallback((target: "place" | "explorer", expanded: boolean) => {
+    const element = target === "place" ? publicPlacePanelRef.current : publicExplorerPanelRef.current;
+    if (
+      !element
+      || typeof element.animate !== "function"
+      || !window.matchMedia("(max-width: 760px)").matches
+      || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) return;
+    const currentTransform = window.getComputedStyle(element).transform;
+    const fromTransform = currentTransform && currentTransform !== "none"
+      ? currentTransform
+      : `translate3d(0, ${expanded ? 10 : -7}px, 0)`;
+    const pendingFrame = publicPanelMotionFrameRef.current[target];
+    if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
+    publicPanelMotionAnimationRef.current[target]?.cancel();
+    publicPanelMotionFrameRef.current[target] = window.requestAnimationFrame(() => {
+      publicPanelMotionFrameRef.current[target] = null;
+      const panel = target === "place" ? publicPlacePanelRef.current : publicExplorerPanelRef.current;
+      if (!panel) return;
+      panel.getAnimations().forEach((animation) => animation.cancel());
+      const animation = panel.animate([
+        { transform: fromTransform, opacity: 0.96 },
+        { transform: "translate3d(0, 0, 0)", opacity: 1 },
+      ], {
+        duration: PUBLIC_PANEL_MOTION_MS,
+        easing: "cubic-bezier(.22, .78, .28, 1)",
+      });
+      publicPanelMotionAnimationRef.current[target] = animation;
+      animation.addEventListener("finish", () => {
+        if (publicPanelMotionAnimationRef.current[target] === animation) publicPanelMotionAnimationRef.current[target] = null;
+      }, { once: true });
+    });
+  }, []);
+
   const setPublicPanelExpansion = (target: "place" | "explorer", expanded: boolean) => {
+    queuePublicPanelSnap(target, expanded);
     if (target === "place") setPublicPlaceExpanded(expanded);
     else setPublicPanelExpanded(expanded);
     if (!publicNavigationInitializedRef.current || publicNavigationApplyingRef.current) return;
@@ -4255,10 +4286,24 @@ export default function Home() {
     );
   };
 
+  useEffect(() => () => {
+    (Object.keys(publicPanelMotionFrameRef.current) as Array<"place" | "explorer">).forEach((target) => {
+      const pendingFrame = publicPanelMotionFrameRef.current[target];
+      if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
+      publicPanelMotionAnimationRef.current[target]?.cancel();
+    });
+  }, []);
+
   const startPublicPanelDrag = (event: ReactPointerEvent<HTMLDivElement>, target: "place" | "explorer", startExpanded: boolean) => {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    const pendingFrame = publicPanelMotionFrameRef.current[target];
+    if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
+    publicPanelMotionFrameRef.current[target] = null;
+    publicPanelMotionAnimationRef.current[target]?.cancel();
+    publicPanelMotionAnimationRef.current[target] = null;
+    (target === "place" ? publicPlacePanelRef.current : publicExplorerPanelRef.current)?.getAnimations().forEach((animation) => animation.cancel());
     event.currentTarget.setPointerCapture(event.pointerId);
     publicPanelDragRef.current = { pointerId: event.pointerId, startY: event.clientY, target, startExpanded };
     setPublicPanelDrag({ target, offsetY: 0 });
@@ -9873,7 +9918,7 @@ export default function Home() {
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <aside className={`public-place-sheet ${publicPlaceExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "place" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "place" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={`${selectedDisplayName} 장소 정보`} aria-busy={publicPlaceDetailLoading}>
+          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <aside ref={publicPlacePanelRef} className={`public-place-sheet ${publicPlaceExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "place" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "place" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={`${selectedDisplayName} 장소 정보`} aria-busy={publicPlaceDetailLoading}>
             <div className="public-panel-drag-handle" role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소 정보 패널 높이 조절" onPointerDown={(event) => startPublicPanelDrag(event, "place", publicPlaceExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></div>
             <header className="public-place-sheet-head">
               <div><span style={{ color: selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).color : categoryOf(selected.category).color }}>{selectedDirectoryPlace?.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).name : categoryOf(selected.category).name}</span><strong>{selectedDisplayName}</strong></div>
@@ -9996,7 +10041,7 @@ export default function Home() {
         {publicLayoutAccess === "viewer" && !selected && <button type="button" className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel">
           <span aria-hidden="true">⌖</span><strong>{globalStoriesOpen ? "탐색 닫기" : "장소 · 리뷰 · 행사"}</strong>{publicPlaceItems.length > 0 && <em>{publicPlaceItems.length}</em>}
         </button>}
-        {globalStoriesOpen && <aside id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : "public-explorer-panel"} ${publicLayoutAccess === "viewer" && publicPanelExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "explorer" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "explorer" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "원도심 장소·리뷰·행사 탐색"}>
+        {globalStoriesOpen && <aside ref={publicExplorerPanelRef} id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : "public-explorer-panel"} ${publicLayoutAccess === "viewer" && publicPanelExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "explorer" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "explorer" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "원도심 장소·리뷰·행사 탐색"}>
           {publicLayoutAccess === "viewer" && <div className="public-panel-drag-handle" role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소·리뷰·행사 패널 높이 조절" onPointerDown={(event) => startPublicPanelDrag(event, "explorer", publicPanelExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></div>}
           <header className="global-story-panel-head">
             <div><strong>{publicLayoutAccess === "editor" ? "리뷰·행사 관리" : "원도심 탐색"}</strong><span>{publicLayoutAccess === "editor" ? "전체 장소의 최신 기록과 현재 행사" : "목록을 보면서 지도 위치를 바로 확인하세요."}</span></div>
@@ -10080,19 +10125,34 @@ export default function Home() {
                 })}
                 {!filteredPublicPlaceItems.length && <div className="public-place-empty"><strong>조건에 맞는 장소가 없습니다.</strong><span>검색어나 카테고리를 바꿔보세요.</span></div>}
               </div>
-            </section> : globalContentTab === "reviews" ? (globalStoriesLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>최신 리뷰를 불러오는 중입니다.</strong></div>
-              : globalStoriesError ? <div className="global-story-state error"><strong>리뷰를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalStoriesRefreshKey((current) => current + 1)}>다시 시도</button></div>
-                : globalStories.length ? <div className="global-story-list">{globalStories.map((story) => <article className={`global-story-card ${story.photoUrl ? "has-photo" : ""} ${story.status === "hidden" ? "hidden" : ""}`} key={story.id}>
-                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.placeName}에 등록된 사진`} loading="lazy" decoding="async" />}
-                  <div><button type="button" className="global-story-place-link" onClick={() => openGlobalStoryPlace(story)}>{story.placeName}<span>지도에서 보기</span></button><div className="global-story-meta"><strong>{story.authorName}{story.status === "hidden" && <em>숨김</em>}</strong><time dateTime={story.createdAt}>{storyDateTimeLabel(story.createdAt)}</time></div><p>{story.reviewText}</p>{globalStoriesCanModerate && story.reportSummary && <details className="story-report-admin-detail"><summary>신고 내용 보기</summary><p>{story.reportSummary}</p></details>}{!globalStoriesCanModerate && <footer className="global-story-report-action"><button type="button" disabled={reportedStoryIds.has(story.id)} onClick={() => openPlaceStoryReport(story)}>{reportedStoryIds.has(story.id) ? "신고 접수됨" : "후기·사진 신고"}</button></footer>}{globalStoriesCanModerate && <footer className="global-story-admin-actions">{Boolean(story.reportCount) && <span className="story-report-count">신고 {story.reportCount}건</span>}<button type="button" disabled={placeStoryActionId !== null} onClick={() => void moderatePlaceStory(story, story.status === "hidden" ? "published" : "hidden")}>{placeStoryActionId === story.id ? "처리 중…" : story.status === "hidden" ? "다시 공개" : "숨기기"}</button><button type="button" className="danger" disabled={placeStoryActionId !== null} onClick={() => void deletePlaceStory(story)}>영구 삭제</button></footer>}</div>
-                </article>)}</div> : <div className="global-story-state"><strong>{publicLayoutAccess === "editor" ? "아직 등록된 리뷰가 없습니다." : "아직 공개된 리뷰가 없습니다."}</strong><span>{publicLayoutAccess === "editor" ? "새 리뷰가 등록되면 이곳에서 바로 관리할 수 있습니다." : "장소 마커를 눌러 첫 기록을 남겨보세요."}</span></div>)
-              : globalContentTab === "events" ? (globalEventsLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>행사를 불러오는 중입니다.</strong></div>
-                : globalEventsError ? <div className="global-story-state error"><strong>행사를 불러오지 못했습니다.</strong><button type="button" onClick={() => setGlobalEventsRefreshKey((current) => current + 1)}>다시 시도</button></div>
-                  : globalEvents.length ? <div className="global-story-list">{globalEvents.map((event) => {
-                    const visibility = eventVisibilityState(event);
-                    const eventPlaces = eventPlaceList(event);
-                    return <article className={`global-story-card event-card has-photo ${!event.isVisible ? "hidden" : ""}`} key={event.id}><img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" decoding="async" /><div><div className="global-event-place-links" aria-label="행사 장소">{eventPlaces.length ? eventPlaces.map((place) => <button type="button" key={place.placeKey} onClick={() => openGlobalEventPlace(place)}>{place.placeName}<span>지도 보기</span></button>) : <span className="global-event-unassigned">원도심 공통 행사 · 장소 지정 없음</span>}</div><div className="global-story-meta"><strong>{event.eventName}<em className={`event-visibility ${event.isVisible ? "visible" : ""}`}>{visibility}</em></strong><time dateTime={event.startsAt}>{eventScheduleLabel(event.startsAt, event.endsAt)}</time></div><p>{event.eventInfo}</p>{globalEventsCanManage && <div className="event-admin-visibility-period">화면 노출 {storyDateTimeLabel(event.visibleFrom)} ~ {storyDateTimeLabel(event.visibleUntil)}</div>}{globalEventsCanManage && <footer className="global-story-admin-actions"><button type="button" disabled={placeEventActionId !== null} onClick={() => editPlaceEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={placeEventActionId !== null} onClick={() => void moderatePlaceEvent(event, event.status === "hidden" ? "active" : "hidden")}>{placeEventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={placeEventActionId !== null} onClick={() => void deletePlaceEvent(event)}>영구 삭제</button></footer>}</div></article>;
-                  })}</div> : <div className="global-story-state"><strong>{publicLayoutAccess === "editor" ? "아직 등록된 행사가 없습니다." : "현재 노출 중인 행사가 없습니다."}</strong><span>{publicLayoutAccess === "editor" ? "위 등록 버튼에서 장소 지정 여부와 노출 기간을 정할 수 있습니다." : "새 행사가 등록되면 이곳에 표시됩니다."}</span></div>)
+            </section> : globalContentTab === "reviews" || globalContentTab === "events" ? <Suspense fallback={<div className="global-story-state"><span className="global-story-spinner" /><strong>{globalContentTab === "reviews" ? "리뷰 화면을 준비하는 중입니다." : "행사 화면을 준비하는 중입니다."}</strong></div>}>
+              <PublicExplorerActivityContent
+                key={globalContentTab}
+                tab={globalContentTab}
+                access={publicLayoutAccess === "editor" ? "editor" : "viewer"}
+                stories={globalStories}
+                storiesLoading={globalStoriesLoading}
+                storiesError={globalStoriesError}
+                storiesCanModerate={globalStoriesCanModerate}
+                reportedStoryIds={reportedStoryIds}
+                storyActionId={placeStoryActionId}
+                events={globalEvents}
+                eventsLoading={globalEventsLoading}
+                eventsError={globalEventsError}
+                eventsCanManage={globalEventsCanManage}
+                eventActionId={placeEventActionId}
+                onRetryStories={() => setGlobalStoriesRefreshKey((current) => current + 1)}
+                onOpenStoryPlace={openGlobalStoryPlace}
+                onReportStory={openPlaceStoryReport}
+                onModerateStory={moderatePlaceStory}
+                onDeleteStory={deletePlaceStory}
+                onRetryEvents={() => setGlobalEventsRefreshKey((current) => current + 1)}
+                onOpenEventPlace={openGlobalEventPlace}
+                onEditEvent={editPlaceEvent}
+                onModerateEvent={moderatePlaceEvent}
+                onDeleteEvent={deletePlaceEvent}
+              />
+            </Suspense>
                 : (placeRequestsLoading ? <div className="global-story-state"><span className="global-story-spinner" /><strong>장소 등록 요청을 불러오는 중입니다.</strong></div>
                   : placeRequestsError ? <div className="global-story-state error"><strong>장소 등록 요청을 불러오지 못했습니다.</strong><button type="button" onClick={() => setPlaceRequestsRefreshKey((current) => current + 1)}>다시 시도</button></div>
                     : placeRequests.length ? <div className="place-request-admin-list">{placeRequests.map((request) => {

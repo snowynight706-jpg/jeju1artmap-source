@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const explorerActivitySource = await readFile(new URL("../app/public-explorer-activity-content.tsx", import.meta.url), "utf8");
 const apiSource = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -14,8 +15,8 @@ test("event management can create and edit an event without a mapped place", () 
   assert.match(pageSource, /장소 지정 안 함/);
   assert.match(pageSource, /form\.set\("places", JSON\.stringify\(placeEventNoPlace \? \[\] : placeEventPlaces\)\)/);
   assert.match(pageSource, /\(!placeEventNoPlace && !placeEventPlaces\.length\)/);
-  assert.match(pageSource, /const eventPlaces = eventPlaceList\(event\)/);
-  assert.match(pageSource, /원도심 공통 행사 · 장소 지정 없음/);
+  assert.match(explorerActivitySource, /const places = eventPlaces\(event\)/);
+  assert.match(explorerActivitySource, /원도심 공통 행사 · 장소 지정 없음/);
   assert.match(cssSource, /\.global-event-management-toolbar \{/);
   assert.match(cssSource, /\.event-place-picker\.unassigned \{/);
 });
