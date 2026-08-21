@@ -17,7 +17,7 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(pageSource, /const \[startupInitialViewTarget, setStartupInitialViewTarget\] = useState/);
   assert.match(pageSource, /Math\.abs\(settledLabelZoom - startupInitialViewTarget\.zoom\) > 0\.002/);
   assert.match(pageSource, /setMapLayoutZoom\(target\.zoom\)/);
-  assert.match(pageSource, /expectedWidth = stageWrap\.offsetWidth \* target\.zoom/);
+  assert.doesNotMatch(pageSource, /expectedWidth = stageWrap\.offsetWidth \* target\.zoom/);
   assert.match(pageSource, /committedFrame = window\.requestAnimationFrame[\s\S]{0,260}settledFrame = window\.requestAnimationFrame\(\(\) =>/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
@@ -32,6 +32,13 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(cssSource, /\.public-loading-track \{ width: min\(270px, 82%\)/);
   assert.equal(signatureB.readUInt32BE(16), 1182);
   assert.equal(signatureB.readUInt32BE(20), 626);
+});
+
+test("cached PWA startup assets cannot reset completed progress back to zero", () => {
+  const startupBlock = pageSource.match(/if \(publicLayoutAccess === "loading"[\s\S]*?\}, \[assetsById, baseMap, hydrated/)?.[0] ?? "";
+  assert.match(startupBlock, /queueMicrotask\(\(\) => \{[\s\S]*?setStartupLoadDone\(0\);[\s\S]*?Promise\.all\(sources\.map\(preload\)\)/);
+  assert.match(startupBlock, /Promise\.all\(sources\.map\(preload\)\)[\s\S]*?setStartupLoadDone\(sources\.length\)/);
+  assert.doesNotMatch(startupBlock, /queueMicrotask\([\s\S]*?setStartupLoadDone\(0\)[\s\S]*?\}\);\s*const preload/);
 });
 
 test("map wrappers start centered before the first admin drag", () => {

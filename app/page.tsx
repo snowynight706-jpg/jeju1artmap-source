@@ -5414,12 +5414,6 @@ export default function Home() {
       mapSource,
       primaryHubAsset?.screenSrc ?? primaryHubAsset?.src,
     ].filter((source): source is string => Boolean(source)))];
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setStartupLoadDone(0);
-      setStartupLoadTotal(sources.length);
-    });
-
     const preload = (source: string) => new Promise<void>((resolve) => {
       const image = new Image();
       let finished = false;
@@ -5439,13 +5433,22 @@ export default function Home() {
       if (image.complete) finish();
     });
 
-    void Promise.all(sources.map(preload)).then(() => {
+    queueMicrotask(() => {
       if (cancelled) return;
-      setMapLoaded(true);
-      window.requestAnimationFrame(() => {
+      // Reset before starting preloads. Cached PWA images can complete
+      // synchronously, so starting them first could increment to 3 and then be
+      // overwritten back to 0 by the delayed reset.
+      setStartupLoadDone(0);
+      setStartupLoadTotal(sources.length);
+      void Promise.all(sources.map(preload)).then(() => {
         if (cancelled) return;
-        startupLoadCompletedRef.current = true;
-        setStartupAssetsReady(true);
+        setStartupLoadDone(sources.length);
+        setMapLoaded(true);
+        window.requestAnimationFrame(() => {
+          if (cancelled) return;
+          startupLoadCompletedRef.current = true;
+          setStartupAssetsReady(true);
+        });
       });
     });
     return () => { cancelled = true; };
@@ -5579,8 +5582,10 @@ export default function Home() {
       setMapPan(target.pan);
       setMapLayoutZoom(target.zoom);
       settledFrame = window.requestAnimationFrame(() => {
-        const expectedWidth = stageWrap.offsetWidth * target.zoom;
-        if (Math.abs(stage.offsetWidth - expectedWidth) <= 2.5) setStartupInitialViewReady(true);
+        // The target width and pan have now been painted for two frames. A
+        // second integer pixel comparison is redundant and can deadlock on
+        // mobile device-pixel rounding even though the view is already correct.
+        setStartupInitialViewReady(true);
       });
     });
     return () => {
