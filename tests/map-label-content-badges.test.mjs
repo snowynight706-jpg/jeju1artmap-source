@@ -14,14 +14,18 @@ test("public layout bootstraps published review counts per place", () => {
 });
 
 test("map labels show quiet event and review indicators only in public interactive view", () => {
-  assert.match(pageSource, /publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus\.hasEvent/);
+  assert.match(pageSource, /publicLayoutAccess === "viewer" && !printPreviewMode && \(labelStatus\.hasEvent \|\| labelStatus\.reviewCount > 0\)/);
+  assert.match(pageSource, /className="map-label-status-rail"/);
   assert.match(pageSource, /className="map-label-status event"/);
   assert.match(pageSource, /map-label-status reviews/);
   assert.match(pageSource, /className="dense-map-event"/);
   assert.match(pageSource, /dense-map-reviews/);
   assert.match(pageSource, />EVENT<\/span>/);
-  assert.match(cssSource, /\.map-label-status\.event \{ left: -5px; top: -6px;/);
-  assert.match(cssSource, /\.map-label-status\.reviews \{ right: -6px; top: -5px;/);
+  assert.match(cssSource, /\.map-label-status-rail \{[^}]*bottom: calc\(100% \+ 2px\)[^}]*min-width: 100%[^}]*justify-content: space-between/);
+  assert.match(cssSource, /\.map-label-status \{ position: static;/);
+  assert.doesNotMatch(cssSource, /\.map-label-status\.event \{[^}]*left:/);
+  assert.doesNotMatch(cssSource, /\.map-label-status\.reviews \{[^}]*right:/);
+  assert.match(cssSource, /\.dense-label strong span \{[^}]*grid-template-columns: 6px max-content auto auto/);
   assert.match(cssSource, /\.map-viewport:is\(\.is-panning, \.is-zooming, \.is-direct-manipulation\) \.map-label-status \{ opacity: \.42;/);
 });
 

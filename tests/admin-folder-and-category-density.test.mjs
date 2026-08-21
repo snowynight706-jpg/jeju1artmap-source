@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
 const adminFolderSource = await readFile(new URL("../app/admin-folder.tsx", import.meta.url), "utf8");
 const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -136,7 +137,7 @@ test("five persisted palettes include a hidden picker, full tonal hierarchy, and
     assert.match(pageSource, new RegExp(`id: "${id}"[^\\n]*${colors.join("[^\\n]*")}`));
   }
   for (const place of ["제주아트플랫폼", "예술공간 이아", "산지천갤러리", "김만덕객주"]) assert.match(pageSource, new RegExp(`"${place}"`));
-  assert.match(pageSource, /className="place-theme-easter-egg"/);
+  assert.match(publicPlaceDetailSource, /className="place-theme-easter-egg"/);
   assert.match(pageSource, /className="admin-theme-menu"/);
   assert.match(pageSource, /localStorage\.getItem\(UI_THEME_STORAGE_KEY\)/);
   assert.match(pageSource, /localStorage\.setItem\(UI_THEME_STORAGE_KEY, theme\)/);

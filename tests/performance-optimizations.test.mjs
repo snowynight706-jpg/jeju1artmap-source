@@ -10,6 +10,7 @@ const baseMapRoute = await readFile(new URL("../app/api/base-map/route.ts", impo
 const placeEventsRoute = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const placeStoriesRoute = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
 const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
@@ -91,4 +92,13 @@ test("administrator diagnostics are code-split while anonymous performance sampl
   assert.match(performanceMigration, /CREATE TABLE `map_performance_diagnostics`/);
   assert.match(performanceMigration, /map_performance_diagnostics_actor_created_idx/);
   assert.doesNotMatch(performanceTable, /place_key|user_agent|photo|review_text|author_name/);
+});
+
+test("public place details, events, and review UI load only after a place is opened", () => {
+  assert.match(pageSource, /const PublicPlaceDetailContent = lazy\(\(\) => import\("\.\/public-place-detail-content"\)\)/);
+  assert.match(pageSource, /<Suspense fallback=\{<div className="public-place-detail-loading"/);
+  assert.match(pageSource, /<PublicPlaceDetailContent/);
+  assert.match(publicPlaceDetailSource, /className="public-place-summary"/);
+  assert.match(publicPlaceDetailSource, /className="public-place-events"/);
+  assert.match(publicPlaceDetailSource, /className="public-place-archive"/);
 });

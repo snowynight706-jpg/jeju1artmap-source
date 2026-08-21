@@ -9,6 +9,7 @@ import {
 } from "../app/public-convenience.mjs";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("stable place links preserve unrelated query parameters and hashes", () => {
@@ -71,9 +72,9 @@ test("public explorer starts with all places and reports the filtered result cou
 });
 
 test("place detail exposes directions, address copy, share, and a stable history state", () => {
-  assert.match(pageSource, />길찾기 ↗<\/a>/);
-  assert.match(pageSource, />주소 복사<\/button>/);
-  assert.match(pageSource, />공유<\/button>/);
+  assert.match(publicPlaceDetailSource, />길찾기 ↗<\/a>/);
+  assert.match(publicPlaceDetailSource, />주소 복사<\/button>/);
+  assert.match(publicPlaceDetailSource, />공유<\/button>/);
   assert.match(pageSource, /navigator\.share/);
   assert.match(pageSource, /window\.addEventListener\("popstate", handlePopState\)/);
   assert.match(pageSource, /window\.addEventListener\("keydown", handleEscape, true\)/);
@@ -126,7 +127,9 @@ test("public place details wait for events and records before revealing all cont
   assert.match(pageSource, /setPlaceStoriesLoadedKey\(requestKey\)/);
   assert.match(pageSource, /setPlaceEventsLoadedKey\(requestKey\)/);
   assert.match(pageSource, /aria-busy=\{publicPlaceDetailLoading\}/);
-  assert.match(pageSource, /publicPlaceDetailLoading \? <div className="public-place-detail-loading"[\s\S]{0,320}행사와 장소 기록을 함께 준비한 뒤 한 번에 보여드립니다/);
+  assert.match(pageSource, /<PublicPlaceDetailContent[\s\S]{0,120}loading=\{publicPlaceDetailLoading\}/);
+  assert.match(publicPlaceDetailSource, /if \(props\.loading\) return <LoadingState \/>/);
+  assert.match(publicPlaceDetailSource, /className="public-place-detail-loading"[\s\S]{0,320}행사와 장소 기록을 함께 준비한 뒤 한 번에 보여드립니다/);
   assert.match(cssSource, /\.public-place-detail-loading \{[^}]*min-height: 100%[^}]*place-content: center/);
 });
 

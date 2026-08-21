@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../public/service-worker.js", import.meta.url), "utf8");
@@ -17,19 +18,19 @@ test("mobile place-story submission survives unavailable browser storage", () =>
 });
 
 test("mobile photos have a native picker and resilient encoding fallbacks", () => {
-  assert.match(pageSource, /className="place-story-photo-picker"/);
-  assert.match(pageSource, /accept="image\/\*,\.heic,\.heif"/);
+  assert.match(publicPlaceDetailSource, /className="place-story-photo-picker"/);
+  assert.match(publicPlaceDetailSource, /accept="image\/\*,\.heic,\.heif"/);
   assert.match(pageSource, /navigator\.mediaDevices\.getUserMedia/);
   assert.match(pageSource, /facingMode: \{ ideal: "environment" \}/);
-  assert.match(pageSource, /capture="environment"/);
-  assert.match(pageSource, /선택한 사진 1장을 즉시 앱의 임시 메모리로 복사합니다/);
-  assert.match(pageSource, /카메라 권한 요청/);
+  assert.match(publicPlaceDetailSource, /capture="environment"/);
+  assert.match(publicPlaceDetailSource, /선택한 사진 1장을 즉시 앱의 임시 메모리로 복사합니다/);
+  assert.match(publicPlaceDetailSource, /카메라 권한 요청/);
   assert.match(pageSource, /stream\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
   assert.match(pageSource, /const bytes = await sourceFile\.arrayBuffer\(\)/);
   assert.match(pageSource, /const retainedFile = new File\(\[bytes\]/);
   assert.match(pageSource, /void retainPlaceStoryPhoto\(file\)/);
-  assert.match(pageSource, /임시 사본은 후기 등록 완료 후 자동 삭제됩니다/);
-  assert.match(pageSource, /placeStoryPhotoRetaining \|\| !placeStoryAuthor\.trim\(\)/);
+  assert.match(publicPlaceDetailSource, /임시 사본은 후기 등록 완료 후 자동 삭제됩니다/);
+  assert.match(pageSource, /storyCanSubmit=\{!placeStorySubmitting && !placeStoryPhotoRetaining && Boolean\(placeStoryAuthor\.trim\(\)\) && placeStoryText\.trim\(\)\.length >= 2\}/);
   assert.match(pageSource, /errorCode = error instanceof Error[\s\S]{0,180}"photo-read-failed"/);
   assert.match(pageSource, /updatePlaceStoryPhoto\(null\);[\s\S]{0,220}setPlaceStoryFormOpen\(false\)/);
   assert.match(pageSource, /const STORY_PHOTO_TARGET_BYTES = 1\.5 \* 1024 \* 1024/);

@@ -29,7 +29,7 @@ test("map labels leave the paint path only after drag or zoom actually starts", 
   assert.match(pageSource, /pendingTouchTransformRef\.current = \{ zoom: nextZoom, pan: nextPan \};\s*viewportRef\.current\?\.classList\.add\("is-map-labels-suspended"\)/);
   assert.match(pageSource, /classList\.remove\("is-direct-manipulation", "is-map-labels-suspended"\)/);
   assert.match(pageSource, /viewportElement\.classList\.add\("is-map-labels-suspended"\)/);
-  assert.match(cssSource, /\.label, \.dense-label-layer, \.dense-label-connector \{ transition: opacity \.18s/);
+  assert.match(cssSource, /\.label, \.dense-label-layer, \.dense-label-connector \{ transition: opacity \.28s/);
   assert.match(cssSource, /\.map-viewport:is\(\.is-map-labels-suspended, \.is-zooming\) :is\(\.label, \.dense-label-layer, \.dense-label-connector\) \{ visibility: hidden; opacity: 0; pointer-events: none; transition-duration: 0s; \}/);
   assert.doesNotMatch(pageSource, /beginTouchMapTransform[\s\S]{0,500}classList\.add\("is-map-labels-suspended"\)/);
 });

@@ -76,6 +76,7 @@ import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
 const AdminDiagnosticsPanel = lazy(() => import("./admin-diagnostics-panel"));
 const AdminFolder = lazy(() => import("./admin-folder"));
+const PublicPlaceDetailContent = lazy(() => import("./public-place-detail-content"));
 
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -2656,7 +2657,7 @@ const MapElementMarker = memo(function MapElementMarker({
     {showMarker && <div className="icon-visual">{asset ? <img className="placed-asset" src={asset.screenSrc ?? asset.src} alt="" draggable={false} decoding="async" onLoad={(event) => actionsRef.current?.measureAssetBounds(asset.id, event.currentTarget)} /> : <div className={`dummy-symbol ${element.category === "landmark" ? "landmark" : "marker"}`}><span>{metaGlyph}</span></div>}</div>}
     {publicLayoutAccess === "viewer" && (isMainHub || isPublicSelected) && <span className={`map-focus-pointer ${isMainHub ? "main-hub-badge" : "located-place-badge"} ${isPublicSelected ? "located" : ""}`} aria-label={isPublicSelected ? "현재 찾은 장소 ▼" : "주요 거점 ▼"}>{isPublicSelected && <span className="map-focus-pointer-label">찾은 장소</span>}<svg className="main-hub-pointer-icon" viewBox="0 0 24 22" aria-hidden="true"><path d="M5 4.5Q5 3 6.5 3h11Q19 3 19 4.5v1.2q0 .8-.45 1.45l-5.15 10.1Q12 20 10.6 17.25L5.45 7.15Q5 6.5 5 5.7Z" /></svg></span>}
     {editingEnabled && !element.locked && viewMode !== "labels" && (element.category === "landmark" || isSelected) && <span className="review-flag">검수 필요</span>}
-    {showLabel && !labelClustered && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : assetBounds, !printPreviewMode)} onPointerDown={isSelected ? (event) => actionsRef.current?.startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음">EVENT</span>}{publicLayoutAccess === "viewer" && !printPreviewMode && labelStatus.reviewCount > 0 && <span className={`map-label-status reviews ${labelStatus.hasNewReview ? "new" : ""}`} aria-label={labelStatus.hasNewReview ? `${publicElementName} 최근 3일 내 새 후기 있음` : `${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={labelStatus.hasNewReview ? "최근 3일 내 새 후기" : `후기 ${labelStatus.reviewCount}개`}>{labelStatus.hasNewReview ? "NEW" : labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</div>}
+    {showLabel && !labelClustered && <div className={`label ${isMainHub ? "primary-hub-label" : ""} ${isSelected ? "label-editable" : ""}`} data-label-id={element.id} style={labelStyle(element.labelPosition, element.labelGap, element.labelOffsetX, element.labelOffsetY, zoom, fitZoom, printPreviewMode ? undefined : assetBounds, !printPreviewMode)} onPointerDown={isSelected ? (event) => actionsRef.current?.startLabelDrag(event, element) : undefined} title={isSelected ? "드래그하여 맞춤 화면 기준 라벨 위치 조정" : publicLayoutAccess === "viewer" ? `${publicElementName} 상세보기` : undefined}><span className="map-label-name">{publicElementName}</span>{publicLayoutAccess === "viewer" && !printPreviewMode && (labelStatus.hasEvent || labelStatus.reviewCount > 0) && <span className="map-label-status-rail">{labelStatus.hasEvent && <span className="map-label-status event" aria-label={`${publicElementName} 행사 있음`} title="행사 있음">EVENT</span>}{labelStatus.reviewCount > 0 && <span className={`map-label-status reviews ${labelStatus.hasNewReview ? "new" : ""}`} aria-label={labelStatus.hasNewReview ? `${publicElementName} 최근 3일 내 새 후기 있음` : `${publicElementName} 후기 ${labelStatus.reviewCount}개`} title={labelStatus.hasNewReview ? "최근 3일 내 새 후기" : `후기 ${labelStatus.reviewCount}개`}>{labelStatus.hasNewReview ? "NEW" : labelStatus.reviewCount > 99 ? "99+" : labelStatus.reviewCount}</span>}</span>}</div>}
     {isSelected && !element.locked && <button className="resize-handle" aria-label="크기 조절" onPointerDown={(event) => actionsRef.current?.startResize(event, element)} />}
   </div>;
 });
@@ -9879,55 +9880,46 @@ export default function Home() {
               <div className="public-place-sheet-actions"><button type="button" className="public-place-list-back" onClick={openPublicPlaceList} aria-label="장소 목록으로 돌아가기">목록</button><button type="button" onClick={closePublicPlacePanel} aria-label="장소 정보 닫기">×</button></div>
             </header>
             <div className="public-place-sheet-scroll">
-              {publicPlaceDetailLoading ? <div className="public-place-detail-loading" role="status" aria-live="polite">
-                <span aria-hidden="true" />
-                <strong>장소 정보를 확인하는 중입니다.</strong>
-                <p>행사와 장소 기록을 함께 준비한 뒤 한 번에 보여드립니다.</p>
-              </div> : <>
-              {selectedLocationGroupPlaces.length > 1 && <section className="public-location-group" aria-label="이 건물의 시설">
-                <div><strong>제주아트플랫폼 건물</strong><span>{selectedLocationGroupPlaces.length}개 시설</span></div>
-                <div>{selectedLocationGroupPlaces.map((place) => <button type="button" className={place.id === selectedDirectoryPlace?.id ? "active" : ""} key={place.id} onClick={() => { const item = publicPlaceItems.find((candidate) => candidate.place.id === place.id); if (item) focusPublicPlaceItem(item); }}>{place.name}</button>)}</div>
-              </section>}
-              <section className="public-place-summary">
-                {(selectedDirectoryPlace?.address || selected.address) && <p className="public-place-address">{selectedDirectoryPlace?.address || selected.address}</p>}
-                {selectedDirectoryPlace?.area && <span className="public-place-area">{selectedDirectoryPlace.area}</span>}
-                {!!sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).length && <div className="public-place-conveniences" aria-label="편의정보">{convenienceAttributeDefinitions.filter((definition) => sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).includes(definition.id)).map((definition) => <span key={definition.id}>{definition.name}</span>)}</div>}
-                {selectedDirectoryPlace?.description && <p className="public-place-description">{selectedDirectoryPlace.description}</p>}
-                {selectedDirectoryPlace?.operatingInfo && <div className="public-place-hours"><b>이용 안내</b><span>{selectedDirectoryPlace.operatingInfo}</span></div>}
-                <div className="public-place-quick-actions" aria-label="장소 빠른 작업">
-                  <a className="public-place-map-link" href={publicPlaceDirectionsUrl(selectedDisplayName, selectedDirectoryPlace?.address || selected.address, selectedDirectoryPlace?.mapUrl)} target="_blank" rel="noreferrer">길찾기 ↗</a>
-                  {(selectedDirectoryPlace?.address || selected.address) && <button type="button" onClick={() => void copyPublicPlaceAddress()}>주소 복사</button>}
-                  <button type="button" onClick={() => void sharePublicPlace()}>공유</button>
-                </div>
-              </section>
-              {placeEvents.length > 0 && <section className="public-place-events" aria-label={`${selectedDisplayName} 행사`}>
-                <div className="public-place-events-title"><strong>지금 볼 수 있는 행사</strong><span>{placeEvents.length}개</span></div>
-                <div className="place-event-list">{placeEvents.map((event) => <article className="place-event-card" key={event.id}>
-                  <img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" decoding="async" />
-                  <div><strong>{event.eventName}</strong><p>{event.eventInfo}</p><span className="event-schedule-label">{eventScheduleLabel(event.startsAt, event.endsAt)}</span></div>
-                </article>)}</div>
-              </section>}
-              <section className="public-place-archive">
-                <div className="public-place-archive-title"><div><strong>함께 만든 장소 기록</strong><span>사진과 짧은 후기 {publishedPlaceStories.length}개</span></div><button type="button" onClick={togglePlaceStoryForm}>{placeStoryFormOpen ? "작성 닫기" : "＋ 기록 남기기"}</button></div>
-                {placeStoryFormOpen && <div className="place-story-form">
-                  <label>닉네임<input value={placeStoryAuthor} maxLength={20} onChange={(event) => setPlaceStoryAuthor(event.target.value)} placeholder="20자 이내" /></label>
-                  <label>짧은 후기<textarea value={placeStoryText} maxLength={220} onChange={(event) => setPlaceStoryText(event.target.value)} placeholder="이 장소에서 기억하고 싶은 순간을 남겨주세요." /><small>{placeStoryText.length}/220</small></label>
-                  <div className="place-story-photo-permission"><span>선택한 사진 1장을 즉시 앱의 임시 메모리로 복사합니다. 임시 사본은 후기 등록 완료 후 자동 삭제됩니다. 카메라 <b className={storyCameraPermission}>{storyCameraPermissionLabel(storyCameraPermission)}</b></span><button type="button" disabled={storyCameraPermission === "requesting"} onClick={() => void requestPlaceStoryCameraPermission()}>{storyCameraPermission === "granted" ? "권한 다시 확인" : "카메라 권한 요청"}</button></div>
-                  <div className="place-story-photo-row" aria-busy={placeStoryPhotoRetaining}><label className="place-story-photo-picker"><span>{placeStoryPhotoRetaining ? "사진 가져오는 중…" : placeStoryPhoto ? "사진 바꾸기" : "사진 1장 선택"}</span><input type="file" disabled={placeStoryPhotoRetaining} accept="image/*,.heic,.heif" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void retainPlaceStoryPhoto(file); }} /></label><label className="place-story-photo-picker camera"><span>카메라 촬영</span><input type="file" disabled={placeStoryPhotoRetaining} accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ""; void retainPlaceStoryPhoto(file); }} /></label>{placeStoryPhoto && <button type="button" className="remove" onClick={() => updatePlaceStoryPhoto(null)}>사진 빼기</button>}</div>
-                  {placeStoryPhotoPreview && <img className="place-story-photo-preview" src={placeStoryPhotoPreview} alt="등록할 사진 미리보기" />}
-                  <p>직접 촬영했거나 게시 권한이 있는 사진만 등록해 주세요. 등록한 내용은 다른 방문자에게 바로 공개됩니다.</p>
-                  <button type="button" className="place-story-submit" disabled={placeStorySubmitting || placeStoryPhotoRetaining || !placeStoryAuthor.trim() || placeStoryText.trim().length < 2} onClick={() => void submitPlaceStory()}>{placeStorySubmitting ? "저장 중…" : placeStoryPhotoRetaining ? "사진 준비 중…" : "사진·후기 공개하기"}</button>
-                </div>}
-                {placeStoriesLoading ? <div className="place-story-empty">장소 기록을 불러오는 중입니다.</div> : publishedPlaceStories.length ? <div className="place-story-list">{publishedPlaceStories.map((story) => <article className="place-story-card" key={story.id}>
-                  {story.photoUrl && <img src={story.photoUrl} alt={`${story.authorName}님이 남긴 ${selectedDisplayName} 사진`} loading="lazy" decoding="async" />}
-                  <div><header><strong>{story.authorName}</strong><time dateTime={story.createdAt}>{storyDateLabel(story.createdAt)}</time></header><p>{story.reviewText}</p><footer className="place-story-card-actions"><button type="button" disabled={reportedStoryIds.has(story.id)} onClick={() => openPlaceStoryReport(story)}>{reportedStoryIds.has(story.id) ? "신고 접수됨" : "후기·사진 신고"}</button></footer></div>
-                </article>)}</div> : <div className="place-story-empty"><strong>아직 남겨진 기록이 없습니다.</strong><span>이 장소의 첫 사진이나 짧은 후기를 남겨보세요.</span></div>}
-              </section>
-              {selectedHasThemeEasterEgg && <section className="place-theme-easter-egg" aria-label="숨겨진 화면 테마 선택">
-                <div><span aria-hidden="true">◇</span><div><strong>오늘의 화면 팔레트</strong><p>이 장소까지 내려온 분만 발견하는 작은 선택입니다.</p></div></div>
-                <UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} />
-              </section>}
-              </>}
+              <Suspense fallback={<div className="public-place-detail-loading" role="status" aria-live="polite"><span aria-hidden="true" /><strong>장소 화면을 준비하는 중입니다.</strong></div>}>
+                <PublicPlaceDetailContent
+                  loading={publicPlaceDetailLoading}
+                  placeName={selectedDisplayName}
+                  locationPlaces={selectedLocationGroupPlaces.map((place) => ({ id: place.id, name: place.name, active: place.id === selectedDirectoryPlace?.id }))}
+                  address={selectedDirectoryPlace?.address || selected.address}
+                  area={selectedDirectoryPlace?.area ?? ""}
+                  convenienceNames={convenienceAttributeDefinitions.filter((definition) => sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).includes(definition.id)).map((definition) => definition.name)}
+                  description={selectedDirectoryPlace?.description ?? ""}
+                  operatingInfo={selectedDirectoryPlace?.operatingInfo ?? ""}
+                  directionsUrl={publicPlaceDirectionsUrl(selectedDisplayName, selectedDirectoryPlace?.address || selected.address, selectedDirectoryPlace?.mapUrl)}
+                  events={placeEvents.map((event) => ({ id: event.id, photoUrl: event.photoUrl, eventName: event.eventName, eventInfo: event.eventInfo, scheduleLabel: eventScheduleLabel(event.startsAt, event.endsAt) }))}
+                  stories={publishedPlaceStories.map((story) => ({ id: story.id, authorName: story.authorName, reviewText: story.reviewText, photoUrl: story.photoUrl, createdAt: story.createdAt, dateLabel: storyDateLabel(story.createdAt), reported: reportedStoryIds.has(story.id) }))}
+                  storiesLoading={placeStoriesLoading}
+                  storyFormOpen={placeStoryFormOpen}
+                  storyAuthor={placeStoryAuthor}
+                  storyText={placeStoryText}
+                  cameraPermissionClass={storyCameraPermission}
+                  cameraPermissionLabel={storyCameraPermissionLabel(storyCameraPermission)}
+                  cameraPermissionRequesting={storyCameraPermission === "requesting"}
+                  cameraPermissionGranted={storyCameraPermission === "granted"}
+                  photoRetaining={placeStoryPhotoRetaining}
+                  photoSelected={Boolean(placeStoryPhoto)}
+                  photoPreview={placeStoryPhotoPreview ?? ""}
+                  storySubmitting={placeStorySubmitting}
+                  storyCanSubmit={!placeStorySubmitting && !placeStoryPhotoRetaining && Boolean(placeStoryAuthor.trim()) && placeStoryText.trim().length >= 2}
+                  themePicker={selectedHasThemeEasterEgg ? <UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} /> : undefined}
+                  onLocationSelect={(placeId) => { const item = publicPlaceItems.find((candidate) => candidate.place.id === placeId); if (item) focusPublicPlaceItem(item); }}
+                  onCopyAddress={() => { void copyPublicPlaceAddress(); }}
+                  onShare={() => { void sharePublicPlace(); }}
+                  onToggleStoryForm={togglePlaceStoryForm}
+                  onStoryAuthorChange={setPlaceStoryAuthor}
+                  onStoryTextChange={setPlaceStoryText}
+                  onRequestCameraPermission={() => { void requestPlaceStoryCameraPermission(); }}
+                  onPhotoSelected={(file) => { void retainPlaceStoryPhoto(file); }}
+                  onRemovePhoto={() => updatePlaceStoryPhoto(null)}
+                  onSubmitStory={() => { void submitPlaceStory(); }}
+                  onReportStory={(storyId) => { const story = publishedPlaceStories.find((candidate) => candidate.id === storyId); if (story) openPlaceStoryReport(story); }}
+                />
+              </Suspense>
             </div>
           </aside>}
           {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span>요소 {visibleElements.length}/{elements.length} · 장소 {directoryPlaces.length} · 메모 {reviewNotes.length}</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span>장소 {publicPlaceItems.length} · 마커 {visibleElements.length}</span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
