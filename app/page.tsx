@@ -1330,6 +1330,15 @@ function categoryOf(id: CategoryId) {
   return categories.find((category) => category.id === id) ?? categories[categories.length - 1];
 }
 
+const mobileMarkerPlaceholderColors: Partial<Record<CategoryId, string>> = {
+  cafe: "#80573f",
+  food: "#e37d35",
+};
+
+function mobileMarkerPlaceholderColor(id: CategoryId) {
+  return mobileMarkerPlaceholderColors[id] ?? categoryOf(id).color;
+}
+
 function directoryCategory(category: CategoryId): CategoryId {
   return normalizeDirectoryCategory(category) as CategoryId;
 }
@@ -2738,14 +2747,24 @@ const MapElementLayer = memo(function MapElementLayer(props: MapElementLayerProp
 type MobileMarkerPlaceholderLayerProps = {
   actionsRef: MapRenderActionsRef;
   elements: MapElement[];
+  fitZoom: number;
+  zoom: number;
 };
 
 const MobileMarkerPlaceholderLayer = memo(function MobileMarkerPlaceholderLayer({
   actionsRef,
   elements,
+  fitZoom,
+  zoom,
 }: MobileMarkerPlaceholderLayerProps) {
   if (!elements.length) return null;
-  return <div className="mobile-marker-placeholder-layer" data-render-isolation="mobile-marker-placeholder-layer" aria-label="간략 장소 마커">
+  const markerScale = clamp(zoom / Math.max(fitZoom, 0.22), 0.72, 2.2);
+  return <div
+    className="mobile-marker-placeholder-layer"
+    data-render-isolation="mobile-marker-placeholder-layer"
+    aria-label="간략 장소 마커"
+    style={{ "--mobile-marker-scale": markerScale } as CSSProperties}
+  >
     {elements.map((element) => <button
       type="button"
       className="mobile-marker-placeholder"
@@ -2753,7 +2772,7 @@ const MobileMarkerPlaceholderLayer = memo(function MobileMarkerPlaceholderLayer(
       style={{
         left: `${element.x}%`,
         top: `${element.y}%`,
-        "--mobile-marker-color": categoryOf(element.category).color,
+        "--mobile-marker-color": mobileMarkerPlaceholderColor(element.category),
       } as CSSProperties}
       onPointerDown={(event) => actionsRef.current?.startPan(event, element.id)}
       aria-label={`${element.name} 간략 마커`}
@@ -9548,7 +9567,12 @@ export default function Home() {
   }, [mobileMapRenderBounds, selectedId, visibleElements]);
   const mobileFullMarkerIds = useMemo(() => {
     if (!mobileMapRenderBounds) return null;
-    const markerBudget = mobileOverviewSimplified ? 0 : mobileMarkerBudgetForScale(
+    if (mobileOverviewSimplified) {
+      return new Set(mobileMapCandidateElements
+        .filter((element) => element.category === "landmark")
+        .map((element) => element.id));
+    }
+    const markerBudget = mobileMarkerBudgetForScale(
       zoom,
       fitZoom,
       mobileMapCandidateElements.length,
@@ -9559,9 +9583,7 @@ export default function Home() {
       limit: markerBudget,
       selectedId,
       mainHubIds: mobileMapCandidateElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
-      recommendedIds: mobileOverviewSimplified
-        ? []
-        : mobileMapCandidateElements.filter((element) => printPolicyFor(element).recommended).map((element) => element.id),
+      recommendedIds: mobileMapCandidateElements.filter((element) => printPolicyFor(element).recommended).map((element) => element.id),
       centerX: mobileMapRenderBounds.centerX,
       centerY: mobileMapRenderBounds.centerY,
     }));
@@ -9967,6 +9989,8 @@ export default function Home() {
                 <MobileMarkerPlaceholderLayer
                   actionsRef={mapRenderActionsRef}
                   elements={mobilePlaceholderElements}
+                  fitZoom={fitZoom}
+                  zoom={zoom}
                 />
                 <MapElementLayer
                   actionsRef={mapRenderActionsRef}

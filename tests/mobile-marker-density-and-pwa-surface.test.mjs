@@ -59,7 +59,11 @@ test("landmarks and the selected place stay full while recommendations win optio
 test("mobile PWA uses a light root fallback and lightweight category-colored omitted markers", () => {
   assert.match(cssSource, /@media \(display-mode: standalone\) \{\s*html, body \{ background: var\(--paper\); \}/);
   assert.match(cssSource, /\.mobile-marker-placeholder::after \{[^}]*border-radius: 50%;[^}]*background: var\(--mobile-marker-color\)/);
-  assert.match(cssSource, /\.mobile-marker-placeholder::after \{[^}]*width: 12px; height: 12px/);
+  assert.match(cssSource, /\.mobile-marker-placeholder::after \{[^}]*width: 10\.2px; height: 10\.2px; border: 1px solid #1f2024/);
+  assert.doesNotMatch(cssSource, /\.mobile-marker-placeholder::after \{[^}]*box-shadow/);
+  assert.match(cssSource, /transform: scale\(var\(--mobile-marker-scale, 1\)\)/);
+  assert.match(pageSource, /cafe: "#80573f"[\s\S]{0,40}food: "#e37d35"/);
+  assert.match(pageSource, /"--mobile-marker-scale": markerScale/);
   assert.match(pageSource, /element\.category === "landmark"[\s\S]{0,260}mobileMapRenderBounds\.left/);
   assert.match(pageSource, /cluster\.elementIds\.every\(\(elementId\) => renderedMapElementsById\.has\(elementId\)\)/);
   assert.match(pageSource, /clusteredLabelElementIds=\{renderedClusteredLabelElementIds\}/);
@@ -67,7 +71,7 @@ test("mobile PWA uses a light root fallback and lightweight category-colored omi
   assert.match(pageSource, /<MobileMarkerPlaceholderLayer[\s\S]{0,180}elements=\{mobilePlaceholderElements\}/);
   assert.match(pageSource, /mobileMarkerBudgetForScale\([\s\S]{0,180}startupInitialViewTarget\?\.zoom \?\? null/);
   assert.match(pageSource, /mobileOverviewSimplified && element\.category !== "landmark"/);
-  assert.match(pageSource, /const markerBudget = mobileOverviewSimplified \? 0 : mobileMarkerBudgetForScale/);
+  assert.match(pageSource, /if \(mobileOverviewSimplified\) \{[\s\S]{0,220}filter\(\(element\) => element\.category === "landmark"\)[\s\S]{0,100}map\(\(element\) => element\.id\)/);
 });
 
 test("the administrator event dialog stays out of the public initial bundle", () => {
