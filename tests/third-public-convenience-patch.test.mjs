@@ -83,6 +83,17 @@ test("place detail exposes directions, address copy, share, and a stable history
   assert.match(pageSource, /window\.addEventListener\("keydown", handleEscape, true\)/);
 });
 
+test("public place details omit the area and show DB information as one continuous block", () => {
+  assert.doesNotMatch(publicPlaceDetailSource, /area: string|props\.area|public-place-area/);
+  assert.match(publicPlaceDetailSource, /notes: string/);
+  assert.match(publicPlaceDetailSource, /className="public-place-information"[\s\S]{0,360}props\.description[\s\S]{0,220}props\.operatingInfo[\s\S]{0,220}props\.notes/);
+  assert.doesNotMatch(publicPlaceDetailSource, /public-place-hours|public-place-description/);
+  assert.match(pageSource, /notes=\{selectedDirectoryPlace\?\.notes \?\? ""\}/);
+  assert.doesNotMatch(pageSource, /area=\{selectedDirectoryPlace\?\.area/);
+  assert.match(cssSource, /\.public-place-information \{[^}]*margin-top: 14px[^}]*line-height: 1\.65/);
+  assert.doesNotMatch(cssSource, /\.public-place-hours|\.public-place-area/);
+});
+
 test("closing public sheets preserves the current map scale while explicit navigation may restore it", () => {
   const closePlace = pageSource.match(/const closePublicPlacePanel = \(\) => \{[\s\S]+?\n  \};/)?.[0] ?? "";
   const closeExplorer = pageSource.match(/const closePublicExplorerPanel = \(\) => \{[\s\S]+?\n  \};/)?.[0] ?? "";

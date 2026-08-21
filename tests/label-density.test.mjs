@@ -34,13 +34,15 @@ test("selected, main-hub and landmark labels survive caps while recommendations 
   assert.equal(result.limited, true);
 });
 
-test("screen limits happen before dense-label clustering and settle heavy zoom work", () => {
+test("public screen limits happen before dense-label clustering while admin labels stay uncapped", () => {
   assert.match(pageSource, /const editorLabelCandidates = useMemo/);
   assert.match(pageSource, /const scaleAwareLabelSelection = useMemo/);
   assert.match(pageSource, /const stageLabelElements = printPreviewMode \? printLabelElements : editorLabelElements/);
-  assert.match(pageSource, /fitZoom \/ Math\.max\(settledLabelZoom, 0\.22\)/);
+  assert.match(pageSource, /const labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
+  assert.match(pageSource, /const scaleLabelLimitActive = publicLayoutAccess === "viewer"/);
+  assert.match(pageSource, /fitZoom \/ Math\.max\(labelRenderZoom, 0\.22\)/);
   assert.match(pageSource, /setTimeout\(\(\) => \{[\s\S]{0,100}startTransition\(\(\) => setSettledLabelZoom\(zoom\)\);[\s\S]{0,30}\}, 140\)/);
-  assert.match(pageSource, /축척별 라벨 자동 제한/);
+  assert.doesNotMatch(pageSource, /축척별 라벨 자동 제한|scaleLabelLimitEnabled/);
 });
 
 test("four labels around one dense point stay grouped at detailed zoom", () => {

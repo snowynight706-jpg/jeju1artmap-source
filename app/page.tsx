@@ -3026,7 +3026,6 @@ export default function Home() {
   const [screenRecommendedOnly, setScreenRecommendedOnly] = useState(false);
   const [markerLabelsVisible, setMarkerLabelsVisible] = useState(true);
   const [mergeDenseLabels, setMergeDenseLabels] = useState(true);
-  const [scaleLabelLimitEnabled, setScaleLabelLimitEnabled] = useState(true);
   const [printRecommendedOnly, setPrintRecommendedOnly] = useState(true);
   const [printLandmarks, setPrintLandmarks] = useState(true);
   const [printMarkers, setPrintMarkers] = useState(true);
@@ -3226,6 +3225,7 @@ export default function Home() {
     state: "ready" | "saving" | "saved" | "error";
   }>({ placeId: null, state: "ready" });
   const [interaction, setInteraction] = useState<
+    | { type: "pan"; startX: number; startY: number; panX: number; panY: number }
     | { type: "resize"; id: string; startX: number; startSize: number }
     | { type: "drag"; id: string; startX: number; startY: number; elementX: number; elementY: number; anchorX: number; anchorY: number; mode: "anchor" | "output"; calibrationPointId?: string }
     | { type: "label"; id: string; startX: number; startY: number; offsetX: number; offsetY: number }
@@ -3241,9 +3241,17 @@ export default function Home() {
     }
   }, []);
 
-  const setMapLayoutZoom = useCallback((nextZoom: number) => {
-    stageWrapRef.current?.style.setProperty("--map-stage-width", `${nextZoom * 100}%`);
+  const setEditorMapPan = useCallback((nextPan: { x: number; y: number }) => {
+    panRef.current = nextPan;
+    setMapRenderPan((current) => (
+      current.x === nextPan.x && current.y === nextPan.y ? current : nextPan
+    ));
   }, []);
+
+  const setMapLayoutZoom = useCallback((nextZoom: number) => {
+    if (publicLayoutAccess === "editor") return;
+    stageWrapRef.current?.style.setProperty("--map-stage-width", `${nextZoom * 100}%`);
+  }, [publicLayoutAccess]);
 
   const currentDocument = useCallback((): DocumentState => ({
     elements: elementsRef.current,
@@ -3891,9 +3899,17 @@ export default function Home() {
     if (viewportDimensions.width <= 0 || viewportDimensions.height <= 0) return 0.72;
     const compactViewport = viewportDimensions.width <= 760;
     const horizontalPadding = compactViewport ? 18 : 34;
-    return horizontalMapFitZoom(viewportDimensions.width, stageDimensions.width, horizontalPadding);
-  }, [stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
-  const labelDetailRatio = settledLabelZoom / Math.max(fitZoom, 0.22);
+    if (publicLayoutAccess === "viewer") {
+      return horizontalMapFitZoom(viewportDimensions.width, stageDimensions.width, horizontalPadding);
+    }
+    const verticalPadding = compactViewport ? 24 : 34;
+    return clamp(Math.min(
+      (viewportDimensions.width - horizontalPadding) / Math.max(stageDimensions.width, 1),
+      (viewportDimensions.height - verticalPadding) / Math.max(stageDimensions.height, 1),
+    ), 0.22, 1.12);
+  }, [publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
+  const labelRenderZoom = publicLayoutAccess === "viewer" ? settledLabelZoom : zoom;
+  const labelDetailRatio = labelRenderZoom / Math.max(fitZoom, 0.22);
   const mobileOverviewSimplified = publicLayoutAccess === "viewer"
     && viewportDimensions.width > 0
     && viewportDimensions.width <= 760
@@ -3938,12 +3954,12 @@ export default function Home() {
     return (element.labelVisible || selectedLabel || (publicLayoutAccess === "viewer" && primaryHub))
       && (element.category === "landmark" || markerLabelsVisible || primaryHub || selectedLabel);
   }), [editorVisibleElements, markerLabelsVisible, mobileOverviewSimplified, publicLayoutAccess, selectedId]);
-  const scaleLabelLimitActive = publicLayoutAccess === "viewer" || scaleLabelLimitEnabled;
+  const scaleLabelLimitActive = publicLayoutAccess === "viewer";
   const scaleLabelBudget = useMemo(() => {
-    const baseBudget = labelBudgetForScale(settledLabelZoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive);
+    const baseBudget = labelBudgetForScale(labelRenderZoom, fitZoom, editorLabelCandidates.length, scaleLabelLimitActive);
     if (publicLayoutAccess !== "viewer" || viewportDimensions.width <= 0 || viewportDimensions.width > 760) return baseBudget;
-    return mobileLabelBudgetForScale(settledLabelZoom, fitZoom, baseBudget, editorLabelCandidates.length, mobileRenderBudget.tier);
-  }, [editorLabelCandidates.length, fitZoom, mobileRenderBudget.tier, publicLayoutAccess, scaleLabelLimitActive, settledLabelZoom, viewportDimensions.width]);
+    return mobileLabelBudgetForScale(labelRenderZoom, fitZoom, baseBudget, editorLabelCandidates.length, mobileRenderBudget.tier);
+  }, [editorLabelCandidates.length, fitZoom, labelRenderZoom, mobileRenderBudget.tier, publicLayoutAccess, scaleLabelLimitActive, viewportDimensions.width]);
   const scaleAwareLabelSelection = useMemo(() => chooseScaleAwareLabelIds(editorLabelCandidates, {
     limit: scaleLabelBudget,
     selectedId,
@@ -3954,7 +3970,6 @@ export default function Home() {
     const selectedLabelIds = new Set(scaleAwareLabelSelection.ids);
     return editorLabelCandidates.filter((element) => selectedLabelIds.has(element.id));
   }, [editorLabelCandidates, scaleAwareLabelSelection]);
-  const scaleHiddenLabelCount = Math.max(0, editorLabelCandidates.length - editorLabelElements.length);
   const visibleElements = useMemo(() => {
     if (!printPreviewMode) return editorVisibleElements;
     const byId = new Map([...printMarkerElements, ...printLabelElements].map((element) => [element.id, element]));
@@ -4122,10 +4137,10 @@ export default function Home() {
         stageMarkerElements,
         denseLabelPositions,
         printPreviewMode ? denseLabelExcludedIds : displayDenseLabelExcludedIds,
-        printPreviewMode ? 1 : fitZoom / Math.max(settledLabelZoom, 0.22),
+        printPreviewMode ? 1 : fitZoom / Math.max(labelRenderZoom, 0.22),
         !printPreviewMode && forceIndividualLabels,
       )
-    : [], [denseLabelExcludedIds, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, mergeDenseLabels, printPreviewMode, settledLabelZoom, stageLabelElements, stageMarkerElements]);
+    : [], [denseLabelExcludedIds, denseLabelPositions, displayDenseLabelExcludedIds, fitZoom, forceIndividualLabels, labelRenderZoom, mergeDenseLabels, printPreviewMode, stageLabelElements, stageMarkerElements]);
   const selectedDenseLabel = useMemo(
     () => denseLabelClusters.find((cluster) => cluster.id === selectedDenseLabelId) ?? null,
     [denseLabelClusters, selectedDenseLabelId],
@@ -4889,13 +4904,11 @@ export default function Home() {
           const savedMapView = JSON.parse(localStorage.getItem(MAP_VIEW_SETTINGS_KEY) ?? "null") as {
             markerLabelsVisible?: boolean;
             mergeDenseLabels?: boolean;
-            scaleLabelLimitEnabled?: boolean;
             expandedPlacedMarkerGroups?: Partial<Record<CategoryId, boolean>>;
           } | null;
           if (savedMapView) {
             if (typeof savedMapView.markerLabelsVisible === "boolean") setMarkerLabelsVisible(savedMapView.markerLabelsVisible);
             if (typeof savedMapView.mergeDenseLabels === "boolean") setMergeDenseLabels(savedMapView.mergeDenseLabels);
-            if (typeof savedMapView.scaleLabelLimitEnabled === "boolean") setScaleLabelLimitEnabled(savedMapView.scaleLabelLimitEnabled);
             if (savedMapView.expandedPlacedMarkerGroups) {
               setExpandedPlacedMarkerGroups((current) => categories.reduce<Record<CategoryId, boolean>>((next, category) => {
                 const saved = savedMapView.expandedPlacedMarkerGroups?.[category.id];
@@ -5125,11 +5138,10 @@ export default function Home() {
       localStorage.setItem(MAP_VIEW_SETTINGS_KEY, JSON.stringify({
         markerLabelsVisible,
         mergeDenseLabels,
-        scaleLabelLimitEnabled,
         expandedPlacedMarkerGroups,
       }));
     } catch {}
-  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels, publicLayoutAccess, scaleLabelLimitEnabled]);
+  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels, publicLayoutAccess]);
 
   useEffect(() => {
     if (!hydrated || publicLayoutAccess !== "editor" || placeDirectoryLoadedRef.current) return;
@@ -5625,12 +5637,17 @@ export default function Home() {
     const previousFitZoom = fitZoomRef.current;
     const wasAtFit = Math.abs(zoom - previousFitZoom) <= 0.018;
     fitZoomRef.current = fitZoom;
-    if (!fitZoomAppliedRef.current || wasAtFit || zoom < fitZoom - 0.002) {
+    if (!fitZoomAppliedRef.current || wasAtFit || (publicLayoutAccess === "viewer" && zoom < fitZoom - 0.002)) {
       fitZoomAppliedRef.current = true;
-      setZoom(fitZoom);
-      setMapPan({ x: 0, y: 0 });
+      const frame = window.requestAnimationFrame(() => {
+        zoomRef.current = fitZoom;
+        setZoom(fitZoom);
+        if (publicLayoutAccess === "editor") setEditorMapPan({ x: 0, y: 0 });
+        else setMapPan({ x: 0, y: 0 });
+      });
+      return () => window.cancelAnimationFrame(frame);
     }
-  }, [fitZoom, setMapPan, viewportDimensions.height, viewportDimensions.width, zoom]);
+  }, [fitZoom, publicLayoutAccess, setEditorMapPan, setMapPan, viewportDimensions.height, viewportDimensions.width, zoom]);
 
   useEffect(() => {
     if (
@@ -5886,13 +5903,13 @@ export default function Home() {
   }, [flushTouchMapTransform, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan]);
 
   useLayoutEffect(() => {
-    setMapPan(panRef.current);
-  }, [setMapPan]);
+    if (publicLayoutAccess === "viewer") setMapPan(panRef.current);
+  }, [publicLayoutAccess, setMapPan]);
 
   useLayoutEffect(() => {
     zoomRef.current = zoom;
-    setMapLayoutZoom(zoom);
-  }, [setMapLayoutZoom, zoom]);
+    if (publicLayoutAccess === "viewer") setMapLayoutZoom(zoom);
+  }, [publicLayoutAccess, setMapLayoutZoom, zoom]);
 
   useEffect(() => () => {
     if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
@@ -5988,6 +6005,13 @@ export default function Home() {
         return;
       }
       if (!interaction) return;
+      if (interaction.type === "pan") {
+        setEditorMapPan({
+          x: interaction.panX + clientX - interaction.startX,
+          y: interaction.panY + clientY - interaction.startY,
+        });
+        return;
+      }
       if (interaction.type === "label") {
         updateElement(interaction.id, {
           labelOffsetX: clamp(interaction.offsetX + (clientX - interaction.startX) / Math.max(fitZoom, 0.22), -240, 240),
@@ -6172,7 +6196,7 @@ export default function Home() {
       panInteractionRef.current = null;
       viewportRef.current?.classList.remove("is-panning");
     };
-  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, recordMapSettle, scheduleTouchLayerRelease, selectPublicMarker, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
+  }, [clientToMap, commitTouchMapTransform, fitZoom, interaction, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, recordMapSettle, scheduleTouchLayerRelease, selectPublicMarker, setEditorMapPan, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement]);
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -6251,6 +6275,19 @@ export default function Home() {
     if (!viewport) return;
     const cursorX = event.clientX - viewport.left - viewport.width / 2;
     const cursorY = event.clientY - viewport.top - viewport.height / 2;
+    if (publicLayoutAccess === "editor") {
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const nextZoom = clamp(currentZoom * Math.exp(-event.deltaY * 0.0012), 0.22, 4);
+      const ratio = nextZoom / Math.max(currentZoom, 0.01);
+      zoomRef.current = nextZoom;
+      setEditorMapPan({
+        x: cursorX - (cursorX - currentPan.x) * ratio,
+        y: cursorY - (cursorY - currentPan.y) * ratio,
+      });
+      setZoom(nextZoom);
+      return;
+    }
     if (wheelCommitTimerRef.current === null) {
       beginTouchMapTransform();
       wheelGestureAnchorRef.current = { x: cursorX, y: cursorY };
@@ -6299,6 +6336,17 @@ export default function Home() {
       wheelCommitTimerRef.current = null;
       wheelGestureAnchorRef.current = null;
       commitTouchMapTransform();
+    }
+    if (publicLayoutAccess === "editor") {
+      setSelectedId(null); setSelectedFacilityId(null); setSelectedNoteId(null); setSelectedDenseLabelId(null);
+      setInteraction({
+        type: "pan",
+        startX: event.clientX,
+        startY: event.clientY,
+        panX: panRef.current.x,
+        panY: panRef.current.y,
+      });
+      return;
     }
     if (event.pointerType === "touch") {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -6428,6 +6476,22 @@ export default function Home() {
     const unscaledHeight = stageRect
       ? stageRect.height / Math.max(currentZoom, 0.01)
       : stageDimensions.height;
+    if (publicLayoutAccess === "editor") {
+      const targetZoom = 1.55;
+      const targetPan = unscaledWidth > 0 && unscaledHeight > 0
+        ? {
+            x: -((x - 50) / 100) * unscaledWidth * targetZoom,
+            y: -((y - 50) / 100) * unscaledHeight * targetZoom,
+          }
+        : panRef.current;
+      finishProgrammaticMapFocus();
+      zoomRef.current = targetZoom;
+      setEditorMapPan(targetPan);
+      setZoom(targetZoom);
+      setFocusPulseId(elementId);
+      window.setTimeout(() => setFocusPulseId((current) => current === elementId ? null : current), 1300);
+      return;
+    }
     const targetZoom = focusOptions.publicNavigation
       ? publicPlaceFocusZoom({
         fitZoom,
@@ -9702,8 +9766,8 @@ export default function Home() {
           <button type="button" className="shortcut-trigger" onClick={() => setShortcutHelpOpen(true)} aria-haspopup="dialog" aria-controls="shortcut-dialog">단축키</button>
         </div>
         <div className="toolbar-group zoom-tools">
-          <button onClick={() => setZoom((value) => clamp(value / 1.16, fitZoom, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
-          <button onClick={() => setZoom((value) => clamp(value * 1.16, fitZoom, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button>
+          <button onClick={() => setZoom((value) => clamp(value / 1.16, 0.22, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output>
+          <button onClick={() => setZoom((value) => clamp(value * 1.16, 0.22, 4))} aria-label="확대">＋</button><button onClick={() => { zoomRef.current = fitZoom; setZoom(fitZoom); setEditorMapPan({ x: 0, y: 0 }); }}>맞춤</button>
         </div>
         <div className="toolbar-group export-tools"><button className={`print-preview-toggle ${printPreviewMode ? "active" : ""}`} onClick={openPrintSettings}>{printPreviewMode ? "출력 · 미리보기 중" : "출력"}</button></div>
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
@@ -9798,10 +9862,8 @@ export default function Home() {
                   <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 임시 표시</b><small>배치와 출력 포함 설정은 유지됩니다.</small></span></label>
                   <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>일반 마커 라벨</b><small>화면 표시만 한 번에 전환합니다.</small></span></label>
                   <label><input type="checkbox" checked={mergeDenseLabels} onChange={(event) => setMergeDenseLabels(event.target.checked)} /><span><b>밀집 라벨 자동 통합</b><small>확대해도 주변 4곳 이상 밀집 시 통합 유지</small></span></label>
-                  <label className={scaleLabelLimitEnabled ? "active" : ""}><input type="checkbox" checked={scaleLabelLimitEnabled} onChange={(event) => setScaleLabelLimitEnabled(event.target.checked)} /><span><b>축척별 라벨 자동 제한</b><small>확대 수준에 맞춰 가독성을 유지합니다.</small></span></label>
                 </div>
                 <div className="placed-label-bulk" role="group" aria-label="배치 라벨 가시성 일괄 조절"><button type="button" onClick={() => setPlacedLabelsVisibility(true)}>배치 라벨 전체 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(false)}>전체 OFF</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "landmark")}>랜드마크 ON</button><button type="button" onClick={() => setPlacedLabelsVisibility(true, "marker")}>일반마커 ON</button></div>
-                <div className={`label-scale-status ${scaleHiddenLabelCount > 0 ? "limited" : "all"}`}><span><b>현재 라벨</b><em>{editorLabelElements.length}/{editorLabelCandidates.length}</em></span><small>{scaleHiddenLabelCount > 0 ? `축척에 따라 ${scaleHiddenLabelCount}개 임시 숨김` : "현재 배율 표시 준비 완료"}</small></div>
                 <button type="button" className={`view-label-refresh ${labelsRefreshing ? "refreshing" : ""}`} disabled={labelsRefreshing} onClick={() => void refreshLabelPositions()}><span aria-hidden="true">↻</span>{labelsRefreshing ? "전체 라벨 정리 중…" : "전체 라벨 위치 새로고침"}</button>
               </div>
             </details>
@@ -9970,9 +10032,13 @@ export default function Home() {
 
         <section className="canvas-column">
           <div className="canvas-toolbar"><span className="map-file" title={activeBaseMapLabel}>{activeBaseMapLabel}</span><div className={`canvas-hint ${resourceOutputDragMode ? "output-mode" : ""}`}>{resourceOutputDragMode ? "출력 위치 ON · 드래그/방향키로 리소스만 이동" : calibrationMode ? "앵커 드래그 → 전체 좌표 보정 적용" : "출력 위치 OFF · 실제 위치 앵커 이동"}</div></div>
-          <div className={`map-viewport ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
+          <div className={`map-viewport ${interaction?.type === "pan" ? "is-panning" : ""} ${interaction?.type === "drag" ? "is-dragging-element" : ""} ${publicLayoutAccess === "viewer" && Math.abs(zoom - settledLabelZoom) > 0.002 ? "is-zooming" : ""} ${memoMode ? "memo-cursor" : ""} ${eventPlaceSelectionMode ? "event-place-selecting" : ""} ${placeRequestPickingLocation ? "place-request-location-selecting" : ""}`} ref={viewportRef} onWheel={onWheel} onPointerDown={startPan}>
             {publicLayoutAccess === "viewer" && <button type="button" className="public-map-reset" onPointerDown={(event) => event.stopPropagation()} onClick={resetPublicMap} aria-label="전체 지도 보기">↙ 전체 지도</button>}
-            <div ref={stageWrapRef} className="map-stage-wrap">
+            <div
+              ref={stageWrapRef}
+              className={`map-stage-wrap ${publicLayoutAccess === "editor" ? "editor-direct-render" : ""}`}
+              style={publicLayoutAccess === "editor" ? { transform: `translate(calc(-50% + ${mapRenderPan.x}px), calc(-50% + ${mapRenderPan.y}px)) scale(${zoom})` } : undefined}
+            >
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
                 <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
@@ -9992,7 +10058,7 @@ export default function Home() {
                   viewMode={viewMode}
                   visibleElements={renderedMapElements}
                   visibleElementsById={renderedMapElementsById}
-                  zoom={settledLabelZoom}
+                  zoom={labelRenderZoom}
                 />
                 <MobileMarkerPlaceholderLayer
                   actionsRef={mapRenderActionsRef}
@@ -10022,7 +10088,7 @@ export default function Home() {
                   stageMarkerIds={stageMarkerIds}
                   viewMode={viewMode}
                   visibleElements={renderedMapElements}
-                  zoom={settledLabelZoom}
+                  zoom={labelRenderZoom}
                 />
                 {placeRequestPickingLocation && placeRequestLocation && <div className="place-request-location-marker" style={{ left: `${placeRequestLocation.x}%`, top: `${placeRequestLocation.y}%` }} aria-label="요청할 마커 위치">
                   <img src={markerAssetSrc(placeRequestMarkerStyle, placeRequestCategory)} alt="" draggable={false} decoding="async" />
@@ -10070,10 +10136,10 @@ export default function Home() {
                   placeName={selectedDisplayName}
                   locationPlaces={selectedLocationGroupPlaces.map((place) => ({ id: place.id, name: place.name, active: place.id === selectedDirectoryPlace?.id }))}
                   address={selectedDirectoryPlace?.address || selected.address}
-                  area={selectedDirectoryPlace?.area ?? ""}
                   convenienceNames={convenienceAttributeDefinitions.filter((definition) => sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).includes(definition.id)).map((definition) => definition.name)}
                   description={selectedDirectoryPlace?.description ?? ""}
                   operatingInfo={selectedDirectoryPlace?.operatingInfo ?? ""}
+                  notes={selectedDirectoryPlace?.notes ?? ""}
                   directionsUrl={publicPlaceDirectionsUrl(selectedDisplayName, selectedDirectoryPlace?.address || selected.address, selectedDirectoryPlace?.mapUrl)}
                   events={placeEvents.map((event) => ({ id: event.id, photoUrl: event.photoUrl, eventName: event.eventName, eventInfo: event.eventInfo, scheduleLabel: eventScheduleLabel(event.startsAt, event.endsAt) }))}
                   stories={publishedPlaceStories.map((story) => ({ id: story.id, authorName: story.authorName, reviewText: story.reviewText, photoUrl: story.photoUrl, createdAt: story.createdAt, dateLabel: storyDateLabel(story.createdAt), reported: reportedStoryIds.has(story.id) }))}

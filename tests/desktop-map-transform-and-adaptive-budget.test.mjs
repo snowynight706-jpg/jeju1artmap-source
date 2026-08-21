@@ -13,7 +13,7 @@ import {
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-test("desktop map scaling separates centering from the composited scale", () => {
+test("public desktop scaling stays composited while admin restores direct wheel scaling", () => {
   assert.equal(mapStageGestureTransform(1.25, 1280), "scale3d(1.25, 1.25, 1)");
   assert.equal(mapStageGestureTransform(1.25, 760), "translateX(-50%) scale(1.25)");
   assert.match(cssSource, /@media \(min-width: 761px\) \{\s*\.map-stage \{ left: auto; margin-inline: auto; transform: none; \}/);
@@ -28,6 +28,9 @@ test("desktop map scaling separates centering from the composited scale", () => 
   assert.match(pageSource, /return horizontalMapFitZoom\(viewportDimensions\.width, stageDimensions\.width, horizontalPadding\)/);
   assert.match(pageSource, /pinch\.startZoom \* distance \/ pinch\.startDistance, fitZoom, 4/);
   assert.match(pageSource, /currentZoom \* Math\.exp\(-next\.deltaY \* 0\.0012\), fitZoom, 4/);
+  assert.match(pageSource, /if \(publicLayoutAccess === "editor"\) \{[\s\S]{0,220}currentZoom \* Math\.exp\(-event\.deltaY \* 0\.0012\), 0\.22, 4/);
+  assert.match(pageSource, /type: "pan"; startX: number; startY: number; panX: number; panY: number/);
+  assert.match(pageSource, /if \(publicLayoutAccess === "editor"\) \{[\s\S]{0,200}const targetZoom = 1\.55[\s\S]{0,400}setEditorMapPan\(targetPan\);[\s\S]{0,60}setZoom\(targetZoom\)/);
   assert.match(pageSource, /fitZoom, Math\.max\(fitZoom, 1\.32\)/);
   assert.match(pageSource, /fitZoom, Math\.max\(fitZoom, 1\.42\)/);
 });

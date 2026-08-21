@@ -6,7 +6,7 @@ const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const serviceWorkerSource = await readFile(new URL("../public/service-worker.js", import.meta.url), "utf8");
 
-test("touch pan and pinch stay on a requestAnimationFrame composited path until commit", () => {
+test("public touch pan and pinch stay composited while admin pan uses the restored direct path", () => {
   assert.match(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\)/);
   assert.match(pageSource, /touchTransformFrameRef\.current = window\.requestAnimationFrame/);
   assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(scale, viewport\.clientWidth\)/);
@@ -15,7 +15,8 @@ test("touch pan and pinch stay on a requestAnimationFrame composited path until 
   assert.doesNotMatch(pageSource, /queueTouchMapTransform\(nextZoom, nextPan\);\s*setZoom\(nextZoom\)/);
   assert.match(pageSource, /panInteractionRef = useRef/);
   assert.match(pageSource, /panInteractionRef\.current = \{[\s\S]{0,240}viewportRef\.current\?\.classList\.add\("is-panning"\)/);
-  assert.doesNotMatch(pageSource, /setInteraction\(\{ type: "pan"/);
+  assert.match(pageSource, /if \(publicLayoutAccess === "editor"\) \{[\s\S]{0,260}setInteraction\(\{[\s\S]{0,60}type: "pan"/);
+  assert.match(pageSource, /if \(interaction\.type === "pan"\) \{[\s\S]{0,180}setEditorMapPan/);
   assert.doesNotMatch(pageSource, /const \[pan, setPan\] = useState/);
 });
 
@@ -54,11 +55,12 @@ test("programmatic focus animates compositor transforms and commits layout once"
   assert.doesNotMatch(pageSource, /style=\{\{ aspectRatio: `\$\{MAP_ASPECT\}`, width:/);
 });
 
-test("label density work is deferred from the map layout commit", () => {
-  assert.match(pageSource, /labelDetailRatio = settledLabelZoom \/ Math\.max\(fitZoom, 0\.22\)/);
-  assert.match(pageSource, /labelBudgetForScale\(settledLabelZoom, fitZoom/);
+test("public label density work is deferred while admin labels follow direct zoom", () => {
+  assert.match(pageSource, /labelRenderZoom = publicLayoutAccess === "viewer" \? settledLabelZoom : zoom/);
+  assert.match(pageSource, /labelDetailRatio = labelRenderZoom \/ Math\.max\(fitZoom, 0\.22\)/);
+  assert.match(pageSource, /labelBudgetForScale\(labelRenderZoom, fitZoom/);
   assert.match(pageSource, /startTransition\(\(\) => setSettledLabelZoom\(zoom\)\)/);
-  assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}\s+zoom=\{settledLabelZoom\}/);
+  assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}\s+zoom=\{labelRenderZoom\}/);
 });
 
 test("mobile high-resolution map switching and startup reveal wait for settled work only", () => {

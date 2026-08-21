@@ -41,9 +41,11 @@ test("cached PWA startup assets cannot reset completed progress back to zero", (
   assert.doesNotMatch(startupBlock, /queueMicrotask\([\s\S]*?setStartupLoadDone\(0\)[\s\S]*?\}\);\s*const preload/);
 });
 
-test("map wrappers start centered before the first admin drag", () => {
+test("map wrappers start centered and admin uses the restored direct transform", () => {
   assert.match(cssSource, /\.map-stage-wrap \{[^}]*left: 50%;[^}]*top: 50%;[^}]*transform: translate3d\(-50%, -50%, 0\)/);
-  assert.match(pageSource, /setMapPan = useCallback[\s\S]{0,280}translate3d\(calc\(-50% \+ \$\{nextPan\.x\}px\), calc\(-50% \+ \$\{nextPan\.y\}px\), 0\)/);
+  assert.match(pageSource, /className=\{`map-stage-wrap \$\{publicLayoutAccess === "editor" \? "editor-direct-render"/);
+  assert.match(pageSource, /publicLayoutAccess === "editor" \? \{ transform: `translate\(calc\(-50% \+ \$\{mapRenderPan\.x\}px\), calc\(-50% \+ \$\{mapRenderPan\.y\}px\)\) scale\(\$\{zoom\}\)` \} : undefined/);
+  assert.match(cssSource, /\.map-stage-wrap\.editor-direct-render \.map-stage \{ width: 100%; \}/);
 });
 
 test("a partial coordinate snapshot never clears a lock stored in the layout", () => {

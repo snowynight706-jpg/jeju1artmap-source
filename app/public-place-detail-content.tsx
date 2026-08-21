@@ -32,10 +32,10 @@ type Props = {
   placeName: string;
   locationPlaces: LocationPlace[];
   address: string;
-  area: string;
   convenienceNames: string[];
   description: string;
   operatingInfo: string;
+  notes: string;
   directionsUrl: string;
   events: PlaceEvent[];
   stories: PlaceStory[];
@@ -84,10 +84,12 @@ export default function PublicPlaceDetailContent(props: Props) {
     </section>}
     <section className="public-place-summary">
       {props.address && <p className="public-place-address">{props.address}</p>}
-      {props.area && <span className="public-place-area">{props.area}</span>}
       {!!props.convenienceNames.length && <div className="public-place-conveniences" aria-label="편의정보">{props.convenienceNames.map((name) => <span key={name}>{name}</span>)}</div>}
-      {props.description && <p className="public-place-description">{props.description}</p>}
-      {props.operatingInfo && <div className="public-place-hours"><b>이용 안내</b><span>{props.operatingInfo}</span></div>}
+      {(props.description || props.operatingInfo || props.notes) && <div className="public-place-information">
+        {props.description && <p>{props.description}</p>}
+        {props.operatingInfo && <p><b>이용 안내</b> {props.operatingInfo}</p>}
+        {props.notes && <p><b>비고·주의사항</b> {props.notes}</p>}
+      </div>}
       <div className="public-place-quick-actions" aria-label="장소 빠른 작업">
         <a className="public-place-map-link" href={props.directionsUrl} target="_blank" rel="noreferrer">길찾기 ↗</a>
         {props.address && <button type="button" onClick={props.onCopyAddress}>주소 복사</button>}
