@@ -4,6 +4,7 @@
 - `app/map-calibration.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성, 보정 좌표 계산을 담당하는 순수 도메인 모듈
 - `app/map-model.ts`: 지도 분류·색상·표시 크기와 장소 식별 키를 공유하는 순수 도메인 모듈
 - `app/map-types.ts`: 지도 요소·자산·장소 디렉터리·편집 문서·통합 라벨·화면 경계의 공용 TypeScript 계약
+- `app/map-document.ts`: 런타임 ID 복구, 문서 복제, 배치 오버라이드, 잠금 좌표 직렬화의 순수 문서 규칙
 - `app/map-render-layers.tsx`: 메인 상태와 ref 액션으로 연결되는 마커·간략 마커·연결선·통합 라벨 렌더 계층
 - `app/public-place-detail-content.tsx`: 장소 선택 후에만 지연 로딩되는 공개 상세·행사·후기 화면
 - `app/public-explorer-activity-content.tsx`: 원도심 탐색에서 리뷰·행사 탭을 열 때만 지연 로딩되는 카드 화면
