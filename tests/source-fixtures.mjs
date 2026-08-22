@@ -4,6 +4,7 @@ export const APP_CLIENT_SOURCE_PATHS = Object.freeze([
   "../app/page.tsx",
   "../app/map-calibration.ts",
   "../app/map-model.ts",
+  "../app/map-types.ts",
 ]);
 
 export async function readAppClientSource() {

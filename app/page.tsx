@@ -51,6 +51,20 @@ import {
   placeContentKey,
   type CategoryId,
 } from "./map-model";
+import type {
+  AssetStatus,
+  DenseLabelCluster,
+  DenseLabelPosition,
+  DenseLabelRow,
+  LabelPosition,
+  MapAsset,
+  MapElement,
+  MapLabelStatus,
+  PublicLayoutAccess,
+  StageDimensions,
+  ViewMode,
+  VisualBounds,
+} from "./map-types";
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import {
@@ -290,10 +304,7 @@ type PublicHistoryState = {
   wondosimFrom?: "map" | "explorer" | "explorer-expanded";
   wondosimExpandedFromCollapsed?: boolean;
 };
-type AssetStatus = "approved" | "review" | "unchecked";
-type LabelPosition = "top" | "bottom" | "left" | "right";
 type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
-type ViewMode = "all" | "landmarks" | "markers" | "labels" | "anchors" | "clearance" | "collisions" | "dim" | "gray" | "nomap";
 type BaseMapMode = "svg" | "png" | "uploaded";
 type CoordinateLockFilter = "all" | "unlocked" | "locked";
 type PlacementFilter = "all" | "placed" | "unplaced";
@@ -301,7 +312,6 @@ type RecommendationFilter = "all" | "recommended" | "standard";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PrintMode = "auto" | "include" | "exclude";
 type PlacementState = "unplaced" | "deleted";
-type PublicLayoutAccess = "loading" | "editor" | "viewer";
 type PublicAssetProfile = "mobile" | "standard";
 type GlobalContentTab = "places" | "reviews" | "events" | "place-requests";
 type StoryReportReason = "inappropriate" | "privacy" | "copyright" | "spam" | "other";
@@ -319,54 +329,6 @@ type UploadedBaseMap = {
   originalUrl?: string;
   screen2048Url?: string;
   screen4096Url?: string;
-};
-
-type MapAsset = {
-  id: string;
-  name: string;
-  category: CategoryId;
-  status: AssetStatus;
-  src: string;
-  screenSrc?: string;
-  mobileSrc?: string;
-  fileType: "png" | "svg" | "image";
-  placeName?: string;
-  address?: string;
-  addressSourceUrl?: string;
-  sourceLabel?: string;
-  sourceUrl?: string;
-  builtIn?: boolean;
-};
-
-type MapElement = {
-  id: string;
-  name: string;
-  category: CategoryId;
-  x: number;
-  y: number;
-  anchorX: number;
-  anchorY: number;
-  size: number;
-  z: number;
-  labelVisible: boolean;
-  labelLocked: boolean;
-  labelPosition: LabelPosition;
-  labelGap: number;
-  labelOffsetX: number;
-  labelOffsetY: number;
-  opacity: number;
-  connectorVisible: boolean;
-  connectorColor: string;
-  connectorWidth: number;
-  assetId: string | null;
-  status: AssetStatus;
-  locked: boolean;
-  mapVisible: boolean;
-  memo: string;
-  address: string;
-  addressSourceUrl: string;
-  directoryId?: string;
-  placeRequestId?: string;
 };
 
 type DirectoryPlace = {
@@ -475,50 +437,11 @@ type PrintPlaceSetting = {
   labelMode: PrintMode;
 };
 
-type DenseLabelPosition = {
-  key: string;
-  elementIds: string[];
-  x: number;
-  y: number;
-};
-
 type PlacementOverride = {
   key: string;
   directoryId?: string;
   name: string;
   state: PlacementState;
-};
-
-type DenseLabelRow = {
-  elementId: string;
-  name: string;
-  category: CategoryId;
-  targetX: number;
-  targetY: number;
-  column: number;
-  rowIndex: number;
-};
-
-type DenseLabelCluster = {
-  id: string;
-  elementIds: string[];
-  names: string[];
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  manuallyPositioned: boolean;
-  hasCollision: boolean;
-  rows: DenseLabelRow[];
-  columnCount: number;
-  rowCount: number;
-  columnWidths: number[];
-  positionKeys: string[];
-};
-
-type StageDimensions = {
-  width: number;
-  height: number;
 };
 
 type MobileRenderBudget = {
@@ -1356,8 +1279,6 @@ function writePlaceStoryDraft(placeKey: string | null, value: string) {
     // 세션 저장소가 차단된 환경에서는 현재 입력 상태만 유지합니다.
   }
 }
-
-type VisualBounds = { left: number; top: number; right: number; bottom: number };
 
 // 이하는 지도 라벨 위치와 사진 업로드 파일을 준비하는 코드입니다.
 function smoothstep(edge0: number, edge1: number, value: number) {
@@ -2399,8 +2320,6 @@ type MapRenderActions = {
 
 type MapRenderActionsRef = { current: MapRenderActions | null };
 type MobileMarkerPlaceholderLayerRef = { current: HTMLDivElement | null };
-type MapLabelStatus = { hasEvent: boolean; reviewCount: number; hasNewReview: boolean };
-
 const EMPTY_MAP_LABEL_STATUS: MapLabelStatus = Object.freeze({ hasEvent: false, reviewCount: 0, hasNewReview: false });
 const EMPTY_MAP_LABEL_STATUS_BY_ELEMENT_ID = new Map<string, MapLabelStatus>();
 const EMPTY_MAP_ELEMENT_IDS = new Set<string>();
