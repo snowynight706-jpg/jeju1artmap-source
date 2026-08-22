@@ -71,8 +71,8 @@ import {
 import {
   printSettingKey,
   type PrintMode,
-  type PrintPlaceSetting,
 } from "./map-print-settings";
+import { usePrintSettingsPersistence } from "./use-print-settings-persistence";
 import type {
   AssetStatus,
   DenseLabelCluster,
@@ -172,7 +172,6 @@ const UPLOADED_MAP_API = "/api/base-map";
 const CALIBRATION_SETTINGS_API = "/api/calibration-settings";
 const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
 const PLACE_DIRECTORY_API = "/api/place-directory";
-const PRINT_SETTINGS_API = "/api/print-settings";
 const DENSE_LABEL_SETTINGS_API = "/api/dense-label-settings";
 const PLACEMENT_SETTINGS_API = "/api/placement-settings";
 const PUBLIC_LAYOUT_API = "/api/public-layout";
@@ -2177,7 +2176,6 @@ export default function Home() {
   const placeDirectoryLoadedRef = useRef(false);
   const directoryTaxonomySaveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const directoryTaxonomySaveRunRef = useRef(0);
-  const printSettingsRef = useRef<PrintPlaceSetting[]>([]);
   const denseLabelPositionsRef = useRef<DenseLabelPosition[]>([]);
   const denseLabelExcludedIdsRef = useRef<string[]>([]);
   const placementOverridesRef = useRef<PlacementOverride[]>([]);
@@ -2258,9 +2256,6 @@ export default function Home() {
   const [printPreviewMode, setPrintPreviewMode] = useState(false);
   const [printAuditOpen, setPrintAuditOpen] = useState(false);
   const [printFolderOpenRequest, setPrintFolderOpenRequest] = useState(0);
-  const [printSettings, setPrintSettings] = useState<PrintPlaceSetting[]>([]);
-  const [printSettingsCanEdit, setPrintSettingsCanEdit] = useState(false);
-  const [printSettingsStorage, setPrintSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
   const [denseLabelPositions, setDenseLabelPositions] = useState<DenseLabelPosition[]>([]);
   const [denseLabelExcludedIds, setDenseLabelExcludedIds] = useState<string[]>([]);
   const [placementOverrides, setPlacementOverrides] = useState<PlacementOverride[]>([]);
@@ -2271,6 +2266,17 @@ export default function Home() {
   const [forceIndividualLabels, setForceIndividualLabels] = useState(false);
   const [placementSettingsRemoteReady, setPlacementSettingsRemoteReady] = useState(false);
   const [publicLayoutAccess, setPublicLayoutAccess] = useState<PublicLayoutAccess>("loading");
+  const {
+    printSettings,
+    printSettingsCanEdit,
+    printSettingsStorage,
+    savePrintSetting,
+  } = usePrintSettingsPersistence({
+    hydrated,
+    publicLayoutAccess,
+    screenRecommendedOnly,
+    onMessage: setToast,
+  });
   const [publicLayoutPublishedAt, setPublicLayoutPublishedAt] = useState<string | null>(null);
   const [publicLayoutRevision, setPublicLayoutRevision] = useState(0);
   const [publicLayoutPublishing, setPublicLayoutPublishing] = useState(false);
@@ -4525,68 +4531,6 @@ export default function Home() {
       });
     return () => { cancelled = true; };
   }, [hydrated, publicLayoutAccess, replaceDirectoryPlaces, replaceElements]);
-
-  useEffect(() => {
-    if (!hydrated || (publicLayoutAccess === "viewer" && !screenRecommendedOnly)) return;
-    let cancelled = false;
-    fetch(PRINT_SETTINGS_API, { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null) as {
-          settings?: PrintPlaceSetting[];
-          persistent?: boolean;
-          canEdit?: boolean;
-        } | null;
-        if (!response.ok && response.status !== 503) throw new Error("print settings load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (cancelled) return;
-        const settings = Array.isArray(payload?.settings) ? payload!.settings : [];
-        printSettingsRef.current = settings;
-        setPrintSettings(settings);
-        setPrintSettingsCanEdit(Boolean(payload?.canEdit));
-        setPrintSettingsStorage(payload?.persistent ? "persistent" : "local");
-      })
-      .catch(() => {
-        if (!cancelled) setPrintSettingsStorage("local");
-      });
-    return () => { cancelled = true; };
-  }, [hydrated, publicLayoutAccess, screenRecommendedOnly]);
-
-  const savePrintSetting = useCallback(async (target: Pick<MapElement, "directoryId" | "category" | "name">, patch: Partial<Pick<PrintPlaceSetting, "recommended" | "markerMode" | "labelMode">>) => {
-    if (!printSettingsCanEdit) {
-      setToast("출력 추천 설정은 소유자 로그인 후 영구 저장할 수 있습니다.");
-      return;
-    }
-    const key = printSettingKey(target);
-    const existing = printSettingsRef.current.find((setting) => setting.key === key);
-    const next: PrintPlaceSetting = {
-      key,
-      ...(target.directoryId ? { directoryId: target.directoryId } : {}),
-      name: normalizePlaceName(target.name),
-      recommended: existing?.recommended ?? false,
-      markerMode: existing?.markerMode ?? "auto",
-      labelMode: existing?.labelMode ?? "auto",
-      ...patch,
-    };
-    const previous = printSettingsRef.current;
-    const updated = [...previous.filter((setting) => setting.key !== key), next];
-    printSettingsRef.current = updated;
-    setPrintSettings(updated);
-    try {
-      const response = await fetch(PRINT_SETTINGS_API, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ setting: next }),
-      });
-      if (!response.ok) throw new Error("print setting save failed");
-      setPrintSettingsStorage("persistent");
-    } catch {
-      printSettingsRef.current = previous;
-      setPrintSettings(previous);
-      setToast("출력 추천 설정을 저장하지 못했습니다. 로그인 상태를 확인해 주세요.");
-    }
-  }, [printSettingsCanEdit]);
 
   useEffect(() => {
     if (!hydrated || publicLayoutAccess !== "editor") return;
