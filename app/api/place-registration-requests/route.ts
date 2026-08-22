@@ -103,7 +103,7 @@ async function ensureStorage(db: D1Database) {
       db.prepare(TABLE_SQL),
       db.prepare("CREATE INDEX IF NOT EXISTS place_registration_requests_status_created_idx ON place_registration_requests (status, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_registration_requests_actor_created_idx ON place_registration_requests (actor_hash, created_at)"),
-    ]).then(() => undefined).catch((error) => {
+    ]).then(() => undefined).catch((error: unknown) => {
       storageReady = null;
       throw error;
     });

@@ -367,7 +367,12 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
     draftRow: canEdit && draftResult ? batchRow(draftResult) as StoredDraft | null : null,
     contentSummary,
     eventLinkedPlaces: (eventPlaceResult.results ?? []) as Array<{ placeKey: string; placeName: string }>,
-    reviewCountsByPlace: (reviewPlaceResult.results ?? []).map((row) => ({
+    reviewCountsByPlace: ((reviewPlaceResult.results ?? []) as Array<{
+      placeKey?: unknown;
+      placeName?: unknown;
+      count?: unknown;
+      latestCreatedAt?: unknown;
+    }>).map((row) => ({
       placeKey: String(row.placeKey ?? ""),
       placeName: String(row.placeName ?? ""),
       count: Math.max(0, Number(row.count ?? 0)),

@@ -124,7 +124,7 @@ async function ensureStorage(db: D1Database) {
       db.prepare("CREATE INDEX IF NOT EXISTS place_story_reports_actor_created_idx ON place_story_reports (actor_hash, created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_story_upload_diagnostics_created_idx ON place_story_upload_diagnostics (created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS place_story_upload_diagnostics_actor_created_idx ON place_story_upload_diagnostics (actor_hash, created_at)"),
-    ]).then(() => undefined).catch((error) => {
+    ]).then(() => undefined).catch((error: unknown) => {
       storageReady = null;
       throw error;
     });
@@ -138,7 +138,7 @@ async function ensurePerformanceStorage(db: D1Database) {
       db.prepare(PERFORMANCE_DIAGNOSTICS_TABLE_SQL),
       db.prepare("CREATE INDEX IF NOT EXISTS map_performance_diagnostics_created_idx ON map_performance_diagnostics (created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS map_performance_diagnostics_actor_created_idx ON map_performance_diagnostics (actor_hash, created_at)"),
-    ]).then(() => undefined).catch((error) => {
+    ]).then(() => undefined).catch((error: unknown) => {
       performanceStorageReady = null;
       throw error;
     });
@@ -163,7 +163,7 @@ function photoFormat(bytes: Uint8Array) {
   return null;
 }
 
-async function actorHash(request: Request, visitorId: string, purpose: "story" | "report" = "story") {
+async function actorHash(request: Request, visitorId: string, purpose: "story" | "report" | "performance" = "story") {
   const source = [
     purpose === "report" ? "jeju-wondosim-place-story-report-v1" : "jeju-wondosim-place-story-v1",
     visitorId,

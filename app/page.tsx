@@ -1537,7 +1537,7 @@ function sendPerformanceDiagnostic(details: {
       }).catch(() => undefined);
     };
     if ("requestIdleCallback" in window) window.requestIdleCallback(report, { timeout: 2000 });
-    else window.setTimeout(report, 500);
+    else globalThis.setTimeout(report, 500);
   } catch {
     // Performance reporting must never interrupt map interaction.
   }
@@ -2383,7 +2383,7 @@ function ensureLppMapElement(
       ? uniqueRuntimeId("element", elements.map((element) => element.id))
       : "system-lpp-local-player-platform",
     z: Math.max(0, ...elements.map((element) => element.z)) + 1,
-    status: "approved",
+    status: "approved" as const,
     memo: "LPP 공식 주소·카카오맵 좌표 확인 · 2차 공개 탐색 패치",
   }];
 }
@@ -2547,7 +2547,7 @@ function applyLockedCoordinateSettings(
     return {
       ...element,
       locked: true,
-      status: "approved",
+      status: "approved" as const,
       anchorX: clamp(setting.anchorX, 0, 100),
       anchorY: clamp(setting.anchorY, 0, 100),
       x: clamp(setting.x, 0, 100),
@@ -2580,7 +2580,7 @@ function applyLockedCoordinateSettings(
       size: category === "landmark" ? 6.2 : category === "culture" ? 2.5 : 1.65,
       z,
       locked: true,
-      status: "approved",
+      status: "approved" as const,
       labelVisible: category === "landmark" || category === "culture" || category === "parking",
       assetId,
       address: place?.address ?? "",
@@ -9003,7 +9003,7 @@ export default function Home() {
     setPlaceRequests((current) => current.map((request) => request.id === id ? { ...request, ...patch } : request));
     const linked = elementsRef.current.find((element) => element.placeRequestId === id && !element.directoryId);
     if (!linked) return;
-    const nextCategory = patch.category ?? linked.category;
+    const nextCategory = (patch.category ?? linked.category) as BundledMarkerCategory;
     const nextStyle = patch.markerStyle ?? (linked.assetId?.match(/-(01|02|03|v2)-/)?.[1] as BundledMarkerStyle | undefined) ?? recommendedMarkerStyle;
     replaceElements((current) => current.map((element) => element.id === linked.id ? {
       ...element,

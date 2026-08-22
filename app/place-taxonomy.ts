@@ -135,7 +135,7 @@ export function sanitizeAdditionalCategories(value: unknown): AdditionalCategory
     try {
       candidate = JSON.parse(candidate);
     } catch {
-      candidate = candidate.split(",");
+      candidate = (candidate as string).split(",");
     }
   }
   if (!Array.isArray(candidate)) return [];
@@ -155,7 +155,7 @@ export function sanitizeConvenienceAttributes(value: unknown): ConvenienceAttrib
     try {
       candidate = JSON.parse(candidate);
     } catch {
-      candidate = candidate.split(",");
+      candidate = (candidate as string).split(",");
     }
   }
   if (!Array.isArray(candidate)) return [];
