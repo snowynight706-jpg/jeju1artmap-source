@@ -6,6 +6,7 @@ export const APP_CLIENT_SOURCE_PATHS = Object.freeze([
   "../app/map-model.ts",
   "../app/map-types.ts",
   "../app/map-document.ts",
+  "../app/map-print-settings.ts",
   "../app/map-render-layers.tsx",
 ]);
 

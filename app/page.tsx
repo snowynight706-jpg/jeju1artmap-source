@@ -68,6 +68,11 @@ import {
   sanitizePlacementOverrides,
   uniqueRuntimeId,
 } from "./map-document";
+import {
+  printSettingKey,
+  type PrintMode,
+  type PrintPlaceSetting,
+} from "./map-print-settings";
 import type {
   AssetStatus,
   DenseLabelCluster,
@@ -330,7 +335,6 @@ type CoordinateLockFilter = "all" | "unlocked" | "locked";
 type PlacementFilter = "all" | "placed" | "unplaced";
 type RecommendationFilter = "all" | "recommended" | "standard";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
-type PrintMode = "auto" | "include" | "exclude";
 type PublicAssetProfile = "mobile" | "standard";
 type GlobalContentTab = "places" | "reviews" | "events" | "place-requests";
 type StoryReportReason = "inappropriate" | "privacy" | "copyright" | "spam" | "other";
@@ -390,15 +394,6 @@ type UnifiedPlaceRow = {
   sourceLabel: string;
   place?: DirectoryPlace;
   element?: MapElement;
-};
-
-type PrintPlaceSetting = {
-  key: string;
-  directoryId?: string;
-  name: string;
-  recommended: boolean;
-  markerMode: PrintMode;
-  labelMode: PrintMode;
 };
 
 type MobileRenderBudget = {
@@ -1443,12 +1438,6 @@ type NormalizedRect = { left: number; top: number; right: number; bottom: number
 // 이하는 밀집 장소의 묶음 라벨 배치와 인쇄 충돌 점검 코드입니다.
 function rectsOverlap(a: NormalizedRect, b: NormalizedRect, margin = 0.18) {
   return a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin;
-}
-
-function printSettingKey(target: Pick<MapElement, "directoryId" | "category" | "name">) {
-  return target.directoryId?.trim()
-    ? `directory:${target.directoryId.trim()}`
-    : `name:${target.category}:${normalizePlaceName(target.name)}`;
 }
 
 function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
