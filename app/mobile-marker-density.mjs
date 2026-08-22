@@ -1,11 +1,3 @@
-const MOBILE_MARKER_SCALE_STEPS = Object.freeze([
-  { maximumRatio: 1.05, limits: { low: 18, standard: 24, high: 30 } },
-  { maximumRatio: 1.45, limits: { low: 28, standard: 40, high: 52 } },
-  { maximumRatio: 1.9, limits: { low: 46, standard: 64, high: 82 } },
-  { maximumRatio: 2.2, limits: { low: 64, standard: 88, high: 112 } },
-  { maximumRatio: Number.POSITIVE_INFINITY, limits: { low: Number.POSITIVE_INFINITY, standard: Number.POSITIVE_INFINITY, high: Number.POSITIVE_INFINITY } },
-]);
-
 const MOBILE_LABEL_SCALE_STEPS = Object.freeze([
   { maximumRatio: 1.05, limits: { low: 14, standard: 18, high: 22 } },
   { maximumRatio: 1.45, limits: { low: 22, standard: 30, high: 38 } },
@@ -14,7 +6,7 @@ const MOBILE_LABEL_SCALE_STEPS = Object.freeze([
   { maximumRatio: Number.POSITIVE_INFINITY, limits: { low: Number.POSITIVE_INFINITY, standard: Number.POSITIVE_INFINITY, high: Number.POSITIVE_INFINITY } },
 ]);
 
-const MOBILE_SIMPLIFIED_OVERVIEW_MAX_RATIO = 1.45;
+const MOBILE_FULL_MARKER_MIN_RATIO = 2;
 
 function zoomRatio(zoom, fitZoom) {
   return Math.max(0.01, Number.isFinite(zoom) ? zoom : 0.22)
@@ -22,17 +14,7 @@ function zoomRatio(zoom, fitZoom) {
 }
 
 export function mobileOverviewIsSimplified(zoom, fitZoom) {
-  return zoomRatio(zoom, fitZoom) <= MOBILE_SIMPLIFIED_OVERVIEW_MAX_RATIO;
-}
-
-export function mobileMarkerBudgetForScale(zoom, fitZoom, total, tier = "standard") {
-  const safeTotal = Math.max(0, Math.floor(Number.isFinite(total) ? total : 0));
-  if (safeTotal === 0) return 0;
-  const ratio = zoomRatio(zoom, fitZoom);
-  const step = MOBILE_MARKER_SCALE_STEPS.find((candidate) => ratio <= candidate.maximumRatio)
-    ?? MOBILE_MARKER_SCALE_STEPS[MOBILE_MARKER_SCALE_STEPS.length - 1];
-  const limit = step.limits[tier] ?? step.limits.standard;
-  return Math.min(safeTotal, Number.isFinite(limit) ? limit : safeTotal);
+  return zoomRatio(zoom, fitZoom) < MOBILE_FULL_MARKER_MIN_RATIO;
 }
 
 export function mobileLabelBudgetForScale(zoom, fitZoom, baseLimit, total, tier = "standard") {
@@ -44,36 +26,4 @@ export function mobileLabelBudgetForScale(zoom, fitZoom, baseLimit, total, tier 
     ?? MOBILE_LABEL_SCALE_STEPS[MOBILE_LABEL_SCALE_STEPS.length - 1];
   const limit = step.limits[tier] ?? step.limits.standard;
   return Math.min(safeBaseLimit, Number.isFinite(limit) ? limit : safeBaseLimit);
-}
-
-export function chooseMobileMarkerRenderIds(candidates, {
-  limit,
-  selectedId = null,
-  mainHubIds = [],
-  centerX = 50,
-  centerY = 50,
-} = {}) {
-  const uniqueCandidates = [...new Map(candidates.map((candidate) => [candidate.id, candidate])).values()];
-  const safeLimit = Math.min(uniqueCandidates.length, Math.max(0, Math.floor(Number.isFinite(limit) ? limit : uniqueCandidates.length)));
-  if (safeLimit >= uniqueCandidates.length) return uniqueCandidates.map((candidate) => candidate.id);
-  const mainHubs = new Set(mainHubIds);
-  const mandatory = uniqueCandidates.filter((candidate) => (
-    candidate.category === "landmark"
-    || candidate.id === selectedId
-    || mainHubs.has(candidate.id)
-  ));
-  const mandatoryIds = new Set(mandatory.map((candidate) => candidate.id));
-  const optional = uniqueCandidates
-    .filter((candidate) => !mandatoryIds.has(candidate.id))
-    .sort((a, b) => {
-      const aDistance = Math.hypot((a.x ?? 50) - centerX, (a.y ?? 50) - centerY);
-      const bDistance = Math.hypot((b.x ?? 50) - centerX, (b.y ?? 50) - centerY);
-      return aDistance - bDistance
-        || (b.z ?? 0) - (a.z ?? 0)
-        || String(a.name ?? "").localeCompare(String(b.name ?? ""), "ko");
-    });
-  return [
-    ...mandatory,
-    ...optional.slice(0, Math.max(0, safeLimit - mandatory.length)),
-  ].map((candidate) => candidate.id);
 }

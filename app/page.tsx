@@ -52,9 +52,7 @@ import {
 } from "./mobile-render-budget.mjs";
 import { shouldSendMapSettleDiagnostic } from "./performance-diagnostics.mjs";
 import {
-  chooseMobileMarkerRenderIds,
   mobileLabelBudgetForScale,
-  mobileMarkerBudgetForScale,
   mobileOverviewIsSimplified,
 } from "./mobile-marker-density.mjs";
 import {
@@ -9782,20 +9780,8 @@ export default function Home() {
         .filter((element) => element.category === "landmark")
         .map((element) => element.id));
     }
-    const markerBudget = mobileMarkerBudgetForScale(
-      zoom,
-      fitZoom,
-      mobileMapCandidateElements.length,
-      mobileRenderBudget.tier,
-    );
-    return new Set(chooseMobileMarkerRenderIds(mobileMapCandidateElements, {
-      limit: markerBudget,
-      selectedId,
-      mainHubIds: mobileMapCandidateElements.filter((element) => isPrimaryHubLabel(element.name)).map((element) => element.id),
-      centerX: mobileMapRenderBounds.centerX,
-      centerY: mobileMapRenderBounds.centerY,
-    }));
-  }, [fitZoom, mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified, mobileRenderBudget.tier, selectedId, zoom]);
+    return new Set(mobileMapCandidateElements.map((element) => element.id));
+  }, [mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified]);
   const mobileMapElementPartition = useMemo(() => {
     if (!mobileFullMarkerIds) return { rendered: mobileMapCandidateElements, placeholders: [] as MapElement[] };
     const rendered: MapElement[] = [];
