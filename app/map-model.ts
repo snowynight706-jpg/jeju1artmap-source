@@ -23,6 +23,8 @@ export const categories = [
 
 export type CategoryId = (typeof categories)[number]["id"];
 
+export const EXPORT_CANONICAL_WIDTH = 1180;
+
 const GENERAL_MARKER_DISPLAY_SCALE = 1.25;
 
 export function mapElementDisplaySize(element: { category: CategoryId; size: number }) {
