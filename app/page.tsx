@@ -28,8 +28,19 @@ import {
   type BundledMarkerStyle,
 } from "./marker-assets";
 import type { MasterDirectoryRow } from "./master-directory";
-import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places";
+import { geocodedPlaces } from "./geocoded-places";
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
+import {
+  CALIBRATION_LANDMARK_NAMES,
+  MAP_ASPECT,
+  PRIMARY_CALIBRATION_NAMES,
+  buildEffectiveCalibrationPoints,
+  calibratedPlaceCoordinates,
+  canonicalAnchorForElement,
+  coordinatesToMap,
+  initialCalibrationPoints,
+  type CalibrationPoint,
+} from "./map-calibration";
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import {
@@ -102,7 +113,6 @@ const PublicPlaceDetailContent = lazy(() => import("./public-place-detail-conten
 const PublicExplorerActivityContent = lazy(() => import("./public-explorer-activity-content"));
 
 // 이하는 지도 자산, 서버 API 주소, 저장 키에 관한 공통 설정 코드입니다.
-const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
 const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_초고해상도.png";
 const JFAC_SIGNATURE_B_SVG = "/jfac-signature-b.svg?v=20260821-svg1";
@@ -447,16 +457,6 @@ type ReviewNote = {
   y: number;
   status: ReviewStatus;
   text: string;
-};
-
-type CalibrationPoint = {
-  id: string;
-  name: string;
-  sourceX: number;
-  sourceY: number;
-  targetX: number;
-  targetY: number;
-  tier?: "primary" | "secondary" | "tertiary";
 };
 
 type LandmarkDefaultPosition = {
@@ -819,181 +819,6 @@ const landmarkLocations = [
   { name: "탑동광장", address: "제주특별자치도 제주시 중앙로 1", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", assetId: "tapdong-square-03", x: 28, y: 20 },
   { name: "탑동해변공연장", address: "제주특별자치도 제주시 중앙로 2", addressSourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=51ad702c-5321-45a0-8a03-316acb38336e", assetId: LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID, x: 37, y: 20 },
 ] as const;
-
-const CALIBRATION_LANDMARK_NAMES = [
-  "관덕정",
-  "제주아트플랫폼",
-  "탑동해변공연장",
-  "탑동광장",
-  "김만덕객주",
-  "김만덕기념관",
-] as const;
-const PRIMARY_CALIBRATION_NAMES = new Set<string>(CALIBRATION_LANDMARK_NAMES);
-
-const persistedPrimaryCalibrationSeed: Record<(typeof CALIBRATION_LANDMARK_NAMES)[number], Omit<CalibrationPoint, "id" | "name" | "tier">> = {
-  "관덕정": { sourceX: 32.74695652176581, sourceY: 34.92339449542698, targetX: 35.74958737983302, targetY: 59.189847489691005 },
-  "제주아트플랫폼": { sourceX: 39.61521739129978, sourceY: 42.24770642203441, targetX: 41.70357577308721, targetY: 74.41225648694478 },
-  "탑동해변공연장": { sourceX: 58.25, sourceY: 11.6, targetX: 51.61534016007473, targetY: 19.675915250183785 },
-  "탑동광장": { sourceX: 57.098260869564854, sourceY: 12.513302752310512, targetX: 64.28211860238308, targetY: 15.970238020036858 },
-  "김만덕객주": { sourceX: 81.05260869565093, sourceY: 19.982110091755693, targetX: 96.15791294866513, targetY: 27.816749269686078 },
-  "김만덕기념관": { sourceX: 73.47217391303064, sourceY: 22.624770642198094, targetX: 89.3165328501865, targetY: 37.72972393275184 },
-};
-
-const initialCalibrationPoints: CalibrationPoint[] = CALIBRATION_LANDMARK_NAMES.map((name, index) => {
-  const persisted = persistedPrimaryCalibrationSeed[name];
-  return {
-    id: `calibration-${index + 1}`,
-    name,
-    ...persisted,
-    tier: "primary" as const,
-  };
-});
-
-function buildEffectiveCalibrationPoints(
-  primaryPoints: CalibrationPoint[],
-  defaults: LandmarkDefaultPosition[],
-  elements: MapElement[] = [],
-  directoryPlaces: DirectoryPlace[] = [],
-) {
-  const primaryNames = new Set(primaryPoints.map((point) => point.name));
-  const secondaryPoints: CalibrationPoint[] = defaults.flatMap((position, index) => {
-    if (!position.confirmed || primaryNames.has(position.name)) return [];
-    const geocoded = geocodedPlaces[position.name];
-    if (!geocoded) return [];
-    return [{
-      id: `secondary-${position.elementId || index}`,
-      name: position.name,
-      sourceX: geocoded.x,
-      sourceY: geocoded.y,
-      targetX: position.x,
-      targetY: position.y,
-      tier: "secondary" as const,
-    }];
-  });
-  const establishedNames = new Set([...primaryNames, ...secondaryPoints.map((point) => point.name)]);
-  const placesById = new Map(directoryPlaces.map((place) => [place.id, place]));
-  const placesByName = new Map(directoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
-  const tertiaryNames = new Set<string>();
-  const tertiaryPoints: CalibrationPoint[] = elements.flatMap((element) => {
-    const name = normalizePlaceName(element.name);
-    if (!element.locked || !element.mapVisible || establishedNames.has(name) || tertiaryNames.has(name)) return [];
-    const place = (element.directoryId ? placesById.get(element.directoryId) : undefined) ?? placesByName.get(name);
-    const geocoded = geocodedPlaces[name];
-    const source = geocoded
-      ? { x: geocoded.x, y: geocoded.y }
-      : Number.isFinite(place?.latitude) && Number.isFinite(place?.longitude)
-        ? projectGeographicCoordinates(place!.latitude!, place!.longitude!)
-        : null;
-    if (!source || !Number.isFinite(element.anchorX) || !Number.isFinite(element.anchorY)) return [];
-    tertiaryNames.add(name);
-    return [{
-      id: `tertiary-${element.id}`,
-      name,
-      sourceX: source.x,
-      sourceY: source.y,
-      targetX: element.anchorX,
-      targetY: element.anchorY,
-      tier: "tertiary" as const,
-    }];
-  });
-  return [...primaryPoints.map((point) => ({ ...point, tier: "primary" as const })), ...secondaryPoints, ...tertiaryPoints];
-}
-
-function canonicalAnchorForElement(
-  element: MapElement,
-  primaryPoints: CalibrationPoint[],
-  defaults: LandmarkDefaultPosition[],
-) {
-  const normalizedName = normalizePlaceName(element.name);
-  const primary = primaryPoints.find((point) => point.name === normalizedName);
-  if (primary) return { x: primary.targetX, y: primary.targetY };
-  if (element.category === "landmark") {
-    const saved = defaults.find((position) => position.elementId === element.id || position.name === normalizedName);
-    if (saved) return { x: saved.x, y: saved.y };
-  }
-  return { x: element.anchorX, y: element.anchorY };
-}
-
-function singleStageCalibratedCoordinates(sourceX: number, sourceY: number, points: CalibrationPoint[]) {
-  if (!points.length) return { x: sourceX, y: sourceY };
-  const exact = points.find((point) => Math.hypot(sourceX - point.sourceX, sourceY - point.sourceY) < 0.001);
-  if (exact) return { x: exact.targetX, y: exact.targetY };
-  let weightSum = 0;
-  let dx = 0;
-  let dy = 0;
-  const localPoints = points.map((point) => {
-    const distanceSquared = (sourceX - point.sourceX) ** 2 + ((sourceY - point.sourceY) / MAP_ASPECT) ** 2;
-    return { point, distanceSquared };
-  }).sort((a, b) => a.distanceSquared - b.distanceSquared).slice(0, Math.min(7, points.length));
-  localPoints.forEach(({ point, distanceSquared }) => {
-    const weight = 1 / Math.pow(Math.max(distanceSquared, 0.06), 1.22);
-    weightSum += weight;
-    dx += (point.targetX - point.sourceX) * weight;
-    dy += (point.targetY - point.sourceY) * weight;
-  });
-  return {
-    x: clamp(sourceX + dx / Math.max(weightSum, 1), 0, 100),
-    y: clamp(sourceY + dy / Math.max(weightSum, 1), 0, 100),
-  };
-}
-
-function applyLocalCalibrationStage(
-  sourceX: number,
-  sourceY: number,
-  baseResult: { x: number; y: number },
-  controls: CalibrationPoint[],
-  projectControl: (point: CalibrationPoint) => { x: number; y: number },
-  options: { radius: number; fadePower: number; maxControls: number; strength: number; maxCorrection: number },
-) {
-  if (!controls.length) return baseResult;
-  const exact = controls.find((point) => Math.hypot(sourceX - point.sourceX, sourceY - point.sourceY) < 0.001);
-  if (exact) return { x: exact.targetX, y: exact.targetY };
-
-  const localControls = controls.map((point) => {
-    const projected = projectControl(point);
-    const distanceSquared = (baseResult.x - projected.x) ** 2 + ((baseResult.y - projected.y) / MAP_ASPECT) ** 2;
-    return { distanceSquared, dx: point.targetX - projected.x, dy: point.targetY - projected.y };
-  }).sort((a, b) => a.distanceSquared - b.distanceSquared).slice(0, options.maxControls);
-  const nearestDistance = Math.sqrt(localControls[0]?.distanceSquared ?? Number.POSITIVE_INFINITY);
-  const localFade = Math.pow(clamp(1 - nearestDistance / options.radius, 0, 1), options.fadePower);
-  if (!localFade) return baseResult;
-  let weightSum = 0;
-  let dx = 0;
-  let dy = 0;
-  localControls.forEach((control) => {
-    const weight = 1 / Math.pow(Math.max(control.distanceSquared, 0.05), 1.18);
-    weightSum += weight;
-    dx += control.dx * weight;
-    dy += control.dy * weight;
-  });
-  const correctionX = clamp(dx / Math.max(weightSum, 1) * localFade * options.strength, -options.maxCorrection, options.maxCorrection);
-  const correctionY = clamp(dy / Math.max(weightSum, 1) * localFade * options.strength, -options.maxCorrection, options.maxCorrection);
-  return { x: clamp(baseResult.x + correctionX, 0, 100), y: clamp(baseResult.y + correctionY, 0, 100) };
-}
-
-function calibratedCoordinates(sourceX: number, sourceY: number, points: CalibrationPoint[]) {
-  const primaryPoints = points.filter((point) => point.tier !== "secondary" && point.tier !== "tertiary");
-  const secondaryPoints = points.filter((point) => point.tier === "secondary");
-  const tertiaryPoints = points.filter((point) => point.tier === "tertiary");
-  const primaryResult = singleStageCalibratedCoordinates(sourceX, sourceY, primaryPoints);
-  const secondaryResult = applyLocalCalibrationStage(sourceX, sourceY, primaryResult, secondaryPoints, (point) => (
-    singleStageCalibratedCoordinates(point.sourceX, point.sourceY, primaryPoints)
-  ), { radius: 32, fadePower: 1.35, maxControls: 4, strength: 1, maxCorrection: 100 });
-  return applyLocalCalibrationStage(sourceX, sourceY, secondaryResult, tertiaryPoints, (point) => {
-    const projectedPrimary = singleStageCalibratedCoordinates(point.sourceX, point.sourceY, primaryPoints);
-    return applyLocalCalibrationStage(point.sourceX, point.sourceY, projectedPrimary, secondaryPoints, (secondaryPoint) => (
-      singleStageCalibratedCoordinates(secondaryPoint.sourceX, secondaryPoint.sourceY, primaryPoints)
-    ), { radius: 32, fadePower: 1.35, maxControls: 4, strength: 1, maxCorrection: 100 });
-  }, { radius: 18, fadePower: 1.65, maxControls: 3, strength: 0.72, maxCorrection: 4.5 });
-}
-
-function calibratedPlaceCoordinates(name: string, latitude: number | undefined, longitude: number | undefined, points: CalibrationPoint[]) {
-  const reference = points.find((point) => point.name === normalizePlaceName(name));
-  if (reference) return { x: reference.targetX, y: reference.targetY };
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  const source = projectGeographicCoordinates(latitude!, longitude!);
-  return calibratedCoordinates(source.x, source.y, points);
-}
 
 const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-jeju-art-platform", name: "제주아트플랫폼", category: "culture", area: "중앙로", address: "제주특별자치도 제주시 중앙로14길 18", x: 31, y: 62, coordinateStatus: "landmark", sourceLabel: "기본 랜드마크 DB" },
@@ -2593,11 +2418,6 @@ function applyLockedCoordinateSettings(
 
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
-}
-
-function coordinatesToMap(latitude: number, longitude: number, calibrationPoints: CalibrationPoint[] = initialCalibrationPoints) {
-  const { x, y } = projectGeographicCoordinates(latitude, longitude);
-  return calibratedCoordinates(x, y, calibrationPoints);
 }
 
 type MapRenderActions = {
