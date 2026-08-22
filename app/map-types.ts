@@ -1,4 +1,9 @@
+import type { CalibrationPoint } from "./map-calibration";
 import type { CategoryId } from "./map-model";
+import type {
+  AdditionalCategoryId,
+  ConvenienceAttributeId,
+} from "./place-taxonomy";
 
 export type AssetStatus = "approved" | "review" | "unchecked";
 export type LabelPosition = "top" | "bottom" | "left" | "right";
@@ -103,4 +108,82 @@ export type MapLabelStatus = {
   hasEvent: boolean;
   reviewCount: number;
   hasNewReview: boolean;
+};
+
+export type DirectoryPlace = {
+  id: string;
+  name: string;
+  category: CategoryId;
+  area: string;
+  address: string;
+  x: number;
+  y: number;
+  coordinateStatus: "landmark" | "review" | "geocoded" | "unresolved";
+  sourceLabel: string;
+  sourceUrl?: string;
+  subtype?: string;
+  priority?: string;
+  description?: string;
+  operatingInfo?: string;
+  notes?: string;
+  mapUrl?: string;
+  checkedAt?: string;
+  latitude?: number;
+  longitude?: number;
+  additionalCategories?: AdditionalCategoryId[];
+  convenienceAttributes?: ConvenienceAttributeId[];
+  locationGroupId?: string;
+  mapAnchorId?: string;
+  featuredRole?: string;
+  aliases?: string[];
+};
+
+export type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
+
+export type ReviewNote = {
+  id: string;
+  x: number;
+  y: number;
+  status: ReviewStatus;
+  text: string;
+};
+
+export type LandmarkDefaultPosition = {
+  elementId: string;
+  name: string;
+  x: number;
+  y: number;
+  confirmed?: boolean;
+};
+
+export type LockedCoordinateSetting = {
+  key: string;
+  directoryId?: string;
+  name: string;
+  category: CategoryId;
+  anchorX: number;
+  anchorY: number;
+  x: number;
+  y: number;
+};
+
+export type PlacementState = "unplaced" | "deleted";
+
+export type PlacementOverride = {
+  key: string;
+  directoryId?: string;
+  name: string;
+  state: PlacementState;
+};
+
+export type DocumentState = {
+  elements: MapElement[];
+  assets: MapAsset[];
+  reviewNotes: ReviewNote[];
+  directoryPlaces?: DirectoryPlace[];
+  calibrationPoints?: CalibrationPoint[];
+  landmarkDefaultPositions?: LandmarkDefaultPosition[];
+  denseLabelPositions?: DenseLabelPosition[];
+  denseLabelExcludedIds?: string[];
+  placementOverrides?: PlacementOverride[];
 };

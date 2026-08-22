@@ -62,11 +62,19 @@ import type {
   DenseLabelCluster,
   DenseLabelPosition,
   DenseLabelRow,
+  DirectoryPlace,
+  DocumentState,
   LabelPosition,
+  LandmarkDefaultPosition,
+  LockedCoordinateSetting,
   MapAsset,
   MapElement,
   MapLabelStatus,
+  PlacementOverride,
+  PlacementState,
   PublicLayoutAccess,
+  ReviewNote,
+  ReviewStatus,
   StageDimensions,
   ViewMode,
   VisualBounds,
@@ -308,14 +316,12 @@ type PublicHistoryState = {
   wondosimFrom?: "map" | "explorer" | "explorer-expanded";
   wondosimExpandedFromCollapsed?: boolean;
 };
-type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
 type BaseMapMode = "svg" | "png" | "uploaded";
 type CoordinateLockFilter = "all" | "unlocked" | "locked";
 type PlacementFilter = "all" | "placed" | "unplaced";
 type RecommendationFilter = "all" | "recommended" | "standard";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PrintMode = "auto" | "include" | "exclude";
-type PlacementState = "unplaced" | "deleted";
 type PublicAssetProfile = "mobile" | "standard";
 type GlobalContentTab = "places" | "reviews" | "events" | "place-requests";
 type StoryReportReason = "inappropriate" | "privacy" | "copyright" | "spam" | "other";
@@ -333,34 +339,6 @@ type UploadedBaseMap = {
   originalUrl?: string;
   screen2048Url?: string;
   screen4096Url?: string;
-};
-
-type DirectoryPlace = {
-  id: string;
-  name: string;
-  category: CategoryId;
-  area: string;
-  address: string;
-  x: number;
-  y: number;
-  coordinateStatus: "landmark" | "review" | "geocoded" | "unresolved";
-  sourceLabel: string;
-  sourceUrl?: string;
-  subtype?: string;
-  priority?: string;
-  description?: string;
-  operatingInfo?: string;
-  notes?: string;
-  mapUrl?: string;
-  checkedAt?: string;
-  latitude?: number;
-  longitude?: number;
-  additionalCategories?: AdditionalCategoryId[];
-  convenienceAttributes?: ConvenienceAttributeId[];
-  locationGroupId?: string;
-  mapAnchorId?: string;
-  featuredRole?: string;
-  aliases?: string[];
 };
 
 type PlaceDirectoryRecord = {
@@ -405,33 +383,6 @@ type UnifiedPlaceRow = {
   element?: MapElement;
 };
 
-type ReviewNote = {
-  id: string;
-  x: number;
-  y: number;
-  status: ReviewStatus;
-  text: string;
-};
-
-type LandmarkDefaultPosition = {
-  elementId: string;
-  name: string;
-  x: number;
-  y: number;
-  confirmed?: boolean;
-};
-
-type LockedCoordinateSetting = {
-  key: string;
-  directoryId?: string;
-  name: string;
-  category: CategoryId;
-  anchorX: number;
-  anchorY: number;
-  x: number;
-  y: number;
-};
-
 type PrintPlaceSetting = {
   key: string;
   directoryId?: string;
@@ -439,13 +390,6 @@ type PrintPlaceSetting = {
   recommended: boolean;
   markerMode: PrintMode;
   labelMode: PrintMode;
-};
-
-type PlacementOverride = {
-  key: string;
-  directoryId?: string;
-  name: string;
-  state: PlacementState;
 };
 
 type MobileRenderBudget = {
@@ -468,18 +412,6 @@ type PrintAuditReport = {
   overlapCount: number;
   crossingCount: number;
   minimumTextPixels: number;
-};
-
-type DocumentState = {
-  elements: MapElement[];
-  assets: MapAsset[];
-  reviewNotes: ReviewNote[];
-  directoryPlaces?: DirectoryPlace[];
-  calibrationPoints?: CalibrationPoint[];
-  landmarkDefaultPositions?: LandmarkDefaultPosition[];
-  denseLabelPositions?: DenseLabelPosition[];
-  denseLabelExcludedIds?: string[];
-  placementOverrides?: PlacementOverride[];
 };
 
 type OptionalLabelScaleStep = {
