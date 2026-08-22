@@ -2,6 +2,7 @@
 
 - `app/page.tsx`: 공개 지도, 관리자 편집기, 지도 조작, 장소 상세·후기·행사 UI의 중심 상태와 화면
 - `app/map-calibration.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성, 보정 좌표 계산을 담당하는 순수 도메인 모듈
+- `app/map-model.ts`: 지도 분류·색상·표시 크기와 장소 식별 키를 공유하는 순수 도메인 모듈
 - `app/public-place-detail-content.tsx`: 장소 선택 후에만 지연 로딩되는 공개 상세·행사·후기 화면
 - `app/public-explorer-activity-content.tsx`: 원도심 탐색에서 리뷰·행사 탭을 열 때만 지연 로딩되는 카드 화면
 - `app/globals.css`: 지도·패널·모바일 PWA 반응형 스타일

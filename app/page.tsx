@@ -41,6 +41,16 @@ import {
   initialCalibrationPoints,
   type CalibrationPoint,
 } from "./map-calibration";
+import {
+  categories,
+  categoryOf,
+  isPrimaryHubLabel,
+  mapElementDisplaySize,
+  markerCategoryColors,
+  mobileMarkerPlaceholderColor,
+  placeContentKey,
+  type CategoryId,
+} from "./map-model";
 import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./local-autosave.mjs";
 import { chooseEditorRestoreSource } from "./editor-draft-restore.mjs";
 import {
@@ -257,28 +267,7 @@ function UiThemePicker({ activeTheme, compact = false, onSelect }: {
   </div>;
 }
 
-const markerCategoryColors = {
-  culture: "#58AEB0",
-  cafe: "#D49A55",
-  food: "#E36B58",
-  shop: "#9A6DAE",
-  parking: "#557AA8",
-  park: "#69A56D",
-  utility: "#8F7EA7",
-} as const;
-
 // 이하는 장소 분류와 공개 탐색 메뉴에 표시할 카테고리 설정 코드입니다.
-const categories = [
-  { id: "landmark", name: "핵심 랜드마크", color: markerCategoryColors.culture, glyph: "景" },
-  { id: "culture", name: "일반 문화시설", color: markerCategoryColors.culture, glyph: "文" },
-  { id: "cafe", name: "카페", color: markerCategoryColors.cafe, glyph: "珈" },
-  { id: "food", name: "음식점", color: markerCategoryColors.food, glyph: "食" },
-  { id: "shop", name: "소품샵", color: markerCategoryColors.shop, glyph: "物" },
-  { id: "parking", name: "주차장", color: markerCategoryColors.parking, glyph: "P" },
-  { id: "park", name: "공원·광장", color: markerCategoryColors.park, glyph: "休" },
-  { id: "utility", name: "기타 편의시설", color: markerCategoryColors.utility, glyph: "＋" },
-] as const;
-
 const publicListCategories: ReadonlyArray<{
   id: PublicPlaceCategoryFilter;
   name: string;
@@ -301,7 +290,6 @@ type PublicHistoryState = {
   wondosimFrom?: "map" | "explorer" | "explorer-expanded";
   wondosimExpandedFromCollapsed?: boolean;
 };
-type CategoryId = (typeof categories)[number]["id"];
 type AssetStatus = "approved" | "review" | "unchecked";
 type LabelPosition = "top" | "bottom" | "left" | "right";
 type ReviewStatus = "delete" | "weaken" | "keep" | "hierarchy";
@@ -797,12 +785,6 @@ const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" |
 };
 
 // 이하는 지도 좌표 보정과 기준 랜드마크 위치를 계산하는 코드입니다.
-const GENERAL_MARKER_DISPLAY_SCALE = 1.25;
-
-function mapElementDisplaySize(element: Pick<MapElement, "category" | "size">) {
-  return element.category === "landmark" ? element.size : element.size * GENERAL_MARKER_DISPLAY_SCALE;
-}
-
 const landmarkLocations = [
   { name: MAIN_HUB_CANONICAL_NAME, address: "제주특별자치도 제주시 관덕로 44", addressSourceUrl: "https://www.jejusotong.kr/", assetId: MAIN_HUB_LANDMARK_ASSET_ID, x: 48, y: 64 },
   { name: "제주아트플랫폼", address: "제주특별자치도 제주시 중앙로14길 18", addressSourceUrl: "https://www.jfac.kr/", assetId: LATEST_JEJU_ART_PLATFORM_ASSET_ID, x: 31, y: 62 },
@@ -1169,14 +1151,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 }
 
-function categoryOf(id: CategoryId) {
-  return categories.find((category) => category.id === id) ?? categories[categories.length - 1];
-}
-
-function mobileMarkerPlaceholderColor(id: CategoryId) {
-  return categoryOf(id).color;
-}
-
 function directoryCategory(category: CategoryId): CategoryId {
   return normalizeDirectoryCategory(category) as CategoryId;
 }
@@ -1210,14 +1184,6 @@ function publicCategoryIdForPlace(place: DirectoryPlace, anchor: MapElement): Pu
 function publicCategoryMetaForPlace(place: DirectoryPlace, anchor: MapElement) {
   const id = publicCategoryIdForPlace(place, anchor);
   return publicListCategories.find((category) => category.id === id) ?? publicListCategories[0];
-}
-
-function isPrimaryHubLabel(name: string) {
-  return normalizePlaceName(name) === "제주시소통협력센터";
-}
-
-function placeContentKey(element: Pick<MapElement, "id" | "directoryId">) {
-  return element.directoryId?.trim() ? `directory:${element.directoryId.trim()}` : `element:${element.id}`;
 }
 
 function storyDateLabel(value: string) {
