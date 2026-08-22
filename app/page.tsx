@@ -91,6 +91,8 @@ import {
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 import type { AdminPlaceRequestRecord } from "./admin-place-request-list";
 
+// 이하는 필요할 때만 불러오는 관리자·공개 화면 모듈 코드입니다.
+
 const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
 const AdminDiagnosticsPanel = lazy(() => import("./admin-diagnostics-panel"));
 const AdminFolder = lazy(() => import("./admin-folder"));
@@ -99,6 +101,7 @@ const AdminPlaceRequestList = lazy(() => import("./admin-place-request-list"));
 const PublicPlaceDetailContent = lazy(() => import("./public-place-detail-content"));
 const PublicExplorerActivityContent = lazy(() => import("./public-explorer-activity-content"));
 
+// 이하는 지도 자산, 서버 API 주소, 저장 키에 관한 공통 설정 코드입니다.
 const MAP_ASPECT = 8944 / 7324;
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
 const MAP_PNG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_초고해상도.png";
@@ -205,6 +208,7 @@ const uiThemes = [
   { id: "harbor-morning", name: "항구의 아침", shortName: "항구", colors: ["#F0F3F7", "#C8D2E0", "#8EA2BB", "#4E647A", "#26313B"] },
 ] as const;
 
+// 이하는 화면 테마 선택기와 검색 아이콘을 그리는 작은 UI 코드입니다.
 type UiThemeId = (typeof uiThemes)[number]["id"];
 
 function isUiThemeId(value: unknown): value is UiThemeId {
@@ -253,6 +257,7 @@ const markerCategoryColors = {
   utility: "#8F7EA7",
 } as const;
 
+// 이하는 장소 분류와 공개 탐색 메뉴에 표시할 카테고리 설정 코드입니다.
 const categories = [
   { id: "landmark", name: "핵심 랜드마크", color: markerCategoryColors.culture, glyph: "景" },
   { id: "culture", name: "일반 문화시설", color: markerCategoryColors.culture, glyph: "文" },
@@ -303,6 +308,7 @@ type PublicAssetProfile = "mobile" | "standard";
 type GlobalContentTab = "places" | "reviews" | "events" | "place-requests";
 type StoryReportReason = "inappropriate" | "privacy" | "copyright" | "spam" | "other";
 
+// 이하는 지도, 장소, 후기, 행사, 공개본에 사용되는 데이터 형태 정의입니다.
 type UploadedBaseMap = {
   available: boolean;
   canUpload?: boolean;
@@ -790,6 +796,7 @@ const elementDefaults: Omit<MapElement, "id" | "name" | "category" | "x" | "y" |
   addressSourceUrl: "",
 };
 
+// 이하는 지도 좌표 보정과 기준 랜드마크 위치를 계산하는 코드입니다.
 const GENERAL_MARKER_DISPLAY_SCALE = 1.25;
 
 function mapElementDisplaySize(element: Pick<MapElement, "category" | "size">) {
@@ -1014,6 +1021,7 @@ const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-chilseong-buffet", name: "칠성뷔페", category: "food", area: "칠성통", address: "제주특별자치도 제주시 관덕로11길 17", x: 54, y: 54, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
 ];
 
+// 이하는 장소 DB 자료를 화면용 장소 목록으로 정리하는 코드입니다.
 function withDirectoryMetadata(place: DirectoryPlace): DirectoryPlace {
   const category = directoryCategory(place.category);
   const defaults = directoryMetadataDefaults(place.name, category, place.subtype, place.description);
@@ -1327,6 +1335,7 @@ const factoryLandmarkDefaultPositions: LandmarkDefaultPosition[] = initialLandma
 const statusText: Record<AssetStatus, string> = { approved: "승인 완료", review: "검수 중", unchecked: "미검수" };
 const reviewStatusText: Record<ReviewStatus, string> = { delete: "삭제 검토", weaken: "약화 검토", keep: "유지", hierarchy: "도로 위계 조정" };
 
+// 이하는 날짜, 분류, 위치, 방문자 정보 등에 공통으로 쓰는 보조 함수입니다.
 function reviewStatusForCoordinateLock(locked: boolean): AssetStatus {
   return locked ? "approved" : "unchecked";
 }
@@ -1559,6 +1568,7 @@ function writePlaceStoryDraft(placeKey: string | null, value: string) {
 
 type VisualBounds = { left: number; top: number; right: number; bottom: number };
 
+// 이하는 지도 라벨 위치와 사진 업로드 파일을 준비하는 코드입니다.
 function smoothstep(edge0: number, edge1: number, value: number) {
   const progress = clamp((value - edge0) / Math.max(edge1 - edge0, 0.0001), 0, 1);
   return progress * progress * (3 - 2 * progress);
@@ -1833,6 +1843,7 @@ async function prepareStoryPhoto(file: File) {
 
 type NormalizedRect = { left: number; top: number; right: number; bottom: number };
 
+// 이하는 밀집 장소의 묶음 라벨 배치와 인쇄 충돌 점검 코드입니다.
 function rectsOverlap(a: NormalizedRect, b: NormalizedRect, margin = 0.18) {
   return a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin;
 }
@@ -2243,6 +2254,7 @@ function cloneDocument(document: DocumentState): DocumentState {
   return JSON.parse(JSON.stringify(document)) as DocumentState;
 }
 
+// 이하는 저장된 지도 문서를 복구하고 잘못된 값을 안전하게 정리하는 코드입니다.
 function uniqueRuntimeId(prefix: "element" | "asset" | "review" | "db-place" | "requested-place", existingIds: Iterable<string>) {
   const used = new Set(existingIds);
   let candidate = "";
@@ -2636,6 +2648,7 @@ type MapElementMarkerProps = {
   zoom: number;
 };
 
+// 이하는 지도 위 마커, 간략 마커, 연결선, 묶음 라벨을 그리는 화면 코드입니다.
 const MapElementMarker = memo(function MapElementMarker({
   actionsRef,
   asset,
@@ -2894,7 +2907,9 @@ const DenseLabelLayer = memo(function DenseLabelLayer({
   </div>;
 });
 
+// 이하는 아트맵 전체 화면과 동작을 묶는 메인 화면 코드입니다.
 export default function Home() {
+  // 이하는 지도 화면 요소와 제스처 상태를 직접 참조하기 위한 코드입니다.
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageWrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -3003,6 +3018,7 @@ export default function Home() {
   const editorDraftRevisionRef = useRef(0);
   const labelDensitySettingsRevisionRef = useRef(0);
 
+  // 이하는 장소, 지도, 관리자 도구, 팝업의 현재 상태를 보관하는 코드입니다.
   const [elements, setElements] = useState(initialElements);
   const [assets, setAssets] = useState<MapAsset[]>(builtInAssets);
   const [reviewNotes, setReviewNotes] = useState<ReviewNote[]>([]);
@@ -3793,6 +3809,7 @@ export default function Home() {
     : selected
       ? placeContentKey(selected)
       : null;
+  // 이하는 화면 크기와 초기 로딩 상태를 실제 화면에 맞춰 동기화하는 코드입니다.
   useLayoutEffect(() => {
     selectedStoryKeyRef.current = selectedStoryKey;
   }, [selectedStoryKey]);
@@ -4312,6 +4329,7 @@ export default function Home() {
     return { hard, clearance };
   }, [publicLayoutAccess, stageMarkerElements]);
 
+  // 이하는 화면 좌표를 지도 좌표로 바꾸고 선택된 장소 정보를 동기화하는 코드입니다.
   const clientToMap = useCallback((clientX: number, clientY: number) => {
     const rect = stageRef.current?.getBoundingClientRect();
     if (!rect) return { x: 50, y: 50 };
@@ -5986,6 +6004,7 @@ export default function Home() {
     calibrationLiveApplyRef.current = calibrationLiveApply;
   }, [calibrationLiveApply]);
 
+  // 이하는 모바일 드래그·핀치와 지도 확대·이동을 처리하는 코드입니다.
   const applyTouchMapTransform = useCallback((nextZoom: number, nextPan: { x: number; y: number }) => {
     const stageWrap = stageWrapRef.current;
     const stage = stageRef.current;
@@ -6467,6 +6486,7 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKey);
   }, [databaseEditorOpen, placeEventFormOpen, publicHistoryOpen, publicLayoutAccess, pushHistory, replaceElements, resourceOutputDragMode, selectedId, setPlacementOverride, shortcutHelpOpen, updateCalibrationPoint, updateElement, updateElementAnchor]);
 
+  // 이하는 관리자 편집의 실행 취소, 다시 실행, 휠·포인터 조작 코드입니다.
   const undo = () => {
     if (!undoStack.length) return;
     const previous = undoStack[undoStack.length - 1];
@@ -6850,6 +6870,7 @@ export default function Home() {
     setToast(`랜드마크 ${landmarkDefaultsRef.current.length}곳의 앵커를 저장된 기본 위치로 초기화했습니다.`);
   };
 
+  // 이하는 주소로 지도 위치를 찾고 장소·라벨 배치를 편집하는 코드입니다.
   const runAddressLookup = async (places: DirectoryPlace[], movePlacedElements = false) => {
     const runId = ++geocodeRunRef.current;
     const targets = places.filter((place) => place.coordinateStatus !== "landmark" && place.address);
@@ -7370,6 +7391,7 @@ export default function Home() {
     });
   };
 
+  // 이하는 관리자 장소 DB 편집기를 열고 내용을 저장하는 코드입니다.
   const openDatabaseEditor = () => {
     if (!placeDirectoryCanEdit) {
       setToast("내부 DB 수정은 소유자 로그인 후 사용할 수 있습니다.");
@@ -7934,6 +7956,7 @@ export default function Home() {
     pushHistory(); replaceNotes((current) => current.filter((note) => note.id !== selectedNote.id)); setSelectedNoteId(null);
   };
 
+  // 이하는 지도 자료 백업과 고해상도 PNG 출력 파일을 만드는 코드입니다.
   const download = (name: string, content: string, type: string) => {
     const url = URL.createObjectURL(new Blob([content], { type }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = name; anchor.click();
@@ -8188,6 +8211,7 @@ export default function Home() {
     setToast("배포본 축척별 전체 라벨 개수를 기본값으로 복원했습니다.");
   };
 
+  // 이하는 관리자 초안, 공개본 기록, 공개 라벨 설정을 저장·복원하는 코드입니다.
   const currentPublicViewSettings = (): PublicViewSettings => ({
     baseMap,
     markerLabelsVisible,
@@ -8432,6 +8456,7 @@ export default function Home() {
     }
   };
 
+  // 이하는 방문 후기·사진 신고와 행사 등록·관리 기능 코드입니다.
   const togglePlaceStoryForm = () => {
     const next = !placeStoryFormOpen;
     if (next && !placeStoryAuthor.trim()) {
@@ -9229,6 +9254,7 @@ export default function Home() {
     }
   };
 
+  // 이하는 공개 탐색창과 장소 상세 화면의 열기·닫기·이동 코드입니다.
   const closePublicExplorerPanel = () => {
     if (publicLayoutAccess !== "viewer") {
       setGlobalStoriesOpen(false);
@@ -9718,6 +9744,7 @@ export default function Home() {
     }
   };
 
+  // 이하는 공개·관리자 화면 전환과 최종 지도 렌더링 자료를 준비하는 코드입니다.
   const switchPublicView = (enabled: boolean) => {
     const secure = window.location.protocol === "https:" ? "; Secure" : "";
     document.cookie = `${PUBLIC_VIEW_COOKIE}=${enabled ? "1" : ""}; Path=/; SameSite=Strict; Max-Age=${enabled ? 43_200 : 0}${secure}`;
@@ -9873,6 +9900,7 @@ export default function Home() {
     return <main className="app-shell public-loading" data-ui-theme={uiTheme}>{startupLoadingCard}</main>;
   }
 
+  // 이하는 사용자가 실제로 보는 헤더, 지도, 패널, 팝업 화면 코드입니다.
   return (
     <Suspense fallback={<main className="app-shell public-loading" data-ui-theme={uiTheme}>{startupLoadingCard}</main>}>
       <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""} ${publicLayoutAccess === "viewer" && selected ? "public-place-selected" : ""}`} data-ui-theme={uiTheme}>

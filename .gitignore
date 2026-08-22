@@ -16,10 +16,17 @@
 # next.js
 /.next/
 /out/
+/.vinext/
 
 # misc
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
 *.pem
+*.key
+*.p12
+*.pfx
 
 # debug
 npm-debug.log*
@@ -29,14 +36,22 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.dev.vars*
 
 # vercel
 .vercel
 
 # typescript
 next-env.d.ts
+*.tsbuildinfo
 /dist/
 /.wrangler/
 /.sites-runtime/
 /outputs/
 /work/
+
+# local databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
