@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const routeSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const schemaSource = await readFile(new URL("../db/schema.ts", import.meta.url), "utf8");
 const migrationSource = await readFile(new URL("../drizzle/0020_curved_microbe.sql", import.meta.url), "utf8");

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
 const denseLabelSource = await readFile(new URL("../app/dense-label-density.mjs", import.meta.url), "utf8");
 const requestRouteSource = await readFile(new URL("../app/api/place-registration-requests/route.ts", import.meta.url), "utf8");

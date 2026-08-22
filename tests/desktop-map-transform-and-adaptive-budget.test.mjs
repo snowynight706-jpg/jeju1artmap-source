@@ -12,7 +12,9 @@ import {
 } from "../app/mobile-render-budget.mjs";
 import { shouldSendMapSettleDiagnostic } from "../app/performance-diagnostics.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("public desktop scaling stays composited while admin restores direct wheel scaling", () => {

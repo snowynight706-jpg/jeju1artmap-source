@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const adminAuthSource = await readFile(new URL("../app/admin-auth.ts", import.meta.url), "utf8");
 const serviceWorkerSource = await readFile(new URL("../public/service-worker.js", import.meta.url), "utf8");
 

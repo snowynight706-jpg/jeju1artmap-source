@@ -8,7 +8,9 @@ import {
   publicUrlWithPlace,
 } from "../app/public-convenience.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 

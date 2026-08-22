@@ -7,7 +7,9 @@ import {
   mobileOverviewIsSimplified,
 } from "../app/mobile-marker-density.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const foodMarkerSource = await readFile(new URL("../public/markers/범용마커_v2_food_approved-final.svg", import.meta.url), "utf8");
 

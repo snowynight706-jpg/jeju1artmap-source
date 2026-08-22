@@ -4,7 +4,9 @@ import test from "node:test";
 
 import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "../app/label-connector.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("label connector opacity becomes stronger as the label moves farther away", () => {

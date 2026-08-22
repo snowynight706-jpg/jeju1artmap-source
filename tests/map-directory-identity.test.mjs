@@ -7,7 +7,9 @@ import {
   sameMapPlaceIdentity,
 } from "../app/map-element-identity.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const masterDirectorySource = await readFile(new URL("../app/master-directory.ts", import.meta.url), "utf8");
 const directoryRouteSource = await readFile(new URL("../app/api/place-directory/route.ts", import.meta.url), "utf8");

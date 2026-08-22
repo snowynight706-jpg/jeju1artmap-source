@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const taxonomySource = await readFile(new URL("../app/place-taxonomy.ts", import.meta.url), "utf8");
 const directorySource = await readFile(new URL("../app/master-directory.ts", import.meta.url), "utf8");
 const geocodeSource = await readFile(new URL("../app/geocoded-places.ts", import.meta.url), "utf8");

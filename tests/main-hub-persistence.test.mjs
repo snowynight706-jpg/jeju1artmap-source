@@ -10,7 +10,9 @@ import {
   withoutMainHubPlacementOverrides,
 } from "../app/main-hub-persistence.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const routeSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 
 test("main hub keeps its edited resource size while restoring required visibility and asset", () => {

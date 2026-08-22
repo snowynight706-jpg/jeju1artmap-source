@@ -8,7 +8,9 @@ const taxonomySource = await readFile(new URL("../app/place-taxonomy.ts", import
 const directoryRouteSource = await readFile(new URL("../app/api/place-directory/route.ts", import.meta.url), "utf8");
 const markerAssetSource = await readFile(new URL("../app/marker-assets.ts", import.meta.url), "utf8");
 const registrationRouteSource = await readFile(new URL("../app/api/place-registration-requests/route.ts", import.meta.url), "utf8");
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
 
 test("Chilseong shopping street and the placed Chilseong landmark converge on one DB identity", () => {

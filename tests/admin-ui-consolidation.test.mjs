@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 
 test("admin map keeps one label refresh and one memo-pin entry point", () => {
   assert.equal(pageSource.match(/전체 라벨 위치 새로고침/g)?.length ?? 0, 1);

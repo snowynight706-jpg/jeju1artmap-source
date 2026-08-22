@@ -4,7 +4,9 @@ import test from "node:test";
 
 import { placesForPublicCategory } from "../app/public-place-category.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const apiSource = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 

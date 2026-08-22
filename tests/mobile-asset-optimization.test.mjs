@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFile, readdir, stat } from "node:fs/promises";
 import test from "node:test";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const landmarkSource = await readFile(new URL("../app/landmark-assets/index.ts", import.meta.url), "utf8");
 const manifestSource = await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8");
 

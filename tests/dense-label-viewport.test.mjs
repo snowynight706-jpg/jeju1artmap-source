@@ -4,7 +4,9 @@ import { readFile } from "node:fs/promises";
 
 import { fitDenseLabelCenter, publicDenseLabelViewport } from "../app/dense-label-viewport.mjs";
 
-const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+import { readAppClientSource } from "./source-fixtures.mjs";
+
+const pageSource = await readAppClientSource();
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("public dense-label viewport follows the settled map pan and zoom", () => {
