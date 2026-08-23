@@ -325,7 +325,7 @@ export function usePlaceEditorActions({
                 y: clamp(mapped.y + element.y - element.anchorY, 0, 100),
               } : {}),
             }
-            : elemen
+            : element
         )));
       } else {
         failed += 1;
@@ -572,7 +572,7 @@ export function usePlaceEditorActions({
 
     const runId = ++directoryTaxonomySaveRunRef.current;
     setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "saving" });
-    const queuedSave = directoryTaxonomySaveQueueRef.curren
+    const queuedSave = directoryTaxonomySaveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
         const response = await fetch(PLACE_DIRECTORY_API, {
@@ -626,7 +626,7 @@ export function usePlaceEditorActions({
 
     const runId = ++directoryTaxonomySaveRunRef.current;
     setDirectoryTaxonomySync({ placeId: currentPlace.id, state: "saving" });
-    const queuedSave = directoryTaxonomySaveQueueRef.curren
+    const queuedSave = directoryTaxonomySaveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
         const response = await fetch(PLACE_DIRECTORY_API, {
@@ -704,7 +704,7 @@ export function usePlaceEditorActions({
 
     const runId = ++directoryTaxonomySaveRunRef.current;
     setDirectoryTaxonomySync({ placeId: element.id, state: "saving" });
-    const queuedSave = directoryTaxonomySaveQueueRef.curren
+    const queuedSave = directoryTaxonomySaveQueueRef.current
       .catch(() => undefined)
       .then(async () => {
         const response = await fetch(PLACE_DIRECTORY_API, {
@@ -769,7 +769,7 @@ export function usePlaceEditorActions({
         addressSourceUrl: createdPlace.sourceUrl || element.addressSourceUrl,
       };
       replaceElements((current) => ensureMainHubMapElement(
-        curren
+        current
           .filter((item) => item.id === element.id || !isSameMapPlace(item, linkedElement))
           .map((item) => item.id === element.id ? linkedElement : item),
         nextPlaces,

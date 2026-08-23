@@ -25,6 +25,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapPrint.includes("../app/map/print/export.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapRendering.includes("../app/map/rendering/mobile-render.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.mapWorkspace.includes("../app/map/workspace/use-map-workspace-model.ts"));
 
   await Promise.all(
     APP_CLIENT_SOURCE_PATHS.map((path) => access(new URL(path, import.meta.url))),
@@ -206,18 +207,24 @@ test("dense label persistence stays behind its client hook boundary", async () =
   assert.match(hookSource, /\}, 650\);/);
 });
 
-test("label, print, and mobile rendering calculations stay outside the route component", async () => {
-  const [pageSource, clusterSource, auditSource, exportSource, mobileRenderSource] = await Promise.all([
+test("the map workspace composes label, print, and mobile rendering calculations outside the route component", async () => {
+  const [pageSource, workspaceSource, clusterSource, auditSource, exportSource, mobileRenderSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/workspace/use-map-workspace-model.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/map/labels/clusters.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/map/print/audit.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/map/print/export.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/map/rendering/mobile-render.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageSource, /buildDenseLabelClusters\(/);
+  assert.match(pageSource, /useMapWorkspaceModel\(\{/);
   assert.match(pageSource, /renderHighResolutionMapPng\(\{/);
-  assert.match(pageSource, /calculateMobileMapRenderBounds\(\{/);
+  assert.doesNotMatch(pageSource, /buildDenseLabelClusters\(/);
+  assert.doesNotMatch(pageSource, /buildPrintAudit\(/);
+  assert.doesNotMatch(pageSource, /calculateMobileMapRenderBounds\(\{/);
+  assert.match(workspaceSource, /buildDenseLabelClusters\(/);
+  assert.match(workspaceSource, /buildPrintAudit\(/);
+  assert.match(workspaceSource, /calculateMobileMapRenderBounds\(\{/);
   assert.doesNotMatch(pageSource, /function buildDenseLabelClusters\(/);
   assert.doesNotMatch(pageSource, /function buildPrintAudit\(/);
   assert.match(clusterSource, /export function buildDenseLabelClusters\(/);

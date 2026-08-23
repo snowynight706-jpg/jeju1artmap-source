@@ -73,6 +73,9 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/map/rendering/mobile-render.ts",
     "../app/map/rendering/performance-diagnostics.mjs",
   ]),
+  mapWorkspace: Object.freeze([
+    "../app/map/workspace/use-map-workspace-model.ts",
+  ]),
 });
 
 export const APP_CLIENT_SOURCE_PATHS = Object.freeze(Object.values(APP_CLIENT_SOURCE_GROUPS).flat());

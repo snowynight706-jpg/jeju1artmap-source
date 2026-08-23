@@ -7,6 +7,7 @@
 - `app/map/interaction/`: PC·모바일 변환 정책, 공유 확대율·이동 ref 동기화, 휠·핀치 RAF와 프로그램 이동 타이머의 생성·정리
 - `app/map/print/`: 장소별 출력 설정, 인쇄 충돌 감사, 고해상도 PNG 캔버스 합성과 설정 저장
 - `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 모바일 화면 밖 선별·성능 예산과 진단
+- `app/map/workspace/use-map-workspace-model.ts`: 지도 화면의 맞춤 축척, 화면 안 라벨 후보·예산·통합, 출력 정책·감사, 충돌 상태와 모바일 렌더 선별을 조립하는 큰 작업공간 모델. `map/labels`, `map/print`, `map/rendering`의 계산 모듈을 한 흐름으로 연결하고 `page.tsx`에는 상태와 사용자 동작 연결만 반환
 - `app/editor/document/`: 내장 자산·초기 지도 요소 생성, 메인 허브·LPP 보강, 저장 문서 정규화와 런타임 ID 복구·배치·잠금 좌표 규칙
 - `app/editor/places/actions.ts`: 관리자 장소 작업의 큰 책임 경계. 랜드마크 기본 앵커, 주소 기반 좌표 탐색, 지도 배치·표시, DB 연결·분류·직접 편집 동작을 묶고 기존 `editor/document`와 `place-directory` 규칙을 조립
 - `app/editor/persistence/`: 편집 초안 복원 우선순위, 기기 자동저장, 공개 레이아웃 API 계약, 보정·잠금·배치 설정의 서버 비교와 지연 저장
@@ -31,7 +32,7 @@
 - `worker/`: 배포 Worker 진입점과 정적 자산 캐시 정책
 - `tests/`: 기능·회귀·PWA·성능 정적 검증
 
-`app/page.tsx`의 남은 1차 큰 책임 경계는 공통 상태·복원 조립, 지도 Workspace, 공개 장소·콘텐츠 흐름, 관리자 출력·게시 흐름이다. 큰 경계를 먼저 고정한 뒤 각 Workspace 안에서 100~800줄 규모의 화면·hook·순수 계산 모듈로 세분화하며, 이미 분리된 `map`, `public`, `content`, `editor` 하위 모듈은 재통합하지 않는다.
+`app/page.tsx`의 남은 1차 큰 책임 경계는 공통 상태·복원 조립, 공개 장소·콘텐츠 흐름, 관리자 출력·게시 흐름이다. 지도 Workspace는 `app/map/workspace`가 기존 `map/labels`, `map/print`, `map/rendering`을 조립하는 경계로 고정한다. 큰 경계를 먼저 고정한 뒤 각 Workspace 안에서 100~800줄 규모의 화면·hook·순수 계산 모듈로 세분화하며, 이미 분리된 `map`, `public`, `content`, `editor` 하위 모듈은 재통합하지 않는다.
 
 통합 라벨의 공개 연결선은 거리와 무관하게 불투명도 0.84를 유지한다. 관리자 한 열 통합 라벨은 항목명 길이로 폭을 정하며, 마커 왼쪽에 놓인 라벨은 항목명을 왼쪽 정렬하고 분류 표시점과 연결선 끝점을 행 오른쪽에 맞춘다.
 
