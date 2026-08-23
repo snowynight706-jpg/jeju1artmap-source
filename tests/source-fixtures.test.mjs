@@ -3,6 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  APP_CLIENT_SOURCE_GROUPS,
   APP_CLIENT_SOURCE_PATHS,
   readAppClientSource,
 } from "./source-fixtures.mjs";
@@ -10,6 +11,8 @@ import {
 test("client source regression checks follow explicit extraction boundaries", async () => {
   assert.deepEqual(APP_CLIENT_SOURCE_PATHS, [...new Set(APP_CLIENT_SOURCE_PATHS)]);
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
 
   await Promise.all(
     APP_CLIENT_SOURCE_PATHS.map((path) => access(new URL(path, import.meta.url))),
@@ -17,6 +20,23 @@ test("client source regression checks follow explicit extraction boundaries", as
 
   const source = await readAppClientSource();
   assert.match(source, /^"use client";/);
+});
+
+test("map settings and autosave persistence stay outside the route component", async () => {
+  const [pageSource, settingsSource, autosaveSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/persistence/use-map-settings-persistence.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/persistence/use-local-autosave.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useMapSettingsPersistence\(\{/);
+  assert.match(pageSource, /useLocalAutosave\(\{/);
+  assert.doesNotMatch(pageSource, /fetch\(CALIBRATION_SETTINGS_API/);
+  assert.doesNotMatch(pageSource, /requestIdleCallback\(save/);
+  assert.match(settingsSource, /remoteUpdatedAt >= localCalibrationUpdatedAtRef\.current/);
+  assert.match(settingsSource, /applyLockedCoordinateSettings\(/);
+  assert.match(autosaveSource, /schemaVersion: 4/);
+  assert.match(autosaveSource, /baseRevision: publishedRevisionRef\.current/);
 });
 
 test("page keeps heavyweight panels behind lazy import boundaries", async () => {

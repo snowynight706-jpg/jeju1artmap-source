@@ -3,7 +3,7 @@ import { readUploadedBaseMapMetadata } from "../../base-map-storage";
 import { contentSummaryFromBatchResults } from "../../content-summary.mjs";
 import { normalizeOptionalLabelScaleSteps } from "../../label-density.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
-import { stabilizeMainHubDocument } from "../../main-hub-persistence.mjs";
+import { stabilizeMainHubDocument } from "../../editor/document/main-hub-persistence.mjs";
 
 export const runtime = "edge";
 

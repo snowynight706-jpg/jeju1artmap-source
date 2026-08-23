@@ -1,4 +1,4 @@
-import { normalizePlaceName } from "./core-landmarks";
+import { normalizePlaceName } from "../../core-landmarks";
 
 export const markerCategoryColors = {
   culture: "#58AEB0",

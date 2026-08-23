@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chooseEditorRestoreSource } from "../app/editor-draft-restore.mjs";
+import { chooseEditorRestoreSource } from "../app/editor/persistence/editor-draft-restore.mjs";
 
 test("a current server draft is the cross-device source of truth", () => {
   const server = { elements: [{ id: "server" }] };

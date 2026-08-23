@@ -6,7 +6,7 @@ import {
   printSettingKey,
   type PrintPlaceSetting,
 } from "./map-print-settings";
-import type { MapElement, PublicLayoutAccess } from "./map-types";
+import type { MapElement, PublicLayoutAccess } from "./map/core/types";
 
 const PRINT_SETTINGS_API = "/api/print-settings";
 

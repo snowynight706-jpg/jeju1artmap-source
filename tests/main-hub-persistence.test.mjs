@@ -8,7 +8,7 @@ import {
   stableMainHubResourceSize,
   stabilizeMainHubDocument,
   withoutMainHubPlacementOverrides,
-} from "../app/main-hub-persistence.mjs";
+} from "../app/editor/document/main-hub-persistence.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 

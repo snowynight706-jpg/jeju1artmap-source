@@ -1,5 +1,5 @@
 import { normalizePlaceName } from "./core-landmarks";
-import type { MapElement } from "./map-types";
+import type { MapElement } from "./map/core/types";
 
 export type PrintMode = "auto" | "include" | "exclude";
 

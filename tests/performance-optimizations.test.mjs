@@ -42,7 +42,7 @@ test("public bootstrap includes map metadata and event-linked places with condit
   assert.match(publicLayoutRoute, /eventLinkedPlaces/);
   assert.match(publicLayoutRoute, /cache-control": "private, no-cache"/);
   assert.match(publicLayoutRoute, /status: 304/);
-  assert.match(pageSource, /fetch\(PUBLIC_LAYOUT_API, \{ cache: "no-cache" \}\)/);
+  assert.match(pageSource, /loadPublicLayout\("no-cache"\)/);
   assert.match(pageSource, /eventPlaceIndexBootstrappedRef\.current = true/);
   assert.match(publicLayoutRoute, /item\.builtIn !== true/);
 });

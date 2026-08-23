@@ -1,10 +1,10 @@
 # 프로젝트 구조
 
-- `app/page.tsx`: 공개 지도, 관리자 편집기, 지도 조작, 장소 상세·후기·행사 UI의 중심 상태와 화면
-- `app/map-calibration.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성, 보정 좌표 계산을 담당하는 순수 도메인 모듈
-- `app/map-model.ts`: 지도 분류·색상·표시 크기와 장소 식별 키를 공유하는 순수 도메인 모듈
-- `app/map-types.ts`: 지도 요소·자산·장소 디렉터리·편집 문서·통합 라벨·화면 경계의 공용 TypeScript 계약
-- `app/map-document.ts`: 런타임 ID 복구, 문서 복제, 배치 오버라이드, 잠금 좌표 직렬화의 순수 문서 규칙
+- `app/page.tsx`: 공개 지도와 관리자 편집기의 최상위 상태 조립, 지도 조작, 장소 상세·후기·행사 UI
+- `app/map/core/`: 지도 요소 기본값, 분류·색상·표시 크기, 장소 식별 키와 공용 TypeScript 계약
+- `app/map/calibration/model.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성과 보정 좌표 계산을 담당하는 순수 도메인 모듈
+- `app/editor/document/`: 런타임 ID 복구, 문서 복제, 배치·잠금 좌표 규칙과 메인 허브 영속성 안정화
+- `app/editor/persistence/`: 편집 초안 복원 우선순위, 기기 자동저장, 공개 레이아웃 API 계약, 보정·잠금·배치 설정의 서버 비교와 지연 저장
 - `app/map-print-settings.ts`: 장소별 출력 식별 키와 추천·마커·라벨 포함 계약
 - `app/use-print-settings-persistence.ts`: 출력 설정의 서버 로드, 편집 권한, 낙관적 저장과 실패 롤백 상태를 소유하는 클라이언트 hook
 - `app/use-dense-label-settings-persistence.ts`: 통합 라벨 위치·제외 목록의 로컬 복구 시각 비교, 서버 로드와 지연 저장 상태를 소유하는 클라이언트 hook

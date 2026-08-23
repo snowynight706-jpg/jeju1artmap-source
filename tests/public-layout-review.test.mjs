@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { completeReviewStatuses } from "../app/review-status.mjs";
-import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "../app/local-autosave.mjs";
+import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "../app/editor/persistence/local-autosave.mjs";
 
 test("publishing completes element and asset review statuses without mutating the draft", () => {
   const draft = {

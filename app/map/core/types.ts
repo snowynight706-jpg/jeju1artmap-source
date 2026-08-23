@@ -1,9 +1,9 @@
-import type { CalibrationPoint } from "./map-calibration";
-import type { CategoryId } from "./map-model";
+import type { CalibrationPoint } from "../calibration/model";
+import type { CategoryId } from "./model";
 import type {
   AdditionalCategoryId,
   ConvenienceAttributeId,
-} from "./place-taxonomy";
+} from "../../place-taxonomy";
 
 export type AssetStatus = "approved" | "review" | "unchecked";
 export type LabelPosition = "top" | "bottom" | "left" | "right";

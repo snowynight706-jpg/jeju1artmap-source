@@ -1,5 +1,5 @@
-import { geocodedPlaces, projectGeographicCoordinates } from "./geocoded-places";
-import { normalizePlaceName } from "./core-landmarks";
+import { geocodedPlaces, projectGeographicCoordinates } from "../../geocoded-places";
+import { normalizePlaceName } from "../../core-landmarks";
 
 export const MAP_ASPECT = 8944 / 7324;
 

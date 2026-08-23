@@ -9,7 +9,7 @@ import {
 
 import { normalizePlaceName } from "./core-landmarks";
 import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "./label-connector.mjs";
-import { MAP_ASPECT } from "./map-calibration";
+import { MAP_ASPECT } from "./map/calibration/model";
 import {
   EXPORT_CANONICAL_WIDTH,
   categoryOf,
@@ -17,7 +17,7 @@ import {
   mapElementDisplaySize,
   mobileMarkerPlaceholderColor,
   placeContentKey,
-} from "./map-model";
+} from "./map/core/model";
 import type {
   DenseLabelCluster,
   DenseLabelRow,
@@ -29,7 +29,7 @@ import type {
   StageDimensions,
   ViewMode,
   VisualBounds,
-} from "./map-types";
+} from "./map/core/types";
 
 const PUBLIC_DENSE_LABEL_CONNECTOR_OPACITY = 0.84;
 const EMPTY_MAP_LABEL_STATUS: MapLabelStatus = Object.freeze({

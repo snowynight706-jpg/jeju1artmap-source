@@ -5,7 +5,7 @@ import test from "node:test";
 import {
   ensureIndependentMapElementIdentity,
   sameMapPlaceIdentity,
-} from "../app/map-element-identity.mjs";
+} from "../app/editor/document/map-element-identity.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 
