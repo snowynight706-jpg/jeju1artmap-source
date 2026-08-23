@@ -40,3 +40,17 @@ test("page keeps heavyweight panels behind lazy import boundaries", async () => 
     );
   }
 });
+
+test("dense label persistence stays behind its client hook boundary", async () => {
+  const [pageSource, hookSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/use-dense-label-settings-persistence.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useDenseLabelSettingsPersistence\(\{/);
+  assert.match(pageSource, /readLocalDenseLabelSettings\(\)/);
+  assert.doesNotMatch(pageSource, /DENSE_LABEL_SETTINGS_(?:API|KEY)/);
+  assert.match(hookSource, /remoteUpdatedAt >= localUpdatedAtRef\.current/);
+  assert.match(hookSource, /window\.setTimeout\(\(\) => \{/);
+  assert.match(hookSource, /\}, 650\);/);
+});

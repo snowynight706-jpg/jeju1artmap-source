@@ -7,6 +7,7 @@
 - `app/map-document.ts`: 런타임 ID 복구, 문서 복제, 배치 오버라이드, 잠금 좌표 직렬화의 순수 문서 규칙
 - `app/map-print-settings.ts`: 장소별 출력 식별 키와 추천·마커·라벨 포함 계약
 - `app/use-print-settings-persistence.ts`: 출력 설정의 서버 로드, 편집 권한, 낙관적 저장과 실패 롤백 상태를 소유하는 클라이언트 hook
+- `app/use-dense-label-settings-persistence.ts`: 통합 라벨 위치·제외 목록의 로컬 복구 시각 비교, 서버 로드와 지연 저장 상태를 소유하는 클라이언트 hook
 - `app/map-render-layers.tsx`: 메인 상태와 ref 액션으로 연결되는 마커·간략 마커·연결선·통합 라벨 렌더 계층
 - `app/public-place-detail-content.tsx`: 장소 선택 후에만 지연 로딩되는 공개 상세·행사·후기 화면
 - `app/public-explorer-activity-content.tsx`: 원도심 탐색에서 리뷰·행사 탭을 열 때만 지연 로딩되는 카드 화면

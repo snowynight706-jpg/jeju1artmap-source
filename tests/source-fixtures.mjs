@@ -8,6 +8,7 @@ export const APP_CLIENT_SOURCE_PATHS = Object.freeze([
   "../app/map-document.ts",
   "../app/map-print-settings.ts",
   "../app/use-print-settings-persistence.ts",
+  "../app/use-dense-label-settings-persistence.ts",
   "../app/map-render-layers.tsx",
 ]);
 

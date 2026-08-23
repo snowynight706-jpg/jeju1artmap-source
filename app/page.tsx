@@ -73,6 +73,10 @@ import {
   type PrintMode,
 } from "./map-print-settings";
 import { usePrintSettingsPersistence } from "./use-print-settings-persistence";
+import {
+  readLocalDenseLabelSettings,
+  useDenseLabelSettingsPersistence,
+} from "./use-dense-label-settings-persistence";
 import type {
   AssetStatus,
   DenseLabelCluster,
@@ -172,7 +176,6 @@ const UPLOADED_MAP_API = "/api/base-map";
 const CALIBRATION_SETTINGS_API = "/api/calibration-settings";
 const LOCKED_COORDINATE_SETTINGS_API = "/api/locked-coordinate-settings";
 const PLACE_DIRECTORY_API = "/api/place-directory";
-const DENSE_LABEL_SETTINGS_API = "/api/dense-label-settings";
 const PLACEMENT_SETTINGS_API = "/api/placement-settings";
 const PUBLIC_LAYOUT_API = "/api/public-layout";
 const PLACE_STORIES_API = "/api/place-stories";
@@ -229,7 +232,6 @@ const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
 const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
 const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
-const DENSE_LABEL_SETTINGS_KEY = "jeju-wondosim-map-review:dense-label-settings:v1";
 const PLACEMENT_SETTINGS_KEY = "jeju-wondosim-map-review:placement-settings:v1";
 const PLACE_STORY_VISITOR_KEY = "jeju-wondosim-map-review:story-visitor:v1";
 const PLACE_STORY_AUTHOR_KEY = "jeju-wondosim-map-review:story-author:v1";
@@ -2260,9 +2262,6 @@ export default function Home() {
   const [denseLabelExcludedIds, setDenseLabelExcludedIds] = useState<string[]>([]);
   const [placementOverrides, setPlacementOverrides] = useState<PlacementOverride[]>([]);
   const [selectedDenseLabelId, setSelectedDenseLabelId] = useState<string | null>(null);
-  const [denseLabelSettingsCanEdit, setDenseLabelSettingsCanEdit] = useState(false);
-  const [denseLabelSettingsStorage, setDenseLabelSettingsStorage] = useState<"loading" | "persistent" | "local">("loading");
-  const [denseLabelSettingsRemoteReady, setDenseLabelSettingsRemoteReady] = useState(false);
   const [forceIndividualLabels, setForceIndividualLabels] = useState(false);
   const [placementSettingsRemoteReady, setPlacementSettingsRemoteReady] = useState(false);
   const [publicLayoutAccess, setPublicLayoutAccess] = useState<PublicLayoutAccess>("loading");
@@ -2635,6 +2634,13 @@ export default function Home() {
       denseLabelExcludedIdsRef.current = next;
       return next;
     });
+  }, []);
+
+  const restoreDenseLabelSettings = useCallback((positions: DenseLabelPosition[], excludedElementIds: string[]) => {
+    denseLabelPositionsRef.current = positions;
+    denseLabelExcludedIdsRef.current = excludedElementIds;
+    setDenseLabelPositions(positions);
+    setDenseLabelExcludedIds(excludedElementIds);
   }, []);
 
   const replacePlacementOverrides = useCallback((updater: (current: PlacementOverride[]) => PlacementOverride[]) => {
@@ -4257,13 +4263,7 @@ export default function Home() {
           }
         })();
         localLockedCoordinatesUpdatedAtRef.current = Date.parse(persistentLockedCoordinates?.updatedAt ?? "") || 0;
-        const persistentDenseLabels = (() => {
-          try {
-            return JSON.parse(localStorage.getItem(DENSE_LABEL_SETTINGS_KEY) ?? "null") as { positions?: DenseLabelPosition[]; excludedElementIds?: string[]; updatedAt?: string } | null;
-          } catch {
-            return null;
-          }
-        })();
+        const persistentDenseLabels = readLocalDenseLabelSettings();
         localDenseLabelsUpdatedAtRef.current = Date.parse(persistentDenseLabels?.updatedAt ?? "") || 0;
         const persistentPlacement = (() => {
           try {
@@ -4532,77 +4532,19 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [hydrated, publicLayoutAccess, replaceDirectoryPlaces, replaceElements]);
 
-  useEffect(() => {
-    if (!hydrated || publicLayoutAccess !== "editor") return;
-    let cancelled = false;
-    fetch(DENSE_LABEL_SETTINGS_API, { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null) as {
-          positions?: DenseLabelPosition[];
-          excludedElementIds?: string[];
-          persistent?: boolean;
-          canEdit?: boolean;
-          updatedAt?: string | null;
-        } | null;
-        if (!response.ok && response.status !== 503) throw new Error("dense label settings load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (cancelled) return;
-        const remoteUpdatedAt = Date.parse(payload?.updatedAt ?? "") || 0;
-        const shouldRestoreRemote = remoteUpdatedAt > 0
-          && (localDenseLabelsUpdatedAtRef.current === 0 || remoteUpdatedAt >= localDenseLabelsUpdatedAtRef.current);
-        if (shouldRestoreRemote) {
-          const positions = Array.isArray(payload?.positions) ? payload!.positions : [];
-          const excludedElementIds = Array.isArray(payload?.excludedElementIds) ? payload!.excludedElementIds : [];
-          denseLabelPositionsRef.current = positions;
-          denseLabelExcludedIdsRef.current = excludedElementIds;
-          setDenseLabelPositions(positions);
-          setDenseLabelExcludedIds(excludedElementIds);
-          localDenseLabelsUpdatedAtRef.current = remoteUpdatedAt;
-        }
-        setDenseLabelSettingsCanEdit(Boolean(payload?.canEdit));
-        setDenseLabelSettingsStorage(payload?.persistent ? "persistent" : "local");
-        setDenseLabelSettingsRemoteReady(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDenseLabelSettingsStorage("local");
-        setDenseLabelSettingsRemoteReady(true);
-      });
-    return () => { cancelled = true; };
-  }, [hydrated, publicLayoutAccess]);
-
-  const denseLabelSettingsSignature = useMemo(() => JSON.stringify({
+  const {
+    denseLabelSettingsCanEdit,
+    denseLabelSettingsStorage,
+  } = useDenseLabelSettingsPersistence({
+    hydrated,
+    publicLayoutAccess,
     positions: denseLabelPositions,
     excludedElementIds: denseLabelExcludedIds,
-  }), [denseLabelExcludedIds, denseLabelPositions]);
-
-  useEffect(() => {
-    if (!hydrated || publicLayoutAccess !== "editor" || !denseLabelSettingsRemoteReady) return;
-    const updatedAt = new Date().toISOString();
-    localDenseLabelsUpdatedAtRef.current = Date.parse(updatedAt);
-    try {
-      localStorage.setItem(DENSE_LABEL_SETTINGS_KEY, JSON.stringify({
-        positions: denseLabelPositionsRef.current,
-        excludedElementIds: denseLabelExcludedIdsRef.current,
-        updatedAt,
-      }));
-    } catch {}
-    if (!denseLabelSettingsCanEdit) return;
-    const timer = window.setTimeout(() => {
-      void fetch(DENSE_LABEL_SETTINGS_API, {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          positions: denseLabelPositionsRef.current,
-          excludedElementIds: denseLabelExcludedIdsRef.current,
-        }),
-      }).then((response) => setDenseLabelSettingsStorage(response.ok ? "persistent" : "local"))
-        .catch(() => setDenseLabelSettingsStorage("local"));
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, [denseLabelSettingsCanEdit, denseLabelSettingsRemoteReady, denseLabelSettingsSignature, hydrated, publicLayoutAccess]);
+    positionsRef: denseLabelPositionsRef,
+    excludedElementIdsRef: denseLabelExcludedIdsRef,
+    localUpdatedAtRef: localDenseLabelsUpdatedAtRef,
+    onRestore: restoreDenseLabelSettings,
+  });
 
   useEffect(() => {
     if (!hydrated || publicLayoutAccess !== "editor" || !primaryCalibrationRemoteReady) return;
