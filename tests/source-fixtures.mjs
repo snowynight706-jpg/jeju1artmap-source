@@ -12,6 +12,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/public/place-detail-content.tsx",
     "../app/public/place-focus.mjs",
     "../app/public/place-sheet.tsx",
+    "../app/public/use-public-navigation-actions.ts",
     "../app/public/use-public-place-workspace.ts",
   ]),
   contentClient: Object.freeze([
@@ -51,6 +52,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/editor/persistence/use-map-settings-persistence.ts",
   ]),
   editorWorkspace: Object.freeze([
+    "../app/editor/workspace/use-admin-map-asset-actions.ts",
     "../app/editor/workspace/use-admin-output-workspace.ts",
   ]),
   mapLabels: Object.freeze([

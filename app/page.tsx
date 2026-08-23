@@ -2,7 +2,6 @@
 /* eslint-disable @next/next/no-img-element */
 
 import {
-  ChangeEvent,
   FormEvent,
   PointerEvent as ReactPointerEvent,
   lazy,
@@ -58,7 +57,6 @@ import {
 } from "./editor/document/rules";
 import { createMapDocumentModel } from "./editor/document/bootstrap";
 import { usePlaceEditorActions } from "./editor/places/actions";
-import { elementDefaults } from "./map/core/element-defaults";
 import {
   printSettingKey,
   type PrintMode,
@@ -90,6 +88,7 @@ import type {
 import { useLocalAutosave } from "./editor/persistence/use-local-autosave";
 import { useApplicationBootstrap } from "./editor/persistence/use-application-bootstrap";
 import { useAdminOutputWorkspace } from "./editor/workspace/use-admin-output-workspace";
+import { useAdminMapAssetActions } from "./editor/workspace/use-admin-map-asset-actions";
 import {
   type BaseMapMode,
   type OptionalLabelScaleStep,
@@ -109,8 +108,8 @@ import {
   type PublicHistoryState,
   type PublicPanelHistory,
   type PublicPlaceCategoryScope,
-  type PublicPlaceListItem,
 } from "./public/use-public-place-workspace";
+import { usePublicNavigationActions } from "./public/use-public-navigation-actions";
 import { useMapTransformController } from "./map/interaction/use-map-transform-controller";
 import { useMapWorkspaceModel } from "./map/workspace/use-map-workspace-model";
 import { lowTierBaseMapNeedsHighResolution } from "./map/rendering/base-map-quality.mjs";
@@ -147,7 +146,6 @@ import {
   createDirectoryCatalog,
   createDirectoryRecordMerger,
   databaseEditorCategoryForPlace,
-  defaultMarkerAssetId,
   directoryCategory,
   directoryRecordFromPlace,
 } from "./place-directory/model";
@@ -181,10 +179,7 @@ import {
 } from "./content/use-explorer-content";
 import { usePlaceStoryActions } from "./content/use-place-story-actions";
 import { usePlaceEventRequestActions } from "./content/use-place-event-request-actions";
-import {
-  STORY_PHOTO_MAX_SOURCE_BYTES,
-  loadImage,
-} from "./media/photo-processing";
+import { STORY_PHOTO_MAX_SOURCE_BYTES } from "./media/photo-processing";
 
 // 이하는 필요할 때만 불러오는 관리자·공개 화면 모듈 코드입니다.
 
@@ -478,25 +473,6 @@ function uploadedBaseMapDisplaySource(metadata: UploadedBaseMap | null, preferCo
   }
   return metadata.screen4096Url ?? metadata.screen2048Url ?? uploadedBaseMapOriginalSource(metadata);
 }
-
-async function prepareBaseMapScreenVariant(image: HTMLImageElement, maximumWidth: 2048 | 4096, quality: number) {
-  const scale = Math.min(1, maximumWidth / Math.max(image.naturalWidth, 1));
-  const width = Math.max(1, Math.round(image.naturalWidth * scale));
-  const height = Math.max(1, Math.round(image.naturalHeight * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d", { alpha: false });
-  if (!context) return null;
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(image, 0, 0, width, height);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", quality));
-  canvas.width = 1;
-  canvas.height = 1;
-  return blob?.type === "image/webp" ? { blob, width, height } : null;
-}
-
 
 const EMPTY_MAP_LABEL_STATUS_BY_ELEMENT_ID = new Map<string, MapLabelStatus>();
 const EMPTY_MAP_ELEMENT_IDS = new Set<string>();
@@ -3038,121 +3014,48 @@ export default function Home() {
     setPlaceDirectoryUpdatedAt,
     setSelectedFacilityId,
   });
-  const addAssetElement = (asset: MapAsset) => {
-    pushHistory();
-    const count = elementsRef.current.filter((item) => item.assetId === asset.id).length + 1;
-    const size = asset.category === "landmark" ? 6.4 : markerGroupSize;
-    const next: MapElement = {
-      ...elementDefaults, id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)), name: asset.placeName ?? (count > 1 ? `${asset.name} ${count}` : asset.name),
-      category: asset.category, x: 50, y: 50, anchorX: 50, anchorY: 50, size,
-      z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1, labelVisible: asset.category === "landmark",
-      assetId: asset.id, status: "unchecked", address: asset.address ?? "", addressSourceUrl: asset.addressSourceUrl ?? "",
-    };
-    replaceElements((current) => [...current, next]); setSelectedId(next.id); setSelectedNoteId(null);
-  };
-
-  const applyLandmarkCandidate = (asset: MapAsset) => {
-    const existing = elementsRef.current.find((element) => normalizePlaceName(element.name) === normalizePlaceName(asset.placeName ?? ""));
-    if (!existing) {
-      addAssetElement(asset);
-      setToast(`${asset.placeName}에 ${asset.name} 후보를 적용했습니다.`);
-      return;
-    }
-    updateElement(existing.id, { assetId: asset.id });
-    setSelectedId(existing.id);
-    setSelectedNoteId(null);
-    focusMapPosition(existing.x, existing.y, existing.id);
-    setToast(`${asset.placeName} 리소스를 ${asset.name}(으)로 교체했습니다.`);
-  };
-
-  const uploadAsset = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    files.forEach((file) => {
-      if (!file.type.startsWith("image/") && !file.name.toLowerCase().endsWith(".svg")) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const src = typeof reader.result === "string" ? reader.result : "";
-        if (!src) return;
-        pushHistory();
-        const extension = file.name.split(".").pop()?.toLowerCase();
-        const asset: MapAsset = {
-          id: uniqueRuntimeId("asset", assetsRef.current.map((item) => item.id)), name: file.name.replace(/\.[^.]+$/, ""), category: assetCategory,
-          status: assetStatus, src, fileType: extension === "svg" ? "svg" : extension === "png" ? "png" : "image",
-          sourceLabel: `사용자 업로드 · ${file.name}`,
-          builtIn: false,
-        };
-        replaceAssets((current) => [...current, asset]);
-      };
-      reader.readAsDataURL(file);
-    });
-    event.target.value = "";
-  };
-
-  const uploadBaseMap = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (!file.type.startsWith("image/") || file.size > 60 * 1024 * 1024) {
-      setToast("베이스 지도는 60MB 이하 PNG·JPG·WebP·SVG 이미지로 올려주세요.");
-      return;
-    }
-    setBaseMapUploading(true);
-    try {
-      const localUrl = URL.createObjectURL(file);
-      const image = await loadImage(localUrl);
-      const width = image.naturalWidth;
-      const height = image.naturalHeight;
-      URL.revokeObjectURL(localUrl);
-      if (!width || !height) throw new Error("invalid dimensions");
-      const aspectDifference = Math.abs(width / height - MAP_ASPECT) / MAP_ASPECT;
-      if (aspectDifference > 0.025) {
-        setToast(`지도 비율이 기준(${Math.round(MAP_ASPECT * 1000) / 1000})과 달라 업로드하지 않았습니다. 같은 영역·비율의 지도를 사용해 주세요.`);
-        return;
-      }
-      const screen2048 = await prepareBaseMapScreenVariant(image, 2048, 0.86).catch(() => null);
-      const screen4096 = await prepareBaseMapScreenVariant(image, 4096, 0.88).catch(() => null);
-      const params = new URLSearchParams({ name: file.name, width: String(width), height: String(height) });
-      const response = await fetch(`${UPLOADED_MAP_API}?${params.toString()}`, {
-        method: "POST",
-        headers: { "content-type": file.type || "image/png" },
-        body: file,
-      });
-      if (!response.ok) throw new Error(`upload ${response.status}`);
-      let metadata = await response.json() as UploadedBaseMap;
-      const uploadScreenVariant = async (variant: "screen-2048" | "screen-4096", prepared: { blob: Blob; width: number; height: number } | null) => {
-        if (!prepared) return false;
-        const variantParams = new URLSearchParams({
-          variant,
-          sourceVersion: metadata.uploadedAt,
-          width: String(prepared.width),
-          height: String(prepared.height),
-        });
-        const variantResponse = await fetch(`${UPLOADED_MAP_API}?${variantParams.toString()}`, {
-          method: "POST",
-          headers: { "content-type": "image/webp" },
-          body: prepared.blob,
-        });
-        return variantResponse.ok;
-      };
-      const variantResults = await Promise.allSettled([
-        uploadScreenVariant("screen-2048", screen2048),
-        uploadScreenVariant("screen-4096", screen4096),
-      ]);
-      if (variantResults.some((result) => result.status === "fulfilled" && result.value)) {
-        const metadataResponse = await fetch(`${UPLOADED_MAP_API}?meta=1`, { cache: "no-store" });
-        if (metadataResponse.ok) metadata = await metadataResponse.json() as UploadedBaseMap;
-      }
-      setUploadedBaseMap(metadata);
-      setBaseMapCanUpload(Boolean(metadata.canUpload));
-      setMapLoaded(false);
-      setBaseMap("uploaded");
-      setToast(`${file.name}을(를) 저장하고 화면용 경량 지도를 함께 준비했습니다.`);
-    } catch {
-      setToast("베이스 지도를 저장하지 못했습니다. 소유자 로그인과 파일 형식을 확인해 주세요.");
-    } finally {
-      setBaseMapUploading(false);
-    }
-  };
+  // 관리자 자산·베이스맵 업로드와 선택 요소 빠른 작업은 별도 작업공간에서 조립합니다.
+  const {
+    addAssetElement,
+    applyLandmarkCandidate,
+    uploadAsset,
+    uploadBaseMap,
+    moveLayer,
+    applyGroupSize,
+    applyMarkerStyle,
+    duplicateSelected,
+    toggleSelectedCoordinateReview,
+    deleteSelected,
+    deleteSelectedNote,
+  } = useAdminMapAssetActions({
+    assetCategory,
+    assetStatus,
+    markerGroupSize,
+    selected,
+    selectedNote,
+    directoryPlaces,
+    uploadedMapApi: UPLOADED_MAP_API,
+    elementsRef,
+    assetsRef,
+    pushHistory,
+    replaceElements,
+    replaceAssets,
+    replaceNotes,
+    updateElement,
+    focusMapPosition,
+    setPlacementOverride,
+    setSelectedId,
+    setSelectedNoteId,
+    setToast,
+    setBaseMapUploading,
+    setUploadedBaseMap,
+    setBaseMapCanUpload,
+    setMapLoaded,
+    setBaseMap,
+    setMarkerStyle,
+    setCalibrationDirty,
+    setResourceOutputDragMode,
+  });
 
   const autoArrangeLabels = (record = true, notify = true) => {
     const candidates = elementsRef.current
@@ -3338,86 +3241,6 @@ export default function Home() {
     window.requestAnimationFrame(() => {
       autoArrangeLabels(false, true);
     });
-  };
-
-  const moveLayer = (direction: "front" | "back" | "forward" | "backward") => {
-    if (!selected) return;
-    const zs = elementsRef.current.map((item) => item.z);
-    let z = selected.z;
-    if (direction === "front") z = Math.max(...zs) + 1;
-    if (direction === "back") z = Math.min(...zs) - 1;
-    if (direction === "forward") z += 1;
-    if (direction === "backward") z -= 1;
-    updateElement(selected.id, { z });
-  };
-
-  const applyGroupSize = (group: "landmark" | "marker", size: number) => {
-    pushHistory();
-    replaceElements((current) => current.map((item) => (
-      group === "landmark" ? (item.category === "landmark" ? { ...item, size } : item) : (item.category !== "landmark" ? { ...item, size } : item)
-    )));
-    setToast(group === "landmark" ? `랜드마크 ${size.toFixed(1)}% 일괄 적용` : `일반 마커 ${size.toFixed(1)}% 일괄 적용`);
-  };
-
-  const applyMarkerStyle = (style: BundledMarkerStyle) => {
-    pushHistory();
-    setMarkerStyle(style);
-    replaceElements((current) => current.map((item) => {
-      const place = item.directoryId
-        ? directoryPlaces.find((candidate) => candidate.id === item.directoryId)
-        : directoryPlaces.find((candidate) => normalizePlaceName(candidate.name) === normalizePlaceName(item.name));
-      const nextAssetId = defaultMarkerAssetId(item.category, style, `${item.name} ${place?.subtype ?? ""}`);
-      return nextAssetId ? { ...item, assetId: nextAssetId } : item;
-    }));
-    const styleName = style === "v2" ? "리뉴얼 최종 원형" : style === "01" ? "기본 핀형" : style === "02" ? "아치 배지형" : "유기적 원형";
-    setToast(`범용 마커를 ${styleName}으로 통일했습니다.`);
-  };
-
-  const duplicateSelected = () => {
-    if (!selected) return;
-    pushHistory();
-    const duplicate = {
-      ...selected,
-      id: uniqueRuntimeId("element", elementsRef.current.map((item) => item.id)),
-      directoryId: undefined,
-      name: `${selected.name} 복사본`,
-      locked: false,
-      status: "unchecked" as const,
-      x: clamp(selected.x + 1.2, 0, 100),
-      y: clamp(selected.y + 1.2, 0, 100),
-      z: Math.max(0, ...elementsRef.current.map((item) => item.z)) + 1,
-    };
-    replaceElements((current) => [...current, duplicate]); setSelectedId(duplicate.id);
-  };
-
-  const toggleSelectedCoordinateReview = () => {
-    if (!selected) return;
-    const locked = !selected.locked;
-    updateElement(selected.id, { locked });
-    setCalibrationDirty(true);
-    if (locked) setResourceOutputDragMode(false);
-    setToast(locked
-      ? `${selected.name} 좌표를 고정하고 최종 검수를 완료했습니다.`
-      : `${selected.name} 좌표 고정을 해제해 검수 필요 상태로 돌렸습니다.`);
-  };
-
-  const deleteSelected = () => {
-    if (!selected || selected.locked) return;
-    if (isMainHubPersistenceTarget(selected)) {
-      setPlacementOverride(selected, null);
-      updateElement(selected.id, { mapVisible: true });
-      setToast("제주소통협력센터는 주요 거점이므로 지도에서 삭제할 수 없습니다.");
-      return;
-    }
-    pushHistory();
-    setPlacementOverride(selected, "deleted");
-    replaceElements((current) => current.filter((item) => item.id !== selected.id));
-    setSelectedId(null);
-  };
-
-  const deleteSelectedNote = () => {
-    if (!selectedNote) return;
-    pushHistory(); replaceNotes((current) => current.filter((note) => note.id !== selectedNote.id)); setSelectedNoteId(null);
   };
 
   const {
@@ -3719,174 +3542,62 @@ export default function Home() {
     setToast,
   });
 
-  // 이하는 공개 탐색창과 장소 상세 화면의 열기·닫기·이동 코드입니다.
-  const closePublicExplorerPanel = () => {
-    if (publicLayoutAccess !== "viewer") {
-      setGlobalStoriesOpen(false);
-      setPublicPanelExpanded(false);
-      return;
-    }
-    if (!confirmDiscardStoryPhoto()) return;
-    const current = (window.history.state ?? {}) as PublicHistoryState;
-    if (publicPanelIsExplorer(current.wondosimPanel)) {
-      setGlobalStoriesOpen(false);
-      setPublicPanelExpanded(false);
-      publicPreserveMapViewOnNextPopRef.current = true;
-      window.history.go(current.wondosimPanel === "explorer-expanded" && current.wondosimExpandedFromCollapsed ? -2 : -1);
-      return;
-    }
-    setGlobalStoriesOpen(false);
-    setPublicPanelExpanded(false);
-    publicMapViewBeforeFocusRef.current = null;
-  };
-
-  const toggleGlobalStories = () => {
-    const next = !globalStoriesOpen;
-    if (next) {
-      if (publicLayoutAccess === "viewer" && !confirmDiscardStoryPhoto()) return;
-      if (publicLayoutAccess === "viewer" && globalContentTab === "place-requests") setGlobalContentTab("places");
-      if (publicLayoutAccess === "editor" && globalContentTab === "places") setGlobalContentTab("reviews");
-      setGlobalStoriesPage(1);
-      setGlobalEventsPage(1);
-      setPlaceRequestsPage(1);
-      setSelectedId(null);
-      setSelectedFacilityId(null);
-      setSelectedDenseLabelId(null);
-      setPublicPanelExpanded(publicLayoutAccess === "viewer" && viewportDimensions.width <= 760);
-      if (publicLayoutAccess === "viewer") {
-        rememberPublicMapView();
-        writePublicHistory(viewportDimensions.width <= 760 ? "explorer-expanded" : "explorer", null, "push");
-      }
-    } else if (publicLayoutAccess === "viewer") {
-      closePublicExplorerPanel();
-      return;
-    }
-    setGlobalStoriesOpen(next);
-  };
-
-  const openGlobalManagement = (tab: "reviews" | "events") => {
-    setGlobalContentTab(tab);
-    if (tab === "reviews") {
-      setGlobalStoriesPage(1);
-      setGlobalStoriesRefreshKey((current) => current + 1);
-    } else {
-      setGlobalEventsPage(1);
-      setGlobalEventsRefreshKey((current) => current + 1);
-    }
-    setGlobalStoriesOpen(true);
-    setPublicPanelExpanded(false);
-    setSelectedDenseLabelId(null);
-  };
-
-  const openUnifiedContentManagement = () => {
-    openGlobalManagement(globalContentTab === "events" ? "events" : "reviews");
-  };
-
-  const publicPlaceItemForReference = (placeKey: string, placeName: string) => {
-    const directoryId = placeKey.startsWith("directory:") ? placeKey.slice("directory:".length) : "";
-    const normalized = normalizePlaceName(placeName);
-    return publicPlaceItems.find((item) => (
-      (directoryId && item.place.id === directoryId)
-      || normalizePlaceName(item.place.name) === normalized
-      || item.place.aliases?.some((alias) => normalizePlaceName(alias) === normalized)
-    ));
-  };
-
-  const focusPublicPlaceItem = (item: PublicPlaceListItem, showDetails = false) => {
-    if (!confirmDiscardStoryPhoto(item.id)) return;
-    rememberPublicMapView();
-    const current = (window.history.state ?? {}) as PublicHistoryState;
-    const from: NonNullable<PublicHistoryState["wondosimFrom"]> = current.wondosimPanel === "explorer" || current.wondosimPanel === "explorer-expanded"
-      ? current.wondosimPanel
-      : current.wondosimFrom ?? "map";
-    writePublicHistory("place", item.id, publicPanelIsPlace(current.wondosimPanel) ? "replace" : "push", from);
-    if (showDetails && viewportDimensions.width <= 760) writePublicHistory("place-expanded", item.id, "push", from, true);
-    setSelectedId(item.anchor.id);
-    setSelectedFacilityId(item.place.id === item.anchor.directoryId ? null : item.place.id);
-    setSelectedNoteId(null);
-    setSelectedDenseLabelId(null);
-    setPublicPanelExpanded(false);
-    setPublicPlaceExpanded(showDetails && viewportDimensions.width <= 760);
-    setGlobalStoriesOpen(false);
-    focusMapPosition(item.anchor.x, item.anchor.y, item.anchor.id, {
-      publicNavigation: true,
-      showDetails,
-    });
-  };
-
-  const closePublicPlacePanel = () => {
-    if (!confirmDiscardStoryPhoto()) return;
-    const current = (window.history.state ?? {}) as PublicHistoryState;
-    if (publicPanelIsPlace(current.wondosimPanel)) {
-      const returnToExplorer = publicPanelIsExplorer(current.wondosimFrom);
-      setSelectedId(null);
-      setSelectedFacilityId(null);
-      setPublicPlaceExpanded(false);
-      setGlobalStoriesOpen(returnToExplorer);
-      setPublicPanelExpanded(current.wondosimFrom === "explorer-expanded");
-      if (returnToExplorer) setGlobalContentTab("places");
-      publicPreserveMapViewOnNextPopRef.current = true;
-      window.history.go(current.wondosimPanel === "place-expanded" && current.wondosimExpandedFromCollapsed ? -2 : -1);
-      return;
-    }
-    setSelectedId(null);
-    setSelectedFacilityId(null);
-    setPublicPlaceExpanded(false);
-    publicMapViewBeforeFocusRef.current = null;
-  };
-
-  const openPublicPlaceList = () => {
-    if (!confirmDiscardStoryPhoto()) return;
-    const current = (window.history.state ?? {}) as PublicHistoryState;
-    const expanded = viewportDimensions.width <= 760;
-    if (publicPanelIsPlace(current.wondosimPanel) && publicPanelIsExplorer(current.wondosimFrom)) {
-      window.history.go(current.wondosimPanel === "place-expanded" && current.wondosimExpandedFromCollapsed ? -2 : -1);
-      return;
-    }
-    if (current.wondosimPanel === "place-expanded") {
-      publicNavigationAfterPopRef.current = "explorer";
-      window.history.go(-2);
-      return;
-    }
-    writePublicHistory(expanded ? "explorer-expanded" : "explorer", null, "replace");
-    setSelectedId(null);
-    setSelectedFacilityId(null);
-    setPublicPlaceExpanded(false);
-    setGlobalContentTab("places");
-    setGlobalStoriesOpen(true);
-    setPublicPanelExpanded(expanded);
-    restorePublicMapView(false);
-  };
-
-  const resetPublicMap = () => {
-    if (!confirmDiscardStoryPhoto()) return;
-    publicNavigationAfterPopRef.current = null;
-    publicMapViewBeforeFocusRef.current = null;
-    const nextPan = { x: 0, y: 0 };
-    zoomRef.current = fitZoom;
-    panRef.current = nextPan;
-    setZoom(fitZoom);
-    setMapPan(nextPan);
-    setMapRenderPan(nextPan);
-    setSelectedId(null);
-    setSelectedFacilityId(null);
-    setSelectedDenseLabelId(null);
-    setGlobalStoriesOpen(false);
-    setPublicPanelExpanded(false);
-    setPublicPlaceExpanded(false);
-    writePublicHistory("map", null, "replace");
-    setToast("전체 지도로 돌아왔습니다.");
-  };
-
-  const refreshVisibleMapRenderInfo = () => {
-    const currentPan = { ...panRef.current };
-    startTransition(() => {
-      setSettledLabelZoom(zoomRef.current);
-      setSettledLabelPan(currentPan);
-      setMapRenderRefreshRevision((current) => current + 1);
-    });
-    setToast("현재 화면의 라벨·마커 표시를 새로고침했습니다.");
-  };
+  // 공개 패널 전환·장소 포커스·복사·공유는 별도 내비게이션 작업공간에서 조립합니다.
+  const {
+    closePublicExplorerPanel,
+    toggleGlobalStories,
+    openUnifiedContentManagement,
+    focusPublicPlaceItem,
+    closePublicPlacePanel,
+    openPublicPlaceList,
+    resetPublicMap,
+    refreshVisibleMapRenderInfo,
+    copyPublicPlaceAddress,
+    sharePublicPlace,
+    openGlobalStoryPlace,
+    openGlobalEventPlace,
+  } = usePublicNavigationActions({
+    publicLayoutAccess,
+    globalStoriesOpen,
+    globalContentTab,
+    viewportDimensions,
+    publicPlaceItems,
+    selectedDirectoryPlace,
+    selected,
+    selectedDisplayName,
+    fitZoom,
+    zoomRef,
+    panRef,
+    publicPreserveMapViewOnNextPopRef,
+    publicMapViewBeforeFocusRef,
+    publicNavigationAfterPopRef,
+    confirmDiscardStoryPhoto,
+    rememberPublicMapView,
+    restorePublicMapView,
+    currentPublicPlaceId,
+    writePublicHistory,
+    focusMapPosition,
+    setGlobalStoriesOpen,
+    setGlobalContentTab,
+    setGlobalStoriesPage,
+    setGlobalStoriesRefreshKey,
+    setGlobalEventsPage,
+    setGlobalEventsRefreshKey,
+    setPlaceRequestsPage,
+    setSelectedId,
+    setSelectedFacilityId,
+    setSelectedNoteId,
+    setSelectedDenseLabelId,
+    setPublicPanelExpanded,
+    setPublicPlaceExpanded,
+    setZoom,
+    setMapPan,
+    setMapRenderPan,
+    setSettledLabelZoom,
+    setSettledLabelPan,
+    setMapRenderRefreshRevision,
+    setToast,
+  });
 
   useEffect(() => {
     if (publicLayoutAccess !== "viewer") return;
@@ -3934,44 +3645,6 @@ export default function Home() {
     window.addEventListener("keydown", handleViewerShortcut);
     return () => window.removeEventListener("keydown", handleViewerShortcut);
   }, [adminLoginOpen, fitZoom, globalStoriesOpen, openPublicPlaceList, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, publicPlaceQueryInputRef, setMapPan, shortcutHelpOpen]);
-
-  const copyPublicPlaceAddress = async () => {
-    const address = selectedDirectoryPlace?.address || selected?.address || "";
-    if (!address) return;
-    try {
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(address);
-      else {
-        const textarea = document.createElement("textarea");
-        textarea.value = address;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.append(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        textarea.remove();
-      }
-      setToast("주소를 복사했습니다.");
-    } catch {
-      setToast("주소를 복사하지 못했습니다. 길게 눌러 복사해 주세요.");
-    }
-  };
-
-  const sharePublicPlace = async () => {
-    const placeId = currentPublicPlaceId();
-    if (!placeId) return;
-    const url = new URL(publicUrlWithPlace(window.location.href, placeId), window.location.origin).toString();
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: `${selectedDisplayName} · 제주 원도심 아트맵`, text: `${selectedDisplayName} 장소 정보`, url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
-      setToast("장소 링크를 복사했습니다.");
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setToast("장소 링크를 공유하지 못했습니다.");
-    }
-  };
 
   useEffect(() => {
     if (publicLayoutAccess !== "viewer" || !publicPlaceItems.length) return;
@@ -4148,24 +3821,6 @@ export default function Home() {
     window.addEventListener("keydown", handleEscape, true);
     return () => window.removeEventListener("keydown", handleEscape, true);
   }, [adminLoginOpen, closeDatabaseEditor, closePlaceEventForm, closePlaceStoryReport, closePublicExplorerPanel, closePublicPlacePanel, databaseEditorOpen, globalStoriesOpen, placeEventFormOpen, placeRequestFormOpen, placeRequestPickingLocation, publicHistoryOpen, publicLayoutAccess, publicPanelExpanded, publicPlaceExpanded, selectedId, setPublicPanelExpansion, shortcutHelpOpen, storyReportTarget]);
-
-  const openGlobalStoryPlace = (story: PlaceStory) => {
-    const item = publicPlaceItemForReference(story.placeKey, story.placeName);
-    if (!item) {
-      setToast("현재 공개 지도에서 이 장소의 마커를 찾지 못했습니다.");
-      return;
-    }
-    focusPublicPlaceItem(item);
-  };
-
-  const openGlobalEventPlace = (place: PlaceEventPlace) => {
-    const item = publicPlaceItemForReference(place.placeKey, place.placeName);
-    if (!item) {
-      setToast("현재 공개 지도에서 이 장소의 마커를 찾지 못했습니다.");
-      return;
-    }
-    focusPublicPlaceItem(item);
-  };
 
   const submitSharedAdminLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

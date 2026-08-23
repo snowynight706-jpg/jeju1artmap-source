@@ -12,6 +12,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.deepEqual(APP_CLIENT_SOURCE_PATHS, [...new Set(APP_CLIENT_SOURCE_PATHS)]);
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/explorer-panel.tsx"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/use-public-navigation-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/use-public-place-workspace.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/client.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
@@ -25,6 +26,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPlaces.includes("../app/editor/places/actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-application-bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-admin-map-asset-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-admin-output-workspace.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
@@ -89,6 +91,41 @@ test("admin exports, snapshots, history, and publishing stay behind one output w
   assert.match(workspaceSource, /const saveEditorDraft = async/);
   assert.match(workspaceSource, /const publishCurrentLayout = async/);
   assert.match(workspaceSource, /const loadPublicHistoryEntry = async/);
+});
+
+test("admin asset uploads and selected-element quick actions stay behind one workspace boundary", async () => {
+  const [pageSource, actionsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/workspace/use-admin-map-asset-actions.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useAdminMapAssetActions\(\{/);
+  assert.doesNotMatch(pageSource, /const uploadBaseMap = async/);
+  assert.doesNotMatch(pageSource, /const applyMarkerStyle =/);
+  assert.doesNotMatch(pageSource, /const duplicateSelected =/);
+  assert.doesNotMatch(pageSource, /const deleteSelected =/);
+  assert.match(actionsSource, /const uploadBaseMap = async/);
+  assert.match(actionsSource, /const applyMarkerStyle =/);
+  assert.match(actionsSource, /const duplicateSelected =/);
+  assert.match(actionsSource, /const deleteSelected =/);
+});
+
+test("public panel transitions, focus, copy, and share stay behind one navigation action boundary", async () => {
+  const [pageSource, actionsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/use-public-navigation-actions.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /usePublicNavigationActions\(\{/);
+  assert.doesNotMatch(pageSource, /const closePublicExplorerPanel =/);
+  assert.doesNotMatch(pageSource, /const focusPublicPlaceItem =/);
+  assert.doesNotMatch(pageSource, /const sharePublicPlace =/);
+  assert.doesNotMatch(pageSource, /const openGlobalStoryPlace =/);
+  assert.match(pageSource, /const handlePopState = \(event: PopStateEvent\) =>/);
+  assert.match(actionsSource, /const closePublicExplorerPanel =/);
+  assert.match(actionsSource, /const focusPublicPlaceItem =/);
+  assert.match(actionsSource, /const sharePublicPlace =/);
+  assert.match(actionsSource, /const openGlobalStoryPlace =/);
 });
 
 test("page and public shells keep heavyweight panels behind lazy import boundaries", async () => {
