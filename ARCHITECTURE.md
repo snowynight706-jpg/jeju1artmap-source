@@ -4,7 +4,7 @@
 - `app/map/core/`: 지도 요소 기본값, 분류·색상·표시 크기, 장소 식별 키와 공용 TypeScript 계약
 - `app/map/calibration/model.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성과 보정 좌표 계산을 담당하는 순수 도메인 모듈
 - `app/map/labels/`: 라벨 밀집도·통합 배치·화면 경계·겹침 기하와 통합 라벨 설정 저장
-- `app/map/interaction/`: PC·모바일 변환 정책, 공유 확대율·이동 ref 동기화, 휠·핀치 RAF와 프로그램 이동 타이머의 생성·정리
+- `app/map/interaction/`: PC·모바일 변환 정책과 공유 확대율·이동 ref 동기화, 휠·핀치 RAF 및 프로그램 이동 타이머, 포인터·드래그·크기 조절·키보드 편집·지도 포커스 생명주기
 - `app/map/print/`: 장소별 출력 설정, 인쇄 충돌 감사, 고해상도 PNG 캔버스 합성과 설정 저장
 - `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 모바일 화면 밖 선별·성능 예산과 진단
 - `app/map/workspace/use-map-workspace-model.ts`: 지도 화면의 맞춤 축척, 화면 안 라벨 후보·예산·통합, 출력 정책·감사, 충돌 상태와 모바일 렌더 선별을 조립하는 큰 작업공간 모델. `map/labels`, `map/print`, `map/rendering`의 계산 모듈을 한 흐름으로 연결하고 `page.tsx`에는 상태와 사용자 동작 연결만 반환
@@ -26,6 +26,7 @@
 - `app/public/`: 공개 URL·패널 이동·카테고리·장소 포커스 규칙과 공개 장소 시트·원도심 탐색 표시 조립
 - `app/public/use-public-place-workspace.ts`: 공개 장소 카탈로그·행사 연결·검색·카테고리 표시 모델과 모바일 패널 드래그·안착 모션, History API 저장 원시 동작과 지도 시점 기억·복귀를 조립하는 공개 장소 작업공간
 - `app/public/use-public-navigation-actions.ts`: 공개 탐색·장소 패널 전환, 지도 초기화·장소 포커스, 주소 복사·장소 공유와 후기·행사 연결 장소 이동을 묶는 공개 내비게이션 작업공간
+- `app/public/use-public-navigation-lifecycle.ts`: 공개 지도 단축키, History API 초기화·`popstate` 복원과 Escape 닫기 우선순위를 묶는 공개 내비게이션 생명주기
 - `app/public/place-sheet.tsx`, `app/public/place-detail-content.tsx`: 장소 시트 외곽과 장소 선택 후에만 지연 로딩되는 상세·행사·후기 화면
 - `app/public/explorer-panel.tsx`, `app/public/explorer-activity-content.tsx`: 장소 목록·통합 탐색 외곽과 탭을 열 때만 지연 로딩되는 리뷰·행사 카드 화면; 관리자 진단·장소 요청도 해당 탭 경계에서 지연 로딩
 - `app/globals.css`: 지도·패널·모바일 PWA 반응형 스타일

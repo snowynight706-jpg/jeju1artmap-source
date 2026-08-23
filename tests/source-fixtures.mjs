@@ -13,6 +13,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/public/place-focus.mjs",
     "../app/public/place-sheet.tsx",
     "../app/public/use-public-navigation-actions.ts",
+    "../app/public/use-public-navigation-lifecycle.ts",
     "../app/public/use-public-place-workspace.ts",
   ]),
   contentClient: Object.freeze([
@@ -68,6 +69,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
   ]),
   mapInteraction: Object.freeze([
     "../app/map/interaction/stage-transform.mjs",
+    "../app/map/interaction/use-map-interaction-actions.ts",
     "../app/map/interaction/use-map-transform-controller.ts",
   ]),
   mapPrint: Object.freeze([

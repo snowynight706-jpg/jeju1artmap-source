@@ -13,6 +13,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/explorer-panel.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/use-public-navigation-actions.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/use-public-navigation-lifecycle.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/use-public-place-workspace.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/client.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
@@ -32,6 +33,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-editor-map-edit-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-interaction-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapPrint.includes("../app/map/print/export.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapRendering.includes("../app/map/rendering/mobile-render.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapWorkspace.includes("../app/map/workspace/use-map-workspace-model.ts"));
@@ -112,22 +114,28 @@ test("admin asset uploads and selected-element quick actions stay behind one wor
   assert.match(actionsSource, /const deleteSelected =/);
 });
 
-test("public panel transitions, focus, copy, and share stay behind one navigation action boundary", async () => {
-  const [pageSource, actionsSource] = await Promise.all([
+test("public panel actions and navigation lifecycle stay behind public boundaries", async () => {
+  const [pageSource, actionsSource, lifecycleSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/public/use-public-navigation-actions.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/use-public-navigation-lifecycle.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(pageSource, /usePublicNavigationActions\(\{/);
+  assert.match(pageSource, /usePublicNavigationLifecycle\(\{/);
   assert.doesNotMatch(pageSource, /const closePublicExplorerPanel =/);
   assert.doesNotMatch(pageSource, /const focusPublicPlaceItem =/);
   assert.doesNotMatch(pageSource, /const sharePublicPlace =/);
   assert.doesNotMatch(pageSource, /const openGlobalStoryPlace =/);
-  assert.match(pageSource, /const handlePopState = \(event: PopStateEvent\) =>/);
+  assert.doesNotMatch(pageSource, /const handlePopState = \(event: PopStateEvent\) =>/);
+  assert.doesNotMatch(pageSource, /const handleEscape = \(event: KeyboardEvent\) =>/);
   assert.match(actionsSource, /const closePublicExplorerPanel =/);
   assert.match(actionsSource, /const focusPublicPlaceItem =/);
   assert.match(actionsSource, /const sharePublicPlace =/);
   assert.match(actionsSource, /const openGlobalStoryPlace =/);
+  assert.match(lifecycleSource, /const handleViewerShortcut = \(event: KeyboardEvent\) =>/);
+  assert.match(lifecycleSource, /const handlePopState = \(event: PopStateEvent\) =>/);
+  assert.match(lifecycleSource, /const handleEscape = \(event: KeyboardEvent\) =>/);
 });
 
 test("page and public shells keep heavyweight panels behind lazy import boundaries", async () => {
@@ -413,4 +421,21 @@ test("map transform animation refs and cleanup stay behind the interaction contr
   assert.match(controllerSource, /const touchTransformFrameRef = useRef<number \| null>\(null\)/);
   assert.match(controllerSource, /const wheelCommitTimerRef = useRef<number \| null>\(null\)/);
   assert.match(controllerSource, /useEffect\(\(\) => \(\) => \{/);
+});
+
+test("map pointer lifecycle and editor gestures stay behind the interaction action boundary", async () => {
+  const [pageSource, actionsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/interaction/use-map-interaction-actions.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useMapInteractionActions\(\{/);
+  assert.doesNotMatch(pageSource, /const recordMapSettle = useCallback/);
+  assert.doesNotMatch(pageSource, /const handleMove = \(event: PointerEvent\) =>/);
+  assert.doesNotMatch(pageSource, /const startPan =/);
+  assert.doesNotMatch(pageSource, /const focusMapPosition =/);
+  assert.match(actionsSource, /const recordMapSettle = useCallback/);
+  assert.match(actionsSource, /const handleMove = \(event: PointerEvent\) =>/);
+  assert.match(actionsSource, /const startPan = useCallback/);
+  assert.match(actionsSource, /const focusMapPosition = useCallback/);
 });
