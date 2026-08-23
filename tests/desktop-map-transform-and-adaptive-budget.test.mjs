@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { horizontalMapFitZoom, mapStageGestureTransform } from "../app/map/rendering/stage-transform.mjs";
+import { horizontalMapFitZoom, mapStageGestureTransform } from "../app/map/interaction/stage-transform.mjs";
 import { lowTierBaseMapNeedsHighResolution } from "../app/map/rendering/base-map-quality.mjs";
 import {
   HIGH_MOBILE_RENDER_BUDGET,
@@ -22,7 +22,7 @@ test("public desktop scaling stays composited while admin restores direct wheel 
   assert.equal(mapStageGestureTransform(1.25, 760), "translateX(-50%) scale(1.25)");
   assert.match(cssSource, /@media \(min-width: 761px\) \{\s*\.map-stage \{ left: auto; margin-inline: auto; transform: none; \}/);
   assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(scale, viewport\.clientWidth\)/);
-  assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(targetZoom \/ currentLayoutZoom, viewportWidth\)/);
+  assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(target\.zoom \/ currentLayoutZoom, viewportWidth\)/);
   assert.doesNotMatch(pageSource, /stage\.style\.transform = `translateX\(-50%\) scale\(\$\{scale\}\)`/);
   assert.ok(Math.abs(horizontalMapFitZoom(1200, 1180, 34) - (1200 - 34) / 1180) < 1e-9);
   assert.ok(Math.abs(horizontalMapFitZoom(360, 1120, 18) - (360 - 18) / 1120) < 1e-9);

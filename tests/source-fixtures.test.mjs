@@ -14,6 +14,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapPrint.includes("../app/map/print/export.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapRendering.includes("../app/map/rendering/mobile-render.ts"));
 
@@ -96,4 +97,19 @@ test("label, print, and mobile rendering calculations stay outside the route com
   assert.match(auditSource, /export function buildPrintAudit\(/);
   assert.match(exportSource, /export async function renderHighResolutionMapPng\(/);
   assert.match(mobileRenderSource, /export function calculateMobileMapRenderBounds\(/);
+});
+
+test("map transform animation refs and cleanup stay behind the interaction controller", async () => {
+  const [pageSource, controllerSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/interaction/use-map-transform-controller.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useMapTransformController\(\{/);
+  assert.doesNotMatch(pageSource, /const touchTransformFrameRef = useRef/);
+  assert.doesNotMatch(pageSource, /const wheelCommitTimerRef = useRef/);
+  assert.match(pageSource, /const \[zoom, setZoom\] = useState\(0\.72\)/);
+  assert.match(controllerSource, /const touchTransformFrameRef = useRef<number \| null>\(null\)/);
+  assert.match(controllerSource, /const wheelCommitTimerRef = useRef<number \| null>\(null\)/);
+  assert.match(controllerSource, /useEffect\(\(\) => \(\) => \{/);
 });

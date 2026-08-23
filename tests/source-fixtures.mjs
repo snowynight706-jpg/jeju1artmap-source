@@ -31,6 +31,10 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/map/labels/geometry.ts",
     "../app/map/labels/use-settings-persistence.ts",
   ]),
+  mapInteraction: Object.freeze([
+    "../app/map/interaction/stage-transform.mjs",
+    "../app/map/interaction/use-map-transform-controller.ts",
+  ]),
   mapPrint: Object.freeze([
     "../app/map/print/audit.ts",
     "../app/map/print/export.ts",
@@ -44,7 +48,6 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/map/rendering/mobile-render-budget.mjs",
     "../app/map/rendering/mobile-render.ts",
     "../app/map/rendering/performance-diagnostics.mjs",
-    "../app/map/rendering/stage-transform.mjs",
   ]),
 });
 

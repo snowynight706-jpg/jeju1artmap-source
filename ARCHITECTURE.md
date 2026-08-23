@@ -4,8 +4,9 @@
 - `app/map/core/`: 지도 요소 기본값, 분류·색상·표시 크기, 장소 식별 키와 공용 TypeScript 계약
 - `app/map/calibration/model.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성과 보정 좌표 계산을 담당하는 순수 도메인 모듈
 - `app/map/labels/`: 라벨 밀집도·통합 배치·화면 경계·겹침 기하와 통합 라벨 설정 저장
+- `app/map/interaction/`: PC·모바일 변환 정책, 공유 확대율·이동 ref 동기화, 휠·핀치 RAF와 프로그램 이동 타이머의 생성·정리
 - `app/map/print/`: 장소별 출력 설정, 인쇄 충돌 감사, 고해상도 PNG 캔버스 합성과 설정 저장
-- `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 지도 변환, 모바일 화면 밖 선별·성능 예산과 진단
+- `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 모바일 화면 밖 선별·성능 예산과 진단
 - `app/editor/document/`: 런타임 ID 복구, 문서 복제, 배치·잠금 좌표 규칙과 메인 허브 영속성 안정화
 - `app/editor/persistence/`: 편집 초안 복원 우선순위, 기기 자동저장, 공개 레이아웃 API 계약, 보정·잠금·배치 설정의 서버 비교와 지연 저장
 - `app/public-place-detail-content.tsx`: 장소 선택 후에만 지연 로딩되는 공개 상세·행사·후기 화면

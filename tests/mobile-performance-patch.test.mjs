@@ -31,7 +31,7 @@ test("mobile map manipulation avoids layout-heavy effects per frame", () => {
 test("map labels leave the paint path only after drag or zoom actually starts", () => {
   assert.match(pageSource, /pendingTouchTransformRef\.current = \{ zoom: nextZoom, pan: nextPan \};\s*viewportRef\.current\?\.classList\.add\("is-map-labels-suspended"\)/);
   assert.match(pageSource, /classList\.remove\("is-direct-manipulation", "is-map-labels-suspended"\)/);
-  assert.match(pageSource, /viewportElement\.classList\.add\("is-map-labels-suspended"\)/);
+  assert.match(pageSource, /viewport\.classList\.add\("is-map-labels-suspended"\)/);
   assert.match(cssSource, /\.label, \.dense-label-layer, \.dense-label-connector \{ transition: opacity var\(--motion-label\)/);
   assert.match(cssSource, /\.map-viewport:is\(\.is-map-labels-suspended, \.is-zooming\) :is\(\.label, \.dense-label-layer, \.dense-label-connector\) \{ visibility: hidden; opacity: 0; pointer-events: none; transition-duration: 0s; \}/);
   assert.doesNotMatch(pageSource, /beginTouchMapTransform[\s\S]{0,500}classList\.add\("is-map-labels-suspended"\)/);
@@ -51,7 +51,7 @@ test("programmatic focus animates compositor transforms and commits layout once"
   assert.match(cssSource, /\.map-stage \{[^}]*width: var\(--map-stage-width, 72%\)/);
   assert.match(pageSource, /stageWrap\.style\.transition = "transform \.3s/);
   assert.match(pageSource, /stage\.style\.transition = "transform \.3s/);
-  assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(targetZoom \/ currentLayoutZoom, viewportWidth\)/);
+  assert.match(pageSource, /stage\.style\.transform = mapStageGestureTransform\(target\.zoom \/ currentLayoutZoom, viewportWidth\)/);
   assert.match(pageSource, /setMapLayoutZoom\(target\.zoom\)/);
   assert.doesNotMatch(cssSource, /\.map-viewport\.is-programmatic-focus \.map-stage \{ transition: width/);
   assert.doesNotMatch(pageSource, /style=\{\{ aspectRatio: `\$\{MAP_ASPECT\}`, width:/);
