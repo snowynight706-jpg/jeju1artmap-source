@@ -5,7 +5,8 @@ import test from "node:test";
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
-const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public/place-detail-content.tsx", import.meta.url), "utf8");
+const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
 const adminFolderSource = await readFile(new URL("../app/admin-folder.tsx", import.meta.url), "utf8");
 const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -181,22 +182,22 @@ test("direct DB editing can collect places by primary category with visible coun
 });
 
 test("public place rows show two representative tags, disclose the rest, and use an icon details action", () => {
-  const explorerBlock = pageSource.match(/<section className="public-place-explorer">[\s\S]*?<\/section> : globalContentTab/)?.[0] ?? "";
+  const explorerBlock = publicExplorerPanelSource.match(/<section className="public-place-explorer">[\s\S]*?<\/section> : tabs\.active/)?.[0] ?? "";
   assert.match(explorerBlock, /className="public-place-list-header"[\s\S]{0,180}>장소명<[\s\S]{0,80}>대분류<[\s\S]{0,80}>추가분류<[\s\S]{0,160}className="public-place-detail-heading"/);
   assert.match(explorerBlock, /className="public-place-identity"/);
   assert.doesNotMatch(explorerBlock, /public-place-symbol|<img src=\{meta\.iconSrc\}/);
-  assert.match(explorerBlock, /className="public-place-primary-category"[\s\S]{0,100}\{meta\.name\}/);
-  assert.match(explorerBlock, /className=\{`public-place-additional-category \$\{remainingTagNames\.length \? "has-more" : ""\} \$\{expandedAdditionalCategoryItemId === item\.id \? "is-expanded" : ""\}`\}/);
-  assert.match(explorerBlock, /representativeTagNames = tagNames\.slice\(0, 2\)/);
-  assert.match(explorerBlock, /remainingTagNames = tagNames\.slice\(2\)/);
-  assert.match(explorerBlock, /className="public-place-additional-category-disclosure" aria-expanded=\{expandedAdditionalCategoryItemId === item\.id\}[\s\S]{0,180}aria-label=\{`\$\{representativeTagNames\.join\(", "\)\} 외 추가분류 \$\{remainingTagNames\.length\}개 더 보기`\}/);
+  assert.match(explorerBlock, /className="public-place-primary-category"[\s\S]{0,140}\{item\.primaryCategoryName\}/);
+  assert.match(explorerBlock, /className=\{`public-place-additional-category \$\{remainingTagNames\.length \? "has-more" : ""\} \$\{places\.expandedAdditionalCategoryItemId === item\.id \? "is-expanded" : ""\}`\}/);
+  assert.match(explorerBlock, /representativeTagNames = item\.tagNames\.slice\(0, 2\)/);
+  assert.match(explorerBlock, /remainingTagNames = item\.tagNames\.slice\(2\)/);
+  assert.match(explorerBlock, /className="public-place-additional-category-disclosure" aria-expanded=\{places\.expandedAdditionalCategoryItemId === item\.id\}[\s\S]{0,180}aria-label=\{`\$\{representativeTagNames\.join\(", "\)\} 외 추가분류 \$\{remainingTagNames\.length\}개 더 보기`\}/);
   assert.doesNotMatch(explorerBlock, /<details className="public-place-additional-category-disclosure"/);
-  assert.match(explorerBlock, /setExpandedAdditionalCategoryItemId\(\(current\) => current === item\.id \? null : item\.id\)/);
-  assert.match(explorerBlock, /onPointerLeave=\{\(event\) => \{[\s\S]{0,180}event\.pointerType === "mouse"[\s\S]{0,180}current === item\.id \? null : current/);
+  assert.match(explorerBlock, /places\.onExpandedAdditionalCategoryChange\(places\.expandedAdditionalCategoryItemId === item\.id \? null : item\.id\)/);
+  assert.match(explorerBlock, /onPointerLeave=\{\(event\) => \{[\s\S]{0,180}event\.pointerType === "mouse"[\s\S]{0,180}places\.onExpandedAdditionalCategoryChange\(null\)/);
   assert.match(explorerBlock, /className="public-place-additional-category-count" aria-hidden="true">\+\{remainingTagNames\.length\}/);
   assert.match(explorerBlock, /className="public-place-additional-category-popover" data-density=\{remainingTagNames\.length <= 2 \? "compact" : "adaptive"\} role="list" aria-label="나머지 추가분류"/);
-  assert.match(explorerBlock, /className="public-place-row-action"[\s\S]{0,100}focusPublicPlaceItem\(item\)[\s\S]{0,140}지도에서 찾기/);
-  assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}focusPublicPlaceItem\(item, true\)[\s\S]{0,180}aria-label=\{`\$\{item\.displayName\} 상세보기`\}[\s\S]{0,140}<MagnifierIcon \/><\/button>/);
+  assert.match(explorerBlock, /className="public-place-row-action"[\s\S]{0,120}places\.onFocusPlace\(item\.id, false\)[\s\S]{0,140}지도에서 찾기/);
+  assert.match(explorerBlock, /className="public-place-open-action"[\s\S]{0,180}places\.onFocusPlace\(item\.id, true\)[\s\S]{0,180}aria-label=\{`\$\{item\.displayName\} 상세보기`\}[\s\S]{0,140}<MagnifierIcon \/><\/button>/);
   assert.doesNotMatch(explorerBlock, />상세보기<\/button>/);
   assert.doesNotMatch(explorerBlock, /className="public-place-map-action"|className="public-place-detail-action"/);
   assert.doesNotMatch(explorerBlock, /item\.place\.area|권역 미입력|public-place-meta/);

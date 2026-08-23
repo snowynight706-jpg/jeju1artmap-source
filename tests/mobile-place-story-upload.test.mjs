@@ -5,7 +5,7 @@ import test from "node:test";
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
-const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public/place-detail-content.tsx", import.meta.url), "utf8");
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../public/service-worker.js", import.meta.url), "utf8");
@@ -32,7 +32,7 @@ test("mobile photos have a native picker and resilient encoding fallbacks", () =
   assert.match(pageSource, /const retainedFile = new File\(\[bytes\]/);
   assert.match(pageSource, /void retainPlaceStoryPhoto\(file\)/);
   assert.match(publicPlaceDetailSource, /임시 사본은 후기 등록 완료 후 자동 삭제됩니다/);
-  assert.match(pageSource, /storyCanSubmit=\{!placeStorySubmitting && !placeStoryPhotoRetaining && Boolean\(placeStoryAuthor\.trim\(\)\) && placeStoryText\.trim\(\)\.length >= 2\}/);
+  assert.match(pageSource, /storyCanSubmit: !placeStorySubmitting && !placeStoryPhotoRetaining && Boolean\(placeStoryAuthor\.trim\(\)\) && placeStoryText\.trim\(\)\.length >= 2/);
   assert.match(pageSource, /errorCode = error instanceof Error[\s\S]{0,180}"photo-read-failed"/);
   assert.match(pageSource, /updatePlaceStoryPhoto\(null\);[\s\S]{0,220}setPlaceStoryFormOpen\(false\)/);
   assert.match(pageSource, /const STORY_PHOTO_TARGET_BYTES = 1\.5 \* 1024 \* 1024/);

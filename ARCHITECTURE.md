@@ -9,8 +9,9 @@
 - `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 모바일 화면 밖 선별·성능 예산과 진단
 - `app/editor/document/`: 런타임 ID 복구, 문서 복제, 배치·잠금 좌표 규칙과 메인 허브 영속성 안정화
 - `app/editor/persistence/`: 편집 초안 복원 우선순위, 기기 자동저장, 공개 레이아웃 API 계약, 보정·잠금·배치 설정의 서버 비교와 지연 저장
-- `app/public-place-detail-content.tsx`: 장소 선택 후에만 지연 로딩되는 공개 상세·행사·후기 화면
-- `app/public-explorer-activity-content.tsx`: 원도심 탐색에서 리뷰·행사 탭을 열 때만 지연 로딩되는 카드 화면
+- `app/public/`: 공개 URL·패널 이동·카테고리·장소 포커스 규칙과 공개 장소 시트·원도심 탐색 표시 조립
+- `app/public/place-sheet.tsx`, `app/public/place-detail-content.tsx`: 장소 시트 외곽과 장소 선택 후에만 지연 로딩되는 상세·행사·후기 화면
+- `app/public/explorer-panel.tsx`, `app/public/explorer-activity-content.tsx`: 장소 목록·통합 탐색 외곽과 탭을 열 때만 지연 로딩되는 리뷰·행사 카드 화면; 관리자 진단·장소 요청도 해당 탭 경계에서 지연 로딩
 - `app/globals.css`: 지도·패널·모바일 PWA 반응형 스타일
 - `app/admin-*.tsx`: 지연 로딩되는 관리자 전용 화면
 - `app/admin-place-event-dialog.tsx`: 관리자 행사 등록·수정 시에만 불러오는 행사 입력 창

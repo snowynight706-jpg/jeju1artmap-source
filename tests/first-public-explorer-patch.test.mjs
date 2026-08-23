@@ -5,6 +5,7 @@ import test from "node:test";
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
+const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
 const adminDatabaseSource = await readFile(new URL("../app/admin-database-editor.tsx", import.meta.url), "utf8");
 const taxonomySource = await readFile(new URL("../app/place-taxonomy.ts", import.meta.url), "utf8");
 const directoryRouteSource = await readFile(new URL("../app/api/place-directory/route.ts", import.meta.url), "utf8");
@@ -50,8 +51,8 @@ test("communication center is the persisted and visible workation main hub", () 
   assert.match(taxonomySource, /\? "제주소통협력센터"\s*:\s*name/);
   assert.match(pageSource, /publicElementName = isMainHub \? "제주소통협력센터" : element\.name/);
   assert.match(pageSource, /className=\{`map-focus-pointer \$\{isMainHub \? "main-hub-badge" : "located-place-badge"\}/);
-  assert.match(pageSource, /<article className=\{`\$\{selectedItem \? "selected" : ""\} \$\{item\.isMainHub \? "main-hub" : ""\} \$\{eventListedInCulture \? "event-linked" : ""\}`\}/);
-  assert.doesNotMatch(pageSource, /<img src=\{meta\.iconSrc\}/);
+  assert.match(publicExplorerPanelSource, /<article className=\{`\$\{item\.selected \? "selected" : ""\} \$\{item\.isMainHub \? "main-hub" : ""\} \$\{item\.eventListedInCulture \? "event-linked" : ""\}`\}/);
+  assert.doesNotMatch(publicExplorerPanelSource, /<img src=\{meta\.iconSrc\}/);
   assert.match(pageSource, /const initialElements: MapElement\[\] = ensureMainHubMapElement/);
   assert.match(metadataMigration, /featured_role` = 'workation-main-hub'/);
   assert.match(metadataMigration, /\["creative-startup","event-rental","experience-education"\]/);

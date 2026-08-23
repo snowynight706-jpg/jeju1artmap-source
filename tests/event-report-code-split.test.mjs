@@ -6,7 +6,7 @@ import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
 const eventDialogSource = await readFile(new URL("../app/admin-place-event-dialog.tsx", import.meta.url), "utf8");
-const explorerActivitySource = await readFile(new URL("../app/public-explorer-activity-content.tsx", import.meta.url), "utf8");
+const explorerActivitySource = await readFile(new URL("../app/public/explorer-activity-content.tsx", import.meta.url), "utf8");
 const eventRouteSource = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const storyRouteSource = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
 const migrationSource = await readFile(new URL("../drizzle/0019_late_morph.sql", import.meta.url), "utf8");

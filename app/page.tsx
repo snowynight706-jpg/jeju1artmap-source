@@ -3,7 +3,6 @@
 
 import {
   ChangeEvent,
-  type CSSProperties,
   FormEvent,
   PointerEvent as ReactPointerEvent,
   lazy,
@@ -136,8 +135,10 @@ import {
   optionalLabelBudgetForScale,
 } from "./map/labels/density.mjs";
 import { publicDenseLabelViewport } from "./map/labels/dense-viewport.mjs";
-import { placesForPublicCategory } from "./public-place-category.mjs";
-import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
+import PublicExplorerPanel, { type PublicExplorerPlaceRow, type PublicExplorerTab } from "./public/explorer-panel";
+import { placesForPublicCategory } from "./public/place-category.mjs";
+import { publicPlaceFocusZoom } from "./public/place-focus.mjs";
+import PublicPlaceSheet from "./public/place-sheet";
 import { useMapTransformController } from "./map/interaction/use-map-transform-controller";
 import { horizontalMapFitZoom } from "./map/interaction/stage-transform.mjs";
 import { lowTierBaseMapNeedsHighResolution } from "./map/rendering/base-map-quality.mjs";
@@ -166,7 +167,7 @@ import {
   publicPanelIsPlace,
   publicPlaceDirectionsUrl,
   publicUrlWithPlace,
-} from "./public-convenience.mjs";
+} from "./public/navigation.mjs";
 import {
   consolidateMainHubDirectoryPlaces,
   isMainHubPersistenceTarget,
@@ -196,12 +197,8 @@ import type { AdminPlaceRequestRecord } from "./admin-place-request-list";
 // 이하는 필요할 때만 불러오는 관리자·공개 화면 모듈 코드입니다.
 
 const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
-const AdminDiagnosticsPanel = lazy(() => import("./admin-diagnostics-panel"));
 const AdminFolder = lazy(() => import("./admin-folder"));
 const AdminPlaceEventDialog = lazy(() => import("./admin-place-event-dialog"));
-const AdminPlaceRequestList = lazy(() => import("./admin-place-request-list"));
-const PublicPlaceDetailContent = lazy(() => import("./public-place-detail-content"));
-const PublicExplorerActivityContent = lazy(() => import("./public-explorer-activity-content"));
 
 // 이하는 지도 자산, 서버 API 주소, 저장 키에 관한 공통 설정 코드입니다.
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -297,7 +294,7 @@ const uiThemes = [
   { id: "harbor-morning", name: "항구의 아침", shortName: "항구", colors: ["#F0F3F7", "#C8D2E0", "#8EA2BB", "#4E647A", "#26313B"] },
 ] as const;
 
-// 이하는 화면 테마 선택기와 검색 아이콘을 그리는 작은 UI 코드입니다.
+// 이하는 화면 테마 선택기를 그리는 작은 UI 코드입니다.
 type UiThemeId = (typeof uiThemes)[number]["id"];
 
 function isUiThemeId(value: unknown): value is UiThemeId {
@@ -306,13 +303,6 @@ function isUiThemeId(value: unknown): value is UiThemeId {
 
 function UiThemeSwatch({ colors }: { colors: readonly string[] }) {
   return <span className="ui-theme-swatch" aria-hidden="true">{colors.map((color, index) => <i style={{ background: color }} key={`${color}-${index}`} />)}</span>;
-}
-
-function MagnifierIcon({ className }: { className?: string }) {
-  return <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="10.5" cy="10.5" r="5.75" fill="none" stroke="currentColor" strokeWidth="1.8" />
-    <path d="m14.75 14.75 4.5 4.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-  </svg>;
 }
 
 function UiThemePicker({ activeTheme, compact = false, onSelect }: {
@@ -2421,6 +2411,7 @@ export default function Home() {
     && selectedFacilityPlace.locationGroupId === selectedAnchorDirectoryPlace?.locationGroupId
     ? selectedFacilityPlace
     : selectedAnchorDirectoryPlace;
+  const selectedDirectoryPlaceId = selectedDirectoryPlace?.id ?? null;
   const selectedUnlinkedPrimaryCategory = selected && isPrimaryPublicCategory(directoryCategory(selected.category))
     ? directoryCategory(selected.category)
     : null;
@@ -2463,6 +2454,12 @@ export default function Home() {
   const selectedLocationGroupPlaces = selectedLocationGroupId
     ? directoryPlacesByGroup.get(selectedLocationGroupId) ?? []
     : [];
+  const selectedPublicCategory = selected
+    ? selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected) : categoryOf(selected.category)
+    : null;
+  const selectedPublicCategoryName = selectedDirectoryPlace?.featuredRole === MAIN_HUB_ROLE
+    ? "워크케이션 메인 거점"
+    : selectedPublicCategory?.name ?? "";
   const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces), [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions]);
   const secondaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"), [effectiveCalibrationPoints]);
   const tertiaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"), [effectiveCalibrationPoints]);
@@ -2913,6 +2910,21 @@ export default function Home() {
       ? scopedItems.filter((item) => publicPlacePresentationById.get(item.id)?.searchText.includes(query))
       : scopedItems;
   }, [eventLinkedPublicPlaceIds, publicPlaceCategory, publicPlaceItems, publicPlacePresentationById, publicPlaceQuery]);
+
+  const publicExplorerPlaceRows: PublicExplorerPlaceRow[] = filteredPublicPlaceItems.map((item) => {
+    const meta = publicCategoryMetaForPlace(item.place, item.anchor);
+    return {
+      id: item.id,
+      displayName: item.displayName,
+      isMainHub: item.isMainHub,
+      selected: selectedId === item.anchor.id && selectedDirectoryPlaceId === item.place.id,
+      eventListedInCulture: publicPlaceCategory === "culture" && item.categoryId !== "culture" && eventLinkedPublicPlaceIds.has(item.id),
+      markerColor: categoryOf(item.anchor.category).color,
+      primaryCategoryName: meta.name,
+      primaryCategoryColor: meta.color,
+      tagNames: publicPlacePresentationById.get(item.id)?.tagNames ?? [],
+    };
+  });
 
   const displayDenseLabelExcludedIds = useMemo(() => [...new Set([
     ...denseLabelExcludedIds,
@@ -8173,55 +8185,58 @@ export default function Home() {
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <aside ref={publicPlacePanelRef} className={`public-place-sheet ${publicPlaceExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "place" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "place" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={`${selectedDisplayName} 장소 정보`} aria-busy={publicPlaceDetailLoading}>
-            <div className="public-panel-drag-handle" role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소 정보 패널 높이 조절" onPointerDown={(event) => startPublicPanelDrag(event, "place", publicPlaceExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></div>
-            <header className="public-place-sheet-head">
-              <div><span style={{ color: selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).color : categoryOf(selected.category).color }}>{selectedDirectoryPlace?.featuredRole === MAIN_HUB_ROLE ? "워크케이션 메인 거점" : selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected).name : categoryOf(selected.category).name}</span><strong>{selectedDisplayName}</strong></div>
-              <div className="public-place-sheet-actions"><button type="button" className="public-place-list-back" onClick={openPublicPlaceList} aria-label="장소 목록으로 돌아가기">목록</button><button type="button" onClick={closePublicPlacePanel} aria-label="장소 정보 닫기">×</button></div>
-            </header>
-            <div className="public-place-sheet-scroll">
-              <Suspense fallback={<div className="public-place-detail-loading" role="status" aria-live="polite"><span aria-hidden="true" /><strong>장소 화면을 준비하는 중입니다.</strong></div>}>
-                <PublicPlaceDetailContent
-                  loading={publicPlaceDetailLoading}
-                  placeName={selectedDisplayName}
-                  locationPlaces={selectedLocationGroupPlaces.map((place) => ({ id: place.id, name: place.name, active: place.id === selectedDirectoryPlace?.id }))}
-                  address={selectedDirectoryPlace?.address || selected.address}
-                  convenienceNames={convenienceAttributeDefinitions.filter((definition) => sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).includes(definition.id)).map((definition) => definition.name)}
-                  description={selectedDirectoryPlace?.description ?? ""}
-                  operatingInfo={selectedDirectoryPlace?.operatingInfo ?? ""}
-                  notes={selectedDirectoryPlace?.notes ?? ""}
-                  directionsUrl={publicPlaceDirectionsUrl(selectedDisplayName, selectedDirectoryPlace?.address || selected.address, selectedDirectoryPlace?.mapUrl)}
-                  events={placeEvents.map((event) => ({ id: event.id, photoUrl: event.photoUrl, eventName: event.eventName, eventInfo: event.eventInfo, scheduleLabel: eventScheduleLabel(event.startsAt, event.endsAt) }))}
-                  stories={publishedPlaceStories.map((story) => ({ id: story.id, authorName: story.authorName, reviewText: story.reviewText, photoUrl: story.photoUrl, createdAt: story.createdAt, dateLabel: storyDateLabel(story.createdAt), reported: reportedStoryIds.has(story.id) }))}
-                  storiesLoading={placeStoriesLoading}
-                  storyFormOpen={placeStoryFormOpen}
-                  storyAuthor={placeStoryAuthor}
-                  storyText={placeStoryText}
-                  cameraPermissionClass={storyCameraPermission}
-                  cameraPermissionLabel={storyCameraPermissionLabel(storyCameraPermission)}
-                  cameraPermissionRequesting={storyCameraPermission === "requesting"}
-                  cameraPermissionGranted={storyCameraPermission === "granted"}
-                  photoRetaining={placeStoryPhotoRetaining}
-                  photoSelected={Boolean(placeStoryPhoto)}
-                  photoPreview={placeStoryPhotoPreview ?? ""}
-                  storySubmitting={placeStorySubmitting}
-                  storyCanSubmit={!placeStorySubmitting && !placeStoryPhotoRetaining && Boolean(placeStoryAuthor.trim()) && placeStoryText.trim().length >= 2}
-                  themePicker={selectedHasThemeEasterEgg ? <UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} /> : undefined}
-                  onLocationSelect={(placeId) => { const item = publicPlaceItems.find((candidate) => candidate.place.id === placeId); if (item) focusPublicPlaceItem(item); }}
-                  onCopyAddress={() => { void copyPublicPlaceAddress(); }}
-                  onShare={() => { void sharePublicPlace(); }}
-                  onToggleStoryForm={togglePlaceStoryForm}
-                  onStoryAuthorChange={setPlaceStoryAuthor}
-                  onStoryTextChange={setPlaceStoryText}
-                  onRequestCameraPermission={() => { void requestPlaceStoryCameraPermission(); }}
-                  onPhotoSelected={(file) => { void retainPlaceStoryPhoto(file); }}
-                  onRemovePhoto={() => updatePlaceStoryPhoto(null)}
-                  onSubmitStory={() => { void submitPlaceStory(); }}
-                  onReportStory={(storyId) => { const story = publishedPlaceStories.find((candidate) => candidate.id === storyId); if (story) openPlaceStoryReport(story); }}
-                />
-              </Suspense>
-            </div>
-          </aside>}
+          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <PublicPlaceSheet
+            panelRef={publicPlacePanelRef}
+            expanded={publicPlaceExpanded}
+            dragging={publicPanelDrag?.target === "place"}
+            dragOffsetY={publicPanelDrag?.target === "place" ? publicPanelDrag.offsetY : 0}
+            placeName={selectedDisplayName}
+            categoryName={selectedPublicCategoryName}
+            categoryColor={selectedPublicCategory?.color ?? categoryOf(selected.category).color}
+            detail={{
+              loading: publicPlaceDetailLoading,
+              placeName: selectedDisplayName,
+              locationPlaces: selectedLocationGroupPlaces.map((place) => ({ id: place.id, name: place.name, active: place.id === selectedDirectoryPlace?.id })),
+              address: selectedDirectoryPlace?.address || selected.address,
+              convenienceNames: convenienceAttributeDefinitions.filter((definition) => sanitizeConvenienceAttributes(selectedDirectoryPlace?.convenienceAttributes).includes(definition.id)).map((definition) => definition.name),
+              description: selectedDirectoryPlace?.description ?? "",
+              operatingInfo: selectedDirectoryPlace?.operatingInfo ?? "",
+              notes: selectedDirectoryPlace?.notes ?? "",
+              directionsUrl: publicPlaceDirectionsUrl(selectedDisplayName, selectedDirectoryPlace?.address || selected.address, selectedDirectoryPlace?.mapUrl),
+              events: placeEvents.map((event) => ({ id: event.id, photoUrl: event.photoUrl, eventName: event.eventName, eventInfo: event.eventInfo, scheduleLabel: eventScheduleLabel(event.startsAt, event.endsAt) })),
+              stories: publishedPlaceStories.map((story) => ({ id: story.id, authorName: story.authorName, reviewText: story.reviewText, photoUrl: story.photoUrl, createdAt: story.createdAt, dateLabel: storyDateLabel(story.createdAt), reported: reportedStoryIds.has(story.id) })),
+              storiesLoading: placeStoriesLoading,
+              storyFormOpen: placeStoryFormOpen,
+              storyAuthor: placeStoryAuthor,
+              storyText: placeStoryText,
+              cameraPermissionClass: storyCameraPermission,
+              cameraPermissionLabel: storyCameraPermissionLabel(storyCameraPermission),
+              cameraPermissionRequesting: storyCameraPermission === "requesting",
+              cameraPermissionGranted: storyCameraPermission === "granted",
+              photoRetaining: placeStoryPhotoRetaining,
+              photoSelected: Boolean(placeStoryPhoto),
+              photoPreview: placeStoryPhotoPreview ?? "",
+              storySubmitting: placeStorySubmitting,
+              storyCanSubmit: !placeStorySubmitting && !placeStoryPhotoRetaining && Boolean(placeStoryAuthor.trim()) && placeStoryText.trim().length >= 2,
+              onLocationSelect: (placeId) => { const item = publicPlaceItems.find((candidate) => candidate.place.id === placeId); if (item) focusPublicPlaceItem(item); },
+              onCopyAddress: () => { void copyPublicPlaceAddress(); },
+              onShare: () => { void sharePublicPlace(); },
+              onToggleStoryForm: togglePlaceStoryForm,
+              onStoryAuthorChange: setPlaceStoryAuthor,
+              onStoryTextChange: setPlaceStoryText,
+              onRequestCameraPermission: () => { void requestPlaceStoryCameraPermission(); },
+              onPhotoSelected: (file) => { void retainPlaceStoryPhoto(file); },
+              onRemovePhoto: () => updatePlaceStoryPhoto(null),
+              onSubmitStory: () => { void submitPlaceStory(); },
+              onReportStory: (storyId) => { const story = publishedPlaceStories.find((candidate) => candidate.id === storyId); if (story) openPlaceStoryReport(story); },
+            }}
+            themePicker={selectedHasThemeEasterEgg ? <UiThemePicker activeTheme={uiTheme} onSelect={selectUiTheme} /> : undefined}
+            onDragPointerDown={(event) => startPublicPanelDrag(event, "place", publicPlaceExpanded)}
+            onDragPointerMove={movePublicPanelDrag}
+            onDragPointerEnd={finishPublicPanelDrag}
+            onOpenPlaceList={openPublicPlaceList}
+            onClose={closePublicPlacePanel}
+          />}
           {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span className="map-scale-status">맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span className="map-scale-status"><span>맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><button type="button" className="map-render-refresh" onClick={refreshVisibleMapRenderInfo} aria-label="현재 화면 라벨과 마커 정보 새로고침" title="현재 화면 표시만 다시 계산">↻</button></span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
         </section>
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
@@ -8292,146 +8307,128 @@ export default function Home() {
           </div>}
         </aside>}
       </section>
-      <>
-        {publicLayoutAccess === "viewer" && !selected && <button type="button" className={`global-story-toggle ${globalStoriesOpen ? "active" : ""}`} onClick={toggleGlobalStories} aria-expanded={globalStoriesOpen} aria-controls="global-story-panel">
-          <span aria-hidden="true">⌖</span><strong>{globalStoriesOpen ? "탐색 닫기" : "장소 · 리뷰 · 행사"}</strong>{publicPlaceItems.length > 0 && <em>{publicPlaceItems.length}</em>}
-        </button>}
-        {globalStoriesOpen && <aside ref={publicExplorerPanelRef} id="global-story-panel" className={`global-story-panel ${publicLayoutAccess === "editor" ? "moderation" : "public-explorer-panel"} ${publicLayoutAccess === "viewer" && publicPanelExpanded ? "expanded" : ""} ${publicPanelDrag?.target === "explorer" ? "dragging" : ""}`} style={{ "--panel-drag-y": `${publicPanelDrag?.target === "explorer" ? publicPanelDrag.offsetY : 0}px` } as CSSProperties} aria-label={publicLayoutAccess === "editor" ? "전체 장소 리뷰와 행사 관리" : "원도심 장소·리뷰·행사 탐색"}>
-          {publicLayoutAccess === "viewer" && <div className="public-panel-drag-handle" role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소·리뷰·행사 패널 높이 조절" onPointerDown={(event) => startPublicPanelDrag(event, "explorer", publicPanelExpanded)} onPointerMove={movePublicPanelDrag} onPointerUp={finishPublicPanelDrag} onPointerCancel={finishPublicPanelDrag}><span /></div>}
-          <header className="global-story-panel-head">
-            <div><strong>{publicLayoutAccess === "editor" ? "리뷰·행사 관리" : "원도심 탐색"}</strong><span>{publicLayoutAccess === "editor" ? "전체 장소의 최신 기록과 현재 행사" : "목록을 보면서 지도 위치를 바로 확인하세요."}</span></div>
-            <div className="global-story-panel-head-actions">
-              {publicLayoutAccess === "viewer" && <button type="button" className="place-request-open-button" onClick={() => setPlaceRequestFormOpen(true)}>＋ 장소 등록 요청</button>}
-              <button type="button" className="global-panel-close" onClick={closePublicExplorerPanel} aria-label="탐색 패널 닫기">×</button>
-            </div>
-          </header>
-          <div className={`global-content-tabs ${publicLayoutAccess === "editor" ? "admin" : "public"}`} role="tablist" aria-label="장소와 리뷰, 행사 선택">
-            {publicLayoutAccess === "viewer" && <button type="button" role="tab" aria-selected={globalContentTab === "places"} className={globalContentTab === "places" ? "active" : ""} onClick={() => setGlobalContentTab("places")}>장소 <span>{publicPlaceItems.length}</span></button>}
-            <button type="button" role="tab" aria-selected={globalContentTab === "reviews"} className={globalContentTab === "reviews" ? "active" : ""} onClick={() => { setGlobalContentTab("reviews"); setGlobalStoriesPage(1); }}>최신 리뷰 <span>{globalStoriesTotal ?? "—"}</span></button>
-            <button type="button" role="tab" aria-selected={globalContentTab === "events"} className={globalContentTab === "events" ? "active" : ""} onClick={() => { setGlobalContentTab("events"); setGlobalEventsPage(1); }}>행사 <span>{globalEventsTotal ?? "—"}</span></button>
-            {publicLayoutAccess === "editor" && <button type="button" role="tab" aria-selected={globalContentTab === "place-requests"} className={globalContentTab === "place-requests" ? "active" : ""} onClick={() => { setGlobalContentTab("place-requests"); setPlaceRequestsPage(1); }}>장소 요청 <span>{placeRequestsTotal ?? "—"}</span></button>}
-          </div>
-          <div className="global-story-panel-scroll" aria-live="polite">
-            {publicLayoutAccess === "editor" && globalContentTab === "events" && <div className="global-event-management-toolbar">
-              <div><strong>새 행사 등록</strong><span>장소 연결 없이 원도심 공통 행사로 등록할 수도 있습니다.</span></div>
-              <button type="button" disabled={!globalEventsCanManage} onClick={openUnassignedPlaceEventForm}>{globalEventsCanManage ? "＋ 행사 등록" : "권한 확인 중…"}</button>
-            </div>}
-            {publicLayoutAccess === "editor" && globalContentTab === "reviews" && <Suspense fallback={<div className="upload-diagnostic-state"><span className="global-story-spinner" /><strong>관리자 진단 도구를 불러오는 중입니다.</strong></div>}>
-              <AdminDiagnosticsPanel
-                uploadDiagnostics={uploadDiagnostics}
-                uploadLoading={uploadDiagnosticsLoading}
-                uploadError={uploadDiagnosticsError}
-                uploadActionId={uploadDiagnosticActionId}
-                onRefreshUploads={() => setUploadDiagnosticsRefreshKey((current) => current + 1)}
-                onDeleteUpload={(id) => void deleteUploadDiagnostic(id)}
-                onClearUploads={() => void clearUploadDiagnostics()}
-                performanceDiagnostics={performanceDiagnostics}
-                performanceLoading={performanceDiagnosticsLoading}
-                performanceError={performanceDiagnosticsError}
-                performanceActionId={performanceDiagnosticActionId}
-                onRefreshPerformance={() => setPerformanceDiagnosticsRefreshKey((current) => current + 1)}
-                onDeletePerformance={(id) => void deletePerformanceDiagnostic(id)}
-                onClearPerformance={() => void clearPerformanceDiagnostics()}
-              />
-            </Suspense>}
-            {globalContentTab === "places" ? <section className="public-place-explorer">
-              <div className="public-place-search-row">
-                <button type="button" className={`public-place-all-button ${publicPlaceCategory === "all" ? "active" : ""}`} onClick={() => { setPublicPlaceCategory("all"); setExpandedAdditionalCategoryItemId(null); }} aria-pressed={publicPlaceCategory === "all"}>전체 <em>{publicPlaceItems.length}</em></button>
-                <div className="public-place-search"><span aria-hidden="true">⌕</span><input ref={publicPlaceQueryInputRef} value={publicPlaceQuery} onChange={(event) => { setPublicPlaceQuery(event.target.value); setExpandedAdditionalCategoryItemId(null); }} placeholder="장소명·주소·분류 검색" aria-label="공개 장소 검색" />{publicPlaceQuery && <button type="button" onClick={() => { setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }} aria-label="장소 검색어 지우기">×</button>}</div>
-              </div>
-              <div className="public-place-filter-summary">
-                <span role="status">검색 결과 <strong>{filteredPublicPlaceItems.length}</strong>곳</span>
-                {(publicPlaceCategory !== "all" || publicPlaceQuery) && <button type="button" className="public-place-filter-reset" onClick={() => { setPublicPlaceCategory("all"); setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); }}>조건 초기화</button>}
-              </div>
-              <div className="public-place-category-chips" role="list" aria-label="장소 카테고리">{publicListCategories.map((category) => <button type="button" role="listitem" className={publicPlaceCategory === category.id ? "active" : ""} style={{ "--category-color": category.color } as CSSProperties} onClick={() => { setPublicPlaceCategory(category.id); setExpandedAdditionalCategoryItemId(null); }} key={category.id}><img src={category.iconSrc} width={96} height={96} alt="" aria-hidden="true" /><span>{category.name}</span><em>{publicPlaceCategoryCounts[category.id]}</em></button>)}</div>
-              <div className="public-place-list-header" aria-hidden="true"><span>장소명</span><span>대분류</span><span>추가분류</span><span className="public-place-detail-heading" title="상세보기"><MagnifierIcon /></span></div>
-              <div className="public-place-list" role="list" aria-label={`${publicPlaceCategory === "all" ? "전체 장소" : publicListCategories.find((category) => category.id === publicPlaceCategory)?.name ?? "장소"} 목록`}>
-                {filteredPublicPlaceItems.map((item) => {
-                  const meta = publicCategoryMetaForPlace(item.place, item.anchor);
-                  const selectedItem = selectedId === item.anchor.id && selectedDirectoryPlace?.id === item.place.id;
-                  const eventListedInCulture = publicPlaceCategory === "culture" && item.categoryId !== "culture" && eventLinkedPublicPlaceIds.has(item.id);
-                  const tagNames = publicPlacePresentationById.get(item.id)?.tagNames ?? [];
-                  const tagLabel = tagNames.length ? tagNames.join(" · ") : "—";
-                  const representativeTagNames = tagNames.slice(0, 2);
-                  const remainingTagNames = tagNames.slice(2);
-                  return <article className={`${selectedItem ? "selected" : ""} ${item.isMainHub ? "main-hub" : ""} ${eventListedInCulture ? "event-linked" : ""}`} key={item.id} role="listitem">
-                    <button type="button" className="public-place-row-action" onClick={() => focusPublicPlaceItem(item)} aria-label={`${item.displayName} 지도에서 찾기`} aria-current={selectedItem ? "location" : undefined} />
-                    <span className="public-place-identity"><i className="public-place-marker-key" style={{ background: categoryOf(item.anchor.category).color }} aria-hidden="true" /><strong title={item.displayName}>{item.displayName}</strong>{eventListedInCulture && <em className="public-place-event-badge">행사</em>}</span>
-                    <span className="public-place-primary-category" style={{ color: meta.color }} title={meta.name}>{meta.name}</span>
-                    <div className={`public-place-additional-category ${remainingTagNames.length ? "has-more" : ""} ${expandedAdditionalCategoryItemId === item.id ? "is-expanded" : ""}`} title={remainingTagNames.length ? undefined : tagNames.length ? tagLabel : "추가분류 없음"} onPointerEnter={() => {
-                      setExpandedAdditionalCategoryItemId((current) => current && current !== item.id ? null : current);
-                    }} onPointerLeave={(event) => {
-                      if (event.pointerType === "mouse") setExpandedAdditionalCategoryItemId((current) => current === item.id ? null : current);
-                    }}>
-                      {remainingTagNames.length > 0 ? <>
-                        <button type="button" className="public-place-additional-category-disclosure" aria-expanded={expandedAdditionalCategoryItemId === item.id} aria-label={`${representativeTagNames.join(", ")} 외 추가분류 ${remainingTagNames.length}개 더 보기`} title={`추가분류 ${remainingTagNames.length}개 더 보기`} onClick={() => {
-                          setExpandedAdditionalCategoryItemId((current) => current === item.id ? null : item.id);
-                        }}>
-                          <span className="public-place-additional-category-preview">{representativeTagNames.join(" · ")}</span>
-                          <span className="public-place-additional-category-count" aria-hidden="true">+{remainingTagNames.length}</span>
-                        </button>
-                        <div className="public-place-additional-category-popover" data-density={remainingTagNames.length <= 2 ? "compact" : "adaptive"} role="list" aria-label="나머지 추가분류">
-                          {remainingTagNames.map((tagName) => <span role="listitem" key={tagName}>{tagName}</span>)}
-                        </div>
-                      </> : <span className="public-place-additional-category-preview">{representativeTagNames.length ? representativeTagNames.join(" · ") : "—"}</span>}
-                    </div>
-                    <button type="button" className="public-place-open-action" onClick={() => focusPublicPlaceItem(item, true)} aria-label={`${item.displayName} 상세보기`} title="상세보기" aria-current={selectedItem ? "true" : undefined}><MagnifierIcon /></button>
-                  </article>;
-                })}
-                {!filteredPublicPlaceItems.length && <div className="public-place-empty"><strong>조건에 맞는 장소가 없습니다.</strong><span>검색어나 카테고리를 바꿔보세요.</span></div>}
-              </div>
-            </section> : globalContentTab === "reviews" || globalContentTab === "events" ? <Suspense fallback={<div className="global-story-state"><span className="global-story-spinner" /><strong>{globalContentTab === "reviews" ? "리뷰 화면을 준비하는 중입니다." : "행사 화면을 준비하는 중입니다."}</strong></div>}>
-              <PublicExplorerActivityContent
-                key={globalContentTab}
-                tab={globalContentTab}
-                access={publicLayoutAccess === "editor" ? "editor" : "viewer"}
-                stories={globalStories}
-                storiesLoading={globalStoriesLoading}
-                storiesError={globalStoriesError}
-                storiesCanModerate={globalStoriesCanModerate}
-                reportedStoryIds={reportedStoryIds}
-                storyActionId={placeStoryActionId}
-                events={globalEvents}
-                eventsLoading={globalEventsLoading}
-                eventsError={globalEventsError}
-                eventsCanManage={globalEventsCanManage}
-                eventActionId={placeEventActionId}
-                onRetryStories={() => setGlobalStoriesRefreshKey((current) => current + 1)}
-                onOpenStoryPlace={openGlobalStoryPlace}
-                onReportStory={openPlaceStoryReport}
-                onModerateStory={moderatePlaceStory}
-                onDeleteStory={deletePlaceStory}
-                onRetryEvents={() => setGlobalEventsRefreshKey((current) => current + 1)}
-                onOpenEventPlace={openGlobalEventPlace}
-                onEditEvent={editPlaceEvent}
-                onModerateEvent={moderatePlaceEvent}
-                onDeleteEvent={deletePlaceEvent}
-              />
-            </Suspense>
-                : <Suspense fallback={<div className="global-story-state"><span className="global-story-spinner" /><strong>장소 요청 관리 화면을 준비하는 중입니다.</strong></div>}>
-                  <AdminPlaceRequestList
-                    loading={placeRequestsLoading}
-                    error={placeRequestsError}
-                    requests={placeRequests}
-                    actionId={placeRequestActionId}
-                    areaOptions={placeRequestAreaOptions}
-                    linkedMarkers={requestMarkerByRequestId}
-                    formatDateTime={storyDateTimeLabel}
-                    onRetry={() => setPlaceRequestsRefreshKey((current) => current + 1)}
-                    onUpdate={updatePlaceRequestDraft}
-                    onStartReview={startPlaceRequestReview}
-                    onSave={savePlaceRequestEdits}
-                    onApprove={approvePlaceRequest}
-                    onReject={rejectPlaceRequest}
-                    onDelete={deletePlaceRequest}
-                  />
-                </Suspense>}
-          </div>
-          {globalContentTab === "places" ? null : globalContentTab === "reviews" ? globalStoriesPageCount > 1 && <footer className="global-story-pagination" aria-label="최신 리뷰 페이지 이동"><button type="button" disabled={globalStoriesPage <= 1 || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalStoriesPage}</b> / {globalStoriesPageCount}</span><button type="button" disabled={globalStoriesPage >= globalStoriesPageCount || globalStoriesLoading} onClick={() => setGlobalStoriesPage((page) => Math.min(globalStoriesPageCount, page + 1))}>다음</button></footer>
-            : globalContentTab === "events" ? globalEventsPageCount > 1 && <footer className="global-story-pagination" aria-label="행사 페이지 이동"><button type="button" disabled={globalEventsPage <= 1 || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{globalEventsPage}</b> / {globalEventsPageCount}</span><button type="button" disabled={globalEventsPage >= globalEventsPageCount || globalEventsLoading} onClick={() => setGlobalEventsPage((page) => Math.min(globalEventsPageCount, page + 1))}>다음</button></footer>
-              : placeRequestsPageCount > 1 && <footer className="global-story-pagination" aria-label="장소 등록 요청 페이지 이동"><button type="button" disabled={placeRequestsPage <= 1 || placeRequestsLoading} onClick={() => setPlaceRequestsPage((page) => Math.max(1, page - 1))}>이전</button><span><b>{placeRequestsPage}</b> / {placeRequestsPageCount}</span><button type="button" disabled={placeRequestsPage >= placeRequestsPageCount || placeRequestsLoading} onClick={() => setPlaceRequestsPage((page) => Math.min(placeRequestsPageCount, page + 1))}>다음</button></footer>}
-        </aside>}
-      </>
+      <PublicExplorerPanel
+        access={publicLayoutAccess === "editor" ? "editor" : "viewer"}
+        panelRef={publicExplorerPanelRef}
+        queryInputRef={publicPlaceQueryInputRef}
+        panel={{
+          open: globalStoriesOpen,
+          hasSelectedPlace: Boolean(selected),
+          expanded: publicPanelExpanded,
+          dragging: publicPanelDrag?.target === "explorer",
+          dragOffsetY: publicPanelDrag?.target === "explorer" ? publicPanelDrag.offsetY : 0,
+          onToggle: toggleGlobalStories,
+          onClose: closePublicExplorerPanel,
+          onDragPointerDown: (event) => startPublicPanelDrag(event, "explorer", publicPanelExpanded),
+          onDragPointerMove: movePublicPanelDrag,
+          onDragPointerEnd: finishPublicPanelDrag,
+          onOpenPlaceRequest: () => setPlaceRequestFormOpen(true),
+        }}
+        tabs={{
+          active: globalContentTab,
+          placeCount: publicPlaceItems.length,
+          reviewCount: globalStoriesTotal,
+          eventCount: globalEventsTotal,
+          placeRequestCount: placeRequestsTotal,
+          onSelect: (tab: PublicExplorerTab) => {
+            setGlobalContentTab(tab);
+            if (tab === "reviews") setGlobalStoriesPage(1);
+            if (tab === "events") setGlobalEventsPage(1);
+            if (tab === "place-requests") setPlaceRequestsPage(1);
+          },
+        }}
+        places={{
+          query: publicPlaceQuery,
+          activeCategory: publicPlaceCategory,
+          categories: publicListCategories.map((category) => ({ ...category, count: publicPlaceCategoryCounts[category.id] })),
+          rows: publicExplorerPlaceRows,
+          expandedAdditionalCategoryItemId,
+          onQueryChange: (value) => { setPublicPlaceQuery(value); setExpandedAdditionalCategoryItemId(null); },
+          onCategoryChange: (categoryId) => { setPublicPlaceCategory(categoryId as PublicPlaceCategoryScope); setExpandedAdditionalCategoryItemId(null); },
+          onResetFilters: () => { setPublicPlaceCategory("all"); setPublicPlaceQuery(""); setExpandedAdditionalCategoryItemId(null); },
+          onExpandedAdditionalCategoryChange: setExpandedAdditionalCategoryItemId,
+          onFocusPlace: (itemId, showDetails) => { const item = publicPlaceItems.find((candidate) => candidate.id === itemId); if (item) focusPublicPlaceItem(item, showDetails); },
+        }}
+        eventManagement={{ canManage: globalEventsCanManage, onCreate: openUnassignedPlaceEventForm }}
+        diagnostics={{
+          uploadDiagnostics,
+          uploadLoading: uploadDiagnosticsLoading,
+          uploadError: uploadDiagnosticsError,
+          uploadActionId: uploadDiagnosticActionId,
+          onRefreshUploads: () => setUploadDiagnosticsRefreshKey((current) => current + 1),
+          onDeleteUpload: (id) => { void deleteUploadDiagnostic(id); },
+          onClearUploads: () => { void clearUploadDiagnostics(); },
+          performanceDiagnostics,
+          performanceLoading: performanceDiagnosticsLoading,
+          performanceError: performanceDiagnosticsError,
+          performanceActionId: performanceDiagnosticActionId,
+          onRefreshPerformance: () => setPerformanceDiagnosticsRefreshKey((current) => current + 1),
+          onDeletePerformance: (id) => { void deletePerformanceDiagnostic(id); },
+          onClearPerformance: () => { void clearPerformanceDiagnostics(); },
+        }}
+        activity={{
+          stories: globalStories,
+          storiesLoading: globalStoriesLoading,
+          storiesError: globalStoriesError,
+          storiesCanModerate: globalStoriesCanModerate,
+          reportedStoryIds,
+          storyActionId: placeStoryActionId,
+          events: globalEvents,
+          eventsLoading: globalEventsLoading,
+          eventsError: globalEventsError,
+          eventsCanManage: globalEventsCanManage,
+          eventActionId: placeEventActionId,
+          onRetryStories: () => setGlobalStoriesRefreshKey((current) => current + 1),
+          onOpenStoryPlace: openGlobalStoryPlace,
+          onReportStory: openPlaceStoryReport,
+          onModerateStory: moderatePlaceStory,
+          onDeleteStory: deletePlaceStory,
+          onRetryEvents: () => setGlobalEventsRefreshKey((current) => current + 1),
+          onOpenEventPlace: openGlobalEventPlace,
+          onEditEvent: editPlaceEvent,
+          onModerateEvent: moderatePlaceEvent,
+          onDeleteEvent: deletePlaceEvent,
+        }}
+        requests={{
+          loading: placeRequestsLoading,
+          error: placeRequestsError,
+          requests: placeRequests,
+          actionId: placeRequestActionId,
+          areaOptions: placeRequestAreaOptions,
+          linkedMarkers: requestMarkerByRequestId,
+          formatDateTime: storyDateTimeLabel,
+          onRetry: () => setPlaceRequestsRefreshKey((current) => current + 1),
+          onUpdate: updatePlaceRequestDraft,
+          onStartReview: startPlaceRequestReview,
+          onSave: savePlaceRequestEdits,
+          onApprove: approvePlaceRequest,
+          onReject: rejectPlaceRequest,
+          onDelete: deletePlaceRequest,
+        }}
+        pagination={{
+          reviews: {
+            current: globalStoriesPage,
+            count: globalStoriesPageCount,
+            loading: globalStoriesLoading,
+            onPrevious: () => setGlobalStoriesPage((page) => Math.max(1, page - 1)),
+            onNext: () => setGlobalStoriesPage((page) => Math.min(globalStoriesPageCount, page + 1)),
+          },
+          events: {
+            current: globalEventsPage,
+            count: globalEventsPageCount,
+            loading: globalEventsLoading,
+            onPrevious: () => setGlobalEventsPage((page) => Math.max(1, page - 1)),
+            onNext: () => setGlobalEventsPage((page) => Math.min(globalEventsPageCount, page + 1)),
+          },
+          placeRequests: {
+            current: placeRequestsPage,
+            count: placeRequestsPageCount,
+            loading: placeRequestsLoading,
+            onPrevious: () => setPlaceRequestsPage((page) => Math.max(1, page - 1)),
+            onNext: () => setPlaceRequestsPage((page) => Math.min(placeRequestsPageCount, page + 1)),
+          },
+        }}
+      />
       {publicLayoutAccess === "viewer" && storyReportTarget && <div className="story-report-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closePlaceStoryReport(); }}>
         <section className="story-report-dialog" role="dialog" aria-modal="true" aria-labelledby="story-report-title" aria-describedby="story-report-note">
           <header><div><strong id="story-report-title">후기·사진 신고</strong><span>{storyReportTarget.placeName} · {storyReportTarget.authorName}</span></div><button type="button" disabled={storyReportSubmitting} onClick={closePlaceStoryReport} aria-label="신고 창 닫기">×</button></header>

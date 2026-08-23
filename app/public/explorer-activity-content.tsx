@@ -38,7 +38,7 @@ export type ExplorerEvent = {
   updatedAt: string;
 };
 
-type PublicExplorerActivityContentProps = {
+export type PublicExplorerActivityContentProps = {
   tab: "reviews" | "events";
   access: "editor" | "viewer";
   stories: ExplorerStory[];

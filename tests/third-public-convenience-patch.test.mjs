@@ -6,12 +6,14 @@ import {
   publicPanelAfterDrag,
   publicPlaceDirectionsUrl,
   publicUrlWithPlace,
-} from "../app/public-convenience.mjs";
+} from "../app/public/navigation.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
-const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public/place-detail-content.tsx", import.meta.url), "utf8");
+const publicPlaceSheetSource = await readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8");
+const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("stable place links preserve unrelated query parameters and hashes", () => {
@@ -61,16 +63,17 @@ test("public sheets use only the drag handle for height changes", () => {
   assert.doesNotMatch(pageSource, /className="public-panel-expand"/);
   assert.doesNotMatch(pageSource, />\{publicPlaceExpanded \? "접기" : "펼치기"\}<\/button>/);
   assert.doesNotMatch(pageSource, />\{publicPanelExpanded \? "접기" : "펼치기"\}<\/button>/);
-  assert.match(pageSource, /role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소 정보 패널 높이 조절"/);
-  assert.match(pageSource, /role="separator" aria-orientation="horizontal" aria-label="위아래로 끌어 장소·리뷰·행사 패널 높이 조절"/);
+  assert.match(publicPlaceSheetSource, /role="separator"[\s\S]{0,100}aria-orientation="horizontal"[\s\S]{0,100}aria-label="위아래로 끌어 장소 정보 패널 높이 조절"/);
+  assert.match(publicExplorerPanelSource, /role="separator"[\s\S]{0,100}aria-orientation="horizontal"[\s\S]{0,100}aria-label="위아래로 끌어 장소·리뷰·행사 패널 높이 조절"/);
   assert.match(pageSource, /const nextPanel = publicPanelAfterDrag\(drag\.target, drag\.startExpanded, deltaY\);/);
 });
 
 test("public explorer starts with all places and reports the filtered result count", () => {
   assert.match(pageSource, /useState<PublicPlaceCategoryScope>\("all"\)/);
   assert.match(pageSource, /publicPlaceCategory === "all"\s*\? publicPlaceItems/);
-  assert.match(pageSource, /검색 결과 <strong>\{filteredPublicPlaceItems\.length\}<\/strong>곳/);
-  assert.match(pageSource, /className="public-place-search-row"[\s\S]{0,420}className=\{`public-place-all-button[\s\S]{0,420}className="public-place-search"/);
+  assert.match(pageSource, /rows: publicExplorerPlaceRows/);
+  assert.match(publicExplorerPanelSource, /검색 결과 <strong>\{places\.rows\.length\}<\/strong>곳/);
+  assert.match(publicExplorerPanelSource, /className="public-place-search-row"[\s\S]{0,420}className=\{`public-place-all-button[\s\S]{0,420}className="public-place-search"/);
   assert.match(cssSource, /\.public-place-search-row \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)/);
   assert.match(cssSource, /\.public-place-filter-summary \{[^}]*min-height: 21px[^}]*margin-top: 1px/);
   assert.doesNotMatch(pageSource, /장소 \{publicPlaceItems\.length\} · 마커 \{visibleElements\.length\}/);
@@ -99,7 +102,7 @@ test("public place details omit the area and show DB information as one continuo
   assert.match(publicPlaceDetailSource, /notes: string/);
   assert.match(publicPlaceDetailSource, /className="public-place-information"[\s\S]{0,360}props\.description[\s\S]{0,220}props\.operatingInfo[\s\S]{0,220}props\.notes/);
   assert.doesNotMatch(publicPlaceDetailSource, /public-place-hours|public-place-description/);
-  assert.match(pageSource, /notes=\{selectedDirectoryPlace\?\.notes \?\? ""\}/);
+  assert.match(pageSource, /notes: selectedDirectoryPlace\?\.notes \?\? ""/);
   assert.doesNotMatch(pageSource, /area=\{selectedDirectoryPlace\?\.area/);
   assert.match(cssSource, /\.public-place-information \{[^}]*margin-top: 14px[^}]*line-height: 1\.65/);
   assert.doesNotMatch(cssSource, /\.public-place-hours|\.public-place-area/);
@@ -151,8 +154,9 @@ test("public place details wait for events and records before revealing all cont
   assert.match(pageSource, /publicPlaceDetailLoading = publicLayoutAccess === "viewer"[\s\S]{0,220}placeStoriesLoadedKey !== selectedStoryKey \|\| placeEventsLoadedKey !== selectedStoryKey/);
   assert.match(pageSource, /setPlaceStoriesLoadedKey\(requestKey\)/);
   assert.match(pageSource, /setPlaceEventsLoadedKey\(requestKey\)/);
-  assert.match(pageSource, /aria-busy=\{publicPlaceDetailLoading\}/);
-  assert.match(pageSource, /<PublicPlaceDetailContent[\s\S]{0,120}loading=\{publicPlaceDetailLoading\}/);
+  assert.match(pageSource, /loading: publicPlaceDetailLoading/);
+  assert.match(publicPlaceSheetSource, /aria-busy=\{detail\.loading\}/);
+  assert.match(publicPlaceSheetSource, /<PublicPlaceDetailContent \{\.\.\.detail\}/);
   assert.match(publicPlaceDetailSource, /if \(props\.loading\) return <LoadingState \/>/);
   assert.match(publicPlaceDetailSource, /className="public-place-detail-loading"[\s\S]{0,320}행사와 장소 기록을 함께 준비한 뒤 한 번에 보여드립니다/);
   assert.match(cssSource, /\.public-place-detail-loading \{[^}]*min-height: 100%[^}]*place-content: center/);
@@ -182,7 +186,8 @@ test("review text drafts and mobile photo discard protection are session scoped"
 });
 
 test("mobile sheets expose a drag handle and 44px primary targets", () => {
-  assert.match(pageSource, /className="public-panel-drag-handle"/);
+  assert.match(publicPlaceSheetSource, /className="public-panel-drag-handle"/);
+  assert.match(publicExplorerPanelSource, /className="public-panel-drag-handle"/);
   assert.match(cssSource, /\.public-panel-drag-handle \{[^}]+touch-action: none/);
   assert.match(cssSource, /\.public-place-sheet-head \.public-place-sheet-actions button,[\s\S]+min-height: 44px/);
   assert.match(cssSource, /\.public-map-reset \{[^}]+전체 지도|public-map-reset/);

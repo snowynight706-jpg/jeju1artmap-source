@@ -7,7 +7,7 @@ import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-const focusSource = await readFile(new URL("../app/public-place-focus.mjs", import.meta.url), "utf8");
+const focusSource = await readFile(new URL("../app/public/place-focus.mjs", import.meta.url), "utf8");
 const signatureBSvg = await readFile(new URL("../public/jfac-signature-b.svg", import.meta.url));
 const signatureBWebp = await readFile(new URL("../public/jfac-signature-b.webp", import.meta.url));
 const symbolSvg = await readFile(new URL("../public/jfac-symbol.svg", import.meta.url));

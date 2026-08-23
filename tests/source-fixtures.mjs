@@ -4,6 +4,15 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
   route: Object.freeze([
     "../app/page.tsx",
   ]),
+  publicUi: Object.freeze([
+    "../app/public/explorer-activity-content.tsx",
+    "../app/public/explorer-panel.tsx",
+    "../app/public/navigation.mjs",
+    "../app/public/place-category.mjs",
+    "../app/public/place-detail-content.tsx",
+    "../app/public/place-focus.mjs",
+    "../app/public/place-sheet.tsx",
+  ]),
   mapCore: Object.freeze([
     "../app/map/calibration/model.ts",
     "../app/map/core/element-defaults.ts",

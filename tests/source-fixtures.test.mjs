@@ -11,6 +11,7 @@ import {
 test("client source regression checks follow explicit extraction boundaries", async () => {
   assert.deepEqual(APP_CLIENT_SOURCE_PATHS, [...new Set(APP_CLIENT_SOURCE_PATHS)]);
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/explorer-panel.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
@@ -43,26 +44,42 @@ test("map settings and autosave persistence stay outside the route component", a
   assert.match(autosaveSource, /baseRevision: publishedRevisionRef\.current/);
 });
 
-test("page keeps heavyweight panels behind lazy import boundaries", async () => {
-  const pageSource = await readFile(
-    new URL("../app/page.tsx", import.meta.url),
-    "utf8",
-  );
-  const lazyModules = [
-    "./admin-database-editor",
-    "./admin-diagnostics-panel",
-    "./admin-place-event-dialog",
-    "./admin-place-request-list",
-    "./public-explorer-activity-content",
-    "./public-place-detail-content",
+test("page and public shells keep heavyweight panels behind lazy import boundaries", async () => {
+  const [pageSource, explorerSource, placeSheetSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8"),
+  ]);
+  const lazyBoundaries = [
+    [pageSource, "./admin-database-editor"],
+    [pageSource, "./admin-place-event-dialog"],
+    [explorerSource, "../admin-diagnostics-panel"],
+    [explorerSource, "../admin-place-request-list"],
+    [explorerSource, "./explorer-activity-content"],
+    [placeSheetSource, "./place-detail-content"],
   ];
 
-  for (const modulePath of lazyModules) {
+  for (const [source, modulePath] of lazyBoundaries) {
     assert.match(
-      pageSource,
+      source,
       new RegExp(`import\\(\\s*["']${modulePath.replace(".", "\\.")}["']\\s*\\)`),
     );
   }
+});
+
+test("public place and explorer markup stay behind public display components", async () => {
+  const [pageSource, explorerSource, placeSheetSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /<PublicExplorerPanel/);
+  assert.match(pageSource, /<PublicPlaceSheet/);
+  assert.doesNotMatch(pageSource, /<section className="public-place-explorer">/);
+  assert.doesNotMatch(pageSource, /<aside[^>]+className=\{`public-place-sheet/);
+  assert.match(explorerSource, /<section className="public-place-explorer">/);
+  assert.match(placeSheetSource, /className=\{`public-place-sheet/);
 });
 
 test("dense label persistence stays behind its client hook boundary", async () => {

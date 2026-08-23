@@ -27,7 +27,7 @@ type PlaceStory = {
   reported: boolean;
 };
 
-type Props = {
+export type PublicPlaceDetailContentProps = {
   loading: boolean;
   placeName: string;
   locationPlaces: LocationPlace[];
@@ -74,7 +74,7 @@ function LoadingState() {
   </div>;
 }
 
-export default function PublicPlaceDetailContent(props: Props) {
+export default function PublicPlaceDetailContent(props: PublicPlaceDetailContentProps) {
   if (props.loading) return <LoadingState />;
 
   return <>

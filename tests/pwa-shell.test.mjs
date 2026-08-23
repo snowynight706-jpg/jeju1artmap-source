@@ -8,6 +8,7 @@ const lifecycleSource = await readFile(new URL("../app/pwa-lifecycle.tsx", impor
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
+const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
 const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -89,7 +90,8 @@ test("PWA control files bypass stale HTTP caches and mobile chrome respects safe
 
 test("mobile map details clear competing bottom controls", () => {
   assert.match(pageSource, /publicLayoutAccess === "viewer" && selected \? "public-place-selected" : ""/);
-  assert.match(pageSource, /publicLayoutAccess === "viewer" && !selected && <button type="button" className=\{`global-story-toggle/);
+  assert.match(pageSource, /hasSelectedPlace: Boolean\(selected\)/);
+  assert.match(publicExplorerPanelSource, /access === "viewer" && !panel\.hasSelectedPlace && <button type="button" className=\{`global-story-toggle/);
   assert.match(cssSource, /\.app-shell\.public-place-selected ~ \.pwa-install-button,\s*\.app-shell\.public-place-selected ~ \.pwa-install-guide \{ display: none; \}/);
   assert.match(cssSource, /\.pwa-install-button \{[\s\S]{0,220}bottom: calc\(42px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(cssSource, /\.pwa-install-guide \{ bottom: calc\(88px \+ env\(safe-area-inset-bottom\)\); \}/);

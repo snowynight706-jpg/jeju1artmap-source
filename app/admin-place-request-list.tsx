@@ -37,7 +37,7 @@ export type AdminPlaceRequestRecord = {
 
 type LinkedMarkerPosition = { x: number; y: number };
 
-type AdminPlaceRequestListProps = {
+export type AdminPlaceRequestListProps = {
   loading: boolean;
   error: boolean;
   requests: AdminPlaceRequestRecord[];

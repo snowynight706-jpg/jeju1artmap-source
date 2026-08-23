@@ -1,4 +1,4 @@
-const PLACE_QUERY_KEY = "place";
+const PUBLIC_PLACE_QUERY_KEY = "place";
 
 export const publicPanelIsPlace = (panel) => panel === "place" || panel === "place-expanded";
 export const publicPanelIsExplorer = (panel) => panel === "explorer" || panel === "explorer-expanded";
@@ -12,8 +12,8 @@ export function publicPanelAfterDrag(target, startExpanded, deltaY, threshold = 
 
 export function publicUrlWithPlace(href, placeId) {
   const url = new URL(href, "https://local.invalid");
-  if (placeId) url.searchParams.set(PLACE_QUERY_KEY, placeId);
-  else url.searchParams.delete(PLACE_QUERY_KEY);
+  if (placeId) url.searchParams.set(PUBLIC_PLACE_QUERY_KEY, placeId);
+  else url.searchParams.delete(PUBLIC_PLACE_QUERY_KEY);
   return `${url.pathname}${url.search}${url.hash}`;
 }
 

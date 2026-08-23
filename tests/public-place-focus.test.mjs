@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { publicPlaceFocusZoom } from "../app/public-place-focus.mjs";
+import { publicPlaceFocusZoom } from "../app/public/place-focus.mjs";
 
 test("public place focus zoom is close, bounded, and based on the device fit", () => {
   const mobilePortrait = publicPlaceFocusZoom({

@@ -5,7 +5,7 @@ const PUBLIC_PLACE_FOCUS_BOOST = 1.3;
 
 /**
  * Returns a consistent, device-aware close zoom for moving from a directory
- * row to its map marker. The result is intentionally independent of the
+ * public directory row to its map marker. The result is intentionally independent of the
  * viewer's current zoom so every lookup lands with the same amount of context.
  */
 export function publicPlaceFocusZoom({

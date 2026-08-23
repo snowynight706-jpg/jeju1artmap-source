@@ -13,8 +13,10 @@ const baseMapStorage = await readFile(new URL("../app/base-map-storage.ts", impo
 const placeEventsRoute = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 const placeStoriesRoute = await readFile(new URL("../app/api/place-stories/route.ts", import.meta.url), "utf8");
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
-const publicPlaceDetailSource = await readFile(new URL("../app/public-place-detail-content.tsx", import.meta.url), "utf8");
-const publicExplorerActivitySource = await readFile(new URL("../app/public-explorer-activity-content.tsx", import.meta.url), "utf8");
+const publicPlaceDetailSource = await readFile(new URL("../app/public/place-detail-content.tsx", import.meta.url), "utf8");
+const publicExplorerActivitySource = await readFile(new URL("../app/public/explorer-activity-content.tsx", import.meta.url), "utf8");
+const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
+const publicPlaceSheetSource = await readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8");
 const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
 const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
@@ -97,7 +99,7 @@ test("pinch and wheel zoom share one deferred visual transform before layout com
 
 test("administrator diagnostics are code-split while anonymous performance samples stay content-free", () => {
   const performanceTable = placeStoriesRoute.match(/const PERFORMANCE_DIAGNOSTICS_TABLE_SQL = `([\s\S]*?)`;/)?.[1] ?? "";
-  assert.match(pageSource, /const AdminDiagnosticsPanel = lazy\(\(\) => import\("\.\/admin-diagnostics-panel"\)\)/);
+  assert.match(publicExplorerPanelSource, /const AdminDiagnosticsPanel = lazy\(\(\) => import\("\.\.\/admin-diagnostics-panel"\)\)/);
   assert.match(pageSource, /sendPerformanceDiagnostic/);
   assert.match(pageSource, /metric: "startup"/);
   assert.match(pageSource, /recordMapSettle\("pan-settle"\)/);
@@ -112,24 +114,24 @@ test("administrator diagnostics are code-split while anonymous performance sampl
 });
 
 test("administrator place request cards load only when their management tab is opened", () => {
-  assert.match(pageSource, /const AdminPlaceRequestList = lazy\(\(\) => import\("\.\/admin-place-request-list"\)\)/);
-  assert.match(pageSource, /<Suspense fallback=\{<div className="global-story-state"><span className="global-story-spinner" \/><strong>장소 요청 관리 화면을 준비하는 중입니다\.<\/strong><\/div>\}>/);
-  assert.match(pageSource, /<AdminPlaceRequestList/);
+  assert.match(publicExplorerPanelSource, /const AdminPlaceRequestList = lazy\(\(\) => import\("\.\.\/admin-place-request-list"\)\)/);
+  assert.match(publicExplorerPanelSource, /<Suspense fallback=\{<div className="global-story-state"><span className="global-story-spinner" \/><strong>장소 요청 관리 화면을 준비하는 중입니다\.<\/strong><\/div>\}>/);
+  assert.match(publicExplorerPanelSource, /<AdminPlaceRequestList/);
   assert.match(adminPlaceRequestSource, /place-request-admin-card/);
   assert.doesNotMatch(pageSource, /className=\{`place-request-admin-card/);
 });
 
 test("public place details, events, and review UI load only after a place is opened", () => {
-  assert.match(pageSource, /const PublicPlaceDetailContent = lazy\(\(\) => import\("\.\/public-place-detail-content"\)\)/);
-  assert.match(pageSource, /<Suspense fallback=\{<div className="public-place-detail-loading"/);
-  assert.match(pageSource, /<PublicPlaceDetailContent/);
+  assert.match(publicPlaceSheetSource, /const PublicPlaceDetailContent = lazy\(\(\) => import\("\.\/place-detail-content"\)\)/);
+  assert.match(publicPlaceSheetSource, /<Suspense fallback=\{<div className="public-place-detail-loading"/);
+  assert.match(publicPlaceSheetSource, /<PublicPlaceDetailContent/);
   assert.match(publicPlaceDetailSource, /className="public-place-summary"/);
   assert.match(publicPlaceDetailSource, /className="public-place-events"/);
   assert.match(publicPlaceDetailSource, /className="public-place-archive"/);
 });
 
 test("mobile panel motion avoids height animation and explorer activity tabs are code-split", () => {
-  assert.match(pageSource, /const PublicExplorerActivityContent = lazy\(\(\) => import\("\.\/public-explorer-activity-content"\)\)/);
+  assert.match(publicExplorerPanelSource, /const PublicExplorerActivityContent = lazy\(\(\) => import\("\.\/explorer-activity-content"\)\)/);
   assert.match(pageSource, /panel\.animate\(\[[\s\S]+duration: PUBLIC_PANEL_MOTION_MS/);
   assert.match(globalStyles, /--motion-standard: \.24s/);
   assert.match(globalStyles, /\.public-place-sheet \{[^}]+transition: none/);

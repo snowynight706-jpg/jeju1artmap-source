@@ -1,6 +1,6 @@
 "use client";
 
-type UploadDiagnostic = {
+export type UploadDiagnostic = {
   id: string;
   placeKey: string;
   stage: "prepare" | "request" | "response" | "unknown";
@@ -15,7 +15,7 @@ type UploadDiagnostic = {
   createdAt: string;
 };
 
-type PerformanceDiagnostic = {
+export type PerformanceDiagnostic = {
   id: string;
   metric: "startup" | "pan-settle" | "pinch-settle";
   durationMs: number;
@@ -31,7 +31,7 @@ type PerformanceDiagnostic = {
   createdAt: string;
 };
 
-type Props = {
+export type AdminDiagnosticsPanelProps = {
   uploadDiagnostics: UploadDiagnostic[];
   uploadLoading: boolean;
   uploadError: boolean;
@@ -105,7 +105,7 @@ function performanceGrade(durationMs: number, metric: PerformanceDiagnostic["met
   return durationMs >= slow ? "느림" : durationMs >= warning ? "확인 필요" : "양호";
 }
 
-export default function AdminDiagnosticsPanel(props: Props) {
+export default function AdminDiagnosticsPanel(props: AdminDiagnosticsPanelProps) {
   return <div className="admin-diagnostics-stack">
     <details className="upload-diagnostic-panel">
       <summary><span><strong>모바일 후기 업로드 오류</strong><small>사진·후기 내용과 닉네임은 기록하지 않습니다.</small></span><em>{props.uploadLoading ? "확인 중" : `${props.uploadDiagnostics.length}건`}</em></summary>

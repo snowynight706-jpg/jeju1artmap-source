@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { placesForPublicCategory } from "../app/public-place-category.mjs";
+import { placesForPublicCategory } from "../app/public/place-category.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
+const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const apiSource = await readFile(new URL("../app/api/place-events/route.ts", import.meta.url), "utf8");
 
@@ -67,8 +68,9 @@ test("reading, exhibition, and performance additions also appear in the culture 
 });
 
 test("category rows use the assigned map marker color and explain event-derived entries", () => {
-  assert.match(pageSource, /className="public-place-marker-key"[\s\S]{0,140}categoryOf\(item\.anchor\.category\)\.color/);
-  assert.match(pageSource, /className="public-place-event-badge">행사/);
+  assert.match(pageSource, /markerColor: categoryOf\(item\.anchor\.category\)\.color/);
+  assert.match(publicExplorerPanelSource, /className="public-place-marker-key"[\s\S]{0,140}item\.markerColor/);
+  assert.match(publicExplorerPanelSource, /className="public-place-event-badge">행사/);
   assert.match(cssSource, /\.public-place-marker-key \{[^}]*border-radius: 50%/);
 });
 
