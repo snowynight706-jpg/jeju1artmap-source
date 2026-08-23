@@ -16,6 +16,8 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/client.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-explorer-content.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-event-request-actions.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-story-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/model.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/bootstrap.ts"));
@@ -186,6 +188,40 @@ test("explorer content models and read-only loading stay behind the content boun
   assert.match(hookSource, /scope=performance-diagnostics/);
   assert.match(hookSource, /scope=all&page=\$\{globalStoriesPage\}/);
   assert.match(hookSource, /scope=all&page=\$\{globalEventsPage\}/);
+});
+
+test("story submission, reporting, moderation, and diagnostics stay behind one content action boundary", async () => {
+  const [pageSource, actionsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-story-actions.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /usePlaceStoryActions\(\{/);
+  assert.doesNotMatch(pageSource, /const submitPlaceStory = async/);
+  assert.doesNotMatch(pageSource, /const submitPlaceStoryReport = async/);
+  assert.doesNotMatch(pageSource, /const moderatePlaceStory = async/);
+  assert.doesNotMatch(pageSource, /const clearPerformanceDiagnostics = async/);
+  assert.match(actionsSource, /const submitPlaceStory = async/);
+  assert.match(actionsSource, /const submitPlaceStoryReport = async/);
+  assert.match(actionsSource, /const moderatePlaceStory = async/);
+  assert.match(actionsSource, /const clearPerformanceDiagnostics = async/);
+});
+
+test("event management and place-request review stay behind one content action boundary", async () => {
+  const [pageSource, actionsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-event-request-actions.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /usePlaceEventRequestActions\(\{/);
+  assert.doesNotMatch(pageSource, /const submitPlaceEvent = async/);
+  assert.doesNotMatch(pageSource, /const submitPlaceRegistrationRequest = async/);
+  assert.doesNotMatch(pageSource, /const startPlaceRequestReview = async/);
+  assert.doesNotMatch(pageSource, /const approvePlaceRequest = async/);
+  assert.match(actionsSource, /const submitPlaceEvent = async/);
+  assert.match(actionsSource, /const submitPlaceRegistrationRequest = async/);
+  assert.match(actionsSource, /const startPlaceRequestReview = async/);
+  assert.match(actionsSource, /const approvePlaceRequest = async/);
 });
 
 test("place catalog building, merging, classification, and marker policy stay in one domain boundary", async () => {

@@ -15,7 +15,9 @@
 - `app/editor/workspace/use-admin-output-workspace.ts`: 고해상도 PNG·JSON·메모 내보내기와 복원, 라벨 밀도 설정 저장, 편집 초안 기록, 공개 이력 조회·불러오기와 공개본 게시를 한 흐름으로 조립하는 관리자 출력 작업공간
 - `app/content/types.ts`: 후기·행사·진단·장소 요청과 공개 콘텐츠 요약에서 공유하는 클라이언트 데이터 계약
 - `app/content/client.ts`: 후기·행사·장소 요청 API 경로, 익명 방문자 식별, 후기 세션 초안과 업로드·성능 진단 전송
-- `app/content/use-explorer-content.ts`: 원도심 탐색 탭의 후기·행사·관리자 진단·장소 요청 페이지 상태와 중단 가능한 읽기 요청; 제출·승인·삭제는 최상위 페이지가 담당
+- `app/content/use-explorer-content.ts`: 원도심 탐색 탭의 후기·행사·관리자 진단·장소 요청 페이지 상태와 중단 가능한 읽기 요청
+- `app/content/use-place-story-actions.ts`: 후기 등록·카메라 권한, 신고·공개 상태·삭제와 업로드·성능 진단 정리를 조립하는 후기 변경 작업공간
+- `app/content/use-place-event-request-actions.ts`: 행사 입력·수정·공개 상태·삭제와 장소 등록 요청 제출·지도 검수·DB 승인을 조립하는 행사·장소 요청 변경 작업공간
 - `app/place-directory/model.ts`: 기본·마스터 장소 카탈로그 생성, 필수 시스템 장소 보강, 서버 레코드 병합, 공개 분류와 지도 마커 자산 선택을 묶은 장소 도메인 경계
 - `app/media/photo-processing.ts`: 후기와 관리자 행사에서 공유하는 사진 원본 제한, Worker 압축, 브라우저 캔버스 폴백과 인코딩 목표
 - `app/public/`: 공개 URL·패널 이동·카테고리·장소 포커스 규칙과 공개 장소 시트·원도심 탐색 표시 조립
