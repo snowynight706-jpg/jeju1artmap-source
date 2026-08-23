@@ -24,6 +24,9 @@
 - `app/content/use-place-story-actions.ts`: 후기 등록·카메라 권한, 신고·공개 상태·삭제와 업로드·성능 진단 정리를 조립하는 후기 변경 작업공간
 - `app/content/use-place-event-request-actions.ts`: 행사 입력·수정·공개 상태·삭제와 장소 등록 요청 제출·지도 검수·DB 승인을 조립하는 행사·장소 요청 변경 작업공간
 - `app/place-directory/model.ts`: 기본·마스터 장소 카탈로그 생성, 필수 시스템 장소 보강, 서버 레코드 병합, 공개 분류와 지도 마커 자산 선택을 묶은 장소 도메인 경계
+- `app/place-directory/use-place-directory-view-model.ts`: 지도 요소·장소 인덱스, 선택 장소·시설 그룹·좌표 기준점·호환 자산, 관리자 통합 장소 목록과 DB 검색/분류 필터를 한 번에 계산해 공개·관리자 화면에 공급하는 보기 모델
+- `app/shell/ui-theme.tsx`: 다섯 화면 테마의 정의·선택 UI와 기기 저장·복원을 담당하는 애플리케이션 셸 모듈
+- `app/shell/use-application-shell-lifecycle.ts`: 관리자 전역 단축키, 공유 관리자 세션, 공개 화면 쿠키 전환을 묶는 애플리케이션 셸 생명주기
 - `app/media/photo-processing.ts`: 후기와 관리자 행사에서 공유하는 사진 원본 제한, Worker 압축, 브라우저 캔버스 폴백과 인코딩 목표
 - `app/public/`: 공개 URL·패널 이동·카테고리·장소 포커스 규칙과 공개 장소 시트·원도심 탐색 표시 조립
 - `app/public/use-public-place-workspace.ts`: 공개 장소 카탈로그·행사 연결·검색·카테고리 표시 모델과 모바일 패널 드래그·안착 모션, History API 저장 원시 동작과 지도 시점 기억·복귀를 조립하는 공개 장소 작업공간
@@ -44,7 +47,7 @@
 - `worker/`: 배포 Worker 진입점과 정적 자산 캐시 정책
 - `tests/`: 기능·회귀·PWA·성능 정적 검증
 
-`app/page.tsx`의 1차 큰 책임 경계는 모두 분리했다. 지도 계산은 `app/map/workspace`, 공개 장소 카탈로그·탐색·패널 이동은 `app/public`, 공개본·편집 초안·로컬 설정·장소 DB의 초기 복원은 `app/editor/persistence`, 관리자 지도 자산·출력·기록·게시는 `app/editor/workspace`가 기존 하위 계산·저장 모듈을 조립하는 경계로 고정한다. 다음 분해는 각 Workspace 안에서 100~800줄 규모의 화면·hook·순수 계산 모듈을 대상으로 하며, 이미 분리된 `map`, `public`, `content`, `editor` 하위 모듈은 재통합하지 않는다.
+`app/page.tsx`의 1차 큰 책임 경계는 모두 분리했다. 지도 계산은 `app/map/workspace`, 공개 장소 카탈로그·탐색·패널 이동은 `app/public`, 선택 장소와 관리자 장소·DB 파생 모델은 `app/place-directory`, 공개본·편집 초안·로컬 설정·장소 DB의 초기 복원은 `app/editor/persistence`, 관리자 지도 자산·출력·기록·게시는 `app/editor/workspace`, 테마·전역 단축키·공유 관리자 세션은 `app/shell`이 기존 하위 계산·저장 모듈을 조립하는 경계로 고정한다. 다음 분해는 각 Workspace 안에서 100~800줄 규모의 화면·hook·순수 계산 모듈을 대상으로 하며, 이미 분리된 `map`, `public`, `content`, `editor`, `place-directory`, `shell` 하위 모듈은 재통합하지 않는다.
 
 통합 라벨의 공개 연결선은 거리와 무관하게 불투명도 0.84를 유지한다. 관리자 한 열 통합 라벨은 항목명 길이로 폭을 정하며, 마커 왼쪽에 놓인 라벨은 항목명을 왼쪽 정렬하고 분류 표시점과 연결선 끝점을 행 오른쪽에 맞춘다.
 

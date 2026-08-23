@@ -29,6 +29,11 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
   ]),
   placeDirectory: Object.freeze([
     "../app/place-directory/model.ts",
+    "../app/place-directory/use-place-directory-view-model.ts",
+  ]),
+  shell: Object.freeze([
+    "../app/shell/ui-theme.tsx",
+    "../app/shell/use-application-shell-lifecycle.ts",
   ]),
   mapCore: Object.freeze([
     "../app/map/calibration/model.ts",

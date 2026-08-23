@@ -23,6 +23,9 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-story-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/model.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/use-place-directory-view-model.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.shell.includes("../app/shell/ui-theme.tsx"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.shell.includes("../app/shell/use-application-shell-lifecycle.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/use-editor-document-state.ts"));
@@ -92,11 +95,45 @@ test("admin exports, snapshots, history, and publishing stay behind one output w
   assert.doesNotMatch(pageSource, /const saveEditorDraft = async/);
   assert.doesNotMatch(pageSource, /const publishCurrentLayout = async/);
   assert.doesNotMatch(pageSource, /const loadPublicHistoryEntry = async/);
-  assert.match(pageSource, /adminShortcutActionsRef\.current/);
+  assert.doesNotMatch(pageSource, /adminShortcutActionsRef\.current/);
   assert.match(workspaceSource, /const exportHighResolutionPng = async/);
   assert.match(workspaceSource, /const saveEditorDraft = async/);
   assert.match(workspaceSource, /const publishCurrentLayout = async/);
   assert.match(workspaceSource, /const loadPublicHistoryEntry = async/);
+});
+
+test("selected place, manager list, and database filtering stay behind one directory view model", async () => {
+  const [pageSource, viewModelSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/place-directory/use-place-directory-view-model.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /usePlaceDirectoryViewModel\(\{/);
+  assert.doesNotMatch(pageSource, /const elementsByNormalizedName = useMemo/);
+  assert.doesNotMatch(pageSource, /const allUnifiedPlaceRows = useMemo/);
+  assert.doesNotMatch(pageSource, /const filteredDatabaseDraftPlaces = useMemo/);
+  assert.match(viewModelSource, /const elementsByNormalizedName = useMemo/);
+  assert.match(viewModelSource, /const allUnifiedPlaceRows = useMemo/);
+  assert.match(viewModelSource, /const filteredDatabaseDraftPlaces = useMemo/);
+});
+
+test("theme persistence and administrator shell lifecycle stay outside the route component", async () => {
+  const [pageSource, themeSource, lifecycleSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/shell/ui-theme.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/shell/use-application-shell-lifecycle.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useUiTheme\(\)/);
+  assert.match(pageSource, /useApplicationShellLifecycle\(\{/);
+  assert.doesNotMatch(pageSource, /const handleAdminShortcut =/);
+  assert.doesNotMatch(pageSource, /const submitSharedAdminLogin =/);
+  assert.doesNotMatch(pageSource, /localStorage\.getItem\(UI_THEME_STORAGE_KEY\)/);
+  assert.match(themeSource, /localStorage\.getItem\(UI_THEME_STORAGE_KEY\)/);
+  assert.match(themeSource, /localStorage\.setItem\(UI_THEME_STORAGE_KEY, theme\)/);
+  assert.match(lifecycleSource, /const handleAdminShortcut =/);
+  assert.match(lifecycleSource, /const submitSharedAdminLogin = useCallback/);
+  assert.match(lifecycleSource, /adminShortcutActionsRef\.current/);
 });
 
 test("admin asset uploads and selected-element quick actions stay behind one workspace boundary", async () => {

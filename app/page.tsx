@@ -2,7 +2,6 @@
 /* eslint-disable @next/next/no-img-element */
 
 import {
-  FormEvent,
   lazy,
   Suspense,
   useCallback,
@@ -18,12 +17,9 @@ import {
   type BundledMarkerCategory,
   type BundledMarkerStyle,
 } from "./marker-assets";
-import { geocodedPlaces } from "./geocoded-places";
 import { isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
 import {
   MAP_ASPECT,
-  PRIMARY_CALIBRATION_NAMES,
-  buildEffectiveCalibrationPoints,
   calibratedPlaceCoordinates,
   initialCalibrationPoints,
   type CalibrationPoint,
@@ -32,7 +28,6 @@ import {
   EXPORT_CANONICAL_WIDTH,
   categories,
   categoryOf,
-  placeContentKey,
   type CategoryId,
 } from "./map/core/model";
 import {
@@ -112,24 +107,26 @@ import {
   isMainHubPersistenceTarget,
 } from "./editor/document/main-hub-persistence.mjs";
 import {
-  ART_PLATFORM_FACILITY_NAMES,
   LPP_CANONICAL_NAME,
   MAIN_HUB_CANONICAL_NAME,
-  MAIN_HUB_ROLE,
   additionalCategoryDefinitions,
   convenienceAttributeDefinitions,
   isPrimaryPublicCategory,
-  publicDisplayName,
   sanitizeAdditionalCategories,
   sanitizeConvenienceAttributes,
 } from "./place-taxonomy";
 import {
   createDirectoryCatalog,
   createDirectoryRecordMerger,
-  databaseEditorCategoryForPlace,
   directoryCategory,
   directoryRecordFromPlace,
 } from "./place-directory/model";
+import {
+  usePlaceDirectoryViewModel,
+  type CoordinateLockFilter,
+  type PlacementFilter,
+  type RecommendationFilter,
+} from "./place-directory/use-place-directory-view-model";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 import {
   sendPerformanceDiagnostic,
@@ -152,6 +149,11 @@ import {
 import { usePlaceStoryActions } from "./content/use-place-story-actions";
 import { usePlaceEventRequestActions } from "./content/use-place-event-request-actions";
 import { usePlaceContentLifecycle } from "./content/use-place-content-lifecycle";
+import { UiThemePicker, UiThemeSwatch, useUiTheme } from "./shell/ui-theme";
+import {
+  PUBLIC_VIEW_COOKIE,
+  useApplicationShellLifecycle,
+} from "./shell/use-application-shell-lifecycle";
 
 // 이하는 필요할 때만 불러오는 관리자·공개 화면 모듈 코드입니다.
 
@@ -166,8 +168,6 @@ const JFAC_SIGNATURE_B_SVG = "/jfac-signature-b.svg?v=20260821-svg1";
 const JFAC_SYMBOL_SVG = "/jfac-symbol.svg?v=20260821-svg1";
 const UPLOADED_MAP_API = "/api/base-map";
 const PLACE_DIRECTORY_API = "/api/place-directory";
-const ADMIN_SESSION_API = "/api/admin-session";
-const PUBLIC_VIEW_COOKIE = "jfac_map_public_view";
 const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06";
 const LATEST_ARTSPACE_IA_ASSET_ID = "artspace-ia-v04";
 const LATEST_DONGMUN_ASSET_ID = "dongmun-v08";
@@ -211,7 +211,6 @@ const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["칠성로", new Set(["chilsungro", "chilsungro-20260819"])],
 ]);
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
-const UI_THEME_STORAGE_KEY = "jeju-wondosim-map-review:ui-theme:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 const UI_THEME_EASTER_EGG_PLACES = new Set([
   "제주아트플랫폼",
@@ -220,64 +219,9 @@ const UI_THEME_EASTER_EGG_PLACES = new Set([
   "김만덕객주",
 ]);
 
-const uiThemes = [
-  { id: "stormy", name: "스토미 미니멀", shortName: "스토미", colors: ["#FAFAFA", "#E1E2E5", "#B9BBC1", "#70737C", "#2B2D33"] },
-  { id: "nordic-sand", name: "노르딕 샌드", shortName: "샌드", colors: ["#F6F3EF", "#DED9D2", "#B4AEA6", "#7A746D", "#3A3835"] },
-  { id: "lilac", name: "라일락", shortName: "라일락", colors: ["#F4F2F7", "#D6D2DF", "#A59DB6", "#5D556F", "#26222F"] },
-  { id: "urban-blush", name: "어반 블러시", shortName: "블러시", colors: ["#F6F2F4", "#DED5DA", "#B7A4AC", "#6E5B63", "#C07B8F"] },
-  { id: "harbor-morning", name: "항구의 아침", shortName: "항구", colors: ["#F0F3F7", "#C8D2E0", "#8EA2BB", "#4E647A", "#26313B"] },
-] as const;
-
-// 이하는 화면 테마 선택기를 그리는 작은 UI 코드입니다.
-type UiThemeId = (typeof uiThemes)[number]["id"];
-
-function isUiThemeId(value: unknown): value is UiThemeId {
-  return typeof value === "string" && uiThemes.some((theme) => theme.id === value);
-}
-
-function UiThemeSwatch({ colors }: { colors: readonly string[] }) {
-  return <span className="ui-theme-swatch" aria-hidden="true">{colors.map((color, index) => <i style={{ background: color }} key={`${color}-${index}`} />)}</span>;
-}
-
-function UiThemePicker({ activeTheme, compact = false, onSelect }: {
-  activeTheme: UiThemeId;
-  compact?: boolean;
-  onSelect: (theme: UiThemeId) => void;
-}) {
-  return <div className={`ui-theme-picker ${compact ? "compact" : ""}`} role="group" aria-label="화면 테마 선택">
-    {uiThemes.map((theme) => <button
-      type="button"
-      className={activeTheme === theme.id ? "active" : ""}
-      aria-pressed={activeTheme === theme.id}
-      aria-label={`${theme.name} 테마`}
-      title={theme.name}
-      onClick={() => onSelect(theme.id)}
-      key={theme.id}
-    >
-      <UiThemeSwatch colors={theme.colors} />
-      {!compact && <span>{theme.shortName}</span>}
-    </button>)}
-  </div>;
-}
-
-// 이하는 관리자 목록의 필터와 좌표 그룹에 관한 타입입니다.
-type CoordinateLockFilter = "all" | "unlocked" | "locked";
-type PlacementFilter = "all" | "placed" | "unplaced";
-type RecommendationFilter = "all" | "recommended" | "standard";
+// 이하는 관리자 좌표 그룹과 공개 자산 프로필에 관한 타입입니다.
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PublicAssetProfile = "mobile" | "standard";
-
-// 이하는 지도, 장소, 후기, 행사, 공개본에 사용되는 데이터 형태 정의입니다.
-type UnifiedPlaceRow = {
-  id: string;
-  name: string;
-  category: CategoryId;
-  address: string;
-  area: string;
-  sourceLabel: string;
-  place?: DirectoryPlace;
-  element?: MapElement;
-};
 
 const storyReportReasons: Array<{ id: StoryReportReason; label: string }> = [
   { id: "inappropriate", label: "부적절한 내용" },
@@ -452,7 +396,6 @@ export default function Home() {
   const placeQueryInputRef = useRef<HTMLInputElement>(null);
   const databaseEditorQueryInputRef = useRef<HTMLInputElement>(null);
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
-  const adminShortcutActionsRef = useRef({ saveDraft: () => {}, undo: () => {}, redo: () => {} });
   const mapRenderActionsRef = useRef<MapRenderActions | null>(null);
   const placeRequestLocationBeforePickingRef = useRef<{ x: number; y: number } | null>(null);
   const publicInitialViewAppliedRef = useRef(false);
@@ -514,7 +457,7 @@ export default function Home() {
   const [undoStack, setUndoStack] = useState<DocumentState[]>([]);
   const [redoStack, setRedoStack] = useState<DocumentState[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const [uiTheme, setUiTheme] = useState<UiThemeId>("stormy");
+  const { uiTheme, activeUiTheme, selectUiTheme } = useUiTheme();
   const [saveState, setSaveState] = useState("자동 저장 준비");
   const [layoutName, setLayoutName] = useState("최근 자동복구");
   const [toast, setToast] = useState("");
@@ -934,82 +877,79 @@ export default function Home() {
     setLabelsRefreshing,
   });
 
-  const elementsById = useMemo(() => new Map(elements.map((element) => [element.id, element])), [elements]);
-  const elementsByNormalizedName = useMemo(() => {
-    const index = new Map<string, MapElement>();
-    elements.forEach((element) => {
-      const name = normalizePlaceName(element.name);
-      if (!index.has(name)) index.set(name, element);
-    });
-    return index;
-  }, [elements]);
-  const requestMarkerByRequestId = useMemo(() => {
-    const index = new Map<string, MapElement>();
-    elements.forEach((element) => {
-      if (element.placeRequestId && !element.directoryId && !index.has(element.placeRequestId)) index.set(element.placeRequestId, element);
-    });
-    return index;
-  }, [elements]);
-  const directoryPlacesById = useMemo(() => new Map(directoryPlaces.map((place) => [place.id, place])), [directoryPlaces]);
-  const directoryPlacesByNormalizedName = useMemo(() => {
-    const index = new Map<string, DirectoryPlace>();
-    directoryPlaces.forEach((place) => {
-      const name = normalizePlaceName(place.name);
-      if (!index.has(name)) index.set(name, place);
-    });
-    return index;
-  }, [directoryPlaces]);
-  const directoryPlacesByGroup = useMemo(() => {
-    const groups = new Map<string, DirectoryPlace[]>();
-    directoryPlaces.forEach((place) => {
-      if (!place.locationGroupId) return;
-      const group = groups.get(place.locationGroupId) ?? [];
-      group.push(place);
-      groups.set(place.locationGroupId, group);
-    });
-    groups.forEach((group) => group.sort((a, b) => {
-      const order = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(a.name));
-      const otherOrder = (ART_PLATFORM_FACILITY_NAMES as readonly string[]).indexOf(normalizePlaceName(b.name));
-      return (order < 0 ? 99 : order) - (otherOrder < 0 ? 99 : otherOrder) || a.name.localeCompare(b.name, "ko");
-    }));
-    return groups;
-  }, [directoryPlaces]);
-  const selected = selectedId ? elementsById.get(selectedId) ?? null : null;
-  const selectedNote = reviewNotes.find((note) => note.id === selectedNoteId) ?? null;
-  const selectedAnchorDirectoryPlace = selected
-    ? (selected.directoryId ? directoryPlacesById.get(selected.directoryId) : undefined)
-      ?? directoryPlacesByNormalizedName.get(normalizePlaceName(selected.name))
-      ?? null
-    : null;
-  const selectedFacilityPlace = selectedFacilityId
-    ? directoryPlacesById.get(selectedFacilityId) ?? null
-    : null;
-  const selectedDirectoryPlace = selectedFacilityPlace?.locationGroupId
-    && selectedFacilityPlace.locationGroupId === selectedAnchorDirectoryPlace?.locationGroupId
-    ? selectedFacilityPlace
-    : selectedAnchorDirectoryPlace;
-  const selectedUnlinkedPrimaryCategory = selected && isPrimaryPublicCategory(directoryCategory(selected.category))
-    ? directoryCategory(selected.category)
-    : null;
-  const selectedUnlinkedTaxonomySaving = Boolean(selected)
-    && directoryTaxonomySync.placeId === selected?.id
-    && directoryTaxonomySync.state === "saving";
-  const selectedBasicInfoMeta = selected && directoryTaxonomySync.placeId === (selectedDirectoryPlace?.id ?? selected.id)
-    ? directoryTaxonomySync.state === "saving"
-      ? "DB 저장 중…"
-      : directoryTaxonomySync.state === "saved"
-        ? "DB 저장됨"
-        : directoryTaxonomySync.state === "error"
-          ? "DB 저장 실패"
-          : selectedDirectoryPlace ? "DB 연결" : "DB 미연결"
-    : selectedDirectoryPlace
-      ? placeDirectoryCanEdit ? "DB 연결" : "DB 읽기 전용"
-      : selected?.placeRequestId ? "승인 대기" : "DB 미연결";
-  const selectedStoryKey = selectedDirectoryPlace
-    ? `directory:${selectedDirectoryPlace.id}`
-    : selected
-      ? placeContentKey(selected)
-      : null;
+  // 선택 장소, 관리자 통합 목록, DB 필터는 장소 디렉터리 보기 모델에서 함께 계산합니다.
+  const {
+    elementsByNormalizedName,
+    requestMarkerByRequestId,
+    directoryPlacesById,
+    directoryPlacesByNormalizedName,
+    directoryPlacesByGroup,
+    selected,
+    selectedNote,
+    selectedDirectoryPlace,
+    selectedUnlinkedPrimaryCategory,
+    selectedUnlinkedTaxonomySaving,
+    selectedBasicInfoMeta,
+    selectedStoryKey,
+    selectedDisplayName,
+    selectedLocationGroupPlaces,
+    selectedPublicCategory,
+    selectedPublicCategoryName,
+    secondaryCalibrationPoints,
+    tertiaryCalibrationPoints,
+    calibrationReferenceNames,
+    selectedPrimaryCalibrationPoint,
+    selectedSecondaryCalibrationPoint,
+    selectedTertiaryCalibrationPoint,
+    selectedCalibrationPoint,
+    selectedLandmarkDefault,
+    selectedDisplayOffset,
+    selectedIsPrimaryCalibration,
+    selectedHasGeocodedSource,
+    compatibleAssets,
+    landmarkAssetGroups,
+    generalMarkerAssets,
+    customLandmarkAssets,
+    assetsById,
+    publishedPlaceStories,
+    allUnifiedPlaceRows,
+    searchedUnifiedPlaceRows,
+    coordinateLockCounts,
+    unifiedPlaceRows,
+    unifiedPlaceGroups,
+    placeFiltersActive,
+    placedUnifiedPlaceCount,
+    selectedDatabasePlace,
+    databaseAreaOptions,
+    placeRequestAreaOptions,
+    databaseEditorCategoryCounts,
+    filteredDatabaseDraftPlaces,
+  } = usePlaceDirectoryViewModel({
+    elements,
+    assets,
+    reviewNotes,
+    directoryPlaces,
+    calibrationPoints,
+    landmarkDefaultPositions,
+    selectedId,
+    selectedFacilityId,
+    selectedNoteId,
+    directoryTaxonomySync,
+    placeDirectoryCanEdit,
+    placeStories,
+    placeQuery,
+    coordinateLockFilter,
+    placementFilter,
+    recommendationFilter,
+    printSettings,
+    viewMode,
+    screenRecommendedOnly,
+    databaseDraftPlaces,
+    databaseEditorSelectedId,
+    databaseEditorCategory,
+    databaseEditorQuery,
+    publicCategoryMetaForPlace,
+  });
   // 이하는 화면 크기와 초기 로딩 상태를 실제 화면에 맞춰 동기화하는 코드입니다.
   useLayoutEffect(() => {
     selectedStoryKeyRef.current = selectedStoryKey;
@@ -1017,157 +957,7 @@ export default function Home() {
   const publicPlaceDetailLoading = publicLayoutAccess === "viewer"
     && Boolean(selectedStoryKey)
     && (placeStoriesLoadedKey !== selectedStoryKey || placeEventsLoadedKey !== selectedStoryKey);
-  const selectedUsesMapDisplayName = Boolean(selected && selectedDirectoryPlace && (
-    selectedDirectoryPlace.id === selected.directoryId
-    || (!selected.directoryId && normalizePlaceName(selectedDirectoryPlace.name) === normalizePlaceName(selected.name))
-  ));
-  const selectedDisplayName = selectedDirectoryPlace && !selectedUsesMapDisplayName
-    ? publicDisplayName(selectedDirectoryPlace.name, selectedDirectoryPlace.featuredRole)
-    : selected?.name ?? "";
-  const activeUiTheme = uiThemes.find((theme) => theme.id === uiTheme) ?? uiThemes[0];
   const selectedHasThemeEasterEgg = UI_THEME_EASTER_EGG_PLACES.has(normalizePlaceName(selectedDirectoryPlace?.name ?? selectedDisplayName));
-  const selectedLocationGroupId = selectedDirectoryPlace?.locationGroupId ?? null;
-  const selectedLocationGroupPlaces = selectedLocationGroupId
-    ? directoryPlacesByGroup.get(selectedLocationGroupId) ?? []
-    : [];
-  const selectedPublicCategory = selected
-    ? selectedDirectoryPlace ? publicCategoryMetaForPlace(selectedDirectoryPlace, selected) : categoryOf(selected.category)
-    : null;
-  const selectedPublicCategoryName = selectedDirectoryPlace?.featuredRole === MAIN_HUB_ROLE
-    ? "워크케이션 메인 거점"
-    : selectedPublicCategory?.name ?? "";
-  const effectiveCalibrationPoints = useMemo(() => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces), [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions]);
-  const secondaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"), [effectiveCalibrationPoints]);
-  const tertiaryCalibrationPoints = useMemo(() => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"), [effectiveCalibrationPoints]);
-  const calibrationReferenceNames = useMemo(() => new Set(effectiveCalibrationPoints.map((point) => point.name)), [effectiveCalibrationPoints]);
-  const selectedPrimaryCalibrationPoint = selected ? calibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
-  const selectedSecondaryCalibrationPoint = selected ? secondaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
-  const selectedTertiaryCalibrationPoint = selected ? tertiaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null : null;
-  const selectedCalibrationPoint = selectedPrimaryCalibrationPoint ?? selectedSecondaryCalibrationPoint ?? selectedTertiaryCalibrationPoint;
-  const selectedLandmarkDefault = selected?.category === "landmark" ? landmarkDefaultPositions.find((position) =>
-    position.elementId === selected.id || position.name === normalizePlaceName(selected.name)
-  ) ?? { elementId: selected.id, name: normalizePlaceName(selected.name), x: selected.anchorX, y: selected.anchorY, confirmed: false } : null;
-  const selectedDisplayOffset = selected ? { x: selected.x - selected.anchorX, y: selected.y - selected.anchorY } : null;
-  const selectedIsPrimaryCalibration = selected ? PRIMARY_CALIBRATION_NAMES.has(normalizePlaceName(selected.name)) : false;
-  const selectedHasGeocodedSource = selected ? Boolean(geocodedPlaces[normalizePlaceName(selected.name)]) : false;
-  const compatibleAssets = selected ? assets.filter((asset) => (
-    asset.placeName ? asset.placeName === selected.name : asset.category === selected.category
-  )) : assets;
-  const landmarkAssetGroups = useMemo(() => {
-    const groups = new Map<string, MapAsset[]>();
-    assets.filter((asset) => asset.category === "landmark" && asset.placeName).forEach((asset) => {
-      const group = groups.get(asset.placeName!) ?? [];
-      group.push(asset);
-      groups.set(asset.placeName!, group);
-    });
-    return [...groups.entries()].map(([placeName, candidates]) => ({ placeName, candidates }));
-  }, [assets]);
-  const generalMarkerAssets = useMemo(() => assets.filter((asset) => asset.category !== "landmark"), [assets]);
-  const customLandmarkAssets = useMemo(() => assets.filter((asset) => asset.category === "landmark" && !asset.placeName), [assets]);
-  const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
-  const publishedPlaceStories = useMemo(() => placeStories.filter((story) => story.status === "published"), [placeStories]);
-
-  const allUnifiedPlaceRows = useMemo<UnifiedPlaceRow[]>(() => {
-    const elementsByDirectoryId = new Map(elements.filter((element) => element.directoryId).map((element) => [element.directoryId!, element]));
-    const elementsByName = new Map(elements.map((element) => [normalizePlaceName(element.name), element]));
-    const claimedElementIds = new Set<string>();
-    const rows: UnifiedPlaceRow[] = directoryPlaces.map((place) => {
-      const element = elementsByDirectoryId.get(place.id) ?? elementsByName.get(normalizePlaceName(place.name));
-      if (element) claimedElementIds.add(element.id);
-      return {
-        id: `place-row-${place.id}`,
-        name: place.name,
-        category: element?.category ?? place.category,
-        address: place.address,
-        area: place.area,
-        sourceLabel: place.sourceLabel,
-        place,
-        element,
-      };
-    });
-    elements.forEach((element) => {
-      if (claimedElementIds.has(element.id)) return;
-      rows.push({
-        id: `element-row-${element.id}`,
-        name: element.name,
-        category: element.category,
-        address: element.address,
-        area: element.category === "landmark" ? "랜드마크" : "사용자 배치",
-        sourceLabel: element.memo || "지도 배치 요소",
-        element,
-      });
-    });
-    return rows.sort((a, b) => Number(b.category === "landmark") - Number(a.category === "landmark") || a.name.localeCompare(b.name, "ko"));
-  }, [directoryPlaces, elements]);
-
-  const searchedUnifiedPlaceRows = useMemo(() => {
-    const query = placeQuery.trim().toLocaleLowerCase("ko-KR");
-    return allUnifiedPlaceRows.filter((row) => !query || `${row.name} ${row.address} ${row.area}`.toLocaleLowerCase("ko-KR").includes(query));
-  }, [allUnifiedPlaceRows, placeQuery]);
-
-  const coordinateLockCounts = useMemo(() => searchedUnifiedPlaceRows.reduce((counts, row) => {
-    if (!row.element) return counts;
-    counts[row.element.locked ? "locked" : "unlocked"] += 1;
-    return counts;
-  }, { locked: 0, unlocked: 0 }), [searchedUnifiedPlaceRows]);
-
-  const unifiedPlaceRows = useMemo(() => searchedUnifiedPlaceRows.filter((row) => {
-    const lockMatches = coordinateLockFilter === "all"
-      || (coordinateLockFilter === "locked" ? Boolean(row.element?.locked) : Boolean(row.element && !row.element.locked));
-    const placed = Boolean(row.element?.mapVisible);
-    const placementMatches = placementFilter === "all" || (placementFilter === "placed" ? placed : !placed);
-    const target = row.element ?? { directoryId: row.place?.id ?? row.id, category: row.category, name: row.name };
-    const setting = printSettings.find((item) => item.key === printSettingKey(target));
-    const recommended = row.category === "landmark" || setting?.recommended === true || (!setting && /추천|우선/.test(row.place?.priority ?? ""));
-    const recommendationMatches = recommendationFilter === "all" || (recommendationFilter === "recommended" ? recommended : !recommended);
-    return lockMatches && placementMatches && recommendationMatches;
-  }), [coordinateLockFilter, placementFilter, printSettings, recommendationFilter, searchedUnifiedPlaceRows]);
-
-  const unifiedPlaceGroups = useMemo(() => categories.map((category) => ({
-    category,
-    rows: unifiedPlaceRows.filter((row) => row.category === category.id),
-  })).filter((group) => group.rows.length > 0), [unifiedPlaceRows]);
-  const placeFiltersActive = Boolean(placeQuery.trim())
-    || coordinateLockFilter !== "all"
-    || placementFilter !== "all"
-    || recommendationFilter !== "all"
-    || viewMode !== "all"
-    || screenRecommendedOnly;
-  const placedUnifiedPlaceCount = allUnifiedPlaceRows.filter((row) => row.element?.mapVisible).length;
-
-  const selectedDatabasePlace = useMemo(
-    () => databaseDraftPlaces.find((place) => place.id === databaseEditorSelectedId) ?? null,
-    [databaseDraftPlaces, databaseEditorSelectedId],
-  );
-  const databaseAreaOptions = useMemo(() => [...new Set(databaseDraftPlaces
-    .map((place) => place.area.trim())
-    .filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko")), [databaseDraftPlaces]);
-  const placeRequestAreaOptions = useMemo(() => [...new Set(directoryPlaces
-    .map((place) => place.area.trim())
-    .filter((area) => Boolean(area) && area !== "등록 요청"))]
-    .sort((a, b) => a.localeCompare(b, "ko")), [directoryPlaces]);
-  const databaseEditorCategoryCounts = useMemo(() => databaseDraftPlaces.reduce<Record<DatabaseEditorCategoryFilter, number>>((counts, place) => {
-    counts.all += 1;
-    counts[databaseEditorCategoryForPlace(place)] += 1;
-    return counts;
-  }, { all: 0, culture: 0, food: 0, cafe: 0, shop: 0, other: 0 }), [databaseDraftPlaces]);
-  const filteredDatabaseDraftPlaces = useMemo(() => {
-    const query = databaseEditorQuery.trim().toLocaleLowerCase("ko-KR");
-    return databaseDraftPlaces
-      .filter((place) => databaseEditorCategory === "all" || databaseEditorCategoryForPlace(place) === databaseEditorCategory)
-      .filter((place) => {
-        const tagNames = additionalCategoryDefinitions
-          .filter((definition) => sanitizeAdditionalCategories(place.additionalCategories).includes(definition.id))
-          .map((definition) => definition.name)
-          .join(" ");
-        const convenienceNames = convenienceAttributeDefinitions
-          .filter((definition) => sanitizeConvenienceAttributes(place.convenienceAttributes).includes(definition.id))
-          .map((definition) => definition.name)
-          .join(" ");
-        return !query || `${place.name} ${(place.aliases ?? []).join(" ")} ${place.address} ${place.area} ${place.subtype ?? ""} ${tagNames} ${convenienceNames}`.toLocaleLowerCase("ko-KR").includes(query);
-      })
-      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  }, [databaseDraftPlaces, databaseEditorCategory, databaseEditorQuery]);
 
   const {
     mapVisibleElements,
@@ -1362,15 +1152,6 @@ export default function Home() {
     onDiscardStoryPhoto: updatePlaceStoryPhoto,
   });
 
-  const selectUiTheme = useCallback((theme: UiThemeId) => {
-    setUiTheme(theme);
-    try {
-      window.localStorage.setItem(UI_THEME_STORAGE_KEY, theme);
-    } catch {
-      // 테마 선택은 저장소가 차단된 환경에서도 현재 화면에 바로 적용합니다.
-    }
-  }, []);
-
   useEffect(() => {
     if (!expandedAdditionalCategoryItemId) return;
     const closeAdditionalCategoryPopover = (event: globalThis.PointerEvent) => {
@@ -1380,17 +1161,6 @@ export default function Home() {
     document.addEventListener("pointerdown", closeAdditionalCategoryPopover, true);
     return () => document.removeEventListener("pointerdown", closeAdditionalCategoryPopover, true);
   }, [expandedAdditionalCategoryItemId, setExpandedAdditionalCategoryItemId]);
-
-  useEffect(() => {
-    let restoreFrame = 0;
-    try {
-      const savedTheme = window.localStorage.getItem(UI_THEME_STORAGE_KEY);
-      if (isUiThemeId(savedTheme)) restoreFrame = window.requestAnimationFrame(() => setUiTheme(savedTheme));
-    } catch {
-      // 스토리지 사용이 불가능하면 기본 테마를 유지합니다.
-    }
-    return () => window.cancelAnimationFrame(restoreFrame);
-  }, []);
 
   useApplicationBootstrap({
     globalEventsRefreshKey,
@@ -1890,70 +1660,34 @@ export default function Home() {
     setMarkerGroupSize,
   });
 
-  useEffect(() => {
-    adminShortcutActionsRef.current = {
-      saveDraft: () => { void saveEditorDraft(); },
-      undo,
-      redo,
-    };
+  // 관리자 전역 단축키와 로그인·공개 화면 전환은 애플리케이션 셸 생명주기에서 관리합니다.
+  const {
+    submitSharedAdminLogin,
+    signOutSharedAdmin,
+    switchPublicView,
+  } = useApplicationShellLifecycle({
+    publicLayoutAccess,
+    adminPassword,
+    adminLoginOpen,
+    placeRequestFormOpen,
+    placeEventFormOpen,
+    databaseEditorOpen,
+    publicHistoryOpen,
+    editorDraftSaving,
+    shortcutHelpOpen,
+    leftPanelRef,
+    placeQueryInputRef,
+    databaseEditorQueryInputRef,
+    saveEditorDraft,
+    undo,
+    redo,
+    setAdminLoginError,
+    setAdminLoginSubmitting,
+    setShortcutHelpOpen,
+    setLeftOpen,
+    setLeftPanelMode,
+    setCalibrationMode,
   });
-
-  useEffect(() => {
-    const handleAdminShortcut = (event: KeyboardEvent) => {
-      if (publicLayoutAccess !== "editor") return;
-
-      const target = event.target as HTMLElement | null;
-      const editingText = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
-      const modifier = event.ctrlKey || event.metaKey;
-      const key = event.key.toLowerCase();
-      const blockingDialogOpen = adminLoginOpen || placeRequestFormOpen || placeEventFormOpen || databaseEditorOpen || publicHistoryOpen;
-
-      if (modifier && !event.altKey && !event.shiftKey && key === "s") {
-        event.preventDefault();
-        if (!editorDraftSaving) adminShortcutActionsRef.current.saveDraft();
-        return;
-      }
-
-      if (!editingText && !modifier && !event.altKey && event.key === "?" && !blockingDialogOpen) {
-        event.preventDefault();
-        setShortcutHelpOpen((current) => !current);
-        return;
-      }
-
-      if (shortcutHelpOpen) return;
-
-      if (databaseEditorOpen) {
-        if (!editingText && !modifier && !event.altKey && !event.shiftKey && event.key === "/") {
-          event.preventDefault();
-          databaseEditorQueryInputRef.current?.focus();
-        }
-        return;
-      }
-
-      if (adminLoginOpen || placeRequestFormOpen || placeEventFormOpen) return;
-
-      if (modifier && !event.altKey && key === "z" && !editingText) {
-        event.preventDefault();
-        if (event.shiftKey) adminShortcutActionsRef.current.redo();
-        else adminShortcutActionsRef.current.undo();
-        return;
-      }
-
-      if (!editingText && !modifier && !event.altKey && !event.shiftKey && event.key === "/") {
-        event.preventDefault();
-        setLeftOpen(true);
-        setLeftPanelMode("places");
-        setCalibrationMode(false);
-        window.requestAnimationFrame(() => {
-          leftPanelRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-          window.requestAnimationFrame(() => placeQueryInputRef.current?.focus());
-        });
-      }
-    };
-
-    window.addEventListener("keydown", handleAdminShortcut);
-    return () => window.removeEventListener("keydown", handleAdminShortcut);
-  }, [adminLoginOpen, databaseEditorOpen, editorDraftSaving, placeEventFormOpen, placeRequestFormOpen, publicHistoryOpen, publicLayoutAccess, shortcutHelpOpen]);
 
   // 방문 후기·사진 신고와 관리자 진단 변경은 콘텐츠 작업공간에서 조립합니다.
   const {
@@ -2220,55 +1954,7 @@ export default function Home() {
     setPlaceRequestLocation,
   });
 
-  const submitSharedAdminLogin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!adminPassword) {
-      setAdminLoginError("공유 관리자 비밀번호를 입력해 주세요.");
-      return;
-    }
-    setAdminLoginSubmitting(true);
-    setAdminLoginError("");
-    try {
-      const response = await fetch(ADMIN_SESSION_API, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ password: adminPassword }),
-      });
-      const payload = await response.json().catch(() => null) as { error?: string } | null;
-      if (!response.ok) {
-        setAdminLoginError(response.status === 429
-          ? "입력 횟수가 많습니다. 15분 뒤 다시 시도해 주세요."
-          : response.status === 401
-            ? "비밀번호가 맞지 않습니다."
-            : payload?.error === "shared admin login unavailable"
-              ? "공유 관리자 로그인이 아직 설정되지 않았습니다."
-              : "로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
-        return;
-      }
-      window.location.reload();
-    } catch {
-      setAdminLoginError("로그인 연결을 확인하지 못했습니다. 다시 시도해 주세요.");
-    } finally {
-      setAdminLoginSubmitting(false);
-    }
-  };
-
-  const signOutSharedAdmin = async () => {
-    try {
-      await fetch(ADMIN_SESSION_API, { method: "DELETE", credentials: "same-origin" });
-    } finally {
-      window.location.reload();
-    }
-  };
-
   // 이하는 공개·관리자 화면 전환과 최종 지도 렌더링 자료를 준비하는 코드입니다.
-  const switchPublicView = (enabled: boolean) => {
-    const secure = window.location.protocol === "https:" ? "; Secure" : "";
-    document.cookie = `${PUBLIC_VIEW_COOKIE}=${enabled ? "1" : ""}; Path=/; SameSite=Strict; Max-Age=${enabled ? 43_200 : 0}${secure}`;
-    window.location.reload();
-  };
-
   const stageMapClass = printPreviewMode ? "print-preview-mode" : viewMode === "dim" ? "map-dim" : viewMode === "gray" ? "map-gray" : viewMode === "nomap" ? "map-hidden" : "";
   const editingEnabled = publicLayoutAccess === "editor" && !printPreviewMode;
   const activeGlobalCount = globalContentTab === "reviews"
