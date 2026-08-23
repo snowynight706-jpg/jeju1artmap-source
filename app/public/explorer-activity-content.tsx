@@ -1,42 +1,11 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-export type ExplorerStory = {
-  id: string;
-  placeKey: string;
-  placeName: string;
-  authorName: string;
-  reviewText: string;
-  photoUrl: string | null;
-  status: "published" | "hidden";
-  reportCount?: number;
-  reportSummary?: string;
-  createdAt: string;
-  updatedAt: string;
-};
+import type { PlaceEvent, PlaceEventPlace, PlaceStory } from "../content/types";
 
-export type ExplorerEventPlace = {
-  placeKey: string;
-  placeName: string;
-};
-
-export type ExplorerEvent = {
-  id: string;
-  placeKey: string;
-  placeName: string;
-  places: ExplorerEventPlace[];
-  eventName: string;
-  eventInfo: string;
-  photoUrl: string;
-  startsAt: string;
-  endsAt: string;
-  visibleFrom: string;
-  visibleUntil: string;
-  status: "active" | "hidden";
-  isVisible: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
+export type ExplorerStory = PlaceStory;
+export type ExplorerEventPlace = PlaceEventPlace;
+export type ExplorerEvent = PlaceEvent;
 
 export type PublicExplorerActivityContentProps = {
   tab: "reviews" | "events";

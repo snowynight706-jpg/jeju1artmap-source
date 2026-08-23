@@ -13,6 +13,8 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/explorer-panel.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/client.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-explorer-content.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
@@ -99,6 +101,32 @@ test("browser content storage, diagnostics, and photo processing stay outside th
   assert.match(clientSource, /export function sendPerformanceDiagnostic\(/);
   assert.match(photoSource, /export async function prepareStoryPhoto\(/);
   assert.match(photoSource, /new Worker\("\/story-photo-worker\.js"\)/);
+});
+
+test("explorer content models and read-only loading stay behind the content boundary", async () => {
+  const [pageSource, typesSource, hookSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/types.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-explorer-content.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useExplorerStories\(\{/);
+  assert.match(pageSource, /useExplorerDiagnostics\(\{/);
+  assert.match(pageSource, /useExplorerEvents\(\{/);
+  assert.match(pageSource, /usePlaceRequests\(\{/);
+  assert.doesNotMatch(pageSource, /setUploadDiagnosticsLoading/);
+  assert.doesNotMatch(pageSource, /setPerformanceDiagnosticsLoading/);
+  assert.doesNotMatch(pageSource, /setGlobalStoriesLoading/);
+  assert.doesNotMatch(pageSource, /setGlobalEventsLoading/);
+  assert.doesNotMatch(pageSource, /setPlaceRequestsLoading/);
+  assert.doesNotMatch(pageSource, /scope=all&page=\$\{global(?:Stories|Events)Page\}/);
+  assert.match(typesSource, /export type PlaceStory =/);
+  assert.match(typesSource, /export type PlaceEvent =/);
+  assert.match(typesSource, /export type PlaceRegistrationRequest =/);
+  assert.match(hookSource, /scope=upload-diagnostics/);
+  assert.match(hookSource, /scope=performance-diagnostics/);
+  assert.match(hookSource, /scope=all&page=\$\{globalStoriesPage\}/);
+  assert.match(hookSource, /scope=all&page=\$\{globalEventsPage\}/);
 });
 
 test("dense label persistence stays behind its client hook boundary", async () => {

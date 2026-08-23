@@ -2,38 +2,14 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { memo } from "react";
+import type { PlaceRegistrationRequest } from "./content/types";
 import {
   markerAssetSrc,
   type BundledMarkerCategory,
   type BundledMarkerStyle,
 } from "./marker-assets";
 
-export type AdminPlaceRequestRecord = {
-  id: string;
-  submittedName: string;
-  submittedArea: string;
-  submittedAddress: string;
-  submittedDescription: string;
-  submittedCategory: BundledMarkerCategory;
-  submittedMarkerStyle: BundledMarkerStyle;
-  submittedX: number | null;
-  submittedY: number | null;
-  name: string;
-  area: string;
-  address: string;
-  description: string;
-  category: BundledMarkerCategory;
-  markerStyle: BundledMarkerStyle;
-  markerX: number | null;
-  markerY: number | null;
-  status: "pending" | "reviewing" | "approved" | "rejected";
-  directoryId: string | null;
-  rejectionNote: string;
-  createdAt: string;
-  updatedAt: string;
-  reviewStartedAt: string | null;
-  reviewedAt: string | null;
-};
+export type AdminPlaceRequestRecord = PlaceRegistrationRequest;
 
 type LinkedMarkerPosition = { x: number; y: number };
 

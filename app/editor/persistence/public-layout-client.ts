@@ -1,4 +1,7 @@
 import type { DocumentState } from "../../map/core/types";
+import type { PlaceEventPlace, PlaceReviewCount } from "../../content/types";
+
+export type { PlaceEventPlace, PlaceReviewCount } from "../../content/types";
 
 const PUBLIC_LAYOUT_API = "/api/public-layout";
 
@@ -45,16 +48,6 @@ export type PublicLayoutHistoryItem = {
 export type PublicLayoutHistoryEntry = PublicLayoutHistoryItem & {
   document: DocumentState;
   view: PublicViewSettings;
-};
-
-export type PlaceEventPlace = {
-  placeKey: string;
-  placeName: string;
-};
-
-export type PlaceReviewCount = PlaceEventPlace & {
-  count: number;
-  latestCreatedAt: string | null;
 };
 
 export type UploadedBaseMap = {

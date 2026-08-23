@@ -1,35 +1,9 @@
 "use client";
 
-export type UploadDiagnostic = {
-  id: string;
-  placeKey: string;
-  stage: "prepare" | "request" | "response" | "unknown";
-  errorCode: string;
-  responseStatus: number;
-  sourceSize: number;
-  preparedSize: number | null;
-  sourceType: string;
-  preparedType: string | null;
-  online: number;
-  userAgent: string;
-  createdAt: string;
-};
+import type { PerformanceDiagnostic, PlaceStoryUploadDiagnostic } from "./content/types";
 
-export type PerformanceDiagnostic = {
-  id: string;
-  metric: "startup" | "pan-settle" | "pinch-settle";
-  durationMs: number;
-  elementCount: number;
-  labelCount: number;
-  viewportWidth: number;
-  viewportHeight: number;
-  deviceMemory: number | null;
-  hardwareConcurrency: number;
-  connectionType: string;
-  standalone: number;
-  online: number;
-  createdAt: string;
-};
+export type UploadDiagnostic = PlaceStoryUploadDiagnostic;
+export type { PerformanceDiagnostic } from "./content/types";
 
 export type AdminDiagnosticsPanelProps = {
   uploadDiagnostics: UploadDiagnostic[];

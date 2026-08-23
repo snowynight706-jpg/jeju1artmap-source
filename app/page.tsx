@@ -116,8 +116,6 @@ import {
   type BaseMapMode,
   type EditorDraftPayload,
   type OptionalLabelScaleStep,
-  type PlaceEventPlace,
-  type PlaceReviewCount,
   type PublicLayoutHistoryEntry,
   type PublicLayoutHistoryItem,
   type PublicViewSettings,
@@ -192,7 +190,6 @@ import {
   type ConvenienceAttributeId,
 } from "./place-taxonomy";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
-import type { AdminPlaceRequestRecord } from "./admin-place-request-list";
 import {
   PLACE_EVENTS_API,
   PLACE_REGISTRATION_REQUESTS_API,
@@ -203,6 +200,26 @@ import {
   sendPlaceStoryUploadDiagnostic,
   writePlaceStoryDraft,
 } from "./content/client";
+import type {
+  GlobalContentTab,
+  PlaceDirectoryRecord,
+  PlaceEvent,
+  PlaceEventPlace,
+  PlaceEventsPayload,
+  PlaceRegistrationRequest,
+  PlaceRegistrationRequestsPayload,
+  PlaceReviewCount,
+  PlaceStoriesPayload,
+  PlaceStory,
+  StoryCameraPermissionState,
+  StoryReportReason,
+} from "./content/types";
+import {
+  useExplorerDiagnostics,
+  useExplorerEvents,
+  useExplorerStories,
+  usePlaceRequests,
+} from "./content/use-explorer-content";
 import {
   STORY_PHOTO_MAX_SOURCE_BYTES,
   STORY_PHOTO_MAX_UPLOAD_BYTES,
@@ -352,32 +369,8 @@ type PlacementFilter = "all" | "placed" | "unplaced";
 type RecommendationFilter = "all" | "recommended" | "standard";
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PublicAssetProfile = "mobile" | "standard";
-type GlobalContentTab = "places" | "reviews" | "events" | "place-requests";
-type StoryReportReason = "inappropriate" | "privacy" | "copyright" | "spam" | "other";
 
 // 이하는 지도, 장소, 후기, 행사, 공개본에 사용되는 데이터 형태 정의입니다.
-type PlaceDirectoryRecord = {
-  id: string;
-  name: string;
-  category: CategoryId;
-  area: string;
-  address: string;
-  subtype: string;
-  priority: string;
-  description: string;
-  operatingInfo: string;
-  notes: string;
-  sourceUrl: string;
-  mapUrl: string;
-  checkedAt: string;
-  additionalCategories: AdditionalCategoryId[];
-  convenienceAttributes: ConvenienceAttributeId[];
-  locationGroupId: string;
-  mapAnchorId: string;
-  featuredRole: string;
-  aliases: string[];
-};
-
 type PublicPlaceListItem = {
   id: string;
   place: DirectoryPlace;
@@ -398,75 +391,6 @@ type UnifiedPlaceRow = {
   element?: MapElement;
 };
 
-type PlaceStory = {
-  id: string;
-  placeKey: string;
-  placeName: string;
-  authorName: string;
-  reviewText: string;
-  photoUrl: string | null;
-  status: "published" | "hidden";
-  reportCount?: number;
-  reportSummary?: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type PlaceStoriesPayload = {
-  stories?: PlaceStory[];
-  story?: PlaceStory;
-  canModerate?: boolean;
-  persistent?: boolean;
-  page?: number;
-  pageSize?: number;
-  pageCount?: number;
-  total?: number;
-  error?: string;
-};
-
-type PlaceStoryUploadDiagnostic = {
-  id: string;
-  placeKey: string;
-  stage: "prepare" | "request" | "response" | "unknown";
-  errorCode: string;
-  responseStatus: number;
-  sourceSize: number;
-  preparedSize: number | null;
-  sourceType: string;
-  preparedType: string | null;
-  online: number;
-  userAgent: string;
-  createdAt: string;
-};
-
-type PlaceStoryDiagnosticsPayload = {
-  diagnostics?: PlaceStoryUploadDiagnostic[];
-  error?: string;
-};
-
-type PerformanceDiagnostic = {
-  id: string;
-  metric: "startup" | "pan-settle" | "pinch-settle";
-  durationMs: number;
-  elementCount: number;
-  labelCount: number;
-  viewportWidth: number;
-  viewportHeight: number;
-  deviceMemory: number | null;
-  hardwareConcurrency: number;
-  connectionType: string;
-  standalone: number;
-  online: number;
-  createdAt: string;
-};
-
-type PerformanceDiagnosticsPayload = {
-  diagnostics?: PerformanceDiagnostic[];
-  error?: string;
-};
-
-type StoryCameraPermissionState = "unknown" | "requesting" | "granted" | "denied" | "unavailable";
-
 const storyReportReasons: Array<{ id: StoryReportReason; label: string }> = [
   { id: "inappropriate", label: "부적절한 내용" },
   { id: "privacy", label: "개인정보 노출" },
@@ -475,51 +399,6 @@ const storyReportReasons: Array<{ id: StoryReportReason; label: string }> = [
   { id: "other", label: "기타" },
 ];
 
-type PlaceEvent = {
-  id: string;
-  placeKey: string;
-  placeName: string;
-  places: PlaceEventPlace[];
-  eventName: string;
-  eventInfo: string;
-  photoUrl: string;
-  startsAt: string;
-  endsAt: string;
-  visibleFrom: string;
-  visibleUntil: string;
-  status: "active" | "hidden";
-  isVisible: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type PlaceEventsPayload = {
-  events?: PlaceEvent[];
-  event?: PlaceEvent;
-  linkedPlaces?: PlaceEventPlace[];
-  canManage?: boolean;
-  persistent?: boolean;
-  page?: number;
-  pageSize?: number;
-  pageCount?: number;
-  total?: number;
-  error?: string;
-};
-
-type PlaceRegistrationRequest = AdminPlaceRequestRecord;
-
-type PlaceRegistrationRequestsPayload = {
-  requests?: PlaceRegistrationRequest[];
-  request?: PlaceRegistrationRequest;
-  directory?: PlaceDirectoryRecord;
-  canManage?: boolean;
-  persistent?: boolean;
-  page?: number;
-  pageSize?: number;
-  pageCount?: number;
-  total?: number;
-  error?: string;
-};
 
 // 이하는 지도 좌표 보정과 기준 랜드마크 위치를 계산하는 코드입니다.
 const landmarkLocations = [
@@ -1371,29 +1250,39 @@ export default function Home() {
   const [placeStoriesLoadedKey, setPlaceStoriesLoadedKey] = useState<string | null>(null);
   const [, setPlaceStoriesCanModerate] = useState(false);
   const [globalStoriesOpen, setGlobalStoriesOpen] = useState(false);
+  const [globalContentTab, setGlobalContentTab] = useState<GlobalContentTab>("places");
   const [publicPanelExpanded, setPublicPanelExpanded] = useState(false);
   const [publicPlaceExpanded, setPublicPlaceExpanded] = useState(false);
   const [publicPanelDrag, setPublicPanelDrag] = useState<{ target: "place" | "explorer"; offsetY: number } | null>(null);
   const [publicPlaceQuery, setPublicPlaceQuery] = useState("");
   const [publicPlaceCategory, setPublicPlaceCategory] = useState<PublicPlaceCategoryScope>("all");
   const [expandedAdditionalCategoryItemId, setExpandedAdditionalCategoryItemId] = useState<string | null>(null);
-  const [globalStories, setGlobalStories] = useState<PlaceStory[]>([]);
-  const [globalStoriesPage, setGlobalStoriesPage] = useState(1);
-  const [globalStoriesPageCount, setGlobalStoriesPageCount] = useState(0);
-  const [globalStoriesTotal, setGlobalStoriesTotal] = useState<number | null>(null);
-  const [globalStoriesCanModerate, setGlobalStoriesCanModerate] = useState(false);
-  const [globalStoriesLoading, setGlobalStoriesLoading] = useState(false);
-  const [globalStoriesError, setGlobalStoriesError] = useState(false);
-  const [globalStoriesRefreshKey, setGlobalStoriesRefreshKey] = useState(0);
-  const [uploadDiagnostics, setUploadDiagnostics] = useState<PlaceStoryUploadDiagnostic[]>([]);
-  const [uploadDiagnosticsLoading, setUploadDiagnosticsLoading] = useState(false);
-  const [uploadDiagnosticsError, setUploadDiagnosticsError] = useState(false);
-  const [uploadDiagnosticsRefreshKey, setUploadDiagnosticsRefreshKey] = useState(0);
+  const {
+    globalStories,
+    globalStoriesPage,
+    globalStoriesPageCount,
+    globalStoriesTotal,
+    globalStoriesCanModerate,
+    globalStoriesLoading,
+    globalStoriesError,
+    setGlobalStories,
+    setGlobalStoriesPage,
+    setGlobalStoriesTotal,
+    setGlobalStoriesRefreshKey,
+  } = useExplorerStories({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
+  const {
+    uploadDiagnostics,
+    uploadDiagnosticsLoading,
+    uploadDiagnosticsError,
+    performanceDiagnostics,
+    performanceDiagnosticsLoading,
+    performanceDiagnosticsError,
+    setUploadDiagnostics,
+    setUploadDiagnosticsRefreshKey,
+    setPerformanceDiagnostics,
+    setPerformanceDiagnosticsRefreshKey,
+  } = useExplorerDiagnostics({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
   const [uploadDiagnosticActionId, setUploadDiagnosticActionId] = useState<string | null>(null);
-  const [performanceDiagnostics, setPerformanceDiagnostics] = useState<PerformanceDiagnostic[]>([]);
-  const [performanceDiagnosticsLoading, setPerformanceDiagnosticsLoading] = useState(false);
-  const [performanceDiagnosticsError, setPerformanceDiagnosticsError] = useState(false);
-  const [performanceDiagnosticsRefreshKey, setPerformanceDiagnosticsRefreshKey] = useState(0);
   const [performanceDiagnosticActionId, setPerformanceDiagnosticActionId] = useState<string | null>(null);
   const [placeStoryActionId, setPlaceStoryActionId] = useState<string | null>(null);
   const [placeStoryFormOpen, setPlaceStoryFormOpen] = useState(false);
@@ -1435,15 +1324,20 @@ export default function Home() {
   const [placeEventExistingPhotoUrl, setPlaceEventExistingPhotoUrl] = useState<string | null>(null);
   const [placeEventSubmitting, setPlaceEventSubmitting] = useState(false);
   const [placeEventActionId, setPlaceEventActionId] = useState<string | null>(null);
-  const [globalContentTab, setGlobalContentTab] = useState<GlobalContentTab>("places");
-  const [globalEvents, setGlobalEvents] = useState<PlaceEvent[]>([]);
-  const [globalEventsPage, setGlobalEventsPage] = useState(1);
-  const [globalEventsPageCount, setGlobalEventsPageCount] = useState(0);
-  const [globalEventsTotal, setGlobalEventsTotal] = useState<number | null>(null);
-  const [globalEventsCanManage, setGlobalEventsCanManage] = useState(false);
-  const [globalEventsLoading, setGlobalEventsLoading] = useState(false);
-  const [globalEventsError, setGlobalEventsError] = useState(false);
-  const [globalEventsRefreshKey, setGlobalEventsRefreshKey] = useState(0);
+  const {
+    globalEvents,
+    globalEventsPage,
+    globalEventsPageCount,
+    globalEventsTotal,
+    globalEventsCanManage,
+    globalEventsLoading,
+    globalEventsError,
+    globalEventsRefreshKey,
+    setGlobalEvents,
+    setGlobalEventsPage,
+    setGlobalEventsTotal,
+    setGlobalEventsRefreshKey,
+  } = useExplorerEvents({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
   const [placeRequestFormOpen, setPlaceRequestFormOpen] = useState(false);
   const [placeRequestName, setPlaceRequestName] = useState("");
   const [placeRequestArea, setPlaceRequestArea] = useState("");
@@ -1454,13 +1348,18 @@ export default function Home() {
   const [placeRequestLocation, setPlaceRequestLocation] = useState<{ x: number; y: number } | null>(null);
   const [placeRequestPickingLocation, setPlaceRequestPickingLocation] = useState(false);
   const [placeRequestSubmitting, setPlaceRequestSubmitting] = useState(false);
-  const [placeRequests, setPlaceRequests] = useState<PlaceRegistrationRequest[]>([]);
-  const [placeRequestsPage, setPlaceRequestsPage] = useState(1);
-  const [placeRequestsPageCount, setPlaceRequestsPageCount] = useState(0);
-  const [placeRequestsTotal, setPlaceRequestsTotal] = useState<number | null>(null);
-  const [placeRequestsLoading, setPlaceRequestsLoading] = useState(false);
-  const [placeRequestsError, setPlaceRequestsError] = useState(false);
-  const [placeRequestsRefreshKey, setPlaceRequestsRefreshKey] = useState(0);
+  const {
+    placeRequests,
+    placeRequestsPage,
+    placeRequestsPageCount,
+    placeRequestsTotal,
+    placeRequestsLoading,
+    placeRequestsError,
+    setPlaceRequests,
+    setPlaceRequestsPage,
+    setPlaceRequestsTotal,
+    setPlaceRequestsRefreshKey,
+  } = usePlaceRequests({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
   const [placeRequestActionId, setPlaceRequestActionId] = useState<string | null>(null);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
@@ -2691,7 +2590,7 @@ export default function Home() {
     } catch {
       // The editor document and device recovery copy still retain the position.
     }
-  }, []);
+  }, [setPlaceRequests]);
 
   const updatePlaceStoryPhoto = useCallback((file: File | null) => {
     setPlaceStoryPhotoPreview((current) => {
@@ -3103,168 +3002,6 @@ export default function Home() {
   }, [globalEventsRefreshKey, publicLayoutAccess]);
 
   useEffect(() => {
-    if (publicLayoutAccess === "loading" || !globalStoriesOpen || globalContentTab !== "reviews") return;
-    const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (controller.signal.aborted) return null;
-      setGlobalStoriesLoading(true);
-      setGlobalStoriesError(false);
-      return fetch(`${PLACE_STORIES_API}?scope=all&page=${globalStoriesPage}`, { cache: "no-store", signal: controller.signal });
-    })
-      .then(async (response) => {
-        if (!response) return null;
-        const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
-        if (!response.ok) throw new Error(payload?.error ?? "global story load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (controller.signal.aborted || !payload) return;
-        setGlobalStories(Array.isArray(payload?.stories) ? payload.stories : []);
-        setGlobalStoriesTotal(Math.max(0, Number(payload?.total ?? 0)));
-        setGlobalStoriesPageCount(Math.max(0, Number(payload?.pageCount ?? 0)));
-        setGlobalStoriesCanModerate(Boolean(payload?.canModerate));
-        const normalizedPage = Math.max(1, Number(payload?.page ?? globalStoriesPage));
-        if (normalizedPage !== globalStoriesPage) setGlobalStoriesPage(normalizedPage);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
-        setGlobalStories([]);
-        setGlobalStoriesCanModerate(false);
-        setGlobalStoriesError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setGlobalStoriesLoading(false);
-      });
-    return () => controller.abort();
-  }, [globalContentTab, globalStoriesOpen, globalStoriesPage, globalStoriesRefreshKey, publicLayoutAccess]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "editor" || !globalStoriesOpen || globalContentTab !== "reviews") return;
-    const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (controller.signal.aborted) return null;
-      setUploadDiagnosticsLoading(true);
-      setUploadDiagnosticsError(false);
-      return fetch(`${PLACE_STORIES_API}?scope=upload-diagnostics`, { cache: "no-store", signal: controller.signal });
-    })
-      .then(async (response) => {
-        if (!response) return null;
-        const payload = await response.json().catch(() => null) as PlaceStoryDiagnosticsPayload | null;
-        if (!response.ok) throw new Error(payload?.error ?? "upload diagnostics load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (!controller.signal.aborted && payload) setUploadDiagnostics(Array.isArray(payload.diagnostics) ? payload.diagnostics : []);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
-        setUploadDiagnosticsError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setUploadDiagnosticsLoading(false);
-      });
-    return () => controller.abort();
-  }, [globalContentTab, globalStoriesOpen, publicLayoutAccess, uploadDiagnosticsRefreshKey]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "editor" || !globalStoriesOpen || globalContentTab !== "reviews") return;
-    const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (controller.signal.aborted) return null;
-      setPerformanceDiagnosticsLoading(true);
-      setPerformanceDiagnosticsError(false);
-      return fetch(`${PLACE_STORIES_API}?scope=performance-diagnostics`, { cache: "no-store", signal: controller.signal });
-    })
-      .then(async (response) => {
-        if (!response) return null;
-        const payload = await response.json().catch(() => null) as PerformanceDiagnosticsPayload | null;
-        if (!response.ok) throw new Error(payload?.error ?? "performance diagnostics load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (!controller.signal.aborted && payload) setPerformanceDiagnostics(Array.isArray(payload.diagnostics) ? payload.diagnostics : []);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
-        setPerformanceDiagnosticsError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPerformanceDiagnosticsLoading(false);
-      });
-    return () => controller.abort();
-  }, [globalContentTab, globalStoriesOpen, performanceDiagnosticsRefreshKey, publicLayoutAccess]);
-
-  useEffect(() => {
-    if (publicLayoutAccess === "loading" || !globalStoriesOpen || globalContentTab !== "events") return;
-    const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (controller.signal.aborted) return null;
-      setGlobalEventsLoading(true);
-      setGlobalEventsError(false);
-      return fetch(`${PLACE_EVENTS_API}?scope=all&page=${globalEventsPage}`, { cache: "no-store", signal: controller.signal });
-    })
-      .then(async (response) => {
-        if (!response) return null;
-        const payload = await response.json().catch(() => null) as PlaceEventsPayload | null;
-        if (!response.ok) throw new Error(payload?.error ?? "global event load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (controller.signal.aborted || !payload) return;
-        setGlobalEvents(Array.isArray(payload?.events) ? payload.events : []);
-        setGlobalEventsTotal(Math.max(0, Number(payload?.total ?? 0)));
-        setGlobalEventsPageCount(Math.max(0, Number(payload?.pageCount ?? 0)));
-        setGlobalEventsCanManage(Boolean(payload?.canManage));
-        const normalizedPage = Math.max(1, Number(payload?.page ?? globalEventsPage));
-        if (normalizedPage !== globalEventsPage) setGlobalEventsPage(normalizedPage);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
-        setGlobalEvents([]);
-        setGlobalEventsCanManage(false);
-        setGlobalEventsError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setGlobalEventsLoading(false);
-      });
-    return () => controller.abort();
-  }, [globalContentTab, globalEventsPage, globalEventsRefreshKey, globalStoriesOpen, publicLayoutAccess]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "editor" || !globalStoriesOpen || globalContentTab !== "place-requests") return;
-    const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (controller.signal.aborted) return null;
-      setPlaceRequestsLoading(true);
-      setPlaceRequestsError(false);
-      return fetch(`${PLACE_REGISTRATION_REQUESTS_API}?page=${placeRequestsPage}`, { cache: "no-store", signal: controller.signal });
-    })
-      .then(async (response) => {
-        if (!response) return null;
-        const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
-        if (!response.ok) throw new Error(payload?.error ?? "place request load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (controller.signal.aborted || !payload) return;
-        setPlaceRequests(Array.isArray(payload.requests) ? payload.requests : []);
-        setPlaceRequestsTotal(Math.max(0, Number(payload.total ?? 0)));
-        setPlaceRequestsPageCount(Math.max(0, Number(payload.pageCount ?? 0)));
-        const normalizedPage = Math.max(1, Number(payload.page ?? placeRequestsPage));
-        if (normalizedPage !== placeRequestsPage) setPlaceRequestsPage(normalizedPage);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
-        setPlaceRequests([]);
-        setPlaceRequestsError(true);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPlaceRequestsLoading(false);
-      });
-    return () => controller.abort();
-  }, [globalContentTab, globalStoriesOpen, placeRequestsPage, placeRequestsRefreshKey, publicLayoutAccess]);
-
-  useEffect(() => {
     let cancelled = false;
     loadPublicLayout("no-cache")
       .then(({ response, payload }) => {
@@ -3356,7 +3093,7 @@ export default function Home() {
         setHydrated(true);
       });
     return () => { cancelled = true; };
-  }, [setDocument]);
+  }, [setDocument, setGlobalEventsTotal, setGlobalStoriesTotal, setPlaceRequestsTotal]);
 
   useEffect(() => {
     if (publicLayoutAccess !== "editor") return;

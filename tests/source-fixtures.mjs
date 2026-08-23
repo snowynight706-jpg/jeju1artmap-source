@@ -15,6 +15,8 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
   ]),
   contentClient: Object.freeze([
     "../app/content/client.ts",
+    "../app/content/types.ts",
+    "../app/content/use-explorer-content.ts",
   ]),
   media: Object.freeze([
     "../app/media/photo-processing.ts",
