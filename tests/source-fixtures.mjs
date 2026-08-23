@@ -39,6 +39,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/editor/document/main-hub-persistence.mjs",
     "../app/editor/document/map-element-identity.mjs",
     "../app/editor/document/rules.ts",
+    "../app/editor/document/use-editor-document-state.ts",
   ]),
   editorPlaces: Object.freeze([
     "../app/editor/places/actions.ts",
@@ -54,6 +55,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
   editorWorkspace: Object.freeze([
     "../app/editor/workspace/use-admin-map-asset-actions.ts",
     "../app/editor/workspace/use-admin-output-workspace.ts",
+    "../app/editor/workspace/use-editor-map-edit-actions.ts",
   ]),
   mapLabels: Object.freeze([
     "../app/map/labels/clusters.ts",

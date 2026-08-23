@@ -23,11 +23,13 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/model.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/use-editor-document-state.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPlaces.includes("../app/editor/places/actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-application-bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-admin-map-asset-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-admin-output-workspace.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-editor-map-edit-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapPrint.includes("../app/map/print/export.ts"));
@@ -299,6 +301,39 @@ test("initial assets, system places, and stored document normalization stay behi
   assert.match(bootstrapSource, /function ensureMainHubMapElement\(/);
   assert.match(bootstrapSource, /function ensureLppMapElement\(/);
   assert.match(bootstrapSource, /function sanitizeDocument\(/);
+});
+
+test("editor document snapshots, restoration, history, and ref synchronization stay behind one state boundary", async () => {
+  const [pageSource, stateSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/document/use-editor-document-state.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useEditorDocumentState\(\{/);
+  assert.doesNotMatch(pageSource, /const currentDocument = useCallback/);
+  assert.doesNotMatch(pageSource, /const setDocument = useCallback/);
+  assert.doesNotMatch(pageSource, /const replaceElements = useCallback/);
+  assert.match(stateSource, /const currentDocument = useCallback/);
+  assert.match(stateSource, /const setDocument = useCallback/);
+  assert.match(stateSource, /const pushHistory = useCallback/);
+  assert.match(stateSource, /const replaceElements = useCallback/);
+});
+
+test("coordinate, anchor, element, and automatic label edits stay behind one admin map boundary", async () => {
+  const [pageSource, actionsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/workspace/use-editor-map-edit-actions.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useEditorMapEditActions\(\{/);
+  assert.doesNotMatch(pageSource, /const applyCalibrationPoints = useCallback/);
+  assert.doesNotMatch(pageSource, /const updateElementAnchor = useCallback/);
+  assert.doesNotMatch(pageSource, /const autoArrangeLabels =/);
+  assert.doesNotMatch(pageSource, /const refreshLabelPositions =/);
+  assert.match(actionsSource, /const applyCalibrationPoints = useCallback/);
+  assert.match(actionsSource, /const updateElementAnchor = useCallback/);
+  assert.match(actionsSource, /const autoArrangeLabels =/);
+  assert.match(actionsSource, /const refreshLabelPositions =/);
 });
 
 test("admin place coordinates, placement, taxonomy, and database editing stay behind one workspace boundary", async () => {
