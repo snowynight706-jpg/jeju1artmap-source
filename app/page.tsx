@@ -18,7 +18,6 @@ import {
 import {
   markerAssetIdForPlace,
   markerAssetSrc,
-  markerAssetStatus,
   recommendedMarkerStyle,
   type BundledMarkerCategory,
   type BundledMarkerStyle,
@@ -54,9 +53,6 @@ import {
   applyPlacementOverrides,
   cloneDocument,
   ensureIndependentElementIdentity,
-  isSameMapPlace,
-  lockedCoordinateKey,
-  lockedCoordinateSettingsFor,
   placementKey,
   sanitizePlacementOverrides,
   uniqueRuntimeId,
@@ -72,10 +68,7 @@ import { renderHighResolutionMapPng } from "./map/print/export";
 import { usePrintSettingsPersistence } from "./map/print/use-settings-persistence";
 import { denseLabelRenderScale } from "./map/labels/clusters";
 import { rectsOverlap, type NormalizedRect } from "./map/labels/geometry";
-import {
-  readLocalDenseLabelSettings,
-  useDenseLabelSettingsPersistence,
-} from "./map/labels/use-settings-persistence";
+import { useDenseLabelSettingsPersistence } from "./map/labels/use-settings-persistence";
 import type {
   AssetStatus,
   DenseLabelCluster,
@@ -84,7 +77,6 @@ import type {
   DocumentState,
   LabelPosition,
   LandmarkDefaultPosition,
-  LockedCoordinateSetting,
   MapAsset,
   MapElement,
   MapLabelStatus,
@@ -97,9 +89,8 @@ import type {
   ViewMode,
   VisualBounds,
 } from "./map/core/types";
-import { parseVersionedLocalAutosave, shouldRestoreLocalAutosave } from "./editor/persistence/local-autosave.mjs";
-import { chooseEditorRestoreSource } from "./editor/persistence/editor-draft-restore.mjs";
-import { AUTOSAVE_KEY, useLocalAutosave } from "./editor/persistence/use-local-autosave";
+import { useLocalAutosave } from "./editor/persistence/use-local-autosave";
+import { useApplicationBootstrap } from "./editor/persistence/use-application-bootstrap";
 import {
   fetchPublicHistoryEntry,
   loadPublicLayout,
@@ -114,12 +105,7 @@ import {
   type PublicViewSettings,
   type UploadedBaseMap,
 } from "./editor/persistence/public-layout-client";
-import {
-  CALIBRATION_SETTINGS_KEY,
-  LOCKED_COORDINATE_SETTINGS_KEY,
-  PLACEMENT_SETTINGS_KEY,
-  useMapSettingsPersistence,
-} from "./editor/persistence/use-map-settings-persistence";
+import { useMapSettingsPersistence } from "./editor/persistence/use-map-settings-persistence";
 import { normalizeOptionalLabelScaleSteps } from "./map/labels/density.mjs";
 import PublicExplorerPanel, { type PublicExplorerTab } from "./public/explorer-panel";
 import { publicPlaceFocusZoom } from "./public/place-focus.mjs";
@@ -172,7 +158,6 @@ import {
   defaultMarkerAssetId,
   directoryCategory,
   directoryRecordFromPlace,
-  mapCategoryForDirectoryPlace,
 } from "./place-directory/model";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 import {
@@ -187,7 +172,6 @@ import {
 } from "./content/client";
 import type {
   GlobalContentTab,
-  PlaceDirectoryRecord,
   PlaceEvent,
   PlaceEventPlace,
   PlaceEventsPayload,
@@ -271,9 +255,6 @@ const supersededRedesignedLandmarkAssets = new Map<string, Set<string>>([
   ["칠성로", new Set(["chilsungro", "chilsungro-20260819"])],
 ]);
 const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
-const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
-const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
-const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
 const PLACE_STORY_AUTHOR_KEY = "jeju-wondosim-map-review:story-author:v1";
 const UI_THEME_STORAGE_KEY = "jeju-wondosim-map-review:ui-theme:v1";
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
@@ -2009,420 +1990,77 @@ export default function Home() {
     return () => controller.abort();
   }, [placeEventsRefreshKey, publicLayoutAccess, selectedStoryKey, updatePlaceEventPhoto]);
 
-  useEffect(() => {
-    if (publicLayoutAccess === "loading") return;
-    if (globalEventsRefreshKey === 0 && eventPlaceIndexBootstrappedRef.current) return;
-    const controller = new AbortController();
-    void fetch(`${PLACE_EVENTS_API}?scope=place-index`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null) as PlaceEventsPayload | null;
-        if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "event place index load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (!controller.signal.aborted) setEventLinkedPlaces(Array.isArray(payload?.linkedPlaces) ? payload.linkedPlaces : []);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
-        setEventLinkedPlaces([]);
-      });
-    return () => controller.abort();
-  }, [globalEventsRefreshKey, publicLayoutAccess]);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadPublicLayout("no-cache")
-      .then(({ response, payload }) => {
-        if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "public layout load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (cancelled) return;
-        const canEdit = Boolean(payload?.canEdit);
-        setAdminAccessMethod(payload?.accessMethod ?? null);
-        const publishedDocument = payload?.document && Array.isArray(payload.document.elements)
-          ? sanitizeDocument(payload.document)
-          : null;
-        publishedLayoutDocumentRef.current = publishedDocument;
-        publishedLayoutViewRef.current = payload?.view ?? null;
-        setPublicLayoutPublishedAt(payload?.publishedAt ?? null);
-        const revision = typeof payload?.revision === "number" ? payload.revision : 0;
-        publishedLayoutRevisionRef.current = revision;
-        setPublicLayoutRevision(revision);
-        setPublicHistory(Array.isArray(payload?.history) ? payload.history : []);
-        const serverDraft = payload?.draft?.document && Array.isArray(payload.draft.document.elements)
-          ? sanitizeDocument(payload.draft.document)
-          : null;
-        editorDraftDocumentRef.current = serverDraft;
-        editorDraftViewRef.current = payload?.draft?.view ?? null;
-        const draftRevision = typeof payload?.draft?.revision === "number" ? payload.draft.revision : 0;
-        editorDraftRevisionRef.current = draftRevision;
-        setEditorDraftUpdatedAt(payload?.draft?.updatedAt ?? null);
-        setEditorDraftSyncState(serverDraft ? "saved" : "ready");
-        labelDensitySettingsRevisionRef.current = Math.max(0, Number(payload?.labelDensitySettings?.revision ?? 0));
-        if (payload?.contentSummary) {
-          setGlobalStoriesTotal(Math.max(0, Number(payload.contentSummary.reviews ?? 0)));
-          setGlobalEventsTotal(Math.max(0, Number(payload.contentSummary.events ?? 0)));
-          setPlaceRequestsTotal(Math.max(0, Number(payload.contentSummary.placeRequests ?? 0)));
-        }
-        if (Array.isArray(payload?.eventLinkedPlaces)) {
-          eventPlaceIndexBootstrappedRef.current = true;
-          setEventLinkedPlaces(payload.eventLinkedPlaces);
-        }
-        if (Array.isArray(payload?.reviewCountsByPlace)) {
-          setReviewCountsByPlace(payload.reviewCountsByPlace);
-        }
-        if (payload?.uploadedBaseMap?.available) {
-          setUploadedBaseMap(payload.uploadedBaseMap);
-          setBaseMapCanUpload(Boolean(payload.uploadedBaseMap.canUpload));
-        }
-        if (canEdit) {
-          setPublicLayoutAccess("editor");
-          return;
-        }
-        setPublicLayoutAccess("viewer");
-        if (publishedDocument) {
-          setDocument(publishedDocument);
-          if (payload?.view) {
-            setBaseMap(payload.view.baseMap);
-            setMarkerLabelsVisible(payload.view.markerLabelsVisible);
-            setMergeDenseLabels(payload.view.mergeDenseLabels);
-            setScreenRecommendedOnly(payload.view.screenRecommendedOnly);
-            setMarkerGroupSize(clamp(payload.view.defaultMarkerSize, 0.8, 15));
-            setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(payload.view.optionalLabelScaleSteps));
-          }
-          setSaveState("공개 배치본");
-        } else {
-          setDocument({
-            elements: initialElements,
-            assets: builtInAssets,
-            reviewNotes: [],
-            directoryPlaces: defaultDirectoryPlaces,
-            calibrationPoints: initialCalibrationPoints,
-            landmarkDefaultPositions: factoryLandmarkDefaultPositions,
-            denseLabelPositions: [],
-            denseLabelExcludedIds: [],
-            placementOverrides: [],
-          });
-          setSaveState("공개 배치본 준비 중");
-        }
-        setLeftOpen(false);
-        setRightOpen(false);
-        setSelectedId(null);
-        setHydrated(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setPublicLayoutAccess("viewer");
-        setLeftOpen(false);
-        setRightOpen(false);
-        setSelectedId(null);
-        setSaveState("공개 배치본을 불러오지 못함");
-        setHydrated(true);
-      });
-    return () => { cancelled = true; };
-  }, [setDocument, setGlobalEventsTotal, setGlobalStoriesTotal, setPlaceRequestsTotal]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "editor") return;
-    const timer = window.setTimeout(() => {
-      try {
-        try {
-          const savedVisibilityGroups = JSON.parse(localStorage.getItem(VISIBILITY_GROUPS_KEY) ?? "null") as Partial<Record<CategoryId, boolean>> | null;
-          if (savedVisibilityGroups) {
-            setExpandedVisibilityGroups((current) => categories.reduce<Record<CategoryId, boolean>>((next, category) => {
-              next[category.id] = typeof savedVisibilityGroups[category.id] === "boolean" ? savedVisibilityGroups[category.id]! : current[category.id];
-              return next;
-            }, { ...current }));
-          }
-        } catch {}
-
-        try {
-          const savedCalibrationGroups = JSON.parse(localStorage.getItem(CALIBRATION_GROUPS_KEY) ?? "null") as Partial<Record<CalibrationGroupId, boolean>> | null;
-          if (savedCalibrationGroups) {
-            setExpandedCalibrationGroups((current) => ({
-              primary: typeof savedCalibrationGroups.primary === "boolean" ? savedCalibrationGroups.primary : current.primary,
-              secondary: typeof savedCalibrationGroups.secondary === "boolean" ? savedCalibrationGroups.secondary : current.secondary,
-              tertiary: typeof savedCalibrationGroups.tertiary === "boolean" ? savedCalibrationGroups.tertiary : current.tertiary,
-            }));
-          }
-        } catch {}
-
-        try {
-          const savedMapView = JSON.parse(localStorage.getItem(MAP_VIEW_SETTINGS_KEY) ?? "null") as {
-            markerLabelsVisible?: boolean;
-            mergeDenseLabels?: boolean;
-            expandedPlacedMarkerGroups?: Partial<Record<CategoryId, boolean>>;
-          } | null;
-          if (savedMapView) {
-            if (typeof savedMapView.markerLabelsVisible === "boolean") setMarkerLabelsVisible(savedMapView.markerLabelsVisible);
-            if (typeof savedMapView.mergeDenseLabels === "boolean") setMergeDenseLabels(savedMapView.mergeDenseLabels);
-            if (savedMapView.expandedPlacedMarkerGroups) {
-              setExpandedPlacedMarkerGroups((current) => categories.reduce<Record<CategoryId, boolean>>((next, category) => {
-                const saved = savedMapView.expandedPlacedMarkerGroups?.[category.id];
-                next[category.id] = typeof saved === "boolean" ? saved : current[category.id];
-                return next;
-              }, { ...current }));
-            }
-          }
-        } catch {}
-
-        const persistentCalibration = (() => {
-          try {
-            return JSON.parse(localStorage.getItem(CALIBRATION_SETTINGS_KEY) ?? "null") as { calibrationPoints?: CalibrationPoint[]; landmarkDefaultPositions?: LandmarkDefaultPosition[]; updatedAt?: string } | null;
-          } catch {
-            return null;
-          }
-        })();
-        localCalibrationUpdatedAtRef.current = Date.parse(persistentCalibration?.updatedAt ?? "") || 0;
-        const persistentLockedCoordinates = (() => {
-          try {
-            return JSON.parse(localStorage.getItem(LOCKED_COORDINATE_SETTINGS_KEY) ?? "null") as { settings?: LockedCoordinateSetting[]; updatedAt?: string } | null;
-          } catch {
-            return null;
-          }
-        })();
-        localLockedCoordinatesUpdatedAtRef.current = Date.parse(persistentLockedCoordinates?.updatedAt ?? "") || 0;
-        const persistentDenseLabels = readLocalDenseLabelSettings();
-        localDenseLabelsUpdatedAtRef.current = Date.parse(persistentDenseLabels?.updatedAt ?? "") || 0;
-        const persistentPlacement = (() => {
-          try {
-            return JSON.parse(localStorage.getItem(PLACEMENT_SETTINGS_KEY) ?? "null") as { settings?: PlacementOverride[]; updatedAt?: string } | null;
-          } catch {
-            return null;
-          }
-        })();
-        localPlacementUpdatedAtRef.current = Date.parse(persistentPlacement?.updatedAt ?? "") || 0;
-
-        const raw = localStorage.getItem(AUTOSAVE_KEY);
-        const localAutosave = raw ? parseVersionedLocalAutosave(raw) as { document: Partial<DocumentState>; baseRevision: number | null; savedAt?: string } | null : null;
-        const hasPublishedServerDocument = Boolean(publishedLayoutDocumentRef.current);
-        const canRestoreLocalAutosave = shouldRestoreLocalAutosave(localAutosave, hasPublishedServerDocument, publishedLayoutRevisionRef.current);
-        const restoreChoice = chooseEditorRestoreSource({
-          localAutosave,
-          canRestoreLocalAutosave,
-          serverDraftDocument: editorDraftDocumentRef.current,
-          serverDraftUpdatedAt: editorDraftUpdatedAt,
-          publishedAt: publicLayoutPublishedAt,
-        }) as { document: Partial<DocumentState> | null; source: "local" | "server" | "none" };
-        const parsed = restoreChoice.document;
-        const restoredFromServerDraft = restoreChoice.source === "server";
-        if (parsed && Array.isArray(parsed.elements)) {
-            const parsedElements = (parsed.elements as MapElement[]).map((item) => {
-              const correctedPlace = defaultDirectoryPlaces.find((place) => place.id === item.directoryId || normalizePlaceName(place.name) === normalizePlaceName(item.name));
-              const shouldMoveToCorrectedPosition = Boolean(correctedPlace?.coordinateStatus === "geocoded" && (/^(default-landmark|starter-marker)-/.test(item.id) || /초기 구성용|초기 배치/.test(item.memo ?? "")));
-              const restored = {
-                ...elementDefaults,
-                ...item,
-                ...(correctedPlace?.coordinateStatus === "geocoded" && !item.locked ? {
-                  anchorX: correctedPlace.x,
-                  anchorY: correctedPlace.y,
-                  ...(shouldMoveToCorrectedPosition ? { x: correctedPlace.x, y: correctedPlace.y } : {}),
-                } : {}),
-              };
-              if (restored.name === "탑동해변공연장" && !restored.assetId) {
-                return { ...restored, assetId: LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID, status: "approved" as AssetStatus, directoryId: "place-tapdong-seaside-stage" };
-              }
-              const markerDefault = defaultMarkerAssetId(restored.category, recommendedMarkerStyle, restored.name);
-              if (!restored.assetId && markerDefault) {
-                return { ...restored, assetId: markerDefault, status: markerAssetStatus(recommendedMarkerStyle) };
-              }
-              return restored;
-            });
-            const hasExplicitPlacementState = Array.isArray(persistentPlacement?.settings) || Array.isArray(parsed.placementOverrides);
-            const migratedPlacementOverrides = hasExplicitPlacementState
-              ? sanitizePlacementOverrides(persistentPlacement?.settings ?? parsed.placementOverrides)
-              : sanitizePlacementOverrides([
-                  ...parsedElements
-                    .filter((item) => item.mapVisible === false)
-                    .map((item) => ({ key: placementKey(item), ...(item.directoryId ? { directoryId: item.directoryId } : {}), name: item.name, state: "unplaced" as const })),
-                  ...initialElements
-                    .filter((defaultItem) => !parsedElements.some((item) => isSameMapPlace(item, defaultItem)))
-                    .map((item) => ({ key: placementKey(item), ...(item.directoryId ? { directoryId: item.directoryId } : {}), name: item.name, state: "deleted" as const })),
-                  ...(persistentLockedCoordinates?.settings ?? [])
-                    .filter((setting) => !parsedElements.some((item) => lockedCoordinateKey(item) === setting.key))
-                    .map((setting) => ({
-                      key: setting.directoryId ? `directory:${setting.directoryId}` : `name:${setting.category}:${normalizePlaceName(setting.name)}`,
-                      ...(setting.directoryId ? { directoryId: setting.directoryId } : {}),
-                      name: setting.name,
-                      state: "deleted" as const,
-                    })),
-                ]);
-            if (!hasExplicitPlacementState && migratedPlacementOverrides.length) {
-              const updatedAt = new Date().toISOString();
-              localPlacementUpdatedAtRef.current = Date.parse(updatedAt);
-              localStorage.setItem(PLACEMENT_SETTINGS_KEY, JSON.stringify({ settings: migratedPlacementOverrides, updatedAt }));
-            }
-            const deletedPlacementKeys = new Set(migratedPlacementOverrides.filter((item) => item.state === "deleted").map((item) => item.key));
-            const mergedElements = [
-              ...parsedElements,
-              ...initialElements.filter((defaultItem) => (
-                !deletedPlacementKeys.has(placementKey(defaultItem))
-                && !parsedElements.some((item) => isSameMapPlace(item, defaultItem))
-              )),
-            ];
-            const parsedAssets = Array.isArray(parsed.assets) ? parsed.assets : [];
-            const mergedAssets = [
-              ...builtInAssets,
-              ...parsedAssets.filter((item) => !builtInAssets.some((builtIn) => builtIn.id === item.id)),
-            ];
-            if (!persistentLockedCoordinates) {
-              const migratedSettings = lockedCoordinateSettingsFor(mergedElements);
-              if (migratedSettings.length) {
-                const updatedAt = new Date().toISOString();
-                localLockedCoordinatesUpdatedAtRef.current = Date.parse(updatedAt);
-                localStorage.setItem(LOCKED_COORDINATE_SETTINGS_KEY, JSON.stringify({ settings: migratedSettings, updatedAt }));
-              }
-            }
-            setDocument({
-              elements: mergedElements,
-              assets: mergedAssets,
-              reviewNotes: parsed.reviewNotes ?? [],
-              directoryPlaces: parsed.directoryPlaces,
-              calibrationPoints: persistentCalibration?.calibrationPoints ?? parsed.calibrationPoints,
-              landmarkDefaultPositions: persistentCalibration?.landmarkDefaultPositions ?? parsed.landmarkDefaultPositions,
-              denseLabelPositions: persistentDenseLabels?.positions ?? parsed.denseLabelPositions,
-              denseLabelExcludedIds: persistentDenseLabels?.excludedElementIds ?? parsed.denseLabelExcludedIds,
-              placementOverrides: migratedPlacementOverrides,
-            });
-            if (restoredFromServerDraft) {
-              const draftView = editorDraftViewRef.current;
-              if (draftView) {
-                setBaseMap(draftView.baseMap);
-                setMarkerLabelsVisible(draftView.markerLabelsVisible);
-                setMergeDenseLabels(draftView.mergeDenseLabels);
-                setScreenRecommendedOnly(draftView.screenRecommendedOnly);
-                setMarkerGroupSize(clamp(draftView.defaultMarkerSize, 0.8, 15));
-                setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(draftView.optionalLabelScaleSteps));
-              }
-              setSaveState("서버 초안에서 편집 시작");
-            } else {
-              setSaveState("기기 임시 복구본 적용");
-            }
-        } else if (publishedLayoutDocumentRef.current) {
-          setDocument(cloneDocument(publishedLayoutDocumentRef.current));
-          const publishedView = publishedLayoutViewRef.current;
-          if (publishedView) {
-            setBaseMap(publishedView.baseMap);
-            setMarkerLabelsVisible(publishedView.markerLabelsVisible);
-            setMergeDenseLabels(publishedView.mergeDenseLabels);
-            setScreenRecommendedOnly(publishedView.screenRecommendedOnly);
-            setMarkerGroupSize(clamp(publishedView.defaultMarkerSize, 0.8, 15));
-            setOptionalLabelScaleSteps(normalizeOptionalLabelScaleSteps(publishedView.optionalLabelScaleSteps));
-          }
-          setSaveState("공개 배치본에서 편집 시작");
-        } else if (persistentCalibration?.calibrationPoints?.length || persistentDenseLabels || persistentPlacement?.settings?.length) {
-          setDocument({
-            elements: initialElements,
-            assets: builtInAssets,
-            reviewNotes: [],
-            directoryPlaces: defaultDirectoryPlaces,
-            calibrationPoints: persistentCalibration?.calibrationPoints,
-            landmarkDefaultPositions: persistentCalibration?.landmarkDefaultPositions,
-            denseLabelPositions: persistentDenseLabels?.positions,
-            denseLabelExcludedIds: persistentDenseLabels?.excludedElementIds,
-            placementOverrides: persistentPlacement?.settings,
-          });
-          setSaveState("저장된 기준좌표 복구됨");
-        }
-      } catch {
-        setSaveState("자동복구 확인 필요");
-      } finally {
-        setHydrated(true);
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [editorDraftUpdatedAt, publicLayoutAccess, publicLayoutPublishedAt, setDocument]);
-
-  useEffect(() => {
-    if (!hydrated || publicLayoutAccess !== "editor") return;
-    try {
-      localStorage.setItem(VISIBILITY_GROUPS_KEY, JSON.stringify(expandedVisibilityGroups));
-    } catch {}
-  }, [expandedVisibilityGroups, hydrated, publicLayoutAccess]);
-
-  useEffect(() => {
-    if (!hydrated || publicLayoutAccess !== "editor") return;
-    try {
-      localStorage.setItem(CALIBRATION_GROUPS_KEY, JSON.stringify(expandedCalibrationGroups));
-    } catch {}
-  }, [expandedCalibrationGroups, hydrated, publicLayoutAccess]);
-
-  useEffect(() => {
-    if (!hydrated || publicLayoutAccess !== "editor") return;
-    try {
-      localStorage.setItem(MAP_VIEW_SETTINGS_KEY, JSON.stringify({
-        markerLabelsVisible,
-        mergeDenseLabels,
-        expandedPlacedMarkerGroups,
-      }));
-    } catch {}
-  }, [expandedPlacedMarkerGroups, hydrated, markerLabelsVisible, mergeDenseLabels, publicLayoutAccess]);
-
-  useEffect(() => {
-    if (!hydrated || publicLayoutAccess !== "editor" || placeDirectoryLoadedRef.current) return;
-    placeDirectoryLoadedRef.current = true;
-    let cancelled = false;
-    const applyBundledDirectory = async () => {
-      let bundledPlaces = defaultDirectoryPlaces;
-      try {
-        const { masterDirectoryRows } = await import("./master-directory");
-        bundledPlaces = buildDirectoryPlaces(masterDirectoryRows).map((place) => {
-          const mapped = calibratedPlaceCoordinates(place.name, place.latitude, place.longitude, initialCalibrationPoints);
-          return mapped ? { ...place, ...mapped } : place;
-        });
-      } catch {}
-      if (cancelled) return;
-      const bundledRecords = bundledPlaces.map(directoryRecordFromPlace);
-      replaceDirectoryPlaces((current) => mergeDirectoryRecords(bundledRecords, current));
-      setPlaceDirectoryStorage("bundled");
-    };
-    fetch(PLACE_DIRECTORY_API, { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null) as {
-          rows?: PlaceDirectoryRecord[];
-          persistent?: boolean;
-          canEdit?: boolean;
-          updatedAt?: string | null;
-        } | null;
-        if (!response.ok && response.status !== 503) throw new Error("directory load failed");
-        return payload;
-      })
-      .then((payload) => {
-        if (cancelled) return;
-        setPlaceDirectoryCanEdit(Boolean(payload?.canEdit));
-        setPlaceDirectoryUpdatedAt(payload?.updatedAt ?? null);
-        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
-        if (!payload?.persistent || !rows.length) {
-          void applyBundledDirectory();
-          return;
-        }
-        const merged = mergeDirectoryRecords(rows, placesRef.current);
-        const byId = new Map(merged.map((place) => [place.id, place]));
-        const byName = new Map(merged.map((place) => [normalizePlaceName(place.name), place]));
-        replaceDirectoryPlaces(() => merged);
-        replaceElements((current) => current.map((element) => {
-          const place = (element.directoryId ? byId.get(element.directoryId) : undefined)
-            ?? byName.get(normalizePlaceName(element.name));
-          if (!place) return element;
-          const mapCategory = mapCategoryForDirectoryPlace(place);
-          return {
-            ...element,
-            directoryId: place.id,
-            name: place.name,
-            category: mapCategory,
-            address: place.address,
-            addressSourceUrl: place.sourceUrl ?? "",
-            assetId: assetIdAfterDirectoryCategoryChange(element, mapCategory),
-          };
-        }));
-        setPlaceDirectoryStorage("persistent");
-      })
-      .catch(() => {
-        if (!cancelled) void applyBundledDirectory();
-      });
-    return () => { cancelled = true; };
-  }, [hydrated, publicLayoutAccess, replaceDirectoryPlaces, replaceElements]);
+  useApplicationBootstrap({
+    globalEventsRefreshKey,
+    publicLayoutAccess,
+    hydrated,
+    editorDraftUpdatedAt,
+    publicLayoutPublishedAt,
+    expandedVisibilityGroups,
+    expandedCalibrationGroups,
+    markerLabelsVisible,
+    mergeDenseLabels,
+    expandedPlacedMarkerGroups,
+    placeDirectoryApi: PLACE_DIRECTORY_API,
+    latestTapdongSeasideStageAssetId: LATEST_TAPDONG_SEASIDE_STAGE_ASSET_ID,
+    initialElements,
+    builtInAssets,
+    defaultDirectoryPlaces,
+    initialCalibrationPoints,
+    factoryLandmarkDefaultPositions,
+    eventPlaceIndexBootstrappedRef,
+    publishedLayoutDocumentRef,
+    publishedLayoutViewRef,
+    publishedLayoutRevisionRef,
+    editorDraftDocumentRef,
+    editorDraftViewRef,
+    editorDraftRevisionRef,
+    labelDensitySettingsRevisionRef,
+    localCalibrationUpdatedAtRef,
+    localLockedCoordinatesUpdatedAtRef,
+    localDenseLabelsUpdatedAtRef,
+    localPlacementUpdatedAtRef,
+    placeDirectoryLoadedRef,
+    placesRef,
+    sanitizeDocument,
+    buildDirectoryPlaces,
+    mergeDirectoryRecords,
+    assetIdAfterDirectoryCategoryChange,
+    setDocument,
+    replaceDirectoryPlaces,
+    replaceElements,
+    setAdminAccessMethod,
+    setPublicLayoutPublishedAt,
+    setPublicLayoutRevision,
+    setPublicHistory,
+    setEditorDraftUpdatedAt,
+    setEditorDraftSyncState,
+    setGlobalStoriesTotal,
+    setGlobalEventsTotal,
+    setPlaceRequestsTotal,
+    setEventLinkedPlaces,
+    setReviewCountsByPlace,
+    setUploadedBaseMap,
+    setBaseMapCanUpload,
+    setPublicLayoutAccess,
+    setBaseMap,
+    setMarkerLabelsVisible,
+    setMergeDenseLabels,
+    setScreenRecommendedOnly,
+    setMarkerGroupSize,
+    setOptionalLabelScaleSteps,
+    setSaveState,
+    setLeftOpen,
+    setRightOpen,
+    setSelectedId,
+    setHydrated,
+    setExpandedVisibilityGroups,
+    setExpandedCalibrationGroups,
+    setExpandedPlacedMarkerGroups,
+    setPlaceDirectoryStorage,
+    setPlaceDirectoryCanEdit,
+    setPlaceDirectoryUpdatedAt,
+  });
 
   const {
     denseLabelSettingsCanEdit,

@@ -44,6 +44,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/editor/persistence/editor-draft-restore.mjs",
     "../app/editor/persistence/local-autosave.mjs",
     "../app/editor/persistence/public-layout-client.ts",
+    "../app/editor/persistence/use-application-bootstrap.ts",
     "../app/editor/persistence/use-local-autosave.ts",
     "../app/editor/persistence/use-map-settings-persistence.ts",
   ]),

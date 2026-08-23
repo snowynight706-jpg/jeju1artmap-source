@@ -21,6 +21,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPlaces.includes("../app/editor/places/actions.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-application-bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
@@ -51,6 +52,22 @@ test("map settings and autosave persistence stay outside the route component", a
   assert.match(settingsSource, /applyLockedCoordinateSettings\(/);
   assert.match(autosaveSource, /schemaVersion: 4/);
   assert.match(autosaveSource, /baseRevision: publishedRevisionRef\.current/);
+});
+
+test("public layout and editor recovery bootstrap stay behind one persistence workspace", async () => {
+  const [pageSource, bootstrapSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/persistence/use-application-bootstrap.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useApplicationBootstrap\(\{/);
+  assert.doesNotMatch(pageSource, /loadPublicLayout\("no-cache"\)/);
+  assert.doesNotMatch(pageSource, /chooseEditorRestoreSource\(\{/);
+  assert.doesNotMatch(pageSource, /const applyBundledDirectory = async/);
+  assert.match(bootstrapSource, /loadPublicLayout\("no-cache"\)/);
+  assert.match(bootstrapSource, /chooseEditorRestoreSource\(\{/);
+  assert.match(bootstrapSource, /const applyBundledDirectory = async/);
+  assert.match(bootstrapSource, /localStorage\.setItem\(MAP_VIEW_SETTINGS_KEY/);
 });
 
 test("page and public shells keep heavyweight panels behind lazy import boundaries", async () => {
@@ -213,13 +230,15 @@ test("admin place coordinates, placement, taxonomy, and database editing stay be
 });
 
 test("dense label persistence stays behind its client hook boundary", async () => {
-  const [pageSource, hookSource] = await Promise.all([
+  const [pageSource, hookSource, bootstrapSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/map/labels/use-settings-persistence.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/persistence/use-application-bootstrap.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(pageSource, /useDenseLabelSettingsPersistence\(\{/);
-  assert.match(pageSource, /readLocalDenseLabelSettings\(\)/);
+  assert.doesNotMatch(pageSource, /readLocalDenseLabelSettings\(\)/);
+  assert.match(bootstrapSource, /readLocalDenseLabelSettings\(\)/);
   assert.doesNotMatch(pageSource, /DENSE_LABEL_SETTINGS_(?:API|KEY)/);
   assert.match(hookSource, /remoteUpdatedAt >= localUpdatedAtRef\.current/);
   assert.match(hookSource, /window\.setTimeout\(\(\) => \{/);
