@@ -72,7 +72,7 @@ test("public label density follows settled zoom while admin labels follow direct
 });
 
 test("low-tier mobile starts compact and upgrades the map only after decode", () => {
-  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap, compactBaseMapPreferred\) \|\| MAP_SVG/);
+  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap, compactBaseMapPreferred\) \|\| mapSvg/);
   assert.match(pageSource, /lowTierBaseMapNeedsHighResolution\(\{/);
   assert.match(pageSource, /await image\.decode\(\)/);
   assert.match(pageSource, /setDecodedHighResolutionBaseMapSource\(highResolutionBaseMapSource\)/);

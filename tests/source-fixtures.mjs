@@ -20,6 +20,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/content/client.ts",
     "../app/content/types.ts",
     "../app/content/use-explorer-content.ts",
+    "../app/content/use-place-content-lifecycle.ts",
     "../app/content/use-place-event-request-actions.ts",
     "../app/content/use-place-story-actions.ts",
   ]),
@@ -87,6 +88,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/map/rendering/performance-diagnostics.mjs",
   ]),
   mapWorkspace: Object.freeze([
+    "../app/map/workspace/use-map-runtime-lifecycle.ts",
     "../app/map/workspace/use-map-workspace-model.ts",
   ]),
 });

@@ -8,6 +8,7 @@
 - `app/map/print/`: 장소별 출력 설정, 인쇄 충돌 감사, 고해상도 PNG 캔버스 합성과 설정 저장
 - `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 모바일 화면 밖 선별·성능 예산과 진단
 - `app/map/workspace/use-map-workspace-model.ts`: 지도 화면의 맞춤 축척, 화면 안 라벨 후보·예산·통합, 출력 정책·감사, 충돌 상태와 모바일 렌더 선별을 조립하는 큰 작업공간 모델. `map/labels`, `map/print`, `map/rendering`의 계산 모듈을 한 흐름으로 연결하고 `page.tsx`에는 상태와 사용자 동작 연결만 반환
+- `app/map/workspace/use-map-runtime-lifecycle.ts`: 저사양 베이스맵 해상도 승격, 시작 자산 준비, 지도·뷰포트 측정, 맞춤 축척과 최초 주요 거점 시점 확정, 라벨 정착·시작 성능 진단 순서를 조립하는 지도 런타임 생명주기
 - `app/editor/document/`: 내장 자산·초기 지도 요소 생성, 메인 허브·LPP 보강, 저장 문서 정규화와 런타임 ID 복구·배치·잠금 좌표 규칙
 - `app/editor/document/use-editor-document-state.ts`: 현재 편집 문서 스냅샷, 저장 문서 복원·좌표 마이그레이션, 실행 취소 이력과 요소·자산·장소·라벨 설정의 state/ref 동기화를 묶는 문서 상태 작업공간
 - `app/editor/places/actions.ts`: 관리자 장소 작업의 큰 책임 경계. 랜드마크 기본 앵커, 주소 기반 좌표 탐색, 지도 배치·표시, DB 연결·분류·직접 편집 동작을 묶고 기존 `editor/document`와 `place-directory` 규칙을 조립
@@ -19,6 +20,7 @@
 - `app/content/types.ts`: 후기·행사·진단·장소 요청과 공개 콘텐츠 요약에서 공유하는 클라이언트 데이터 계약
 - `app/content/client.ts`: 후기·행사·장소 요청 API 경로, 익명 방문자 식별, 후기 세션 초안과 업로드·성능 진단 전송
 - `app/content/use-explorer-content.ts`: 원도심 탐색 탭의 후기·행사·관리자 진단·장소 요청 페이지 상태와 중단 가능한 읽기 요청
+- `app/content/use-place-content-lifecycle.ts`: 선택 장소 후기·행사 읽기 요청과 취소, 후기 초안·사진 임시 보관, 행사 사진과 지도 장소 선택, 검수 요청 마커 위치 동기화를 묶는 콘텐츠 생명주기
 - `app/content/use-place-story-actions.ts`: 후기 등록·카메라 권한, 신고·공개 상태·삭제와 업로드·성능 진단 정리를 조립하는 후기 변경 작업공간
 - `app/content/use-place-event-request-actions.ts`: 행사 입력·수정·공개 상태·삭제와 장소 등록 요청 제출·지도 검수·DB 승인을 조립하는 행사·장소 요청 변경 작업공간
 - `app/place-directory/model.ts`: 기본·마스터 장소 카탈로그 생성, 필수 시스템 장소 보강, 서버 레코드 병합, 공개 분류와 지도 마커 자산 선택을 묶은 장소 도메인 경계

@@ -5,7 +5,6 @@ import {
   FormEvent,
   lazy,
   Suspense,
-  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -33,7 +32,6 @@ import {
   EXPORT_CANONICAL_WIDTH,
   categories,
   categoryOf,
-  isPrimaryHubLabel,
   placeContentKey,
   type CategoryId,
 } from "./map/core/model";
@@ -101,7 +99,7 @@ import {
   type MapInteractionState,
 } from "./map/interaction/use-map-interaction-actions";
 import { useMapWorkspaceModel } from "./map/workspace/use-map-workspace-model";
-import { lowTierBaseMapNeedsHighResolution } from "./map/rendering/base-map-quality.mjs";
+import { useMapRuntimeLifecycle } from "./map/workspace/use-map-runtime-lifecycle";
 import {
   STANDARD_MOBILE_RENDER_BUDGET,
   mobileRenderBudgetForDevice,
@@ -134,22 +132,13 @@ import {
 } from "./place-directory/model";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 import {
-  PLACE_EVENTS_API,
-  PLACE_REGISTRATION_REQUESTS_API,
-  PLACE_STORIES_API,
-  readPlaceStoryDraft,
   sendPerformanceDiagnostic,
-  sendPlaceStoryUploadDiagnostic,
-  writePlaceStoryDraft,
 } from "./content/client";
 import type {
   GlobalContentTab,
   PlaceEvent,
   PlaceEventPlace,
-  PlaceEventsPayload,
-  PlaceRegistrationRequestsPayload,
   PlaceReviewCount,
-  PlaceStoriesPayload,
   PlaceStory,
   StoryCameraPermissionState,
   StoryReportReason,
@@ -162,7 +151,7 @@ import {
 } from "./content/use-explorer-content";
 import { usePlaceStoryActions } from "./content/use-place-story-actions";
 import { usePlaceEventRequestActions } from "./content/use-place-event-request-actions";
-import { STORY_PHOTO_MAX_SOURCE_BYTES } from "./media/photo-processing";
+import { usePlaceContentLifecycle } from "./content/use-place-content-lifecycle";
 
 // 이하는 필요할 때만 불러오는 관리자·공개 화면 모듈 코드입니다.
 
@@ -443,14 +432,6 @@ function eventScheduleLabel(startsAt: string, endsAt: string) {
 function uploadedBaseMapOriginalSource(metadata: UploadedBaseMap | null) {
   if (!metadata?.available) return "";
   return metadata.originalUrl ?? `${UPLOADED_MAP_API}?v=${encodeURIComponent(metadata.uploadedAt)}`;
-}
-
-function uploadedBaseMapDisplaySource(metadata: UploadedBaseMap | null, preferCompact = false) {
-  if (!metadata?.available) return "";
-  if (preferCompact) {
-    return metadata.screen2048Url ?? metadata.screen4096Url ?? uploadedBaseMapOriginalSource(metadata);
-  }
-  return metadata.screen4096Url ?? metadata.screen2048Url ?? uploadedBaseMapOriginalSource(metadata);
 }
 
 const EMPTY_MAP_LABEL_STATUS_BY_ELEMENT_ID = new Map<string, MapLabelStatus>();
@@ -1279,74 +1260,51 @@ export default function Home() {
     };
   }, []);
 
-  const syncReviewedPlaceRequestLocation = useCallback(async (placeRequestId: string, x: number, y: number) => {
-    try {
-      const response = await fetch(PLACE_REGISTRATION_REQUESTS_API, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: placeRequestId, action: "move-marker", markerX: x, markerY: y }),
-      });
-      const payload = await response.json().catch(() => null) as PlaceRegistrationRequestsPayload | null;
-      if (!response.ok || !payload?.request) return;
-      setPlaceRequests((current) => current.map((request) => request.id === placeRequestId ? payload.request! : request));
-    } catch {
-      // The editor document and device recovery copy still retain the position.
-    }
-  }, [setPlaceRequests]);
-
-  const updatePlaceStoryPhoto = useCallback((file: File | null) => {
-    setPlaceStoryPhotoPreview((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return file ? URL.createObjectURL(file) : null;
-    });
-    setPlaceStoryPhoto(file);
-  }, []);
-
-  const retainPlaceStoryPhoto = useCallback(async (sourceFile: File | null) => {
-    if (!sourceFile) return;
-    const token = placeStoryPhotoRetainTokenRef.current + 1;
-    placeStoryPhotoRetainTokenRef.current = token;
-    setPlaceStoryPhotoRetaining(true);
-    try {
-      if (sourceFile.size > STORY_PHOTO_MAX_SOURCE_BYTES) throw new Error("photo-source-too-large");
-      const bytes = await sourceFile.arrayBuffer();
-      if (!bytes.byteLength) throw new Error("photo-read-failed");
-      if (placeStoryPhotoRetainTokenRef.current !== token) return;
-      const retainedFile = new File([bytes], sourceFile.name || `wondosim-photo-${Date.now()}`, {
-        type: sourceFile.type,
-        lastModified: sourceFile.lastModified || Date.now(),
-      });
-      updatePlaceStoryPhoto(retainedFile);
-      setToast("선택한 사진을 후기 등록 전까지 앱의 임시 메모리에 보관합니다.");
-    } catch (error) {
-      if (placeStoryPhotoRetainTokenRef.current !== token) return;
-      updatePlaceStoryPhoto(null);
-      const errorCode = error instanceof Error && error.message === "photo-source-too-large" ? "photo-source-too-large" : "photo-read-failed";
-      const storyKey = selectedStoryKeyRef.current;
-      const diagnosticReference = storyKey ? await sendPlaceStoryUploadDiagnostic({
-        placeKey: storyKey,
-        stage: "prepare",
-        errorCode,
-        responseStatus: 0,
-        sourceFile,
-        preparedFile: null,
-      }) : null;
-      const diagnosticSuffix = diagnosticReference ? ` · 오류 ID ${diagnosticReference}` : "";
-      setToast((errorCode === "photo-source-too-large"
-        ? "원본 사진이 30MB를 넘습니다. 더 작은 사진을 선택해 주세요."
-        : "선택한 사진을 앱의 임시 메모리로 가져오지 못했습니다. 사진 접근을 다시 허용해 선택해 주세요.") + diagnosticSuffix);
-    } finally {
-      if (placeStoryPhotoRetainTokenRef.current === token) setPlaceStoryPhotoRetaining(false);
-    }
-  }, [updatePlaceStoryPhoto]);
-
-  const updatePlaceEventPhoto = useCallback((file: File | null) => {
-    setPlaceEventPhotoPreview((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return file ? URL.createObjectURL(file) : null;
-    });
-    setPlaceEventPhoto(file);
-  }, []);
+  // 선택 장소의 후기·행사 로딩, 사진 보관, 초안 저장과 요청 마커 동기화는 콘텐츠 생명주기가 담당합니다.
+  const {
+    syncReviewedPlaceRequestLocation,
+    updatePlaceStoryPhoto,
+    retainPlaceStoryPhoto,
+    updatePlaceEventPhoto,
+    togglePlaceEventMapSelection,
+  } = usePlaceContentLifecycle({
+    selectedStoryKey,
+    publicLayoutAccess,
+    placeStoryText,
+    placeEventsRefreshKey,
+    elementsRef,
+    selectedStoryKeyRef,
+    placeStoryDraftKeyRef,
+    placeStoryTextRef,
+    placeStoryPhotoRetainTokenRef,
+    storyRequestRunRef,
+    eventRequestRunRef,
+    setPlaceRequests,
+    setPlaceStoryPhotoPreview,
+    setPlaceStoryPhoto,
+    setPlaceStoryPhotoRetaining,
+    setPlaceStoryText,
+    setPlaceStories,
+    setPlaceStoriesCanModerate,
+    setPlaceStoriesLoading,
+    setPlaceStoriesLoadedKey,
+    setPlaceStoryFormOpen,
+    setPlaceEventPhotoPreview,
+    setPlaceEventPhoto,
+    setPlaceEventPlaces,
+    setPlaceEvents,
+    setPlaceEventsCanManage,
+    setPlaceEventsLoading,
+    setPlaceEventsLoadedKey,
+    setPlaceEventFormOpen,
+    setPlaceEventEditingId,
+    setPlaceEventNoPlace,
+    setPlaceEventMultiPlace,
+    setPlaceEventName,
+    setPlaceEventInfo,
+    setPlaceEventExistingPhotoUrl,
+    setToast,
+  });
 
   const {
     publicPlaceItems,
@@ -1433,133 +1391,6 @@ export default function Home() {
     }
     return () => window.cancelAnimationFrame(restoreFrame);
   }, []);
-
-  const togglePlaceEventMapSelection = useCallback((elementId: string) => {
-    const element = elementsRef.current.find((item) => item.id === elementId && item.mapVisible);
-    if (!element) return;
-    const place = { placeKey: placeContentKey(element), placeName: element.name };
-    setPlaceEventPlaces((current) => {
-      if (current.some((item) => item.placeKey === place.placeKey)) return current.length > 1 ? current.filter((item) => item.placeKey !== place.placeKey) : current;
-      if (current.length >= 20) {
-        setToast("한 행사에는 장소를 최대 20곳까지 지정할 수 있습니다.");
-        return current;
-      }
-      return [...current, place];
-    });
-  }, [setPlaceEventPlaces]);
-
-  useEffect(() => {
-    const previousKey = placeStoryDraftKeyRef.current;
-    if (previousKey && previousKey !== selectedStoryKey) writePlaceStoryDraft(previousKey, placeStoryTextRef.current);
-    placeStoryDraftKeyRef.current = selectedStoryKey;
-    const nextDraft = readPlaceStoryDraft(selectedStoryKey);
-    placeStoryTextRef.current = nextDraft;
-    const timer = window.setTimeout(() => setPlaceStoryText(nextDraft), 0);
-    return () => window.clearTimeout(timer);
-  }, [selectedStoryKey]);
-
-  useEffect(() => {
-    placeStoryTextRef.current = placeStoryText;
-    const draftKey = selectedStoryKey;
-    const timer = window.setTimeout(() => writePlaceStoryDraft(draftKey, placeStoryText), 180);
-    return () => {
-      window.clearTimeout(timer);
-      writePlaceStoryDraft(draftKey, placeStoryText);
-    };
-  }, [placeStoryText, selectedStoryKey]);
-
-  useEffect(() => {
-    const run = ++storyRequestRunRef.current;
-    const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (!selectedStoryKey || publicLayoutAccess !== "viewer") {
-        setPlaceStories([]);
-        setPlaceStoriesCanModerate(false);
-        setPlaceStoriesLoading(false);
-        setPlaceStoriesLoadedKey(null);
-        return null;
-      }
-      const requestKey = selectedStoryKey;
-      setPlaceStoriesLoading(true);
-      setPlaceStoriesLoadedKey(null);
-      setPlaceStories([]);
-      setPlaceStoryFormOpen(false);
-      updatePlaceStoryPhoto(null);
-      return fetch(`${PLACE_STORIES_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store", signal: controller.signal })
-        .then(async (response) => {
-          const payload = await response.json().catch(() => null) as PlaceStoriesPayload | null;
-          if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "story load failed");
-          return payload;
-        })
-        .then((payload) => {
-          if (storyRequestRunRef.current !== run) return;
-          setPlaceStories(Array.isArray(payload?.stories) ? payload.stories : []);
-          setPlaceStoriesCanModerate(Boolean(payload?.canModerate));
-        })
-        .catch((error) => {
-          if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError") || storyRequestRunRef.current !== run) return;
-          setPlaceStories([]);
-          setPlaceStoriesCanModerate(false);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted && storyRequestRunRef.current === run) {
-            setPlaceStoriesLoading(false);
-            setPlaceStoriesLoadedKey(requestKey);
-          }
-        });
-    });
-    return () => controller.abort();
-  }, [publicLayoutAccess, selectedStoryKey, updatePlaceStoryPhoto]);
-
-  useEffect(() => {
-    const run = ++eventRequestRunRef.current;
-    const controller = new AbortController();
-    void Promise.resolve().then(() => {
-      if (!selectedStoryKey || publicLayoutAccess !== "viewer") {
-        setPlaceEvents([]);
-        setPlaceEventsCanManage(false);
-        setPlaceEventsLoading(false);
-        setPlaceEventsLoadedKey(null);
-        return null;
-      }
-      const requestKey = selectedStoryKey;
-      setPlaceEventsLoading(true);
-      setPlaceEventsLoadedKey(null);
-      setPlaceEvents([]);
-      setPlaceEventFormOpen(false);
-      setPlaceEventEditingId(null);
-      setPlaceEventNoPlace(false);
-      setPlaceEventMultiPlace(false);
-      setPlaceEventPlaces([]);
-      setPlaceEventName("");
-      setPlaceEventInfo("");
-      setPlaceEventExistingPhotoUrl(null);
-      updatePlaceEventPhoto(null);
-      return fetch(`${PLACE_EVENTS_API}?placeKey=${encodeURIComponent(selectedStoryKey)}`, { cache: "no-store", signal: controller.signal })
-        .then(async (response) => {
-          const payload = await response.json().catch(() => null) as PlaceEventsPayload | null;
-          if (!response.ok && response.status !== 503) throw new Error(payload?.error ?? "event load failed");
-          return payload;
-        })
-        .then((payload) => {
-          if (eventRequestRunRef.current !== run) return;
-          setPlaceEvents(Array.isArray(payload?.events) ? payload.events : []);
-          setPlaceEventsCanManage(Boolean(payload?.canManage));
-        })
-        .catch((error) => {
-          if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError") || eventRequestRunRef.current !== run) return;
-          setPlaceEvents([]);
-          setPlaceEventsCanManage(false);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted && eventRequestRunRef.current === run) {
-            setPlaceEventsLoading(false);
-            setPlaceEventsLoadedKey(requestKey);
-          }
-        });
-    });
-    return () => controller.abort();
-  }, [placeEventsRefreshKey, publicLayoutAccess, selectedStoryKey, updatePlaceEventPhoto]);
 
   useApplicationBootstrap({
     globalEventsRefreshKey,
@@ -1653,330 +1484,72 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const baseMapViewportWidth = viewportDimensions.width > 0
-    ? viewportDimensions.width
-    : typeof window !== "undefined"
-      ? window.innerWidth
-      : 0;
-  const lowTierMobileBaseMap = publicLayoutAccess === "viewer"
-    && mobileRenderBudget.tier === "low"
-    && baseMapViewportWidth > 0
-    && baseMapViewportWidth <= 760;
-  const useMobileLandmarkAssets = publicLayoutAccess === "viewer" && publicAssetProfile === "mobile";
-  const highResolutionBaseMapSource = uploadedBaseMap?.screen4096Url ?? "";
-  const compactBaseMapPreferred = lowTierMobileBaseMap
-    && (!highResolutionBaseMapSource || decodedHighResolutionBaseMapSource !== highResolutionBaseMapSource);
-  const activeBaseMapSrc = baseMap === "svg"
-    ? MAP_SVG
-    : baseMap === "png"
-      ? MAP_PNG
-      : uploadedBaseMapDisplaySource(uploadedBaseMap, compactBaseMapPreferred) || MAP_SVG;
-  const lowTierBaseMapUpgradeNeeded = baseMap === "uploaded"
-    && lowTierMobileBaseMap
-    && Boolean(highResolutionBaseMapSource)
-    && decodedHighResolutionBaseMapSource !== highResolutionBaseMapSource
-    && stageDimensions.width <= 1600
-    && lowTierBaseMapNeedsHighResolution({
-      tier: mobileRenderBudget.tier,
-      viewportWidth: baseMapViewportWidth,
-      stageWidth: stageDimensions.width,
-      zoom,
-      devicePixelRatio: typeof window !== "undefined" ? window.devicePixelRatio : 1,
-    });
-
-  useEffect(() => {
-    if (!lowTierBaseMapUpgradeNeeded || !highResolutionBaseMapSource) return;
-    let cancelled = false;
-    let finished = false;
-    const image = new Image();
-    const finish = async () => {
-      if (finished) return;
-      finished = true;
-      try {
-        await image.decode();
-      } catch {
-        // A completed image can still be reused when explicit decode is unavailable.
-      }
-      if (!cancelled) setDecodedHighResolutionBaseMapSource(highResolutionBaseMapSource);
-    };
-    image.decoding = "async";
-    image.fetchPriority = "low";
-    image.onload = () => { void finish(); };
-    image.onerror = () => { finished = true; };
-    image.src = highResolutionBaseMapSource;
-    if (image.complete && image.naturalWidth > 0) void finish();
-    return () => { cancelled = true; };
-  }, [decodedHighResolutionBaseMapSource, highResolutionBaseMapSource, lowTierBaseMapUpgradeNeeded]);
-
-  useEffect(() => {
-    const image = baseMapImgRef.current;
-    if (image?.complete && image.naturalWidth > 0) setMapLoaded(true);
-  }, [activeBaseMapSrc]);
-
-  useEffect(() => {
-    if (publicLayoutAccess === "loading" || !hydrated || startupLoadCompletedRef.current) return;
-    let cancelled = false;
-    const mapSource = activeBaseMapSrc;
-    if (!mapSource) return;
-    const primaryHub = visibleElements.find((element) => isPrimaryHubLabel(element.name));
-    const primaryHubAsset = primaryHub?.assetId ? assetsById.get(primaryHub.assetId) : undefined;
-    const sources = [...new Set([
-      JFAC_SIGNATURE_B_SVG,
-      mapSource,
-      useMobileLandmarkAssets
-        ? primaryHubAsset?.mobileSrc ?? primaryHubAsset?.screenSrc ?? primaryHubAsset?.src
-        : primaryHubAsset?.screenSrc ?? primaryHubAsset?.src,
-    ].filter((source): source is string => Boolean(source)))];
-    const preload = (source: string) => new Promise<void>((resolve) => {
-      const image = new Image();
-      let finished = false;
-      let timeout = 0;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        window.clearTimeout(timeout);
-        if (!cancelled) setStartupLoadDone((current) => current + 1);
-        resolve();
-      };
-      timeout = window.setTimeout(finish, 15000);
-      image.decoding = "async";
-      image.onload = finish;
-      image.onerror = finish;
-      image.src = source;
-      if (image.complete) finish();
-    });
-
-    queueMicrotask(() => {
-      if (cancelled) return;
-      // Reset before starting preloads. Cached PWA images can complete
-      // synchronously, so starting them first could increment to 3 and then be
-      // overwritten back to 0 by the delayed reset.
-      setStartupLoadDone(0);
-      setStartupLoadTotal(sources.length);
-      void Promise.all(sources.map(preload)).then(() => {
-        if (cancelled) return;
-        setStartupLoadDone(sources.length);
-        setMapLoaded(true);
-        window.requestAnimationFrame(() => {
-          if (cancelled) return;
-          startupLoadCompletedRef.current = true;
-          setStartupAssetsReady(true);
-        });
-      });
-    });
-    return () => { cancelled = true; };
-  }, [activeBaseMapSrc, assetsById, hydrated, publicAssetProfile, publicLayoutAccess, useMobileLandmarkAssets, viewportDimensions.width, visibleElements]);
-
-  useEffect(() => {
-    const stageWrap = stageWrapRef.current;
-    const stage = stageRef.current;
-    const viewport = viewportRef.current;
-    if (!stageWrap || !stage || !viewport) return;
-    const measure = () => {
-      // The wrapper retains the canonical on-screen base size while the stage
-      // itself grows with zoom. Measuring the wrapper prevents zoom from
-      // feeding back into fit calculations and coordinate conversion.
-      const width = stageWrap.offsetWidth;
-      const height = width / MAP_ASPECT;
-      const viewportWidth = viewport.clientWidth;
-      const viewportHeight = viewport.clientHeight;
-      if (width > 0 && height > 0) {
-        setStageDimensions((current) => (
-          Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5
-            ? current
-            : { width, height }
-        ));
-      }
-      if (viewportWidth > 0 && viewportHeight > 0) {
-        setViewportDimensions((current) => (
-          Math.abs(current.width - viewportWidth) < 0.5 && Math.abs(current.height - viewportHeight) < 0.5
-            ? current
-            : { width: viewportWidth, height: viewportHeight }
-        ));
-      }
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(stageWrap);
-    observer.observe(viewport);
-    window.addEventListener("resize", measure);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [publicLayoutAccess]);
-
-  useEffect(() => {
-    if (viewportDimensions.width <= 0 || viewportDimensions.height <= 0) return;
-    const previousFitZoom = fitZoomRef.current;
-    const wasAtFit = Math.abs(zoom - previousFitZoom) <= 0.018;
-    fitZoomRef.current = fitZoom;
-    if (!fitZoomAppliedRef.current || wasAtFit || (publicLayoutAccess === "viewer" && zoom < fitZoom - 0.002)) {
-      fitZoomAppliedRef.current = true;
-      const frame = window.requestAnimationFrame(() => {
-        zoomRef.current = fitZoom;
-        setZoom(fitZoom);
-        if (publicLayoutAccess === "editor") setEditorMapPan({ x: 0, y: 0 });
-        else setMapPan({ x: 0, y: 0 });
-      });
-      return () => window.cancelAnimationFrame(frame);
-    }
-  }, [fitZoom, publicLayoutAccess, setEditorMapPan, setMapPan, viewportDimensions.height, viewportDimensions.width, zoom]);
-
-  useEffect(() => {
-    if (
-      publicInitialViewAppliedRef.current
-      || !hydrated
-      || !startupAssetsReady
-      || publicLayoutAccess !== "viewer"
-      || viewportDimensions.width <= 0
-      || viewportDimensions.height <= 0
-    ) return;
-    const primaryHub = elements.find((element) => isPrimaryHubLabel(element.name) && element.mapVisible);
-    if (stageDimensions.width <= 0 || stageDimensions.height <= 0) return;
-    if (!primaryHub) {
-      publicInitialViewAppliedRef.current = true;
-      setStartupInitialViewTarget({ zoom: zoomRef.current, pan: { ...panRef.current } });
-      return;
-    }
-
-    const compact = viewportDimensions.width <= 760;
-    const viewportFillZoom = Math.max(
-      viewportDimensions.width / stageDimensions.width,
-      viewportDimensions.height / stageDimensions.height,
-    );
-    const targetZoom = compact
-      ? clamp(Math.max(fitZoom * 2.35, viewportFillZoom * 1.28), fitZoom, Math.max(fitZoom, 1.38))
-      : clamp(Math.max(fitZoom * 1.32, viewportFillZoom * 1.02), fitZoom, Math.max(fitZoom, 1.32));
-    const desiredScreen = compact
-      ? { x: viewportDimensions.width * 0.5, y: viewportDimensions.height * 0.48 }
-      : { x: viewportDimensions.width * 0.52, y: viewportDimensions.height * 0.48 };
-    const rawPan = {
-      x: desiredScreen.x - viewportDimensions.width / 2
-        - ((primaryHub.x - 50) / 100) * stageDimensions.width * targetZoom,
-      y: desiredScreen.y - viewportDimensions.height / 2
-        - ((primaryHub.y - 50) / 100) * stageDimensions.height * targetZoom,
-    };
-    const horizontalTravel = Math.max(0, (stageDimensions.width * targetZoom - viewportDimensions.width) / 2) + viewportDimensions.width * 0.05;
-    const verticalTravel = Math.max(0, (stageDimensions.height * targetZoom - viewportDimensions.height) / 2) + viewportDimensions.height * 0.05;
-    const targetPan = {
-      x: clamp(rawPan.x, -horizontalTravel, horizontalTravel),
-      y: clamp(rawPan.y, -verticalTravel, verticalTravel),
-    };
-
-    const frame = window.requestAnimationFrame(() => {
-      if (publicInitialViewAppliedRef.current) return;
-      publicInitialViewAppliedRef.current = true;
-      zoomRef.current = targetZoom;
-      panRef.current = targetPan;
-      setStartupInitialViewTarget({ zoom: targetZoom, pan: targetPan });
-      setZoom(targetZoom);
-      setMapPan(targetPan);
-      setMapRenderPan(targetPan);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [elements, fitZoom, hydrated, publicLayoutAccess, setMapPan, stageDimensions.height, stageDimensions.width, startupAssetsReady, viewportDimensions.height, viewportDimensions.width]);
-
-  useLayoutEffect(() => {
-    if (
-      publicLayoutAccess !== "viewer"
-      || !startupAssetsReady
-      || !startupInitialViewTarget
-      || startupInitialViewReady
-      || Math.abs(zoom - startupInitialViewTarget.zoom) > 0.002
-      || Math.abs(settledLabelZoom - startupInitialViewTarget.zoom) > 0.002
-    ) return;
-    const target = startupInitialViewTarget;
-    panRef.current = target.pan;
-    setMapPan(target.pan);
-    const stage = stageRef.current;
-    const stageWrap = stageWrapRef.current;
-    if (!stage || !stageWrap || stageWrap.offsetWidth <= 0) return;
-    // Mobile PWA viewport changes can leave a percentage width one layout frame
-    // behind the target state. Apply the already calculated target directly so
-    // the loading overlay cannot wait forever on a stale rounded measurement.
-    setMapLayoutZoom(target.zoom);
-    let settledFrame = 0;
-    const committedFrame = window.requestAnimationFrame(() => {
-      setMapPan(target.pan);
-      setMapLayoutZoom(target.zoom);
-      settledFrame = window.requestAnimationFrame(() => {
-        // The target width and pan have now been painted for two frames. A
-        // second integer pixel comparison is redundant and can deadlock on
-        // mobile device-pixel rounding even though the view is already correct.
-        setStartupInitialViewReady(true);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(committedFrame);
-      if (settledFrame) window.cancelAnimationFrame(settledFrame);
-    };
-  }, [publicLayoutAccess, setMapLayoutZoom, setMapPan, settledLabelZoom, startupAssetsReady, startupInitialViewReady, startupInitialViewTarget, zoom]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "editor" || !startupAssetsReady) return;
-    const readyFrame = window.requestAnimationFrame(() => setStartupInitialViewReady(true));
-    return () => window.cancelAnimationFrame(readyFrame);
-  }, [publicLayoutAccess, startupAssetsReady]);
-
-  useEffect(() => {
-    if (publicLayoutAccess === "loading" || !startupAssetsReady || !startupInitialViewReady) return;
-    const readyFrame = window.requestAnimationFrame(() => setStartupRevealReady(true));
-    return () => window.cancelAnimationFrame(readyFrame);
-  }, [publicLayoutAccess, startupAssetsReady, startupInitialViewReady]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "viewer" || !startupRevealReady || performanceStartupSentRef.current) return;
-    performanceStartupSentRef.current = true;
-    const completedAt = performance.now();
-    const timer = window.setTimeout(() => sendPerformanceDiagnostic({
-      metric: "startup",
-      durationMs: completedAt - performanceStartedAtRef.current,
-      elementCount: visibleElements.length,
-      labelCount: stageLabelElements.length,
-      viewportWidth: viewportDimensions.width,
-      viewportHeight: viewportDimensions.height,
-    }), 0);
-    return () => window.clearTimeout(timer);
-  }, [publicLayoutAccess, stageLabelElements.length, startupRevealReady, viewportDimensions.height, viewportDimensions.width, visibleElements.length]);
-
-  useEffect(() => {
-    if (printPreviewMode) return;
-    const timer = window.setTimeout(() => {
-      setForceIndividualLabels((current) => current ? labelDetailRatio >= 2.45 : labelDetailRatio >= 2.7);
-    }, 90);
-    return () => window.clearTimeout(timer);
-  }, [labelDetailRatio, printPreviewMode]);
-
-  useEffect(() => {
-    if (publicLayoutAccess !== "viewer") {
-      const timer = window.setTimeout(() => {
-        startTransition(() => {
-          setSettledLabelZoom(zoom);
-          setSettledLabelPan((current) => (
-            current.x === mapRenderPan.x && current.y === mapRenderPan.y
-              ? current
-              : { x: mapRenderPan.x, y: mapRenderPan.y }
-          ));
-        });
-      }, 140);
-      return () => window.clearTimeout(timer);
-    }
-
-    const labelFrame = window.requestAnimationFrame(() => {
-      setSettledLabelZoom(zoom);
-      setSettledLabelPan((current) => (
-        current.x === mapRenderPan.x && current.y === mapRenderPan.y
-          ? current
-          : { x: mapRenderPan.x, y: mapRenderPan.y }
-      ));
-    });
-    return () => window.cancelAnimationFrame(labelFrame);
-  }, [mapRenderPan.x, mapRenderPan.y, publicLayoutAccess, zoom]);
-
-  useEffect(() => {
-    calibrationLiveApplyRef.current = calibrationLiveApply;
-  }, [calibrationLiveApply]);
+  // 베이스맵 품질, 시작 자산, 화면 측정·초기 시점과 라벨 정착은 지도 런타임 생명주기가 담당합니다.
+  const {
+    activeBaseMapSrc,
+    useMobileLandmarkAssets,
+  } = useMapRuntimeLifecycle({
+    baseMap,
+    mapSvg: MAP_SVG,
+    mapPng: MAP_PNG,
+    signatureSource: JFAC_SIGNATURE_B_SVG,
+    uploadedBaseMap,
+    decodedHighResolutionBaseMapSource,
+    mobileRenderBudget,
+    publicLayoutAccess,
+    publicAssetProfile,
+    viewportDimensions,
+    stageDimensions,
+    zoom,
+    mapRenderPan,
+    hydrated,
+    visibleElements,
+    assetsById,
+    elements,
+    startupAssetsReady,
+    startupInitialViewTarget,
+    startupInitialViewReady,
+    startupRevealReady,
+    settledLabelZoom,
+    printPreviewMode,
+    labelDetailRatio,
+    calibrationLiveApply,
+    fitZoom,
+    stageLabelElementCount: stageLabelElements.length,
+    baseMapImgRef,
+    viewportRef,
+    stageWrapRef,
+    stageRef,
+    startupLoadCompletedRef,
+    fitZoomRef,
+    fitZoomAppliedRef,
+    zoomRef,
+    panRef,
+    publicInitialViewAppliedRef,
+    performanceStartupSentRef,
+    performanceStartedAtRef,
+    calibrationLiveApplyRef,
+    uploadedBaseMapOriginalSource,
+    setDecodedHighResolutionBaseMapSource,
+    setMapLoaded,
+    setStartupLoadDone,
+    setStartupLoadTotal,
+    setStartupAssetsReady,
+    setStageDimensions,
+    setViewportDimensions,
+    setZoom,
+    setStartupInitialViewTarget,
+    setStartupInitialViewReady,
+    setStartupRevealReady,
+    setForceIndividualLabels,
+    setSettledLabelZoom,
+    setSettledLabelPan,
+    setMapRenderPan,
+    setMapLayoutZoom,
+    setEditorMapPan,
+    setMapPan,
+    sendPerformanceDiagnostic,
+  });
 
   // 이하는 모바일 드래그·핀치와 지도 확대·이동을 처리하는 코드입니다.
   const mapTransformController = useMapTransformController({

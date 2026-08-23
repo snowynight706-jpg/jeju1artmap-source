@@ -18,6 +18,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/client.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-explorer-content.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-content-lifecycle.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-event-request-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-story-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
@@ -37,6 +38,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapPrint.includes("../app/map/print/export.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapRendering.includes("../app/map/rendering/mobile-render.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapWorkspace.includes("../app/map/workspace/use-map-workspace-model.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.mapWorkspace.includes("../app/map/workspace/use-map-runtime-lifecycle.ts"));
 
   await Promise.all(
     APP_CLIENT_SOURCE_PATHS.map((path) => access(new URL(path, import.meta.url))),
@@ -195,20 +197,39 @@ test("public catalog and panel navigation stay behind the public place workspace
 });
 
 test("browser content storage, diagnostics, and photo processing stay outside the route component", async () => {
-  const [pageSource, clientSource, photoSource] = await Promise.all([
+  const [pageSource, clientSource, lifecycleSource, photoSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/content/client.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-content-lifecycle.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/media/photo-processing.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(pageSource, /from "\.\/content\/client"/);
-  assert.match(pageSource, /from "\.\/media\/photo-processing"/);
+  assert.doesNotMatch(pageSource, /from "\.\/media\/photo-processing"/);
+  assert.match(lifecycleSource, /from "\.\.\/media\/photo-processing"/);
   assert.doesNotMatch(pageSource, /function persistentVisitorId\(/);
   assert.doesNotMatch(pageSource, /function prepareStoryPhotoInWorker\(/);
   assert.match(clientSource, /export function persistentVisitorId\(/);
   assert.match(clientSource, /export function sendPerformanceDiagnostic\(/);
   assert.match(photoSource, /export async function prepareStoryPhoto\(/);
   assert.match(photoSource, /new Worker\("\/story-photo-worker\.js"\)/);
+});
+
+test("selected-place photo, draft, and request loading stay behind one content lifecycle", async () => {
+  const [pageSource, lifecycleSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-content-lifecycle.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /usePlaceContentLifecycle\(\{/);
+  assert.doesNotMatch(pageSource, /const retainPlaceStoryPhoto = useCallback/);
+  assert.doesNotMatch(pageSource, /writePlaceStoryDraft\(draftKey/);
+  assert.doesNotMatch(pageSource, /fetch\(`\$\{PLACE_STORIES_API\}\?placeKey=/);
+  assert.doesNotMatch(pageSource, /fetch\(`\$\{PLACE_EVENTS_API\}\?placeKey=/);
+  assert.match(lifecycleSource, /const retainPlaceStoryPhoto = useCallback/);
+  assert.match(lifecycleSource, /writePlaceStoryDraft\(draftKey/);
+  assert.match(lifecycleSource, /fetch\(`\$\{PLACE_STORIES_API\}\?placeKey=/);
+  assert.match(lifecycleSource, /fetch\(`\$\{PLACE_EVENTS_API\}\?placeKey=/);
 });
 
 test("explorer content models and read-only loading stay behind the content boundary", async () => {
@@ -406,6 +427,22 @@ test("the map workspace composes label, print, and mobile rendering calculations
   assert.match(auditSource, /export function buildPrintAudit\(/);
   assert.match(exportSource, /export async function renderHighResolutionMapPng\(/);
   assert.match(mobileRenderSource, /export function calculateMobileMapRenderBounds\(/);
+});
+
+test("base-map readiness, viewport measurement, and initial focus stay behind the map runtime lifecycle", async () => {
+  const [pageSource, lifecycleSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/workspace/use-map-runtime-lifecycle.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useMapRuntimeLifecycle\(\{/);
+  assert.doesNotMatch(pageSource, /const lowTierBaseMapUpgradeNeeded =/);
+  assert.doesNotMatch(pageSource, /const observer = new ResizeObserver/);
+  assert.doesNotMatch(pageSource, /setStartupLoadDone\(sources\.length\)/);
+  assert.match(lifecycleSource, /const lowTierBaseMapUpgradeNeeded =/);
+  assert.match(lifecycleSource, /const observer = new ResizeObserver/);
+  assert.match(lifecycleSource, /setStartupLoadDone\(sources\.length\)/);
+  assert.match(lifecycleSource, /Math\.abs\(settledLabelZoom - startupInitialViewTarget\.zoom\) > 0\.002/);
 });
 
 test("map transform animation refs and cleanup stay behind the interaction controller", async () => {
