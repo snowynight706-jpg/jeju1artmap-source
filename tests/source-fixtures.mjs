@@ -36,6 +36,9 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/editor/document/map-element-identity.mjs",
     "../app/editor/document/rules.ts",
   ]),
+  editorPlaces: Object.freeze([
+    "../app/editor/places/actions.ts",
+  ]),
   editorPersistence: Object.freeze([
     "../app/editor/persistence/editor-draft-restore.mjs",
     "../app/editor/persistence/local-autosave.mjs",

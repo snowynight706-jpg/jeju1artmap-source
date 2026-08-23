@@ -19,6 +19,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/model.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPlaces.includes("../app/editor/places/actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
@@ -169,6 +170,26 @@ test("initial assets, system places, and stored document normalization stay behi
   assert.match(bootstrapSource, /function ensureMainHubMapElement\(/);
   assert.match(bootstrapSource, /function ensureLppMapElement\(/);
   assert.match(bootstrapSource, /function sanitizeDocument\(/);
+});
+
+test("admin place coordinates, placement, taxonomy, and database editing stay behind one workspace boundary", async () => {
+  const [pageSource, actionsSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/places/actions.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /usePlaceEditorActions\(\{/);
+  assert.doesNotMatch(pageSource, /const updateLandmarkDefault =/);
+  assert.doesNotMatch(pageSource, /const runAddressLookup =/);
+  assert.doesNotMatch(pageSource, /const openDirectoryPlace =/);
+  assert.doesNotMatch(pageSource, /const updateSelectedDirectoryTaxonomy =/);
+  assert.doesNotMatch(pageSource, /const openDatabaseEditor =/);
+  assert.match(actionsSource, /export function usePlaceEditorActions\(/);
+  assert.match(actionsSource, /const updateLandmarkDefault =/);
+  assert.match(actionsSource, /const runAddressLookup =/);
+  assert.match(actionsSource, /const openDirectoryPlace =/);
+  assert.match(actionsSource, /const updateSelectedDirectoryTaxonomy =/);
+  assert.match(actionsSource, /const openDatabaseEditor =/);
 });
 
 test("dense label persistence stays behind its client hook boundary", async () => {
