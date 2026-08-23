@@ -9,6 +9,7 @@ const taxonomySource = await readFile(new URL("../app/place-taxonomy.ts", import
 const directorySource = await readFile(new URL("../app/master-directory.ts", import.meta.url), "utf8");
 const geocodeSource = await readFile(new URL("../app/geocoded-places.ts", import.meta.url), "utf8");
 const assetSource = await readFile(new URL("../app/landmark-assets/index.ts", import.meta.url), "utf8");
+const documentBootstrapSource = await readFile(new URL("../app/editor/document/bootstrap.ts", import.meta.url), "utf8");
 
 test("LPP is registered with the verified official address and exact map coordinate", () => {
   assert.match(directorySource, /"name": "LPP \(Local Player Platform\)"/);
@@ -32,11 +33,12 @@ test("communication center uses the dedicated A-02 final-review landmark in stor
   assert.match(assetSource, /"20260812-091129"/);
   assert.match(assetSource, /"1n1G-0HbAOv9FavuBo54SdxDZWY276b3j"/);
   assert.match(pageSource, /MAIN_HUB_LANDMARK_ASSET_ID = "jeju-communication-center-a02"/);
-  assert.match(pageSource, /category: "landmark" as const,[\s\S]{0,420}assetId: MAIN_HUB_LANDMARK_ASSET_ID/);
-  assert.match(pageSource, /const ensuredMainHubElements = ensureMainHubMapElement/);
+  assert.match(pageSource, /mainHubLandmarkAssetId: MAIN_HUB_LANDMARK_ASSET_ID/);
   assert.match(pageSource, /STANDARD_MAIN_HUB_MEMO = "워크케이션 메인 거점 · A-02 외곽선보강 최종검수안 · 표준 랜드마크 이미지·라벨 처리"/);
-  assert.match(pageSource, /Google Drive A-02 외곽선보강 최종검수안/);
-  assert.match(pageSource, /size: stableMainHubResourceSize\(element\.size\)/);
-  assert.match(pageSource, /labelPosition: migrateLegacyPresentation \? "bottom" as const : element\.labelPosition/);
-  assert.match(pageSource, /labelGap: migrateLegacyPresentation \? LANDMARK_LABEL_GAP : element\.labelGap/);
+  assert.match(documentBootstrapSource, /category: "landmark" as const,[\s\S]{0,520}assetId: mainHubLandmarkAssetId/);
+  assert.match(documentBootstrapSource, /const ensuredMainHubElements = ensureMainHubMapElement/);
+  assert.match(documentBootstrapSource, /Google Drive A-02 외곽선보강 최종검수안/);
+  assert.match(documentBootstrapSource, /size: stableMainHubResourceSize\(element\.size\)/);
+  assert.match(documentBootstrapSource, /labelPosition: migrateLegacyPresentation \? "bottom" as const : element\.labelPosition/);
+  assert.match(documentBootstrapSource, /labelGap: migrateLegacyPresentation \? landmarkLabelGap : element\.labelGap/);
 });

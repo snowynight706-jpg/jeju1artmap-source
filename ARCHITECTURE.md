@@ -7,7 +7,7 @@
 - `app/map/interaction/`: PC·모바일 변환 정책, 공유 확대율·이동 ref 동기화, 휠·핀치 RAF와 프로그램 이동 타이머의 생성·정리
 - `app/map/print/`: 장소별 출력 설정, 인쇄 충돌 감사, 고해상도 PNG 캔버스 합성과 설정 저장
 - `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 모바일 화면 밖 선별·성능 예산과 진단
-- `app/editor/document/`: 런타임 ID 복구, 문서 복제, 배치·잠금 좌표 규칙과 메인 허브 영속성 안정화
+- `app/editor/document/`: 내장 자산·초기 지도 요소 생성, 메인 허브·LPP 보강, 저장 문서 정규화와 런타임 ID 복구·배치·잠금 좌표 규칙
 - `app/editor/persistence/`: 편집 초안 복원 우선순위, 기기 자동저장, 공개 레이아웃 API 계약, 보정·잠금·배치 설정의 서버 비교와 지연 저장
 - `app/content/types.ts`: 후기·행사·진단·장소 요청과 공개 콘텐츠 요약에서 공유하는 클라이언트 데이터 계약
 - `app/content/client.ts`: 후기·행사·장소 요청 API 경로, 익명 방문자 식별, 후기 세션 초안과 업로드·성능 진단 전송

@@ -17,6 +17,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-explorer-content.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/model.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
@@ -131,14 +132,15 @@ test("explorer content models and read-only loading stay behind the content boun
 });
 
 test("place catalog building, merging, classification, and marker policy stay in one domain boundary", async () => {
-  const [pageSource, modelSource] = await Promise.all([
+  const [pageSource, modelSource, bootstrapSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/place-directory/model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/document/bootstrap.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(pageSource, /createDirectoryCatalog\(\{/);
   assert.match(pageSource, /createDirectoryRecordMerger\(defaultDirectoryPlaces, ensureSystemDirectoryPlaces\)/);
-  assert.match(pageSource, /createDirectoryMarkerPolicy\(/);
+  assert.match(pageSource, /createMapDocumentModel\(\{/);
   assert.doesNotMatch(pageSource, /function buildDirectoryPlaces\(/);
   assert.doesNotMatch(pageSource, /function mergeDirectoryRecords\(/);
   assert.doesNotMatch(pageSource, /function publicCategoryIdForPlace\(/);
@@ -146,6 +148,27 @@ test("place catalog building, merging, classification, and marker policy stay in
   assert.match(modelSource, /export function createDirectoryRecordMerger\(/);
   assert.match(modelSource, /export function publicCategoryIdForPlace\(/);
   assert.match(modelSource, /export function createDirectoryMarkerPolicy\(/);
+  assert.match(bootstrapSource, /createDirectoryMarkerPolicy\(/);
+});
+
+test("initial assets, system places, and stored document normalization stay behind one document boundary", async () => {
+  const [pageSource, bootstrapSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/document/bootstrap.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /createMapDocumentModel\(\{/);
+  assert.doesNotMatch(pageSource, /const builtInLandmarkAssets/);
+  assert.doesNotMatch(pageSource, /function buildStarterMarkers\(/);
+  assert.doesNotMatch(pageSource, /function ensureMainHubMapElement\(/);
+  assert.doesNotMatch(pageSource, /function ensureLppMapElement\(/);
+  assert.doesNotMatch(pageSource, /function sanitizeDocument\(/);
+  assert.match(bootstrapSource, /export function createMapDocumentModel\(/);
+  assert.match(bootstrapSource, /const builtInLandmarkAssets/);
+  assert.match(bootstrapSource, /function buildStarterMarkers\(/);
+  assert.match(bootstrapSource, /function ensureMainHubMapElement\(/);
+  assert.match(bootstrapSource, /function ensureLppMapElement\(/);
+  assert.match(bootstrapSource, /function sanitizeDocument\(/);
 });
 
 test("dense label persistence stays behind its client hook boundary", async () => {

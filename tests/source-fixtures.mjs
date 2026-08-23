@@ -31,6 +31,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/map/core/types.ts",
   ]),
   editorDocument: Object.freeze([
+    "../app/editor/document/bootstrap.ts",
     "../app/editor/document/main-hub-persistence.mjs",
     "../app/editor/document/map-element-identity.mjs",
     "../app/editor/document/rules.ts",
