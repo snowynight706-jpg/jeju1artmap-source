@@ -12,6 +12,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.deepEqual(APP_CLIENT_SOURCE_PATHS, [...new Set(APP_CLIENT_SOURCE_PATHS)]);
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/explorer-panel.tsx"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/use-public-place-workspace.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/client.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-explorer-content.ts"));
@@ -88,6 +89,24 @@ test("public place and explorer markup stay behind public display components", a
   assert.doesNotMatch(pageSource, /<aside[^>]+className=\{`public-place-sheet/);
   assert.match(explorerSource, /<section className="public-place-explorer">/);
   assert.match(placeSheetSource, /className=\{`public-place-sheet/);
+});
+
+test("public catalog and panel navigation stay behind the public place workspace", async () => {
+  const [pageSource, workspaceSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/use-public-place-workspace.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /usePublicPlaceWorkspace\(\{/);
+  assert.doesNotMatch(pageSource, /const publicPlaceItems = useMemo/);
+  assert.doesNotMatch(pageSource, /const writePublicHistory = useCallback/);
+  assert.doesNotMatch(pageSource, /const startPublicPanelDrag = useCallback/);
+  assert.doesNotMatch(pageSource, /const selectPublicMarker = useCallback/);
+  assert.match(workspaceSource, /const publicPlaceItems = useMemo/);
+  assert.match(workspaceSource, /const writePublicHistory = useCallback/);
+  assert.match(workspaceSource, /const startPublicPanelDrag = useCallback/);
+  assert.match(workspaceSource, /const selectPublicMarker = useCallback/);
+  assert.match(workspaceSource, /selected: selectedId === item\.anchor\.id && selectedDirectoryPlaceId === item\.place\.id/);
 });
 
 test("browser content storage, diagnostics, and photo processing stay outside the route component", async () => {

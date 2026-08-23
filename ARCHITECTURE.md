@@ -17,6 +17,7 @@
 - `app/place-directory/model.ts`: 기본·마스터 장소 카탈로그 생성, 필수 시스템 장소 보강, 서버 레코드 병합, 공개 분류와 지도 마커 자산 선택을 묶은 장소 도메인 경계
 - `app/media/photo-processing.ts`: 후기와 관리자 행사에서 공유하는 사진 원본 제한, Worker 압축, 브라우저 캔버스 폴백과 인코딩 목표
 - `app/public/`: 공개 URL·패널 이동·카테고리·장소 포커스 규칙과 공개 장소 시트·원도심 탐색 표시 조립
+- `app/public/use-public-place-workspace.ts`: 공개 장소 카탈로그·행사 연결·검색·카테고리 표시 모델과 모바일 패널 드래그·안착 모션, History API, 지도 시점 복귀와 마커 선택을 조립하는 공개 작업공간
 - `app/public/place-sheet.tsx`, `app/public/place-detail-content.tsx`: 장소 시트 외곽과 장소 선택 후에만 지연 로딩되는 상세·행사·후기 화면
 - `app/public/explorer-panel.tsx`, `app/public/explorer-activity-content.tsx`: 장소 목록·통합 탐색 외곽과 탭을 열 때만 지연 로딩되는 리뷰·행사 카드 화면; 관리자 진단·장소 요청도 해당 탭 경계에서 지연 로딩
 - `app/globals.css`: 지도·패널·모바일 PWA 반응형 스타일
@@ -32,7 +33,7 @@
 - `worker/`: 배포 Worker 진입점과 정적 자산 캐시 정책
 - `tests/`: 기능·회귀·PWA·성능 정적 검증
 
-`app/page.tsx`의 남은 1차 큰 책임 경계는 공통 상태·복원 조립, 공개 장소·콘텐츠 흐름, 관리자 출력·게시 흐름이다. 지도 Workspace는 `app/map/workspace`가 기존 `map/labels`, `map/print`, `map/rendering`을 조립하는 경계로 고정한다. 큰 경계를 먼저 고정한 뒤 각 Workspace 안에서 100~800줄 규모의 화면·hook·순수 계산 모듈로 세분화하며, 이미 분리된 `map`, `public`, `content`, `editor` 하위 모듈은 재통합하지 않는다.
+`app/page.tsx`의 남은 1차 큰 책임 경계는 공통 상태·복원 조립과 관리자 출력·게시 흐름이다. 지도 Workspace는 `app/map/workspace`, 공개 장소 카탈로그·탐색·패널 이동 Workspace는 `app/public`이 기존 하위 계산·표시 모듈을 조립하는 경계로 고정한다. 큰 경계를 먼저 고정한 뒤 각 Workspace 안에서 100~800줄 규모의 화면·hook·순수 계산 모듈로 세분화하며, 이미 분리된 `map`, `public`, `content`, `editor` 하위 모듈은 재통합하지 않는다.
 
 통합 라벨의 공개 연결선은 거리와 무관하게 불투명도 0.84를 유지한다. 관리자 한 열 통합 라벨은 항목명 길이로 폭을 정하며, 마커 왼쪽에 놓인 라벨은 항목명을 왼쪽 정렬하고 분류 표시점과 연결선 끝점을 행 오른쪽에 맞춘다.
 

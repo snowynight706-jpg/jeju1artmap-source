@@ -40,7 +40,6 @@ import {
   categoryOf,
   isPrimaryHubLabel,
   mapElementDisplaySize,
-  markerCategoryColors,
   placeContentKey,
   type CategoryId,
 } from "./map/core/model";
@@ -122,10 +121,18 @@ import {
   useMapSettingsPersistence,
 } from "./editor/persistence/use-map-settings-persistence";
 import { normalizeOptionalLabelScaleSteps } from "./map/labels/density.mjs";
-import PublicExplorerPanel, { type PublicExplorerPlaceRow, type PublicExplorerTab } from "./public/explorer-panel";
-import { placesForPublicCategory } from "./public/place-category.mjs";
+import PublicExplorerPanel, { type PublicExplorerTab } from "./public/explorer-panel";
 import { publicPlaceFocusZoom } from "./public/place-focus.mjs";
 import PublicPlaceSheet from "./public/place-sheet";
+import {
+  publicCategoryMetaForPlace,
+  publicListCategories,
+  usePublicPlaceWorkspace,
+  type PublicHistoryState,
+  type PublicPanelHistory,
+  type PublicPlaceCategoryScope,
+  type PublicPlaceListItem,
+} from "./public/use-public-place-workspace";
 import { useMapTransformController } from "./map/interaction/use-map-transform-controller";
 import { useMapWorkspaceModel } from "./map/workspace/use-map-workspace-model";
 import { lowTierBaseMapNeedsHighResolution } from "./map/rendering/base-map-quality.mjs";
@@ -137,7 +144,6 @@ import {
 import { shouldSendMapSettleDiagnostic } from "./map/rendering/performance-diagnostics.mjs";
 import type { MobileRenderBudget } from "./map/rendering/mobile-render";
 import {
-  publicPanelAfterDrag,
   publicPanelIsExpanded,
   publicPanelIsExplorer,
   publicPanelIsPlace,
@@ -149,7 +155,6 @@ import {
 } from "./editor/document/main-hub-persistence.mjs";
 import {
   ART_PLATFORM_FACILITY_NAMES,
-  ART_PLATFORM_GROUP_ID,
   LPP_CANONICAL_NAME,
   MAIN_HUB_CANONICAL_NAME,
   MAIN_HUB_ROLE,
@@ -168,9 +173,6 @@ import {
   directoryCategory,
   directoryRecordFromPlace,
   mapCategoryForDirectoryPlace,
-  publicCategoryIdForPlace,
-  withDirectoryMetadata,
-  type PublicPlaceCategoryId,
 } from "./place-directory/model";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 import {
@@ -274,7 +276,6 @@ const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
 const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
 const PLACE_STORY_AUTHOR_KEY = "jeju-wondosim-map-review:story-author:v1";
 const UI_THEME_STORAGE_KEY = "jeju-wondosim-map-review:ui-theme:v1";
-const PUBLIC_PANEL_MOTION_MS = 240;
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 const UI_THEME_EASTER_EGG_PLACES = new Set([
   "제주아트플랫폼",
@@ -323,29 +324,7 @@ function UiThemePicker({ activeTheme, compact = false, onSelect }: {
   </div>;
 }
 
-// 이하는 장소 분류와 공개 탐색 메뉴에 표시할 카테고리 설정 코드입니다.
-const publicListCategories: ReadonlyArray<{
-  id: PublicPlaceCategoryFilter;
-  name: string;
-  color: string;
-  iconSrc: string;
-}> = [
-  { id: "culture", name: "문화공간", color: markerCategoryColors.culture, iconSrc: "/category-icons/category_ui_culture_book_brush_note_v03_ui-96px.webp" },
-  { id: "food", name: "음식점", color: markerCategoryColors.food, iconSrc: "/category-icons/category_ui_restaurant_v02_ui-96px.webp" },
-  { id: "cafe", name: "카페", color: markerCategoryColors.cafe, iconSrc: "/category-icons/category_ui_cafe_v03_ui-96px.webp" },
-  { id: "shop", name: "소품샵", color: markerCategoryColors.shop, iconSrc: "/category-icons/category_ui_goods_shop_v03_ui-96px.webp" },
-  { id: "convenience", name: "편의시설", color: markerCategoryColors.utility, iconSrc: "/category-icons/category_ui_amenities_v01_ui-96px.webp" },
-] as const;
-
-type PublicPlaceCategoryFilter = PublicPlaceCategoryId;
-type PublicPlaceCategoryScope = "all" | PublicPlaceCategoryFilter;
-type PublicPanelHistory = "map" | "explorer" | "explorer-expanded" | "place" | "place-expanded";
-type PublicHistoryState = {
-  wondosimPanel?: PublicPanelHistory;
-  wondosimPlaceId?: string;
-  wondosimFrom?: "map" | "explorer" | "explorer-expanded";
-  wondosimExpandedFromCollapsed?: boolean;
-};
+// 이하는 관리자 목록의 필터와 좌표 그룹에 관한 타입입니다.
 type CoordinateLockFilter = "all" | "unlocked" | "locked";
 type PlacementFilter = "all" | "placed" | "unplaced";
 type RecommendationFilter = "all" | "recommended" | "standard";
@@ -353,15 +332,6 @@ type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PublicAssetProfile = "mobile" | "standard";
 
 // 이하는 지도, 장소, 후기, 행사, 공개본에 사용되는 데이터 형태 정의입니다.
-type PublicPlaceListItem = {
-  id: string;
-  place: DirectoryPlace;
-  anchor: MapElement;
-  displayName: string;
-  categoryId: PublicPlaceCategoryFilter;
-  isMainHub: boolean;
-};
-
 type UnifiedPlaceRow = {
   id: string;
   name: string;
@@ -489,11 +459,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 }
 
-function publicCategoryMetaForPlace(place: DirectoryPlace, anchor: MapElement) {
-  const id = publicCategoryIdForPlace(place, anchor);
-  return publicListCategories.find((category) => category.id === id) ?? publicListCategories[0];
-}
-
 function storyDateLabel(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "날짜 미상" : date.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
@@ -594,7 +559,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const placeQueryInputRef = useRef<HTMLInputElement>(null);
-  const publicPlaceQueryInputRef = useRef<HTMLInputElement>(null);
   const databaseEditorQueryInputRef = useRef<HTMLInputElement>(null);
   const mapUploadInputRef = useRef<HTMLInputElement>(null);
   const adminShortcutActionsRef = useRef({ saveDraft: () => {}, undo: () => {}, redo: () => {} });
@@ -605,18 +569,6 @@ export default function Home() {
   const publicNavigationInitializedRef = useRef(false);
   const publicNavigationApplyingRef = useRef(false);
   const publicNavigationAfterPopRef = useRef<"explorer" | null>(null);
-  const publicPreserveMapViewOnNextPopRef = useRef(false);
-  const publicMapViewBeforeFocusRef = useRef<{ zoom: number; pan: { x: number; y: number } } | null>(null);
-  const publicPanelDragRef = useRef<{
-    pointerId: number;
-    startY: number;
-    target: "place" | "explorer";
-    startExpanded: boolean;
-  } | null>(null);
-  const publicPlacePanelRef = useRef<HTMLElement>(null);
-  const publicExplorerPanelRef = useRef<HTMLElement>(null);
-  const publicPanelMotionFrameRef = useRef<Record<"place" | "explorer", number | null>>({ place: null, explorer: null });
-  const publicPanelMotionAnimationRef = useRef<Record<"place" | "explorer", Animation | null>>({ place: null, explorer: null });
   const placeStoryDraftKeyRef = useRef<string | null>(null);
   const selectedStoryKeyRef = useRef<string | null>(null);
   const placeStoryTextRef = useRef("");
@@ -758,12 +710,6 @@ export default function Home() {
   const [, setPlaceStoriesCanModerate] = useState(false);
   const [globalStoriesOpen, setGlobalStoriesOpen] = useState(false);
   const [globalContentTab, setGlobalContentTab] = useState<GlobalContentTab>("places");
-  const [publicPanelExpanded, setPublicPanelExpanded] = useState(false);
-  const [publicPlaceExpanded, setPublicPlaceExpanded] = useState(false);
-  const [publicPanelDrag, setPublicPanelDrag] = useState<{ target: "place" | "explorer"; offsetY: number } | null>(null);
-  const [publicPlaceQuery, setPublicPlaceQuery] = useState("");
-  const [publicPlaceCategory, setPublicPlaceCategory] = useState<PublicPlaceCategoryScope>("all");
-  const [expandedAdditionalCategoryItemId, setExpandedAdditionalCategoryItemId] = useState<string | null>(null);
   const {
     globalStories,
     globalStoriesPage,
@@ -1509,7 +1455,6 @@ export default function Home() {
     && selectedFacilityPlace.locationGroupId === selectedAnchorDirectoryPlace?.locationGroupId
     ? selectedFacilityPlace
     : selectedAnchorDirectoryPlace;
-  const selectedDirectoryPlaceId = selectedDirectoryPlace?.id ?? null;
   const selectedUnlinkedPrimaryCategory = selected && isPrimaryPublicCategory(directoryCategory(selected.category))
     ? directoryCategory(selected.category)
     : null;
@@ -1762,68 +1707,6 @@ export default function Home() {
     selectedDenseLabelId,
   });
 
-  const publicPlaceItems = useMemo<PublicPlaceListItem[]>(() => {
-    const items = new Map<string, PublicPlaceListItem>();
-    visibleElements.forEach((anchor) => {
-      const ownPlace = (anchor.directoryId ? directoryPlacesById.get(anchor.directoryId) : undefined)
-        ?? directoryPlacesByNormalizedName.get(normalizePlaceName(anchor.name));
-      const candidates = ownPlace?.locationGroupId
-        ? directoryPlacesByGroup.get(ownPlace.locationGroupId) ?? [ownPlace]
-        : ownPlace
-          ? [ownPlace]
-          : [{
-            id: `element-${anchor.id}`,
-            name: anchor.name,
-            category: anchor.category,
-            area: anchor.category === "landmark" ? "랜드마크" : "지도 배치",
-            address: anchor.address,
-            x: anchor.x,
-            y: anchor.y,
-            coordinateStatus: anchor.category === "landmark" ? "landmark" as const : "review" as const,
-            sourceLabel: "공개 지도",
-            additionalCategories: [],
-          } satisfies DirectoryPlace];
-      candidates.forEach((candidate) => {
-        const place = withDirectoryMetadata(candidate);
-        const itemId = place.id || `element-${anchor.id}`;
-        if (items.has(itemId)) return;
-        const isMainHub = place.featuredRole === MAIN_HUB_ROLE || isPrimaryHubLabel(place.name);
-        const usesMapDisplayName = Boolean(ownPlace && place.id === ownPlace.id);
-        items.set(itemId, {
-          id: itemId,
-          place,
-          anchor,
-          displayName: usesMapDisplayName ? anchor.name : publicDisplayName(place.name, place.featuredRole),
-          categoryId: publicCategoryIdForPlace(place, anchor),
-          isMainHub,
-        });
-      });
-    });
-    return [...items.values()].sort((a, b) => (
-      Number(b.isMainHub) - Number(a.isMainHub)
-      || Number(a.place.locationGroupId !== ART_PLATFORM_GROUP_ID) - Number(b.place.locationGroupId !== ART_PLATFORM_GROUP_ID)
-      || a.displayName.localeCompare(b.displayName, "ko")
-    ));
-  }, [directoryPlacesByGroup, directoryPlacesById, directoryPlacesByNormalizedName, visibleElements]);
-
-  const eventLinkedPublicPlaceIds = useMemo(() => {
-    if (!eventLinkedPlaces.length) return new Set<string>();
-    const linkedKeys = new Set(eventLinkedPlaces.map((place) => place.placeKey));
-    const linkedNames = new Set(eventLinkedPlaces.map((place) => normalizePlaceName(place.placeName)));
-    return new Set(publicPlaceItems.flatMap((item) => {
-      const directKey = `directory:${item.place.id}`;
-      const anchorKey = placeContentKey(item.anchor);
-      const referenceKeys = item.place.id === item.anchor.directoryId || !item.anchor.directoryId
-        ? [directKey, anchorKey]
-        : [directKey];
-      const referenceNames = [item.place.name, item.displayName, ...(item.place.aliases ?? [])]
-        .map((name) => normalizePlaceName(name));
-      return referenceKeys.some((key) => linkedKeys.has(key)) || referenceNames.some((name) => linkedNames.has(name))
-        ? [item.id]
-        : [];
-    }));
-  }, [eventLinkedPlaces, publicPlaceItems]);
-
   useLayoutEffect(() => {
     if (!performanceStartedAtRef.current) performanceStartedAtRef.current = performance.now();
   }, []);
@@ -1833,45 +1716,6 @@ export default function Home() {
     const timer = window.setInterval(() => setReviewBadgeNow(Date.now()), 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, [publicLayoutAccess]);
-
-  const publicPlaceCategoryCounts = useMemo(() => publicListCategories.reduce<Record<PublicPlaceCategoryFilter, number>>((counts, category) => {
-    counts[category.id] = placesForPublicCategory(publicPlaceItems, category.id, eventLinkedPublicPlaceIds).length;
-    return counts;
-  }, Object.fromEntries(publicListCategories.map((category) => [category.id, 0])) as Record<PublicPlaceCategoryFilter, number>), [eventLinkedPublicPlaceIds, publicPlaceItems]);
-
-  const publicPlacePresentationById = useMemo(() => new Map(publicPlaceItems.map((item) => {
-    const additionalIds = new Set(sanitizeAdditionalCategories(item.place.additionalCategories));
-    const convenienceIds = new Set(sanitizeConvenienceAttributes(item.place.convenienceAttributes));
-    const tagNames = additionalCategoryDefinitions.flatMap((definition) => additionalIds.has(definition.id) ? [definition.name] : []);
-    const convenienceNames = convenienceAttributeDefinitions.flatMap((definition) => convenienceIds.has(definition.id) ? [definition.name] : []);
-    const searchText = `${item.displayName} ${item.place.name} ${(item.place.aliases ?? []).join(" ")} ${item.place.address} ${item.place.area} ${tagNames.join(" ")} ${convenienceNames.join(" ")}`.toLocaleLowerCase("ko-KR");
-    return [item.id, { tagNames, searchText }] as const;
-  })), [publicPlaceItems]);
-
-  const filteredPublicPlaceItems = useMemo(() => {
-    const query = publicPlaceQuery.trim().toLocaleLowerCase("ko-KR");
-    const scopedItems: PublicPlaceListItem[] = publicPlaceCategory === "all"
-      ? publicPlaceItems
-      : placesForPublicCategory(publicPlaceItems, publicPlaceCategory, eventLinkedPublicPlaceIds) as PublicPlaceListItem[];
-    return query
-      ? scopedItems.filter((item) => publicPlacePresentationById.get(item.id)?.searchText.includes(query))
-      : scopedItems;
-  }, [eventLinkedPublicPlaceIds, publicPlaceCategory, publicPlaceItems, publicPlacePresentationById, publicPlaceQuery]);
-
-  const publicExplorerPlaceRows: PublicExplorerPlaceRow[] = filteredPublicPlaceItems.map((item) => {
-    const meta = publicCategoryMetaForPlace(item.place, item.anchor);
-    return {
-      id: item.id,
-      displayName: item.displayName,
-      isMainHub: item.isMainHub,
-      selected: selectedId === item.anchor.id && selectedDirectoryPlaceId === item.place.id,
-      eventListedInCulture: publicPlaceCategory === "culture" && item.categoryId !== "culture" && eventLinkedPublicPlaceIds.has(item.id),
-      markerColor: categoryOf(item.anchor.category).color,
-      primaryCategoryName: meta.name,
-      primaryCategoryColor: meta.color,
-      tagNames: publicPlacePresentationById.get(item.id)?.tagNames ?? [],
-    };
-  });
 
   // 이하는 화면 좌표를 지도 좌표로 바꾸고 선택된 장소 정보를 동기화하는 코드입니다.
   const clientToMap = useCallback((clientX: number, clientY: number) => {
@@ -1952,183 +1796,61 @@ export default function Home() {
     setPlaceEventPhoto(file);
   }, []);
 
-  const currentPublicPlaceId = () => {
-    const item = publicPlaceItems.find((candidate) => (
-      candidate.anchor.id === selectedId
-      && (!selectedFacilityId || candidate.place.id === selectedFacilityId)
-      && (selectedFacilityId || candidate.place.id === candidate.anchor.directoryId || !candidate.anchor.directoryId)
-    ));
-    return item?.id ?? selectedFacilityId ?? selectedDirectoryPlace?.id ?? null;
-  };
-
-  const confirmDiscardStoryPhoto = (nextPlaceId: string | null = null) => {
-    if (!placeStoryPhoto || (nextPlaceId && nextPlaceId === currentPublicPlaceId())) return true;
-    if (!window.confirm("선택한 사진은 장소를 벗어나면 사라집니다. 사진을 버리고 이동할까요?\n작성한 후기 문장은 이 세션에 임시 저장됩니다.")) return false;
-    updatePlaceStoryPhoto(null);
-    return true;
-  };
-
-  const rememberPublicMapView = useCallback(() => {
-    if (!publicMapViewBeforeFocusRef.current) {
-      publicMapViewBeforeFocusRef.current = {
-        zoom: zoomRef.current,
-        pan: { ...panRef.current },
-      };
-    }
-  }, []);
-
-  const restorePublicMapView = useCallback((clear = false) => {
-    const previous = publicMapViewBeforeFocusRef.current;
-    const nextZoom = clamp(previous?.zoom ?? fitZoomRef.current, fitZoomRef.current, 4);
-    const nextPan = previous?.pan ?? { x: 0, y: 0 };
-    zoomRef.current = nextZoom;
-    panRef.current = nextPan;
-    setZoom(nextZoom);
-    setMapPan(nextPan);
-    setMapRenderPan(nextPan);
-    if (clear) publicMapViewBeforeFocusRef.current = null;
-  }, [setMapPan]);
-
-  const writePublicHistory = useCallback((
-    panel: PublicPanelHistory,
-    placeId: string | null = null,
-    mode: "push" | "replace" = "push",
-    from?: PublicHistoryState["wondosimFrom"],
-    expandedFromCollapsed = false,
-  ) => {
-    if (!publicNavigationInitializedRef.current || publicNavigationApplyingRef.current) return;
-    const current = (window.history.state ?? {}) as PublicHistoryState;
-    const currentExplorer = current.wondosimPanel === "explorer" || current.wondosimPanel === "explorer-expanded"
-      ? current.wondosimPanel
-      : undefined;
-    const origin: NonNullable<PublicHistoryState["wondosimFrom"]> = from
-      ?? currentExplorer
-      ?? current.wondosimFrom
-      ?? "map";
-    const state: PublicHistoryState = {
-      wondosimPanel: panel,
-      ...(publicPanelIsPlace(panel) && placeId ? { wondosimPlaceId: placeId, wondosimFrom: origin } : {}),
-      ...(publicPanelIsExpanded(panel) && expandedFromCollapsed ? { wondosimExpandedFromCollapsed: true } : {}),
-    };
-    const url = publicUrlWithPlace(window.location.href, publicPanelIsPlace(panel) ? placeId : null);
-    window.history[mode === "push" ? "pushState" : "replaceState"](state, "", url);
-  }, []);
-
-  const queuePublicPanelSnap = useCallback((target: "place" | "explorer", expanded: boolean) => {
-    const element = target === "place" ? publicPlacePanelRef.current : publicExplorerPanelRef.current;
-    if (
-      !element
-      || typeof element.animate !== "function"
-      || !window.matchMedia("(max-width: 760px)").matches
-      || window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) return;
-    const currentTransform = window.getComputedStyle(element).transform;
-    const fromTransform = currentTransform && currentTransform !== "none"
-      ? currentTransform
-      : `translate3d(0, ${expanded ? 10 : -7}px, 0)`;
-    const pendingFrame = publicPanelMotionFrameRef.current[target];
-    if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
-    publicPanelMotionAnimationRef.current[target]?.cancel();
-    publicPanelMotionFrameRef.current[target] = window.requestAnimationFrame(() => {
-      publicPanelMotionFrameRef.current[target] = null;
-      const panel = target === "place" ? publicPlacePanelRef.current : publicExplorerPanelRef.current;
-      if (!panel) return;
-      panel.getAnimations().forEach((animation) => animation.cancel());
-      const animation = panel.animate([
-        { transform: fromTransform, opacity: 0.96 },
-        { transform: "translate3d(0, 0, 0)", opacity: 1 },
-      ], {
-        duration: PUBLIC_PANEL_MOTION_MS,
-        easing: "cubic-bezier(.22, .78, .28, 1)",
-      });
-      publicPanelMotionAnimationRef.current[target] = animation;
-      animation.addEventListener("finish", () => {
-        if (publicPanelMotionAnimationRef.current[target] === animation) publicPanelMotionAnimationRef.current[target] = null;
-      }, { once: true });
-    });
-  }, []);
-
-  const setPublicPanelExpansion = (target: "place" | "explorer", expanded: boolean) => {
-    queuePublicPanelSnap(target, expanded);
-    if (target === "place") setPublicPlaceExpanded(expanded);
-    else setPublicPanelExpanded(expanded);
-    if (!publicNavigationInitializedRef.current || publicNavigationApplyingRef.current) return;
-    const current = (window.history.state ?? {}) as PublicHistoryState;
-    const collapsedPanel = target;
-    const expandedPanel = `${target}-expanded` as PublicPanelHistory;
-    if (!expanded && current.wondosimPanel === expandedPanel && current.wondosimExpandedFromCollapsed) {
-      window.history.back();
-      return;
-    }
-    writePublicHistory(
-      expanded ? expandedPanel : collapsedPanel,
-      target === "place" ? current.wondosimPlaceId ?? currentPublicPlaceId() : null,
-      current.wondosimPanel === collapsedPanel && expanded ? "push" : "replace",
-      current.wondosimFrom,
-      expanded && current.wondosimPanel === collapsedPanel,
-    );
-  };
-
-  useEffect(() => () => {
-    (Object.keys(publicPanelMotionFrameRef.current) as Array<"place" | "explorer">).forEach((target) => {
-      const pendingFrame = publicPanelMotionFrameRef.current[target];
-      if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
-      publicPanelMotionAnimationRef.current[target]?.cancel();
-    });
-  }, []);
-
-  const startPublicPanelDrag = (event: ReactPointerEvent<HTMLDivElement>, target: "place" | "explorer", startExpanded: boolean) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const pendingFrame = publicPanelMotionFrameRef.current[target];
-    if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame);
-    publicPanelMotionFrameRef.current[target] = null;
-    publicPanelMotionAnimationRef.current[target]?.cancel();
-    publicPanelMotionAnimationRef.current[target] = null;
-    (target === "place" ? publicPlacePanelRef.current : publicExplorerPanelRef.current)?.getAnimations().forEach((animation) => animation.cancel());
-    event.currentTarget.setPointerCapture(event.pointerId);
-    publicPanelDragRef.current = { pointerId: event.pointerId, startY: event.clientY, target, startExpanded };
-    setPublicPanelDrag({ target, offsetY: 0 });
-  };
-
-  const movePublicPanelDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = publicPanelDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    event.preventDefault();
-    setPublicPanelDrag({ target: drag.target, offsetY: clamp(event.clientY - drag.startY, -96, 96) });
-  };
-
-  const finishPublicPanelDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = publicPanelDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const deltaY = event.clientY - drag.startY;
-    const nextPanel = publicPanelAfterDrag(drag.target, drag.startExpanded, deltaY);
-    publicPanelDragRef.current = null;
-    setPublicPanelDrag(null);
-    setPublicPanelExpansion(drag.target, publicPanelIsExpanded(nextPanel));
-  };
-
-  const selectPublicMarker = (elementId: string) => {
-    const item = publicPlaceItems.find((candidate) => (
-      candidate.anchor.id === elementId
-      && (candidate.place.id === candidate.anchor.directoryId || !candidate.anchor.directoryId)
-    )) ?? publicPlaceItems.find((candidate) => candidate.anchor.id === elementId);
-    if (!item || !confirmDiscardStoryPhoto(item.id)) return;
-    rememberPublicMapView();
-    const current = (window.history.state ?? {}) as PublicHistoryState;
-    const from: NonNullable<PublicHistoryState["wondosimFrom"]> = current.wondosimPanel === "explorer" || current.wondosimPanel === "explorer-expanded"
-      ? current.wondosimPanel
-      : "map";
-    setSelectedId(elementId);
-    setSelectedFacilityId(null);
-    setPublicPlaceExpanded(false);
-    setGlobalStoriesOpen(false);
-    setPublicPanelExpanded(false);
-    setSelectedNoteId(null);
-    setSelectedDenseLabelId(null);
-    writePublicHistory("place", item.id, publicPanelIsPlace(current.wondosimPanel) ? "replace" : "push", from);
-  };
+  const {
+    publicPlaceItems,
+    publicPlaceCategoryCounts,
+    publicExplorerPlaceRows,
+    publicPanelExpanded,
+    setPublicPanelExpanded,
+    publicPlaceExpanded,
+    setPublicPlaceExpanded,
+    publicPanelDrag,
+    publicPlaceQuery,
+    setPublicPlaceQuery,
+    publicPlaceCategory,
+    setPublicPlaceCategory,
+    expandedAdditionalCategoryItemId,
+    setExpandedAdditionalCategoryItemId,
+    publicPlaceQueryInputRef,
+    publicPreserveMapViewOnNextPopRef,
+    publicMapViewBeforeFocusRef,
+    publicPlacePanelRef,
+    publicExplorerPanelRef,
+    currentPublicPlaceId,
+    confirmDiscardStoryPhoto,
+    rememberPublicMapView,
+    restorePublicMapView,
+    writePublicHistory,
+    setPublicPanelExpansion,
+    startPublicPanelDrag,
+    movePublicPanelDrag,
+    finishPublicPanelDrag,
+    selectPublicMarker,
+  } = usePublicPlaceWorkspace({
+    visibleElements,
+    directoryPlacesById,
+    directoryPlacesByNormalizedName,
+    directoryPlacesByGroup,
+    eventLinkedPlaces,
+    selectedId,
+    selectedFacilityId,
+    selectedDirectoryPlaceId: selectedDirectoryPlace?.id ?? null,
+    placeStoryPhoto,
+    zoomRef,
+    panRef,
+    fitZoomRef,
+    publicNavigationInitializedRef,
+    publicNavigationApplyingRef,
+    setZoom,
+    setMapPan,
+    setMapRenderPan,
+    setSelectedId,
+    setSelectedFacilityId,
+    setGlobalStoriesOpen,
+    setSelectedNoteId,
+    setSelectedDenseLabelId,
+    onDiscardStoryPhoto: updatePlaceStoryPhoto,
+  });
 
   const selectUiTheme = useCallback((theme: UiThemeId) => {
     setUiTheme(theme);
@@ -2147,7 +1869,7 @@ export default function Home() {
     };
     document.addEventListener("pointerdown", closeAdditionalCategoryPopover, true);
     return () => document.removeEventListener("pointerdown", closeAdditionalCategoryPopover, true);
-  }, [expandedAdditionalCategoryItemId]);
+  }, [expandedAdditionalCategoryItemId, setExpandedAdditionalCategoryItemId]);
 
   useEffect(() => {
     let restoreFrame = 0;
@@ -5450,7 +5172,7 @@ export default function Home() {
 
     window.addEventListener("keydown", handleViewerShortcut);
     return () => window.removeEventListener("keydown", handleViewerShortcut);
-  }, [adminLoginOpen, fitZoom, globalStoriesOpen, openPublicPlaceList, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, setMapPan, shortcutHelpOpen]);
+  }, [adminLoginOpen, fitZoom, globalStoriesOpen, openPublicPlaceList, placeRequestFormOpen, placeRequestPickingLocation, publicLayoutAccess, publicPlaceQueryInputRef, setMapPan, shortcutHelpOpen]);
 
   const copyPublicPlaceAddress = async () => {
     const address = selectedDirectoryPlace?.address || selected?.address || "";
@@ -5587,7 +5309,7 @@ export default function Home() {
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [closePublicExplorerPanel, closePublicPlacePanel, confirmDiscardStoryPhoto, currentPublicPlaceId, focusMapPosition, publicLayoutAccess, publicPlaceItems, rememberPublicMapView, restorePublicMapView, selectedId]);
+  }, [closePublicExplorerPanel, closePublicPlacePanel, confirmDiscardStoryPhoto, currentPublicPlaceId, focusMapPosition, publicLayoutAccess, publicMapViewBeforeFocusRef, publicPlaceItems, publicPreserveMapViewOnNextPopRef, rememberPublicMapView, restorePublicMapView, selectedId, setPublicPanelExpanded, setPublicPlaceExpanded]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {

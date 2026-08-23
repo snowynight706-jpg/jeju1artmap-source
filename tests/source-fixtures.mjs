@@ -12,6 +12,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/public/place-detail-content.tsx",
     "../app/public/place-focus.mjs",
     "../app/public/place-sheet.tsx",
+    "../app/public/use-public-place-workspace.ts",
   ]),
   contentClient: Object.freeze([
     "../app/content/client.ts",
