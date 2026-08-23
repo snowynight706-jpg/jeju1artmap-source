@@ -12,6 +12,7 @@ import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentIntersect
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
+const adminOutputWorkspaceSource = await readFile(new URL("../app/editor/workspace/use-admin-output-workspace.ts", import.meta.url), "utf8");
 const publicLayoutRouteSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const publicLayoutClientSource = await readFile(new URL("../app/editor/persistence/public-layout-client.ts", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -110,7 +111,7 @@ test("admin label budgets are editable and publish immediately as independent ru
   assert.match(pageSource, /setOptionalLabelScaleSteps\(normalizeOptionalLabelScaleSteps\(view\.optionalLabelScaleSteps\)\)/);
   assert.match(pageSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(optionalLabelScaleSteps\)/);
   assert.match(pageSource, /className="public-label-density-actions"[\s\S]{0,320}>기본값<[\s\S]{0,320}>\{optionalLabelScaleSaving \? "저장 중…" : "저장"\}</);
-  assert.match(pageSource, /const saveOptionalLabelScaleLimits = async[\s\S]{0,800}saveLabelDensitySettings\([\s\S]{0,260}labelDensitySettingsRevisionRef\.current/);
+  assert.match(adminOutputWorkspaceSource, /const saveOptionalLabelScaleLimits = async[\s\S]{0,800}saveLabelDensitySettings\([\s\S]{0,260}labelDensitySettingsRevisionRef\.current/);
   assert.match(publicLayoutClientSource, /method: "PATCH"[\s\S]{0,300}action: "save-label-density-settings"[\s\S]{0,120}baseRevision/);
   assert.match(pageSource, /공개본 업데이트 없이 공개 지도에 반영됩니다\./);
   assert.match(publicLayoutRouteSource, /optionalLabelScaleSteps: normalizeOptionalLabelScaleSteps\(raw\.optionalLabelScaleSteps\)/);

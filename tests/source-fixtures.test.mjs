@@ -23,6 +23,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPlaces.includes("../app/editor/places/actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-application-bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-admin-output-workspace.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapInteraction.includes("../app/map/interaction/use-map-transform-controller.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapPrint.includes("../app/map/print/export.ts"));
@@ -68,6 +69,24 @@ test("public layout and editor recovery bootstrap stay behind one persistence wo
   assert.match(bootstrapSource, /chooseEditorRestoreSource\(\{/);
   assert.match(bootstrapSource, /const applyBundledDirectory = async/);
   assert.match(bootstrapSource, /localStorage\.setItem\(MAP_VIEW_SETTINGS_KEY/);
+});
+
+test("admin exports, snapshots, history, and publishing stay behind one output workspace", async () => {
+  const [pageSource, workspaceSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/workspace/use-admin-output-workspace.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /useAdminOutputWorkspace\(\{/);
+  assert.doesNotMatch(pageSource, /const exportHighResolutionPng = async/);
+  assert.doesNotMatch(pageSource, /const saveEditorDraft = async/);
+  assert.doesNotMatch(pageSource, /const publishCurrentLayout = async/);
+  assert.doesNotMatch(pageSource, /const loadPublicHistoryEntry = async/);
+  assert.match(pageSource, /adminShortcutActionsRef\.current/);
+  assert.match(workspaceSource, /const exportHighResolutionPng = async/);
+  assert.match(workspaceSource, /const saveEditorDraft = async/);
+  assert.match(workspaceSource, /const publishCurrentLayout = async/);
+  assert.match(workspaceSource, /const loadPublicHistoryEntry = async/);
 });
 
 test("page and public shells keep heavyweight panels behind lazy import boundaries", async () => {
@@ -246,9 +265,10 @@ test("dense label persistence stays behind its client hook boundary", async () =
 });
 
 test("the map workspace composes label, print, and mobile rendering calculations outside the route component", async () => {
-  const [pageSource, workspaceSource, clusterSource, auditSource, exportSource, mobileRenderSource] = await Promise.all([
+  const [pageSource, workspaceSource, outputWorkspaceSource, clusterSource, auditSource, exportSource, mobileRenderSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/map/workspace/use-map-workspace-model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/workspace/use-admin-output-workspace.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/map/labels/clusters.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/map/print/audit.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/map/print/export.ts", import.meta.url), "utf8"),
@@ -256,7 +276,8 @@ test("the map workspace composes label, print, and mobile rendering calculations
   ]);
 
   assert.match(pageSource, /useMapWorkspaceModel\(\{/);
-  assert.match(pageSource, /renderHighResolutionMapPng\(\{/);
+  assert.doesNotMatch(pageSource, /renderHighResolutionMapPng\(\{/);
+  assert.match(outputWorkspaceSource, /renderHighResolutionMapPng\(\{/);
   assert.doesNotMatch(pageSource, /buildDenseLabelClusters\(/);
   assert.doesNotMatch(pageSource, /buildPrintAudit\(/);
   assert.doesNotMatch(pageSource, /calculateMobileMapRenderBounds\(\{/);

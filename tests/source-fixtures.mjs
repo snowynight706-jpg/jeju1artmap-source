@@ -48,6 +48,9 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/editor/persistence/use-local-autosave.ts",
     "../app/editor/persistence/use-map-settings-persistence.ts",
   ]),
+  editorWorkspace: Object.freeze([
+    "../app/editor/workspace/use-admin-output-workspace.ts",
+  ]),
   mapLabels: Object.freeze([
     "../app/map/labels/clusters.ts",
     "../app/map/labels/density.mjs",

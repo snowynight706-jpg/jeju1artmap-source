@@ -28,7 +28,8 @@ test("uploaded base maps use versioned screen derivatives while exports retain t
   assert.match(pageSource, /return metadata\.screen4096Url \?\? metadata\.screen2048Url \?\?/);
   assert.match(pageSource, /lowTierBaseMapNeedsHighResolution/);
   assert.match(pageSource, /decodedHighResolutionBaseMapSource/);
-  assert.match(pageSource, /uploadedBaseMapOriginalSource\(uploadedBaseMap\) \|\| MAP_SVG/);
+  assert.match(pageSource, /mapSvg: MAP_SVG/);
+  assert.match(pageSource, /uploadedBaseMapOriginalSource\(uploadedBaseMap\) \|\| mapSvg/);
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 2048, 0\.86\)/);
   assert.match(pageSource, /prepareBaseMapScreenVariant\(image, 4096, 0\.88\)/);
   assert.match(baseMapRoute, /bundledScreenResponse/);
