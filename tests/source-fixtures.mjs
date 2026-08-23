@@ -13,6 +13,12 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/public/place-focus.mjs",
     "../app/public/place-sheet.tsx",
   ]),
+  contentClient: Object.freeze([
+    "../app/content/client.ts",
+  ]),
+  media: Object.freeze([
+    "../app/media/photo-processing.ts",
+  ]),
   mapCore: Object.freeze([
     "../app/map/calibration/model.ts",
     "../app/map/core/element-defaults.ts",

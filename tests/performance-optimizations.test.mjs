@@ -17,6 +17,7 @@ const publicPlaceDetailSource = await readFile(new URL("../app/public/place-deta
 const publicExplorerActivitySource = await readFile(new URL("../app/public/explorer-activity-content.tsx", import.meta.url), "utf8");
 const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
 const publicPlaceSheetSource = await readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8");
+const contentClientSource = await readFile(new URL("../app/content/client.ts", import.meta.url), "utf8");
 const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
 const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
@@ -100,7 +101,8 @@ test("pinch and wheel zoom share one deferred visual transform before layout com
 test("administrator diagnostics are code-split while anonymous performance samples stay content-free", () => {
   const performanceTable = placeStoriesRoute.match(/const PERFORMANCE_DIAGNOSTICS_TABLE_SQL = `([\s\S]*?)`;/)?.[1] ?? "";
   assert.match(publicExplorerPanelSource, /const AdminDiagnosticsPanel = lazy\(\(\) => import\("\.\.\/admin-diagnostics-panel"\)\)/);
-  assert.match(pageSource, /sendPerformanceDiagnostic/);
+  assert.match(pageSource, /sendPerformanceDiagnostic\(\{/);
+  assert.match(contentClientSource, /export function sendPerformanceDiagnostic/);
   assert.match(pageSource, /metric: "startup"/);
   assert.match(pageSource, /recordMapSettle\("pan-settle"\)/);
   assert.match(pageSource, /recordMapSettle\("pinch-settle"\)/);

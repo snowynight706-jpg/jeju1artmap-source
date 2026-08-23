@@ -12,6 +12,8 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.deepEqual(APP_CLIENT_SOURCE_PATHS, [...new Set(APP_CLIENT_SOURCE_PATHS)]);
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.publicUi.includes("../app/public/explorer-panel.tsx"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/client.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
@@ -80,6 +82,23 @@ test("public place and explorer markup stay behind public display components", a
   assert.doesNotMatch(pageSource, /<aside[^>]+className=\{`public-place-sheet/);
   assert.match(explorerSource, /<section className="public-place-explorer">/);
   assert.match(placeSheetSource, /className=\{`public-place-sheet/);
+});
+
+test("browser content storage, diagnostics, and photo processing stay outside the route component", async () => {
+  const [pageSource, clientSource, photoSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/client.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/media/photo-processing.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /from "\.\/content\/client"/);
+  assert.match(pageSource, /from "\.\/media\/photo-processing"/);
+  assert.doesNotMatch(pageSource, /function persistentVisitorId\(/);
+  assert.doesNotMatch(pageSource, /function prepareStoryPhotoInWorker\(/);
+  assert.match(clientSource, /export function persistentVisitorId\(/);
+  assert.match(clientSource, /export function sendPerformanceDiagnostic\(/);
+  assert.match(photoSource, /export async function prepareStoryPhoto\(/);
+  assert.match(photoSource, /new Worker\("\/story-photo-worker\.js"\)/);
 });
 
 test("dense label persistence stays behind its client hook boundary", async () => {

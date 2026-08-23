@@ -14,6 +14,7 @@ const pageSource = await readAppClientSource();
 const publicPlaceDetailSource = await readFile(new URL("../app/public/place-detail-content.tsx", import.meta.url), "utf8");
 const publicPlaceSheetSource = await readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8");
 const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
+const contentClientSource = await readFile(new URL("../app/content/client.ts", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("stable place links preserve unrelated query parameters and hashes", () => {
@@ -179,8 +180,8 @@ test("PC shortcut help and viewer shortcuts are available in both modes", () => 
 });
 
 test("review text drafts and mobile photo discard protection are session scoped", () => {
-  assert.match(pageSource, /PLACE_STORY_DRAFTS_KEY/);
-  assert.match(pageSource, /sessionStorage\.setItem\(PLACE_STORY_DRAFTS_KEY/);
+  assert.match(contentClientSource, /PLACE_STORY_DRAFTS_KEY/);
+  assert.match(contentClientSource, /sessionStorage\.setItem\(PLACE_STORY_DRAFTS_KEY/);
   assert.match(pageSource, /선택한 사진은 장소를 벗어나면 사라집니다/);
   assert.match(pageSource, /writePlaceStoryDraft\(selectedStoryKey, ""\)/);
 });

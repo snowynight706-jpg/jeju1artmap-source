@@ -5,6 +5,8 @@ import test from "node:test";
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
+const contentClientSource = await readFile(new URL("../app/content/client.ts", import.meta.url), "utf8");
+const photoProcessingSource = await readFile(new URL("../app/media/photo-processing.ts", import.meta.url), "utf8");
 const publicPlaceDetailSource = await readFile(new URL("../app/public/place-detail-content.tsx", import.meta.url), "utf8");
 const adminDiagnosticsSource = await readFile(new URL("../app/admin-diagnostics-panel.tsx", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -13,9 +15,9 @@ const storyRouteSource = await readFile(new URL("../app/api/place-stories/route.
 const photoWorkerSource = await readFile(new URL("../public/story-photo-worker.js", import.meta.url), "utf8");
 
 test("mobile place-story submission survives unavailable browser storage", () => {
-  assert.match(pageSource, /let volatileVisitorId = ""/);
-  assert.match(pageSource, /function persistentVisitorId\(\) \{\s+try \{/);
-  assert.match(pageSource, /volatileVisitorId \|\|= newVisitorId\(\)/);
+  assert.match(contentClientSource, /let volatileVisitorId = ""/);
+  assert.match(contentClientSource, /function persistentVisitorId\(\) \{\s+try \{/);
+  assert.match(contentClientSource, /volatileVisitorId \|\|= newVisitorId\(\)/);
   assert.match(pageSource, /try \{ localStorage\.setItem\(PLACE_STORY_AUTHOR_KEY, authorName\); \} catch \{\}/);
 });
 
@@ -35,23 +37,23 @@ test("mobile photos have a native picker and resilient encoding fallbacks", () =
   assert.match(pageSource, /storyCanSubmit: !placeStorySubmitting && !placeStoryPhotoRetaining && Boolean\(placeStoryAuthor\.trim\(\)\) && placeStoryText\.trim\(\)\.length >= 2/);
   assert.match(pageSource, /errorCode = error instanceof Error[\s\S]{0,180}"photo-read-failed"/);
   assert.match(pageSource, /updatePlaceStoryPhoto\(null\);[\s\S]{0,220}setPlaceStoryFormOpen\(false\)/);
-  assert.match(pageSource, /const STORY_PHOTO_TARGET_BYTES = 1\.5 \* 1024 \* 1024/);
-  assert.match(pageSource, /const STORY_PHOTO_ENCODING_ATTEMPTS = \[/);
-  assert.match(pageSource, /\{ maximumEdge: 1080, type: "image\/webp", quality: 0\.7 \}/);
-  assert.match(pageSource, /\{ maximumEdge: 900, type: "image\/jpeg", quality: 0\.64 \}/);
-  assert.match(pageSource, /\{ maximumEdge: 640, type: "image\/jpeg", quality: 0\.5 \}/);
-  assert.match(pageSource, /for \(const attempt of STORY_PHOTO_ENCODING_ATTEMPTS\)/);
-  assert.match(pageSource, /blob\.size <= STORY_PHOTO_TARGET_BYTES/);
-  assert.match(pageSource, /createImageBitmap\(file, \{ imageOrientation: "from-image" \}\)/);
-  assert.match(pageSource, /prepareStoryPhotoInWorker\(file\)/);
-  assert.match(pageSource, /new Worker\("\/story-photo-worker\.js"\)/);
+  assert.match(photoProcessingSource, /const STORY_PHOTO_TARGET_BYTES = 1\.5 \* 1024 \* 1024/);
+  assert.match(photoProcessingSource, /const STORY_PHOTO_ENCODING_ATTEMPTS = \[/);
+  assert.match(photoProcessingSource, /\{ maximumEdge: 1080, type: "image\/webp", quality: 0\.7 \}/);
+  assert.match(photoProcessingSource, /\{ maximumEdge: 900, type: "image\/jpeg", quality: 0\.64 \}/);
+  assert.match(photoProcessingSource, /\{ maximumEdge: 640, type: "image\/jpeg", quality: 0\.5 \}/);
+  assert.match(photoProcessingSource, /for \(const attempt of STORY_PHOTO_ENCODING_ATTEMPTS\)/);
+  assert.match(photoProcessingSource, /blob\.size <= STORY_PHOTO_TARGET_BYTES/);
+  assert.match(photoProcessingSource, /createImageBitmap\(file, \{ imageOrientation: "from-image" \}\)/);
+  assert.match(photoProcessingSource, /prepareStoryPhotoInWorker\(file\)/);
+  assert.match(photoProcessingSource, /new Worker\("\/story-photo-worker\.js"\)/);
   assert.match(photoWorkerSource, /new OffscreenCanvas\(width, height\)/);
   assert.match(photoWorkerSource, /canvas\.convertToBlob/);
-  assert.match(pageSource, /\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(file\.type\)/);
-  assert.match(pageSource, /file\.size <= STORY_PHOTO_TARGET_BYTES\) return file/);
-  assert.doesNotMatch(pageSource, /file\.size <= STORY_PHOTO_MAX_UPLOAD_BYTES\) \{\s+return file/);
-  assert.match(pageSource, /throw new Error\("photo-encode-failed"\)/);
-  assert.match(pageSource, /throw new Error\("photo-compression-target-failed"\)/);
+  assert.match(photoProcessingSource, /\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(file\.type\)/);
+  assert.match(photoProcessingSource, /file\.size <= STORY_PHOTO_TARGET_BYTES\) return file/);
+  assert.doesNotMatch(photoProcessingSource, /file\.size <= STORY_PHOTO_MAX_UPLOAD_BYTES\) \{\s+return file/);
+  assert.match(photoProcessingSource, /throw new Error\("photo-encode-failed"\)/);
+  assert.match(photoProcessingSource, /throw new Error\("photo-compression-target-failed"\)/);
   assert.match(pageSource, /preparedPhoto\.size > STORY_PHOTO_TARGET_BYTES/);
   assert.match(styleSource, /\.place-story-photo-picker input \{ position: absolute; inset: 0;/);
 });
@@ -61,7 +63,8 @@ test("review uploads bypass PWA caching and report mobile failure causes", () =>
   assert.match(pageSource, /fetch\(PLACE_STORIES_API, \{ method: "POST", body: form, cache: "no-store", credentials: "same-origin" \}\)/);
   assert.match(pageSource, /message === "photo-unsupported"/);
   assert.match(pageSource, /!navigator\.onLine/);
-  assert.match(pageSource, /sendPlaceStoryUploadDiagnostic/);
+  assert.match(pageSource, /sendPlaceStoryUploadDiagnostic\(\{/);
+  assert.match(contentClientSource, /export async function sendPlaceStoryUploadDiagnostic/);
   assert.match(pageSource, /오류 ID/);
   assert.match(storyRouteSource, /place_story_upload_diagnostics/);
   assert.match(storyRouteSource, /scope === "upload-diagnostics"/);

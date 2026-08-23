@@ -193,6 +193,23 @@ import {
 } from "./place-taxonomy";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 import type { AdminPlaceRequestRecord } from "./admin-place-request-list";
+import {
+  PLACE_EVENTS_API,
+  PLACE_REGISTRATION_REQUESTS_API,
+  PLACE_STORIES_API,
+  persistentVisitorId,
+  readPlaceStoryDraft,
+  sendPerformanceDiagnostic,
+  sendPlaceStoryUploadDiagnostic,
+  writePlaceStoryDraft,
+} from "./content/client";
+import {
+  STORY_PHOTO_MAX_SOURCE_BYTES,
+  STORY_PHOTO_MAX_UPLOAD_BYTES,
+  STORY_PHOTO_TARGET_BYTES,
+  loadImage,
+  prepareStoryPhoto,
+} from "./media/photo-processing";
 
 // 이하는 필요할 때만 불러오는 관리자·공개 화면 모듈 코드입니다.
 
@@ -207,9 +224,6 @@ const JFAC_SIGNATURE_B_SVG = "/jfac-signature-b.svg?v=20260821-svg1";
 const JFAC_SYMBOL_SVG = "/jfac-symbol.svg?v=20260821-svg1";
 const UPLOADED_MAP_API = "/api/base-map";
 const PLACE_DIRECTORY_API = "/api/place-directory";
-const PLACE_STORIES_API = "/api/place-stories";
-const PLACE_EVENTS_API = "/api/place-events";
-const PLACE_REGISTRATION_REQUESTS_API = "/api/place-registration-requests";
 const ADMIN_SESSION_API = "/api/admin-session";
 const PUBLIC_VIEW_COOKIE = "jfac_map_public_view";
 const LATEST_SANJICHEON_ASSET_ID = "sanjicheon-v06";
@@ -258,26 +272,10 @@ const GEOCODE_CACHE_KEY = "jeju-wondosim-map-review:geocode-cache:v1";
 const VISIBILITY_GROUPS_KEY = "jeju-wondosim-map-review:visibility-groups:v1";
 const CALIBRATION_GROUPS_KEY = "jeju-wondosim-map-review:calibration-groups:v1";
 const MAP_VIEW_SETTINGS_KEY = "jeju-wondosim-map-review:map-view-settings:v1";
-const PLACE_STORY_VISITOR_KEY = "jeju-wondosim-map-review:story-visitor:v1";
 const PLACE_STORY_AUTHOR_KEY = "jeju-wondosim-map-review:story-author:v1";
-const PLACE_STORY_DRAFTS_KEY = "jeju-wondosim-map-review:story-drafts:v1";
 const UI_THEME_STORAGE_KEY = "jeju-wondosim-map-review:ui-theme:v1";
-const STORY_PHOTO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const STORY_PHOTO_MAX_SOURCE_BYTES = 30 * 1024 * 1024;
-const STORY_PHOTO_MAX_EDGE = 1280;
-const STORY_PHOTO_TARGET_BYTES = 1.5 * 1024 * 1024;
 const PUBLIC_PANEL_MOTION_MS = 240;
 const RECENT_REVIEW_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
-const STORY_PHOTO_ENCODING_ATTEMPTS = [
-  { maximumEdge: STORY_PHOTO_MAX_EDGE, type: "image/webp", quality: 0.82 },
-  { maximumEdge: STORY_PHOTO_MAX_EDGE, type: "image/webp", quality: 0.7 },
-  { maximumEdge: STORY_PHOTO_MAX_EDGE, type: "image/jpeg", quality: 0.78 },
-  { maximumEdge: 1080, type: "image/webp", quality: 0.7 },
-  { maximumEdge: 1080, type: "image/jpeg", quality: 0.7 },
-  { maximumEdge: 900, type: "image/jpeg", quality: 0.64 },
-  { maximumEdge: 720, type: "image/jpeg", quality: 0.56 },
-  { maximumEdge: 640, type: "image/jpeg", quality: 0.5 },
-] as const;
 const DELETED_PLACE_NAMES = new Set(["산짓물공원", "산짓물 공원"]);
 const UI_THEME_EASTER_EGG_PLACES = new Set([
   "제주아트플랫폼",
@@ -973,140 +971,7 @@ function eventPlaceList(event: PlaceEvent): PlaceEventPlace[] {
     : event.placeKey && event.placeName ? [{ placeKey: event.placeKey, placeName: event.placeName }] : [];
 }
 
-let volatileVisitorId = "";
-
-function newVisitorId() {
-  return `${crypto.randomUUID().replaceAll("-", "")}${Date.now().toString(36)}`;
-}
-
-function persistentVisitorId() {
-  try {
-    const existing = localStorage.getItem(PLACE_STORY_VISITOR_KEY)?.trim();
-    if (existing && /^[a-zA-Z0-9_-]{24,100}$/.test(existing)) return existing;
-    const next = volatileVisitorId || newVisitorId();
-    volatileVisitorId = next;
-    localStorage.setItem(PLACE_STORY_VISITOR_KEY, next);
-    return next;
-  } catch {
-    volatileVisitorId ||= newVisitorId();
-    return volatileVisitorId;
-  }
-}
-
-async function sendPlaceStoryUploadDiagnostic(details: {
-  placeKey: string;
-  stage: "prepare" | "request" | "response";
-  errorCode: string;
-  responseStatus: number;
-  sourceFile: File | null;
-  preparedFile: File | null;
-}) {
-  try {
-    const response = await fetch(PLACE_STORIES_API, {
-      method: "POST",
-      cache: "no-store",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        action: "upload-diagnostic",
-        visitorId: persistentVisitorId(),
-        placeKey: details.placeKey,
-        stage: details.stage,
-        errorCode: details.errorCode,
-        responseStatus: details.responseStatus,
-        sourceSize: details.sourceFile?.size ?? 0,
-        preparedSize: details.preparedFile?.size ?? null,
-        sourceType: details.sourceFile?.type ?? "",
-        preparedType: details.preparedFile?.type ?? null,
-        online: navigator.onLine,
-      }),
-    });
-    const payload = await response.json().catch(() => null) as { reference?: unknown } | null;
-    return response.ok && typeof payload?.reference === "string" ? payload.reference : null;
-  } catch {
-    return null;
-  }
-}
-
-function sendPerformanceDiagnostic(details: {
-  metric: "startup" | "pan-settle" | "pinch-settle";
-  durationMs: number;
-  elementCount: number;
-  labelCount: number;
-  viewportWidth: number;
-  viewportHeight: number;
-}) {
-  try {
-    const deviceNavigator = navigator as Navigator & {
-      deviceMemory?: number;
-      connection?: { effectiveType?: string };
-      standalone?: boolean;
-    };
-    const report = () => {
-      void fetch(PLACE_STORIES_API, {
-        method: "POST",
-        cache: "no-store",
-        credentials: "same-origin",
-        keepalive: true,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action: "performance-diagnostic",
-          visitorId: persistentVisitorId(),
-          metric: details.metric,
-          durationMs: Math.round(details.durationMs),
-          elementCount: details.elementCount,
-          labelCount: details.labelCount,
-          viewportWidth: Math.round(details.viewportWidth),
-          viewportHeight: Math.round(details.viewportHeight),
-          deviceMemory: Number.isFinite(deviceNavigator.deviceMemory) ? deviceNavigator.deviceMemory : null,
-          hardwareConcurrency: deviceNavigator.hardwareConcurrency || 0,
-          connectionType: deviceNavigator.connection?.effectiveType ?? "",
-          standalone: window.matchMedia("(display-mode: standalone)").matches || deviceNavigator.standalone === true,
-          online: navigator.onLine,
-        }),
-      }).catch(() => undefined);
-    };
-    if ("requestIdleCallback" in window) window.requestIdleCallback(report, { timeout: 2000 });
-    else globalThis.setTimeout(report, 500);
-  } catch {
-    // Performance reporting must never interrupt map interaction.
-  }
-}
-
-function readPlaceStoryDraft(placeKey: string | null) {
-  if (!placeKey) return "";
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(PLACE_STORY_DRAFTS_KEY) ?? "{}") as Record<string, unknown>;
-    return typeof parsed[placeKey] === "string" ? parsed[placeKey].slice(0, 220) : "";
-  } catch {
-    return "";
-  }
-}
-
-function writePlaceStoryDraft(placeKey: string | null, value: string) {
-  if (!placeKey) return;
-  try {
-    const parsed = JSON.parse(sessionStorage.getItem(PLACE_STORY_DRAFTS_KEY) ?? "{}") as Record<string, unknown>;
-    const next = Object.fromEntries(Object.entries(parsed).filter(([, draft]) => typeof draft === "string"));
-    if (value.trim()) next[placeKey] = value.slice(0, 220);
-    else delete next[placeKey];
-    sessionStorage.setItem(PLACE_STORY_DRAFTS_KEY, JSON.stringify(next));
-  } catch {
-    // 세션 저장소가 차단된 환경에서는 현재 입력 상태만 유지합니다.
-  }
-}
-
-// 이하는 지도 이미지와 사진 업로드 파일을 준비하는 코드입니다.
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.decoding = "async";
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error(`image load failed: ${src}`));
-    image.src = src;
-  });
-}
-
+// 이하는 업로드된 베이스맵 화면용 파생본을 준비하는 코드입니다.
 function uploadedBaseMapOriginalSource(metadata: UploadedBaseMap | null) {
   if (!metadata?.available) return "";
   return metadata.originalUrl ?? `${UPLOADED_MAP_API}?v=${encodeURIComponent(metadata.uploadedAt)}`;
@@ -1137,178 +1002,6 @@ async function prepareBaseMapScreenVariant(image: HTMLImageElement, maximumWidth
   canvas.height = 1;
   return blob?.type === "image/webp" ? { blob, width, height } : null;
 }
-
-function timedPhotoBlob(canvas: HTMLCanvasElement, type: "image/webp" | "image/jpeg", quality: number) {
-  return new Promise<Blob | null>((resolve) => {
-    let finished = false;
-    const timer = window.setTimeout(() => {
-      if (finished) return;
-      finished = true;
-      resolve(null);
-    }, 12_000);
-    canvas.toBlob((blob) => {
-      if (finished) return;
-      finished = true;
-      window.clearTimeout(timer);
-      resolve(blob);
-    }, type, quality);
-  });
-}
-
-function prepareStoryPhotoInWorker(file: File) {
-  if (
-    typeof Worker !== "function"
-    || typeof OffscreenCanvas !== "function"
-    || typeof createImageBitmap !== "function"
-  ) return Promise.resolve<File | null>(null);
-
-  return new Promise<File | null>((resolve) => {
-    let worker: Worker;
-    try {
-      worker = new Worker("/story-photo-worker.js");
-    } catch {
-      resolve(null);
-      return;
-    }
-    const requestId = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    let settled = false;
-    let timeout = 0;
-    const finish = (result: File | null) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      worker.terminate();
-      resolve(result);
-    };
-    timeout = window.setTimeout(() => finish(null), 30_000);
-    worker.onerror = () => finish(null);
-    worker.onmessage = (event: MessageEvent<{
-      id?: string;
-      ok?: boolean;
-      blob?: Blob;
-      type?: string;
-    }>) => {
-      const payload = event.data;
-      if (payload?.id !== requestId) return;
-      if (!payload.ok || !(payload.blob instanceof Blob)) {
-        finish(null);
-        return;
-      }
-      const extension = payload.type === "image/jpeg" ? "jpg" : "webp";
-      finish(new File(
-        [payload.blob],
-        `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`,
-        { type: payload.type || payload.blob.type },
-      ));
-    };
-    worker.postMessage({
-      id: requestId,
-      file,
-      attempts: STORY_PHOTO_ENCODING_ATTEMPTS,
-      targetBytes: STORY_PHOTO_TARGET_BYTES,
-    });
-  });
-}
-
-async function decodeStoryPhoto(file: File) {
-  if (typeof createImageBitmap === "function") {
-    try {
-      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-      return {
-        drawable: bitmap as CanvasImageSource,
-        width: bitmap.width,
-        height: bitmap.height,
-        release: () => bitmap.close(),
-      };
-    } catch {
-      // 일부 HEIC·기기별 사진은 아래 이미지 요소 방식으로 다시 시도합니다.
-    }
-  }
-  const source = URL.createObjectURL(file);
-  try {
-    const image = await loadImage(source);
-    return {
-      drawable: image as CanvasImageSource,
-      width: image.naturalWidth,
-      height: image.naturalHeight,
-      release: () => URL.revokeObjectURL(source),
-    };
-  } catch (error) {
-    URL.revokeObjectURL(source);
-    throw error;
-  }
-}
-
-async function prepareStoryPhoto(file: File) {
-  if (file.size > STORY_PHOTO_MAX_SOURCE_BYTES) throw new Error("photo-source-too-large");
-  if (["image/jpeg", "image/png", "image/webp"].includes(file.type) && file.size <= STORY_PHOTO_TARGET_BYTES) return file;
-  const workerPrepared = await prepareStoryPhotoInWorker(file);
-  if (workerPrepared) return workerPrepared;
-  let canvas: HTMLCanvasElement | null = null;
-  let release = () => {};
-  try {
-    const image = await decodeStoryPhoto(file).catch(() => {
-      throw new Error("photo-decode-failed");
-    });
-    release = image.release;
-    if (!image.width || !image.height) throw new Error("photo-decode-failed");
-    canvas = document.createElement("canvas");
-    let smallestBlob: Blob | null = null;
-    let renderedWidth = 0;
-    let renderedHeight = 0;
-
-    for (const attempt of STORY_PHOTO_ENCODING_ATTEMPTS) {
-      const scale = Math.min(1, attempt.maximumEdge / Math.max(image.width, image.height));
-      const width = Math.max(1, Math.round(image.width * scale));
-      const height = Math.max(1, Math.round(image.height * scale));
-      let blob: Blob | null = null;
-      try {
-        if (width !== renderedWidth || height !== renderedHeight) {
-          canvas.width = width;
-          canvas.height = height;
-          const context = canvas.getContext("2d", { alpha: false });
-          if (!context) continue;
-          context.imageSmoothingEnabled = true;
-          context.imageSmoothingQuality = "high";
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, width, height);
-          context.drawImage(image.drawable, 0, 0, width, height);
-          renderedWidth = width;
-          renderedHeight = height;
-        }
-        blob = await timedPhotoBlob(canvas, attempt.type, attempt.quality);
-      } catch {
-        // 한 인코더가 실패해도 더 작은 JPEG 단계까지 계속 시도합니다.
-      }
-      if (!blob || blob.type !== attempt.type) continue;
-      if (!smallestBlob || blob.size < smallestBlob.size) smallestBlob = blob;
-      if (blob.size <= STORY_PHOTO_TARGET_BYTES) {
-        const extension = blob.type === "image/jpeg" ? "jpg" : "webp";
-        return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "wondosim"}.${extension}`, { type: blob.type });
-      }
-    }
-
-    if (smallestBlob) throw new Error("photo-compression-target-failed");
-    throw new Error("photo-encode-failed");
-  } catch (error) {
-    if (error instanceof Error && [
-      "photo-source-too-large",
-      "photo-decode-failed",
-      "photo-encode-failed",
-      "photo-compression-target-failed",
-    ].includes(error.message)) throw error;
-    throw new Error("photo-encode-failed");
-  } finally {
-    if (canvas) {
-      canvas.width = 1;
-      canvas.height = 1;
-    }
-    release();
-  }
-}
-
 
 // 이하는 저장된 지도 문서를 복구하고 잘못된 값을 안전하게 정리하는 코드입니다.
 function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[]) {
