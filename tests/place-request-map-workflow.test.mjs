@@ -6,7 +6,7 @@ import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
 const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
-const denseLabelSource = await readFile(new URL("../app/dense-label-density.mjs", import.meta.url), "utf8");
+const denseLabelSource = await readFile(new URL("../app/map/labels/dense-density.mjs", import.meta.url), "utf8");
 const requestRouteSource = await readFile(new URL("../app/api/place-registration-requests/route.ts", import.meta.url), "utf8");
 const publicLayoutRouteSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
 const migrationSource = await readFile(new URL("../drizzle/0015_amusing_matthew_murdock.sql", import.meta.url), "utf8");

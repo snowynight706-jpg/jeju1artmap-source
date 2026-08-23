@@ -55,7 +55,7 @@ import {
   MapElementLayer,
   MobileMarkerPlaceholderLayer,
   type MapRenderActions,
-} from "./map-render-layers";
+} from "./map/rendering/layers";
 import {
   applyPlacementOverrides,
   cloneDocument,
@@ -71,17 +71,23 @@ import { elementDefaults } from "./map/core/element-defaults";
 import {
   printSettingKey,
   type PrintMode,
-} from "./map-print-settings";
-import { usePrintSettingsPersistence } from "./use-print-settings-persistence";
+} from "./map/print/settings";
+import { buildPrintAudit } from "./map/print/audit";
+import { renderHighResolutionMapPng } from "./map/print/export";
+import { usePrintSettingsPersistence } from "./map/print/use-settings-persistence";
+import {
+  buildDenseLabelClusters,
+  denseLabelRenderScale,
+} from "./map/labels/clusters";
+import { rectsOverlap, type NormalizedRect } from "./map/labels/geometry";
 import {
   readLocalDenseLabelSettings,
   useDenseLabelSettingsPersistence,
-} from "./use-dense-label-settings-persistence";
+} from "./map/labels/use-settings-persistence";
 import type {
   AssetStatus,
   DenseLabelCluster,
   DenseLabelPosition,
-  DenseLabelRow,
   DirectoryPlace,
   DocumentState,
   LabelPosition,
@@ -128,24 +134,30 @@ import {
   chooseScaleAwareLabelIds,
   normalizeOptionalLabelScaleSteps,
   optionalLabelBudgetForScale,
-} from "./label-density.mjs";
-import { denseLabelConnections } from "./dense-label-density.mjs";
-import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentsCross } from "./dense-label-placement.mjs";
-import { fitDenseLabelCenter, publicDenseLabelViewport } from "./dense-label-viewport.mjs";
+} from "./map/labels/density.mjs";
+import { publicDenseLabelViewport } from "./map/labels/dense-viewport.mjs";
 import { placesForPublicCategory } from "./public-place-category.mjs";
 import { publicPlaceFocusZoom } from "./public-place-focus.mjs";
-import { horizontalMapFitZoom, mapStageGestureTransform } from "./map-stage-transform.mjs";
-import { lowTierBaseMapNeedsHighResolution } from "./base-map-quality.mjs";
+import { horizontalMapFitZoom, mapStageGestureTransform } from "./map/rendering/stage-transform.mjs";
+import { lowTierBaseMapNeedsHighResolution } from "./map/rendering/base-map-quality.mjs";
 import {
   LOW_MOBILE_RENDER_BUDGET,
   STANDARD_MOBILE_RENDER_BUDGET,
   mobileRenderBudgetForDevice,
-} from "./mobile-render-budget.mjs";
-import { shouldSendMapSettleDiagnostic } from "./performance-diagnostics.mjs";
+} from "./map/rendering/mobile-render-budget.mjs";
+import { shouldSendMapSettleDiagnostic } from "./map/rendering/performance-diagnostics.mjs";
 import {
   mobileLabelBudgetForScale,
   mobileOverviewIsSimplified,
-} from "./mobile-marker-density.mjs";
+} from "./map/rendering/mobile-marker-density.mjs";
+import {
+  calculateMobileMapRenderBounds,
+  countRenderedIndividualLabels,
+  filterMobileMapCandidateElements,
+  filterRenderedDenseLabelClusters,
+  partitionMobileMapElements,
+  type MobileRenderBudget,
+} from "./map/rendering/mobile-render";
 import {
   publicPanelAfterDrag,
   publicPanelIsExpanded,
@@ -395,28 +407,6 @@ type UnifiedPlaceRow = {
   sourceLabel: string;
   place?: DirectoryPlace;
   element?: MapElement;
-};
-
-type MobileRenderBudget = {
-  tier: "low" | "standard" | "high";
-  overscanRatio: number;
-  minimumOverscan: number;
-};
-
-type PrintAuditIssue = {
-  id: string;
-  kind: "clipping" | "overlap" | "crossing" | "text";
-  label: string;
-  elementId?: string;
-  clusterId?: string;
-};
-
-type PrintAuditReport = {
-  issues: PrintAuditIssue[];
-  clippingCount: number;
-  overlapCount: number;
-  crossingCount: number;
-  minimumTextPixels: number;
 };
 
 type PlaceStory = {
@@ -1328,393 +1318,6 @@ async function prepareStoryPhoto(file: File) {
   }
 }
 
-type NormalizedRect = { left: number; top: number; right: number; bottom: number };
-
-// 이하는 밀집 장소의 묶음 라벨 배치와 인쇄 충돌 점검 코드입니다.
-function rectsOverlap(a: NormalizedRect, b: NormalizedRect, margin = 0.18) {
-  return a.left < b.right + margin && a.right > b.left - margin && a.top < b.bottom + margin && a.bottom > b.top - margin;
-}
-
-function denseLabelKey(elements: Array<Pick<MapElement, "id">>) {
-  return elements.map((element) => element.id).sort().join("|");
-}
-
-const DENSE_LABEL_SINGLE_COLUMN_CONNECTOR_INSET_X = 0.46;
-
-function denseLabelRenderScale(
-  zoom: number,
-  stageDimensions: StageDimensions,
-  labelKeepsScreenSize = true,
-) {
-  const inverseZoom = labelKeepsScreenSize ? 1 / Math.max(zoom, 0.22) : 1;
-  return {
-    x: EXPORT_CANONICAL_WIDTH / Math.max(stageDimensions.width, 1) * inverseZoom,
-    y: (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) / Math.max(stageDimensions.height, 1) * inverseZoom,
-  };
-}
-
-function partitionDenseGroup(group: MapElement[], maximumItems = 18) {
-  if (group.length <= maximumItems) return [group];
-  const remaining = [...group].sort((a, b) => a.y - b.y || a.x - b.x || a.name.localeCompare(b.name, "ko"));
-  const chunks: MapElement[][] = [];
-  const chunkCount = Math.ceil(remaining.length / maximumItems);
-  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
-    const chunksLeft = chunkCount - chunkIndex;
-    const targetSize = Math.ceil(remaining.length / chunksLeft);
-    const chunk = [remaining.shift()!];
-    while (chunk.length < targetSize && remaining.length) {
-      const centerX = chunk.reduce((sum, element) => sum + element.x, 0) / chunk.length;
-      const centerY = chunk.reduce((sum, element) => sum + element.y, 0) / chunk.length;
-      let nearestIndex = 0;
-      let nearestDistance = Number.POSITIVE_INFINITY;
-      remaining.forEach((element, index) => {
-        const distance = Math.hypot(element.x - centerX, (element.y - centerY) / MAP_ASPECT);
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestIndex = index;
-        }
-      });
-      chunk.push(remaining.splice(nearestIndex, 1)[0]);
-    }
-    chunks.push(chunk);
-  }
-  return chunks;
-}
-
-function compactDenseLabelLayout(group: MapElement[], singleColumn = false, compactSingleColumn = false) {
-  const columnCount = singleColumn ? 1 : group.length <= 6 ? 1 : group.length <= 14 ? 2 : 3;
-  const byHorizontalPosition = [...group].sort((a, b) => a.x - b.x || a.y - b.y || a.name.localeCompare(b.name, "ko"));
-  const perColumn = Math.ceil(byHorizontalPosition.length / columnCount);
-  const columns = Array.from({ length: columnCount }, (_, columnIndex) => (
-    byHorizontalPosition
-      .slice(columnIndex * perColumn, Math.min((columnIndex + 1) * perColumn, byHorizontalPosition.length))
-      .sort((a, b) => a.y - b.y || a.x - b.x || a.name.localeCompare(b.name, "ko"))
-  )).filter((column) => column.length > 0);
-  const columnWidths = columns.map((column) => {
-    const longestName = Math.max(...column.map((element) => Array.from(element.name).length));
-    return compactSingleColumn
-      ? Math.max(3.2, longestName * 0.64 + 0.72)
-      : Math.max(5.2, longestName * 0.72 + 1.15);
-  });
-  const rowCount = Math.max(...columns.map((column) => column.length));
-  const measuredWidth = columnWidths.reduce((sum, value) => sum + value, 0) + Math.max(0, columns.length - 1) * 0.34 + 0.68;
-  const width = compactSingleColumn ? measuredWidth : Math.max(7.2, measuredWidth);
-  const height = Math.max(3.2, 1.48 + rowCount * 0.9);
-  return { columns, columnCount: columns.length, rowCount, columnWidths, width, height };
-}
-
-function denseLabelPositionOverride(group: MapElement[], positionOverrides: DenseLabelPosition[]) {
-  const key = denseLabelKey(group);
-  const exact = positionOverrides.find((position) => position.key === key);
-  if (exact) return { position: exact, keys: [exact.key] };
-  const ids = new Set(group.map((element) => element.id));
-  const related = positionOverrides.flatMap((position) => {
-    const overlap = position.elementIds.reduce((count, id) => count + Number(ids.has(id)), 0);
-    return overlap >= 2 && overlap / Math.max(position.elementIds.length, 1) >= 0.5 ? [{ position, overlap }] : [];
-  });
-  if (!related.length) return { position: undefined, keys: [] as string[] };
-  const weight = related.reduce((sum, item) => sum + item.overlap, 0);
-  return {
-    position: {
-      key,
-      elementIds: group.map((element) => element.id).sort(),
-      x: related.reduce((sum, item) => sum + item.position.x * item.overlap, 0) / weight,
-      y: related.reduce((sum, item) => sum + item.position.y * item.overlap, 0) / weight,
-    },
-    keys: related.map((item) => item.position.key),
-  };
-}
-
-function buildDenseLabelClusters(
-  labelElements: MapElement[],
-  iconElements: MapElement[],
-  positionOverrides: DenseLabelPosition[] = [],
-  excludedElementIds: Iterable<string> = [],
-  densityScale = 1,
-  persistentOnly = false,
-  layoutOptions: {
-    maximumItems?: number;
-    renderScale?: { x: number; y: number };
-    singleColumn?: boolean;
-    compactSingleColumn?: boolean;
-    viewportBounds?: NormalizedRect;
-  } = {},
-): DenseLabelCluster[] {
-  // A fixed label still belongs to its ordinary marker and can be represented by a
-  // dense-label cluster. The lock protects the saved direction/gap/offset; it must
-  // not opt the label out of the temporary screen/print presentation layer.
-  const excludedIds = new Set(excludedElementIds);
-  const iconElementIds = new Set(iconElements.map((element) => element.id));
-  const candidates = labelElements.filter((element) => element.category !== "landmark" && iconElementIds.has(element.id) && !excludedIds.has(element.id));
-  if (candidates.length < 2) return [];
-  const parent = candidates.map((_, index) => index);
-  const find = (index: number): number => parent[index] === index ? index : (parent[index] = find(parent[index]));
-  const unite = (a: number, b: number) => {
-    const rootA = find(a);
-    const rootB = find(b);
-    if (rootA !== rootB) parent[rootB] = rootA;
-  };
-  const connections = denseLabelConnections(candidates, { mapAspect: MAP_ASPECT, densityScale });
-  if (!persistentOnly) connections.adaptiveEdges.forEach(([index, other]: [number, number]) => unite(index, other));
-  connections.persistentGroups.forEach((group: number[]) => group.slice(1).forEach((index) => unite(group[0], index)));
-  const groups = new Map<number, MapElement[]>();
-  candidates.forEach((element, index) => {
-    const root = find(index);
-    groups.set(root, [...(groups.get(root) ?? []), element]);
-  });
-  const clusterGroups = [...groups.values()]
-    .filter((group) => group.length >= 2)
-    .flatMap((group) => partitionDenseGroup(group, layoutOptions.maximumItems ?? 18));
-  const clusteredCandidateIds = new Set(clusterGroups.flatMap((group) => group.map((element) => element.id)));
-  const renderScale = {
-    x: clamp(layoutOptions.renderScale?.x ?? 1, 0.02, 8),
-    y: clamp(layoutOptions.renderScale?.y ?? 1, 0.02, 8),
-  };
-  const iconRects = iconElements.map((element) => {
-    const displaySize = mapElementDisplaySize(element);
-    const height = displaySize * MAP_ASPECT / 1.12;
-    return {
-      id: element.id,
-      category: element.category,
-      rect: {
-        left: element.x - displaySize * 0.48,
-        right: element.x + displaySize * 0.48,
-        top: element.y - height * 0.48,
-        bottom: element.y + height * 0.48,
-      },
-    };
-  });
-  const labelRects = labelElements.filter((element) => !clusteredCandidateIds.has(element.id)).map((element) => {
-    const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24) * renderScale.x;
-    const height = 1.34 * renderScale.y;
-    const displaySize = mapElementDisplaySize(element);
-    const elementHeight = displaySize * MAP_ASPECT / 1.12;
-    const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
-    const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
-    const gapX = 0.6 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
-    const gapY = 0.6 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
-    let x = element.x + offsetX;
-    let y = element.y + offsetY;
-    if (element.labelPosition === "top") y -= elementHeight / 2 + gapY + height / 2;
-    if (element.labelPosition === "bottom") y += elementHeight / 2 + gapY + height / 2;
-    if (element.labelPosition === "left") x -= displaySize / 2 + gapX + width / 2;
-    if (element.labelPosition === "right") x += displaySize / 2 + gapX + width / 2;
-    return { id: element.id, rect: { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 } };
-  });
-  const placed: NormalizedRect[] = [];
-  const placedSegments: Segment[] = [];
-  return clusterGroups
-    .map((group) => {
-      const key = denseLabelKey(group);
-      const overrideMatch = denseLabelPositionOverride(group, positionOverrides);
-      return { group, key, override: overrideMatch.position, positionKeys: overrideMatch.keys };
-    })
-    .sort((a, b) => Number(Boolean(b.override)) - Number(Boolean(a.override)) || b.group.length - a.group.length)
-    .map(({ group, key, override, positionKeys }) => {
-    const layout = compactDenseLabelLayout(group, layoutOptions.singleColumn, layoutOptions.compactSingleColumn);
-    const orderedGroup = layout.columns.flat();
-    const names = orderedGroup.map((element) => element.name);
-    const groupIds = new Set(group.map((element) => element.id));
-    const minX = Math.min(...orderedGroup.map((element) => element.x - mapElementDisplaySize(element) / 2));
-    const maxX = Math.max(...orderedGroup.map((element) => element.x + mapElementDisplaySize(element) / 2));
-    const minY = Math.min(...orderedGroup.map((element) => element.y - mapElementDisplaySize(element) * MAP_ASPECT / 2.24));
-    const maxY = Math.max(...orderedGroup.map((element) => element.y + mapElementDisplaySize(element) * MAP_ASPECT / 2.24));
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-    const { width, height } = layout;
-    const placementWidth = width * renderScale.x;
-    const placementHeight = height * renderScale.y;
-    const rowsForPlacement = (placementX: number, placementY: number) => {
-      const rowTop = placementY - height / 2 + 1.17;
-      const rowHeight = 0.9;
-      return layout.columns.flatMap((columnElements, columnIndex) => columnElements.map((element, rowIndex) => {
-        const midpoint = (layout.columnCount - 1) / 2;
-        const rawTargetX = columnIndex < midpoint
-          ? placementX - width / 2
-          : columnIndex > midpoint
-            ? placementX + width / 2
-            : element.x <= placementX ? placementX - width / 2 : placementX + width / 2;
-        const targetX = layoutOptions.compactSingleColumn && layout.columnCount === 1
-          ? rawTargetX + (rawTargetX < placementX ? DENSE_LABEL_SINGLE_COLUMN_CONNECTOR_INSET_X : -DENSE_LABEL_SINGLE_COLUMN_CONNECTOR_INSET_X)
-          : rawTargetX;
-        return { element, targetX, targetY: rowTop + rowHeight * (rowIndex + 0.5), column: columnIndex, rowIndex };
-      }));
-    };
-    const automaticOptions = denseLabelPlacementOptions({ minX, maxX, minY, maxY, width: placementWidth, height: placementHeight });
-    const rawOptions = override
-      ? layoutOptions.viewportBounds
-        ? [{ x: override.x, y: override.y, gap: -0.16 }, ...automaticOptions]
-        : [{ x: override.x, y: override.y, gap: 0 }]
-      : automaticOptions;
-    const viewportBounds = layoutOptions.viewportBounds;
-    const groupTouchesViewport = Boolean(viewportBounds && orderedGroup.some((element) => (
-      element.x >= viewportBounds.left - placementWidth / 2
-      && element.x <= viewportBounds.right + placementWidth / 2
-      && element.y >= viewportBounds.top - placementHeight / 2
-      && element.y <= viewportBounds.bottom + placementHeight / 2
-    )));
-    const placementBounds = groupTouchesViewport && viewportBounds
-      ? viewportBounds
-      : { left: 0, right: 100, top: 0, bottom: 100 };
-    const options = rawOptions.map((option: { x: number; y: number; gap?: number }) => ({
-      ...option,
-      ...fitDenseLabelCenter({
-        x: option.x,
-        y: option.y,
-        width: placementWidth,
-        height: placementHeight,
-        bounds: placementBounds,
-      }),
-    }));
-    const connectorSegmentsFor = (option: { x: number; y: number }) => rowsForPlacement(option.x, option.y).map(({ element, targetX, targetY }) => ({
-      fromX: element.x,
-      fromY: element.y,
-      toX: option.x + (targetX - option.x) * renderScale.x,
-      toY: option.y + (targetY - option.y) * renderScale.y,
-      id: `${key}:${element.id}`,
-      elementId: element.id,
-    }));
-    const best = chooseDenseLabelPlacement({
-      options,
-      width: placementWidth,
-      height: placementHeight,
-      centerX,
-      centerY,
-      mapAspect: MAP_ASPECT,
-      groupIds,
-      connectorSegmentsFor,
-      iconObstacles: iconRects,
-      labelObstacles: labelRects,
-      placedRects: placed,
-      placedSegments,
-    });
-    placed.push(best.rect);
-    placedSegments.push(...best.segments);
-    const x = best.x;
-    const y = best.y;
-    const rows = rowsForPlacement(x, y).map(({ element, targetX, targetY, column, rowIndex }): DenseLabelRow => ({
-      elementId: element.id,
-      name: element.name,
-      category: element.category,
-      targetX,
-      targetY,
-      column,
-      rowIndex,
-    }));
-    return {
-      id: key,
-      elementIds: orderedGroup.map((element) => element.id),
-      names,
-      x,
-      y,
-      width,
-      height,
-      manuallyPositioned: Boolean(override),
-      hasCollision: best.hasCollision,
-      rows,
-      columnCount: layout.columnCount,
-      rowCount: layout.rowCount,
-      columnWidths: layout.columnWidths,
-      positionKeys: positionKeys.length ? positionKeys : (override ? [key] : []),
-    };
-  });
-}
-
-function normalizedIconRect(element: MapElement): NormalizedRect {
-  const displaySize = mapElementDisplaySize(element);
-  const height = displaySize * MAP_ASPECT / 1.12;
-  return {
-    left: element.x - displaySize * 0.48,
-    right: element.x + displaySize * 0.48,
-    top: element.y - height * 0.48,
-    bottom: element.y + height * 0.48,
-  };
-}
-
-function normalizedLabelRect(element: MapElement): NormalizedRect {
-  const width = clamp(Array.from(element.name).length * 0.76 + 0.7, 2.4, 24);
-  const height = 1.34;
-  const displaySize = mapElementDisplaySize(element);
-  const elementHeight = displaySize * MAP_ASPECT / 1.12;
-  const offsetX = element.labelOffsetX / EXPORT_CANONICAL_WIDTH * 100;
-  const offsetY = element.labelOffsetY / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
-  const gapX = 0.6 + element.labelGap / EXPORT_CANONICAL_WIDTH * 100;
-  const gapY = 0.6 + element.labelGap / (EXPORT_CANONICAL_WIDTH / MAP_ASPECT) * 100;
-  let x = element.x + offsetX;
-  let y = element.y + offsetY;
-  if (element.labelPosition === "top") y -= elementHeight / 2 + gapY + height / 2;
-  if (element.labelPosition === "bottom") y += elementHeight / 2 + gapY + height / 2;
-  if (element.labelPosition === "left") x -= displaySize / 2 + gapX + width / 2;
-  if (element.labelPosition === "right") x += displaySize / 2 + gapX + width / 2;
-  return { left: x - width / 2, right: x + width / 2, top: y - height / 2, bottom: y + height / 2 };
-}
-
-function rectOutsideMap(rect: NormalizedRect) {
-  return rect.left < 0 || rect.top < 0 || rect.right > 100 || rect.bottom > 100;
-}
-
-type Segment = { fromX: number; fromY: number; toX: number; toY: number; id: string; elementId?: string };
-
-function buildPrintAudit(
-  markerElements: MapElement[],
-  labelElements: MapElement[],
-  clusters: DenseLabelCluster[],
-  exportWidth: number,
-): PrintAuditReport {
-  const issues: PrintAuditIssue[] = [];
-  const clusteredIds = new Set(clusters.flatMap((cluster) => cluster.elementIds));
-  const individualLabels = labelElements.filter((element) => !clusteredIds.has(element.id));
-  const iconRects = markerElements.map((element) => ({ element, rect: normalizedIconRect(element) }));
-  const labelRects = individualLabels.map((element) => ({ element, rect: normalizedLabelRect(element) }));
-
-  iconRects.forEach(({ element, rect }) => {
-    if (rectOutsideMap(rect)) issues.push({ id: `clip-icon-${element.id}`, kind: "clipping", label: `${element.name} 마커가 지도 밖으로 잘립니다.`, elementId: element.id });
-  });
-  labelRects.forEach(({ element, rect }) => {
-    if (rectOutsideMap(rect)) issues.push({ id: `clip-label-${element.id}`, kind: "clipping", label: `${element.name} 라벨이 지도 밖으로 잘립니다.`, elementId: element.id });
-    if (iconRects.some((icon) => rectsOverlap(rect, icon.rect, 0.18))) {
-      issues.push({ id: `overlap-marker-${element.id}`, kind: "overlap", label: `${element.name} 라벨이 마커·랜드마크 이미지를 가립니다.`, elementId: element.id });
-    }
-  });
-  for (let index = 0; index < labelRects.length; index += 1) {
-    for (let other = index + 1; other < labelRects.length; other += 1) {
-      if (!rectsOverlap(labelRects[index].rect, labelRects[other].rect, 0.12)) continue;
-      issues.push({
-        id: `overlap-label-${labelRects[index].element.id}-${labelRects[other].element.id}`,
-        kind: "overlap",
-        label: `${labelRects[index].element.name}·${labelRects[other].element.name} 라벨이 겹칩니다.`,
-        elementId: labelRects[index].element.id,
-      });
-    }
-  }
-  clusters.forEach((cluster) => {
-    const rect = { left: cluster.x - cluster.width / 2, right: cluster.x + cluster.width / 2, top: cluster.y - cluster.height / 2, bottom: cluster.y + cluster.height / 2 };
-    if (rectOutsideMap(rect)) issues.push({ id: `clip-cluster-${cluster.id}`, kind: "clipping", label: `${cluster.names.join("·")} 통합 라벨이 지도 밖으로 잘립니다.`, clusterId: cluster.id });
-    if (cluster.hasCollision) issues.push({ id: `overlap-cluster-${cluster.id}`, kind: "overlap", label: `${cluster.names.join("·")} 통합 라벨 위치에 겹침이 있습니다.`, clusterId: cluster.id });
-  });
-
-  const byId = new Map(markerElements.map((element) => [element.id, element]));
-  const segments: Segment[] = clusters.flatMap((cluster) => cluster.rows.flatMap((row) => {
-    const element = byId.get(row.elementId);
-    return element ? [{ fromX: element.x, fromY: element.y, toX: row.targetX, toY: row.targetY, id: `${cluster.id}:${row.elementId}` }] : [];
-  }));
-  for (let index = 0; index < segments.length; index += 1) {
-    for (let other = index + 1; other < segments.length; other += 1) {
-      if (!segmentsCross(segments[index], segments[other])) continue;
-      issues.push({ id: `cross-${segments[index].id}-${segments[other].id}`, kind: "crossing", label: "통합 라벨 연결선이 서로 교차합니다." });
-    }
-  }
-
-  const minimumTextPixels = exportWidth / EXPORT_CANONICAL_WIDTH * 7;
-  if (minimumTextPixels < 28) issues.push({ id: "small-text", kind: "text", label: `가장 작은 글자가 ${minimumTextPixels.toFixed(0)}px로 출력 기준보다 작습니다.` });
-  return {
-    issues,
-    clippingCount: issues.filter((issue) => issue.kind === "clipping").length,
-    overlapCount: issues.filter((issue) => issue.kind === "overlap").length,
-    crossingCount: issues.filter((issue) => issue.kind === "crossing").length,
-    minimumTextPixels,
-  };
-}
 
 // 이하는 저장된 지도 문서를 복구하고 잘못된 값을 안전하게 정리하는 코드입니다.
 function ensureMainHubMapElement(elements: MapElement[], places: DirectoryPlace[]) {
@@ -6704,164 +6307,34 @@ export default function Home() {
     setExporting(true);
     setToast(`${exportWidth.toLocaleString()}px 고화질 사본을 합성하고 있습니다.`);
     try {
-      const outputHeight = Math.round(exportWidth / MAP_ASPECT);
-      const canvas = document.createElement("canvas");
-      canvas.width = exportWidth;
-      canvas.height = outputHeight;
-      const context = canvas.getContext("2d", { alpha: false });
-      if (!context) throw new Error("canvas unavailable");
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.fillStyle = "#f4f2ed";
-      context.fillRect(0, 0, exportWidth, outputHeight);
-
-      const mapSrc = baseMap === "svg" ? MAP_SVG : baseMap === "png" ? MAP_PNG : uploadedBaseMapOriginalSource(uploadedBaseMap) || MAP_SVG;
-      const baseImage = await loadImage(mapSrc);
-      context.drawImage(baseImage, 0, 0, exportWidth, outputHeight);
-
+      const mapSource = baseMap === "svg"
+        ? MAP_SVG
+        : baseMap === "png"
+          ? MAP_PNG
+          : uploadedBaseMapOriginalSource(uploadedBaseMap) || MAP_SVG;
       const placedElements = elementsRef.current.filter((element) => element.mapVisible);
-      const exportMarkerElements = placedElements.filter((element) => printPolicyFor(element).marker);
-      const exportLabelElements = placedElements.filter((element) => printPolicyFor(element).label);
-      if (!exportMarkerElements.length && !exportLabelElements.length) throw new Error("empty print composition");
-      const labelOnlyCount = exportLabelElements.filter((element) => !exportMarkerElements.some((marker) => marker.id === element.id)).length;
-      if (labelOnlyCount) setToast(`마커 없이 라벨만 출력되는 장소가 ${labelOnlyCount}곳 있습니다. 고화질 사본을 계속 합성합니다.`);
-      const exportClusters = mergeDenseLabels ? buildDenseLabelClusters(exportLabelElements, exportMarkerElements, denseLabelPositionsRef.current, denseLabelExcludedIdsRef.current) : [];
-      const clusteredExportIds = new Set(exportClusters.flatMap((cluster) => cluster.elementIds));
-      const assetSources = [...new Set(exportMarkerElements.map((element) => assetsRef.current.find((asset) => asset.id === element.assetId)?.src).filter(Boolean) as string[])];
-      const loadedAssets = new Map<string, HTMLImageElement>();
-      await Promise.all(assetSources.map(async (src) => {
-        try { loadedAssets.set(src, await loadImage(src)); } catch { /* 개별 자산 실패는 나머지 합성을 막지 않습니다. */ }
-      }));
-      const ordered = [...exportMarkerElements].sort((a, b) => a.z - b.z);
-      ordered.forEach((element) => {
-        const asset = assetsRef.current.find((item) => item.id === element.assetId);
-        const image = asset ? loadedAssets.get(asset.src) : undefined;
-        if (!image) return;
-        const boxWidth = exportWidth * mapElementDisplaySize(element) / 100;
-        const boxHeight = boxWidth / 1.12;
-        const centerX = exportWidth * element.x / 100;
-        const centerY = outputHeight * element.y / 100;
-        const fit = Math.min(boxWidth / image.naturalWidth, boxHeight / image.naturalHeight);
-        const drawWidth = image.naturalWidth * fit;
-        const drawHeight = image.naturalHeight * fit;
-        context.save();
-        context.globalAlpha = element.opacity / 100;
-        context.shadowColor = "rgba(30,43,39,.13)";
-        context.shadowBlur = exportWidth / EXPORT_CANONICAL_WIDTH * 2;
-        context.shadowOffsetY = exportWidth / EXPORT_CANONICAL_WIDTH * 2;
-        context.drawImage(image, centerX - drawWidth / 2, centerY - drawHeight / 2, drawWidth, drawHeight);
-        context.restore();
-      });
-
-      if (exportClusters.length) {
-        context.save();
-        context.lineWidth = Math.max(1, exportWidth / EXPORT_CANONICAL_WIDTH * 1.1);
-        context.setLineDash([exportWidth / EXPORT_CANONICAL_WIDTH * 3.5, exportWidth / EXPORT_CANONICAL_WIDTH * 2.5]);
-        exportClusters.forEach((cluster) => cluster.rows.forEach((row) => {
-          const element = placedElements.find((item) => item.id === row.elementId);
-          if (!element) return;
-          const fromX = exportWidth * element.x / 100;
-          const fromY = outputHeight * element.y / 100;
-          const toX = exportWidth * row.targetX / 100;
-          const toY = outputHeight * row.targetY / 100;
-          context.strokeStyle = categoryOf(row.category).color;
-          context.fillStyle = categoryOf(row.category).color;
-          context.globalAlpha = 0.58;
-          context.beginPath();
-          context.moveTo(fromX, fromY);
-          context.lineTo(toX, toY);
-          context.stroke();
-          context.beginPath();
-          context.arc(fromX, fromY, Math.max(1.2, exportWidth / EXPORT_CANONICAL_WIDTH * 1.5), 0, Math.PI * 2);
-          context.fill();
-        }));
-        context.globalAlpha = 1;
-        context.restore();
+      const markerElements = placedElements.filter((element) => printPolicyFor(element).marker);
+      const labelElements = placedElements.filter((element) => printPolicyFor(element).label);
+      const markerIds = new Set(markerElements.map((element) => element.id));
+      const labelOnlyCount = labelElements.reduce(
+        (count, element) => count + Number(!markerIds.has(element.id)),
+        0,
+      );
+      if (labelOnlyCount) {
+        setToast(`마커 없이 라벨만 출력되는 장소가 ${labelOnlyCount}곳 있습니다. 고화질 사본을 계속 합성합니다.`);
       }
-
-      const drawLabels = (items: MapElement[]) => items.forEach((element) => {
-        if (clusteredExportIds.has(element.id)) return;
-        const fontSize = exportWidth / EXPORT_CANONICAL_WIDTH * 9.4;
-        const paddingX = exportWidth / EXPORT_CANONICAL_WIDTH * 3;
-        const paddingY = exportWidth / EXPORT_CANONICAL_WIDTH * 1.25;
-        const gap = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelGap;
-        const offsetX = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelOffsetX;
-        const offsetY = exportWidth / EXPORT_CANONICAL_WIDTH * element.labelOffsetY;
-        const centerX = exportWidth * element.x / 100;
-        const centerY = outputHeight * element.y / 100;
-        const boxWidth = exportWidth * mapElementDisplaySize(element) / 100;
-        const boxHeight = boxWidth / 1.12;
-        context.save();
-        context.globalAlpha = element.opacity / 100;
-        context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
-        context.textBaseline = "middle";
-        const metrics = context.measureText(element.name);
-        const labelWidth = metrics.width + paddingX * 2;
-        const labelHeight = fontSize * 1.1 + paddingY * 2;
-        let x = centerX + offsetX;
-        let y = centerY + offsetY;
-        if (element.labelPosition === "top") y -= boxHeight / 2 + gap + labelHeight / 2;
-        if (element.labelPosition === "bottom") y += boxHeight / 2 + gap + labelHeight / 2;
-        if (element.labelPosition === "left") x -= boxWidth / 2 + gap + labelWidth / 2;
-        if (element.labelPosition === "right") x += boxWidth / 2 + gap + labelWidth / 2;
-        const primaryHub = isPrimaryHubLabel(element.name);
-        context.fillStyle = primaryHub ? "rgba(255,226,92,.98)" : "rgba(255,255,255,.95)";
-        context.strokeStyle = primaryHub ? "rgba(158,116,9,.52)" : "rgba(91,106,101,.24)";
-        context.lineWidth = Math.max(1, exportWidth / EXPORT_CANONICAL_WIDTH);
-        context.beginPath();
-        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, exportWidth / EXPORT_CANONICAL_WIDTH * 2);
-        context.fill();
-        context.stroke();
-        context.fillStyle = primaryHub ? "#493807" : "#26332f";
-        context.textAlign = "center";
-        context.fillText(element.name, x, y + fontSize * 0.02);
-        context.restore();
+      const { blob, outputHeight } = await renderHighResolutionMapPng({
+        exportWidth,
+        mapSource,
+        placedElements,
+        markerElements,
+        labelElements,
+        assets: assetsRef.current,
+        mergeDenseLabels,
+        denseLabelPositions: denseLabelPositionsRef.current,
+        denseLabelExcludedIds: denseLabelExcludedIdsRef.current,
+        loadImage,
       });
-      drawLabels(exportLabelElements.filter((element) => element.category !== "landmark"));
-      drawLabels(exportLabelElements.filter((element) => element.category === "landmark"));
-
-      exportClusters.forEach((cluster) => {
-        const scale = exportWidth / EXPORT_CANONICAL_WIDTH;
-        const fontSize = scale * 8.5;
-        const smallSize = scale * 6.8;
-        context.save();
-        const labelWidth = exportWidth * cluster.width / 100;
-        const labelHeight = outputHeight * cluster.height / 100;
-        const x = exportWidth * cluster.x / 100;
-        const y = outputHeight * cluster.y / 100;
-        context.fillStyle = "rgba(255,255,255,.95)";
-        context.strokeStyle = "rgba(91,106,101,.24)";
-        context.lineWidth = Math.max(1, scale);
-        context.beginPath();
-        context.roundRect(x - labelWidth / 2, y - labelHeight / 2, labelWidth, labelHeight, scale * 2);
-        context.fill();
-        context.stroke();
-        const labelLeft = x - labelWidth / 2;
-        const labelTop = y - labelHeight / 2;
-        context.fillStyle = "#61706b";
-        context.textAlign = "left";
-        context.textBaseline = "middle";
-        context.font = `800 ${smallSize}px Arial, "Noto Sans KR", sans-serif`;
-        context.fillText(`${cluster.names.length}곳`, labelLeft + scale * 4, labelTop + scale * 6.5);
-        context.fillStyle = "#26332f";
-        context.font = `700 ${fontSize}px Arial, "Noto Sans KR", sans-serif`;
-        cluster.rows.forEach((row) => {
-          const rowY = outputHeight * row.targetY / 100;
-          const precedingWidth = cluster.columnWidths.slice(0, row.column).reduce((sum, width) => sum + exportWidth * width / 100, 0);
-          const columnX = labelLeft + scale * 4 + precedingWidth + row.column * scale * 4;
-          const dotX = columnX + scale * 2.5;
-          context.fillStyle = categoryOf(row.category).color;
-          context.beginPath();
-          context.arc(dotX, rowY, Math.max(scale * 1.8, 1.4), 0, Math.PI * 2);
-          context.fill();
-          context.fillStyle = "#26332f";
-          context.textAlign = "left";
-          context.fillText(row.name, columnX + scale * 7, rowY);
-        });
-        context.restore();
-      });
-
-      const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("png encoding failed")), "image/png"));
       const sizeMb = blob.size / 1024 / 1024;
       downloadBlob(`제주원도심_${printRecommendedOnly ? "추천장소" : "전체배치"}_고화질_${exportWidth}px.png`, blob);
       setToast(`고화질 PNG 사본을 만들었습니다 · ${exportWidth.toLocaleString()}×${outputHeight.toLocaleString()}px · ${sizeMb.toFixed(1)}MB`);
@@ -8464,83 +7937,45 @@ export default function Home() {
         : placeRequestsTotal;
   const eventPlaceSelectionMode = editingEnabled && placeEventFormOpen && !placeEventNoPlace && placeEventMultiPlace;
   const eventPlaceKeySet = useMemo(() => new Set(placeEventPlaces.map((place) => place.placeKey)), [placeEventPlaces]);
-  const mobileMapRenderBounds = useMemo(() => {
-    if (
-      publicLayoutAccess !== "viewer"
-      || printPreviewMode
-      || viewportDimensions.width <= 0
-      || viewportDimensions.height <= 0
-      || viewportDimensions.width > 760
-      || stageDimensions.width <= 0
-      || stageDimensions.height <= 0
-    ) return null;
-    const renderZoom = Math.max(zoom, 0.22);
-    const renderedWidth = stageDimensions.width * renderZoom;
-    const renderedHeight = stageDimensions.height * renderZoom;
-    const overscanX = Math.max(mobileRenderBudget.minimumOverscan, viewportDimensions.width * mobileRenderBudget.overscanRatio);
-    const overscanY = Math.max(mobileRenderBudget.minimumOverscan, viewportDimensions.height * mobileRenderBudget.overscanRatio);
-    return {
-      centerX: 50 - mapRenderPan.x / renderedWidth * 100,
-      centerY: 50 - mapRenderPan.y / renderedHeight * 100,
-      left: 50 + (-viewportDimensions.width / 2 - overscanX - mapRenderPan.x) / renderedWidth * 100,
-      right: 50 + (viewportDimensions.width / 2 + overscanX - mapRenderPan.x) / renderedWidth * 100,
-      top: 50 + (-viewportDimensions.height / 2 - overscanY - mapRenderPan.y) / renderedHeight * 100,
-      bottom: 50 + (viewportDimensions.height / 2 + overscanY - mapRenderPan.y) / renderedHeight * 100,
-    };
-  }, [mapRenderPan.x, mapRenderPan.y, mobileRenderBudget.minimumOverscan, mobileRenderBudget.overscanRatio, printPreviewMode, publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width, zoom]);
-  const mobileMapCandidateElements = useMemo(() => {
-    if (!mobileMapRenderBounds) return visibleElements;
-    return visibleElements.filter((element) => (
-      element.id === selectedId
-      || element.category === "landmark"
-      || isPrimaryHubLabel(element.name)
-      || (
-        element.x >= mobileMapRenderBounds.left
-        && element.x <= mobileMapRenderBounds.right
-        && element.y >= mobileMapRenderBounds.top
-        && element.y <= mobileMapRenderBounds.bottom
-      )
-    ));
-  }, [mobileMapRenderBounds, selectedId, visibleElements]);
-  const mobileFullMarkerIds = useMemo(() => {
-    if (!mobileMapRenderBounds) return null;
-    if (mobileOverviewSimplified) {
-      return new Set(mobileMapCandidateElements
-        .filter((element) => element.category === "landmark")
-        .map((element) => element.id));
-    }
-    return new Set(mobileMapCandidateElements.map((element) => element.id));
-  }, [mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified]);
-  const mobileMapElementPartition = useMemo(() => {
-    if (!mobileFullMarkerIds) return { rendered: mobileMapCandidateElements, placeholders: [] as MapElement[] };
-    const rendered: MapElement[] = [];
-    const placeholders: MapElement[] = [];
-    mobileMapCandidateElements.forEach((element) => {
-      if (mobileFullMarkerIds.has(element.id)) rendered.push(element);
-      else if (element.category !== "landmark") placeholders.push(element);
-    });
-    return { rendered, placeholders };
-  }, [mobileFullMarkerIds, mobileMapCandidateElements]);
+  const mobileMapRenderBounds = useMemo(() => calculateMobileMapRenderBounds({
+    publicLayoutAccess,
+    printPreviewMode,
+    viewportDimensions,
+    stageDimensions,
+    zoom,
+    mapRenderPan,
+    renderBudget: mobileRenderBudget,
+  }), [mapRenderPan, mobileRenderBudget, printPreviewMode, publicLayoutAccess, stageDimensions, viewportDimensions, zoom]);
+  const mobileMapCandidateElements = useMemo(
+    () => filterMobileMapCandidateElements(visibleElements, mobileMapRenderBounds, selectedId),
+    [mobileMapRenderBounds, selectedId, visibleElements],
+  );
+  const mobileMapElementPartition = useMemo(
+    () => partitionMobileMapElements(mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified),
+    [mobileMapCandidateElements, mobileMapRenderBounds, mobileOverviewSimplified],
+  );
   const renderedMapElements = mobileMapElementPartition.rendered;
   const mobilePlaceholderElements = mobileMapElementPartition.placeholders;
   const renderedMapElementsById = useMemo(
     () => new Map(renderedMapElements.map((element) => [element.id, element])),
     [renderedMapElements],
   );
-  const renderedDenseLabelClusters = useMemo(() => {
-    if (!mobileMapRenderBounds) return denseLabelClusters;
-    return denseLabelClusters.filter((cluster) => (
-      cluster.id === selectedDenseLabelId
-      || (cluster.elementIds.length > 0 && cluster.elementIds.every((elementId) => renderedMapElementsById.has(elementId)))
-    ));
-  }, [denseLabelClusters, mobileMapRenderBounds, renderedMapElementsById, selectedDenseLabelId]);
+  const renderedDenseLabelClusters = useMemo(
+    () => filterRenderedDenseLabelClusters(
+      denseLabelClusters,
+      mobileMapRenderBounds,
+      renderedMapElementsById,
+      selectedDenseLabelId,
+    ),
+    [denseLabelClusters, mobileMapRenderBounds, renderedMapElementsById, selectedDenseLabelId],
+  );
   const renderedClusteredLabelElementIds = useMemo(
     () => new Set(renderedDenseLabelClusters.flatMap((cluster) => cluster.elementIds)),
     [renderedDenseLabelClusters],
   );
   const renderedIndividualLabelCount = useMemo(
-    () => stageLabelElements.reduce((count, element) => count + Number(!renderedClusteredLabelElementIds.has(element.id)), 0),
-    [renderedClusteredLabelElementIds, stageLabelElements],
+    () => countRenderedIndividualLabels(stageLabelElements, renderedDenseLabelClusters),
+    [renderedDenseLabelClusters, stageLabelElements],
   );
   const activeBaseMapLabel = baseMap === "uploaded" ? uploadedBaseMap?.name ?? "업로드 지도" : "v15 · 골목추가정리 검수본";
   const editorSyncLabel = editorDraftSyncState === "saving"

@@ -84,7 +84,7 @@ test("public mobile map culls only far-offscreen render nodes after a settled ge
   assert.match(pageSource, /const \[mapRenderPan, setMapRenderPan\] = useState\(\{ x: 0, y: 0 \}\)/);
   assert.match(pageSource, /setMapRenderPan\(\(current\) => \([\s\S]{0,160}current\.x === committedPan\.x && current\.y === committedPan\.y \? current : committedPan/);
   assert.match(pageSource, /publicLayoutAccess !== "viewer"[\s\S]{0,180}viewportDimensions\.width > 760/);
-  assert.match(pageSource, /const overscanX = Math\.max\(mobileRenderBudget\.minimumOverscan, viewportDimensions\.width \* mobileRenderBudget\.overscanRatio\)/);
+  assert.match(pageSource, /const overscanX = Math\.max\(renderBudget\.minimumOverscan, viewportDimensions\.width \* renderBudget\.overscanRatio\)/);
   assert.match(pageSource, /const mobileMapElementPartition = useMemo/);
   assert.match(pageSource, /const renderedMapElements = mobileMapElementPartition\.rendered/);
   assert.match(pageSource, /<MapElementLayer[\s\S]*?visibleElements=\{renderedMapElements\}/);

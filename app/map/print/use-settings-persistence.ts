@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { normalizePlaceName } from "./core-landmarks";
+import { normalizePlaceName } from "../../core-landmarks";
 import {
   printSettingKey,
   type PrintPlaceSetting,
-} from "./map-print-settings";
-import type { MapElement, PublicLayoutAccess } from "./map/core/types";
+} from "./settings";
+import type { MapElement, PublicLayoutAccess } from "../core/types";
 
 const PRINT_SETTINGS_API = "/api/print-settings";
 

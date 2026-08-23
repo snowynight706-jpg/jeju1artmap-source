@@ -22,11 +22,29 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/editor/persistence/use-local-autosave.ts",
     "../app/editor/persistence/use-map-settings-persistence.ts",
   ]),
-  mapPresentation: Object.freeze([
-    "../app/map-print-settings.ts",
-    "../app/use-print-settings-persistence.ts",
-    "../app/use-dense-label-settings-persistence.ts",
-    "../app/map-render-layers.tsx",
+  mapLabels: Object.freeze([
+    "../app/map/labels/clusters.ts",
+    "../app/map/labels/density.mjs",
+    "../app/map/labels/dense-density.mjs",
+    "../app/map/labels/dense-placement.mjs",
+    "../app/map/labels/dense-viewport.mjs",
+    "../app/map/labels/geometry.ts",
+    "../app/map/labels/use-settings-persistence.ts",
+  ]),
+  mapPrint: Object.freeze([
+    "../app/map/print/audit.ts",
+    "../app/map/print/export.ts",
+    "../app/map/print/settings.ts",
+    "../app/map/print/use-settings-persistence.ts",
+  ]),
+  mapRendering: Object.freeze([
+    "../app/map/rendering/base-map-quality.mjs",
+    "../app/map/rendering/layers.tsx",
+    "../app/map/rendering/mobile-marker-density.mjs",
+    "../app/map/rendering/mobile-render-budget.mjs",
+    "../app/map/rendering/mobile-render.ts",
+    "../app/map/rendering/performance-diagnostics.mjs",
+    "../app/map/rendering/stage-transform.mjs",
   ]),
 });
 

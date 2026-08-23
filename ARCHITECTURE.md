@@ -1,30 +1,22 @@
 # 프로젝트 구조
 
-- `app/page.tsx`: 공개 지도와 관리자 편집기의 최상위 상태 조립, 지도 조작, 장소 상세·후기·행사 UI
+- `app/page.tsx`: 공개 지도와 관리자 편집기의 최상위 상태 조립, 사용자 입력과 기능 모듈 연결
 - `app/map/core/`: 지도 요소 기본값, 분류·색상·표시 크기, 장소 식별 키와 공용 TypeScript 계약
 - `app/map/calibration/model.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성과 보정 좌표 계산을 담당하는 순수 도메인 모듈
+- `app/map/labels/`: 라벨 밀집도·통합 배치·화면 경계·겹침 기하와 통합 라벨 설정 저장
+- `app/map/print/`: 장소별 출력 설정, 인쇄 충돌 감사, 고해상도 PNG 캔버스 합성과 설정 저장
+- `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 지도 변환, 모바일 화면 밖 선별·성능 예산과 진단
 - `app/editor/document/`: 런타임 ID 복구, 문서 복제, 배치·잠금 좌표 규칙과 메인 허브 영속성 안정화
 - `app/editor/persistence/`: 편집 초안 복원 우선순위, 기기 자동저장, 공개 레이아웃 API 계약, 보정·잠금·배치 설정의 서버 비교와 지연 저장
-- `app/map-print-settings.ts`: 장소별 출력 식별 키와 추천·마커·라벨 포함 계약
-- `app/use-print-settings-persistence.ts`: 출력 설정의 서버 로드, 편집 권한, 낙관적 저장과 실패 롤백 상태를 소유하는 클라이언트 hook
-- `app/use-dense-label-settings-persistence.ts`: 통합 라벨 위치·제외 목록의 로컬 복구 시각 비교, 서버 로드와 지연 저장 상태를 소유하는 클라이언트 hook
-- `app/map-render-layers.tsx`: 메인 상태와 ref 액션으로 연결되는 마커·간략 마커·연결선·통합 라벨 렌더 계층
 - `app/public-place-detail-content.tsx`: 장소 선택 후에만 지연 로딩되는 공개 상세·행사·후기 화면
 - `app/public-explorer-activity-content.tsx`: 원도심 탐색에서 리뷰·행사 탭을 열 때만 지연 로딩되는 카드 화면
 - `app/globals.css`: 지도·패널·모바일 PWA 반응형 스타일
 - `app/admin-*.tsx`: 지연 로딩되는 관리자 전용 화면
 - `app/admin-place-event-dialog.tsx`: 관리자 행사 등록·수정 시에만 불러오는 행사 입력 창
 - `app/api/`: 공개 배치, 장소 DB, 행사, 후기, 사진, 진단 기록 API
-- `app/*density*.mjs`, `app/*placement*.mjs`: 라벨 밀집도·배치 계산
-- `app/dense-label-viewport.mjs`: 공개 화면의 현재 이동·축척을 지도 좌표 경계로 변환하고 통합 라벨 중심을 화면 안에 제한
-- `app/map-stage-transform.mjs`: PC·모바일별 지도 중심 정렬과 제스처 확대 변환 정책
-- `app/base-map-quality.mjs`: 저사양 모바일의 실제 표시 픽셀 수에 따른 4096 베이스맵 승격 기준
 - `app/base-map-storage.ts`, `app/api/base-map/route.ts`: 현재 v20에만 버전이 고정된 화면용 2048·4096 WebP와 픽셀 동일 출력용 무손실 WebP를 연결하고, 이후 관리자 업로드 지도는 기존 R2 원본·파생본 경로 사용
 - `app/landmark-assets/index.ts`: 고해상도 원본·512px 화면본·고정 384px 모바일 파생본의 자산 경로와 revision
 - `scripts/extract-jfac-svg-assets.mjs`: 재단 공식 AI의 컬러 페이지를 Inkscape로 변환한 SVG에서 시그니처·심벌 경로만 추출하고 기존 화면 비율·헤더 팔레트를 보존하는 재현 스크립트
-- `app/mobile-render-budget.mjs`: 기기 성능에 따른 모바일 화면 밖 렌더 여유 범위 단계
-- `app/mobile-marker-density.mjs`: 모바일 맞춤 축척 2배의 일괄 마커 전환 기준과 축척·성능 단계별 라벨 예산
-- `app/performance-diagnostics.mjs`: 지도 정착 진단 표본화와 느린 예외 보존 기준
 - `public/`: 지도·랜드마크·마커 자산과 PWA manifest/service worker
 - `public/landmarks-mobile-384/`: 공개 모바일이 최초 진입에서 한 번 선택해 세션 내 계속 사용하는 랜드마크 WebP 파생본
 - `db/`, `drizzle/`: 영구 저장 스키마와 마이그레이션

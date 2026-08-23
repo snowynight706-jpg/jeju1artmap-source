@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-import { fitDenseLabelCenter, publicDenseLabelViewport } from "../app/dense-label-viewport.mjs";
+import { fitDenseLabelCenter, publicDenseLabelViewport } from "../app/map/labels/dense-viewport.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 

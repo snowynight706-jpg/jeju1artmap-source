@@ -13,6 +13,9 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_PATHS.includes("../app/page.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.mapPrint.includes("../app/map/print/export.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.mapRendering.includes("../app/map/rendering/mobile-render.ts"));
 
   await Promise.all(
     APP_CLIENT_SOURCE_PATHS.map((path) => access(new URL(path, import.meta.url))),
@@ -64,7 +67,7 @@ test("page keeps heavyweight panels behind lazy import boundaries", async () => 
 test("dense label persistence stays behind its client hook boundary", async () => {
   const [pageSource, hookSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/use-dense-label-settings-persistence.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/labels/use-settings-persistence.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(pageSource, /useDenseLabelSettingsPersistence\(\{/);
@@ -73,4 +76,24 @@ test("dense label persistence stays behind its client hook boundary", async () =
   assert.match(hookSource, /remoteUpdatedAt >= localUpdatedAtRef\.current/);
   assert.match(hookSource, /window\.setTimeout\(\(\) => \{/);
   assert.match(hookSource, /\}, 650\);/);
+});
+
+test("label, print, and mobile rendering calculations stay outside the route component", async () => {
+  const [pageSource, clusterSource, auditSource, exportSource, mobileRenderSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/labels/clusters.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/print/audit.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/print/export.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/map/rendering/mobile-render.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /buildDenseLabelClusters\(/);
+  assert.match(pageSource, /renderHighResolutionMapPng\(\{/);
+  assert.match(pageSource, /calculateMobileMapRenderBounds\(\{/);
+  assert.doesNotMatch(pageSource, /function buildDenseLabelClusters\(/);
+  assert.doesNotMatch(pageSource, /function buildPrintAudit\(/);
+  assert.match(clusterSource, /export function buildDenseLabelClusters\(/);
+  assert.match(auditSource, /export function buildPrintAudit\(/);
+  assert.match(exportSource, /export async function renderHighResolutionMapPng\(/);
+  assert.match(mobileRenderSource, /export function calculateMobileMapRenderBounds\(/);
 });

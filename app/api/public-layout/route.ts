@@ -1,7 +1,7 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
 import { readUploadedBaseMapMetadata } from "../../base-map-storage";
 import { contentSummaryFromBatchResults } from "../../content-summary.mjs";
-import { normalizeOptionalLabelScaleSteps } from "../../label-density.mjs";
+import { normalizeOptionalLabelScaleSteps } from "../../map/labels/density.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
 import { stabilizeMainHubDocument } from "../../editor/document/main-hub-persistence.mjs";
 

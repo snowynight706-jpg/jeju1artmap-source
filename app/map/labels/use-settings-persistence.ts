@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   DenseLabelPosition,
   PublicLayoutAccess,
-} from "./map/core/types";
+} from "../core/types";
 
 const DENSE_LABEL_SETTINGS_API = "/api/dense-label-settings";
 const DENSE_LABEL_SETTINGS_KEY = "jeju-wondosim-map-review:dense-label-settings:v1";

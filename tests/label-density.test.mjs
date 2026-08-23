@@ -5,9 +5,9 @@ import {
   chooseScaleAwareLabelIds,
   normalizeOptionalLabelScaleSteps,
   optionalLabelBudgetForScale,
-} from "../app/label-density.mjs";
-import { denseLabelConnections } from "../app/dense-label-density.mjs";
-import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentIntersectsRect } from "../app/dense-label-placement.mjs";
+} from "../app/map/labels/density.mjs";
+import { denseLabelConnections } from "../app/map/labels/dense-density.mjs";
+import { chooseDenseLabelPlacement, denseLabelPlacementOptions, segmentIntersectsRect } from "../app/map/labels/dense-placement.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 

@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { horizontalMapFitZoom, mapStageGestureTransform } from "../app/map-stage-transform.mjs";
-import { lowTierBaseMapNeedsHighResolution } from "../app/base-map-quality.mjs";
+import { horizontalMapFitZoom, mapStageGestureTransform } from "../app/map/rendering/stage-transform.mjs";
+import { lowTierBaseMapNeedsHighResolution } from "../app/map/rendering/base-map-quality.mjs";
 import {
   HIGH_MOBILE_RENDER_BUDGET,
   LOW_MOBILE_RENDER_BUDGET,
   STANDARD_MOBILE_RENDER_BUDGET,
   mobileRenderBudgetForDevice,
-} from "../app/mobile-render-budget.mjs";
-import { shouldSendMapSettleDiagnostic } from "../app/performance-diagnostics.mjs";
+} from "../app/map/rendering/mobile-render-budget.mjs";
+import { shouldSendMapSettleDiagnostic } from "../app/map/rendering/performance-diagnostics.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 
@@ -49,7 +49,7 @@ test("mobile offscreen overscan follows device capacity and runtime settle cost"
   assert.match(pageSource, /return mobileRenderBudgetForDevice\(/);
   assert.match(pageSource, /durationMs >= 80[\s\S]{0,360}mobileSlowSettleSamplesRef\.current >= 2/);
   assert.match(pageSource, /current\.tier === "low" \? current : LOW_MOBILE_RENDER_BUDGET/);
-  assert.match(pageSource, /mobileRenderBudget\.minimumOverscan, viewportDimensions\.width \* mobileRenderBudget\.overscanRatio/);
+  assert.match(pageSource, /renderBudget\.minimumOverscan, viewportDimensions\.width \* renderBudget\.overscanRatio/);
 });
 
 test("low-tier map quality upgrades only when rendered pixels need it", () => {

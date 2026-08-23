@@ -5,7 +5,7 @@ import test from "node:test";
 import {
   mobileLabelBudgetForScale,
   mobileOverviewIsSimplified,
-} from "../app/mobile-marker-density.mjs";
+} from "../app/map/rendering/mobile-marker-density.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 
@@ -37,15 +37,15 @@ test("mobile PWA uses a light root fallback and lightweight category-colored omi
   assert.doesNotMatch(pageSource, /mobileMarkerPlaceholderColors/);
   assert.doesNotMatch(pageSource, /const markerScale = clamp\(zoom \/ Math\.max\(fitZoom/);
   assert.match(pageSource, /setProperty\("--mobile-marker-gesture-scale", `\$\{1 \/ scale\}`\)/);
-  assert.match(pageSource, /element\.category === "landmark"[\s\S]{0,260}mobileMapRenderBounds\.left/);
-  assert.match(pageSource, /cluster\.elementIds\.every\(\(elementId\) => renderedMapElementsById\.has\(elementId\)\)/);
+  assert.match(pageSource, /element\.category === "landmark"[\s\S]{0,260}element\.x >= bounds\.left/);
+  assert.match(pageSource, /cluster\.elementIds\.every\(\(elementId\) => renderedElementsById\.has\(elementId\)\)/);
   assert.match(pageSource, /clusteredLabelElementIds=\{renderedClusteredLabelElementIds\}/);
   assert.match(pageSource, /zoomChanged[\s\S]{0,680}scheduleTouchLayerRelease\([\s\S]{0,120}\? 170 : 80\)/);
   assert.match(pageSource, /<MobileMarkerPlaceholderLayer[\s\S]{0,180}elements=\{mobilePlaceholderElements\}/);
   assert.doesNotMatch(pageSource, /mobileMarkerBudgetForScale|chooseMobileMarkerRenderIds/);
-  assert.match(pageSource, /mobileOverviewSimplified && element\.category !== "landmark"/);
-  assert.match(pageSource, /if \(mobileOverviewSimplified\) \{[\s\S]{0,220}filter\(\(element\) => element\.category === "landmark"\)[\s\S]{0,100}map\(\(element\) => element\.id\)/);
-  assert.match(pageSource, /return new Set\(mobileMapCandidateElements\.map\(\(element\) => element\.id\)\)/);
+  assert.match(pageSource, /if \(!overviewSimplified\) return \{ rendered: elements, placeholders: \[\] as MapElement\[\] \}/);
+  assert.match(pageSource, /if \(element\.category === "landmark"\) rendered\.push\(element\);\s*else placeholders\.push\(element\)/);
+  assert.doesNotMatch(pageSource, /mobileFullMarkerIds/);
 });
 
 test("the administrator event dialog stays out of the public initial bundle", () => {

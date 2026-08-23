@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "../app/label-connector.mjs";
+import { distanceAwareConnectorOpacity, distanceAwareConnectorWidth } from "../app/map/labels/connector.mjs";
 
 import { readAppClientSource } from "./source-fixtures.mjs";
 
@@ -22,7 +22,7 @@ test("label connector opacity becomes stronger as the label moves farther away",
 });
 
 test("public dense label connectors stay clearly visible while admin opacity remains distance-aware", () => {
-  assert.match(pageSource, /import \{ distanceAwareConnectorOpacity, distanceAwareConnectorWidth \} from "\.\/label-connector\.mjs"/);
+  assert.match(pageSource, /import \{ distanceAwareConnectorOpacity, distanceAwareConnectorWidth \} from "\.\.\/labels\/connector\.mjs"/);
   assert.match(pageSource, /const PUBLIC_DENSE_LABEL_CONNECTOR_OPACITY = 0\.84/);
   assert.match(pageSource, /const connectorOpacity = publicConnector[\s\S]{0,100}PUBLIC_DENSE_LABEL_CONNECTOR_OPACITY[\s\S]{0,180}distanceAwareConnectorOpacity\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT\)/);
   assert.match(pageSource, /distanceAwareConnectorWidth\(element\.x, element\.y, target\.x, target\.y, MAP_ASPECT, publicConnector \? 1\.5 : 2\.5\)/);
