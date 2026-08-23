@@ -16,6 +16,7 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-explorer-content.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/model.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.mapLabels.includes("../app/map/labels/clusters.ts"));
@@ -127,6 +128,24 @@ test("explorer content models and read-only loading stay behind the content boun
   assert.match(hookSource, /scope=performance-diagnostics/);
   assert.match(hookSource, /scope=all&page=\$\{globalStoriesPage\}/);
   assert.match(hookSource, /scope=all&page=\$\{globalEventsPage\}/);
+});
+
+test("place catalog building, merging, classification, and marker policy stay in one domain boundary", async () => {
+  const [pageSource, modelSource] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/place-directory/model.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /createDirectoryCatalog\(\{/);
+  assert.match(pageSource, /createDirectoryRecordMerger\(defaultDirectoryPlaces, ensureSystemDirectoryPlaces\)/);
+  assert.match(pageSource, /createDirectoryMarkerPolicy\(/);
+  assert.doesNotMatch(pageSource, /function buildDirectoryPlaces\(/);
+  assert.doesNotMatch(pageSource, /function mergeDirectoryRecords\(/);
+  assert.doesNotMatch(pageSource, /function publicCategoryIdForPlace\(/);
+  assert.match(modelSource, /export function createDirectoryCatalog\(/);
+  assert.match(modelSource, /export function createDirectoryRecordMerger\(/);
+  assert.match(modelSource, /export function publicCategoryIdForPlace\(/);
+  assert.match(modelSource, /export function createDirectoryMarkerPolicy\(/);
 });
 
 test("dense label persistence stays behind its client hook boundary", async () => {

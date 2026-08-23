@@ -21,6 +21,9 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
   media: Object.freeze([
     "../app/media/photo-processing.ts",
   ]),
+  placeDirectory: Object.freeze([
+    "../app/place-directory/model.ts",
+  ]),
   mapCore: Object.freeze([
     "../app/map/calibration/model.ts",
     "../app/map/core/element-defaults.ts",

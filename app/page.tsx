@@ -25,7 +25,6 @@ import {
   type BundledMarkerCategory,
   type BundledMarkerStyle,
 } from "./marker-assets";
-import type { MasterDirectoryRow } from "./master-directory";
 import { geocodedPlaces } from "./geocoded-places";
 import { categoryForPlace, isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
 import {
@@ -167,7 +166,6 @@ import {
   publicUrlWithPlace,
 } from "./public/navigation.mjs";
 import {
-  consolidateMainHubDirectoryPlaces,
   isMainHubPersistenceTarget,
   stableMainHubResourceSize,
 } from "./editor/document/main-hub-persistence.mjs";
@@ -179,16 +177,26 @@ import {
   MAIN_HUB_ROLE,
   additionalCategoryDefinitions,
   convenienceAttributeDefinitions,
-  directoryMetadataDefaults,
   isPrimaryPublicCategory,
-  mergeDirectoryMetadata,
-  normalizeDirectoryCategory,
   publicDisplayName,
   sanitizeAdditionalCategories,
   sanitizeConvenienceAttributes,
   type AdditionalCategoryId,
   type ConvenienceAttributeId,
 } from "./place-taxonomy";
+import {
+  createDirectoryCatalog,
+  createDirectoryMarkerPolicy,
+  createDirectoryRecordMerger,
+  databaseEditorCategoryForPlace,
+  defaultMarkerAssetId,
+  directoryCategory,
+  directoryRecordFromPlace,
+  mapCategoryForDirectoryPlace,
+  publicCategoryIdForPlace,
+  withDirectoryMetadata,
+  type PublicPlaceCategoryId,
+} from "./place-directory/model";
 import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
 import {
   PLACE_EVENTS_API,
@@ -355,7 +363,7 @@ const publicListCategories: ReadonlyArray<{
   { id: "convenience", name: "편의시설", color: markerCategoryColors.utility, iconSrc: "/category-icons/category_ui_amenities_v01_ui-96px.webp" },
 ] as const;
 
-type PublicPlaceCategoryFilter = "culture" | "food" | "cafe" | "shop" | "convenience";
+type PublicPlaceCategoryFilter = PublicPlaceCategoryId;
 type PublicPlaceCategoryScope = "all" | PublicPlaceCategoryFilter;
 type PublicPanelHistory = "map" | "explorer" | "explorer-expanded" | "place" | "place-expanded";
 type PublicHistoryState = {
@@ -444,43 +452,6 @@ const legacyDirectoryPlaces: DirectoryPlace[] = [
   { id: "place-chilseong-buffet", name: "칠성뷔페", category: "food", area: "칠성통", address: "제주특별자치도 제주시 관덕로11길 17", x: 54, y: 54, coordinateStatus: "review", sourceLabel: "원도심 정보 v01" },
 ];
 
-// 이하는 장소 DB 자료를 화면용 장소 목록으로 정리하는 코드입니다.
-function withDirectoryMetadata(place: DirectoryPlace): DirectoryPlace {
-  const category = directoryCategory(place.category);
-  const defaults = directoryMetadataDefaults(place.name, category, place.subtype, place.description);
-  const metadata = mergeDirectoryMetadata({
-    ...(Object.prototype.hasOwnProperty.call(place, "additionalCategories") ? { additionalCategories: place.additionalCategories } : {}),
-    ...(Object.prototype.hasOwnProperty.call(place, "convenienceAttributes") ? { convenienceAttributes: place.convenienceAttributes } : {}),
-    locationGroupId: place.locationGroupId,
-    mapAnchorId: place.mapAnchorId,
-    featuredRole: place.featuredRole,
-    ...(Object.prototype.hasOwnProperty.call(place, "aliases") ? { aliases: place.aliases } : {}),
-  }, defaults);
-  return { ...place, category, ...metadata };
-}
-
-function ensureSystemDirectoryPlaces(places: DirectoryPlace[]) {
-  const normalized = consolidateMainHubDirectoryPlaces(places.map(withDirectoryMetadata)) as DirectoryPlace[];
-  const names = new Set(normalized.map((place) => normalizePlaceName(place.name)));
-  const hasArtPlatform = names.has("제주아트플랫폼");
-  const additions = legacyDirectoryPlaces
-    .filter((place) => normalizePlaceName(place.name) === LPP_CANONICAL_NAME
-      || (hasArtPlatform && (ART_PLATFORM_FACILITY_NAMES as readonly string[]).includes(normalizePlaceName(place.name))))
-    .filter((place) => !names.has(normalizePlaceName(place.name)))
-    .map(withDirectoryMetadata);
-  return [...normalized, ...additions];
-}
-
-const areaFallbacks: Record<string, { x: number; y: number }> = {
-  "관덕로·목관아": { x: 40, y: 59 },
-  "칠성로·탑동": { x: 43, y: 35 },
-  "중앙로 남측": { x: 48, y: 72 },
-  "동문시장·동문로": { x: 65, y: 55 },
-  "산지천·탐라문화광장·서부두": { x: 68, y: 38 },
-  "삼도동": { x: 33, y: 82 },
-  "이도동": { x: 67, y: 84 },
-};
-
 const supportDirectoryPlaces: DirectoryPlace[] = [
   { id: "support-tapdong-parking-1", name: "탑동 제1공영주차장", category: "parking", area: "칠성로·탑동", address: "제주특별자치도 제주시 탑동로2길 4", x: 31, y: 28, coordinateStatus: "review", sourceLabel: "편의시설 조사 · 주소 검수 필요", sourceUrl: "https://app.modu.kr/p/157567", subtype: "공영주차장", priority: "추천" },
   { id: "support-chilseong-parking-1", name: "칠성제1공영주차장", category: "parking", area: "칠성로·탑동", address: "제주특별자치도 제주시 관덕로13길 12", x: 56, y: 48, coordinateStatus: "review", sourceLabel: "편의시설 조사 · 주소 검수 필요", sourceUrl: "https://thejade.kr/page.php?p=sub_1_2", subtype: "공영주차장", priority: "추천" },
@@ -492,53 +463,12 @@ const supportDirectoryPlaces: DirectoryPlace[] = [
   { id: "support-tapdong-toilet", name: "탑동광장 무장애 화장실", category: "utility", area: "칠성로·탑동", address: "제주특별자치도 제주시 중앙로 1", x: 26, y: 24, coordinateStatus: "review", sourceLabel: "탑동광장 무장애 편의정보 · 현장 검수 필요", sourceUrl: "https://access.visitkorea.or.kr/ms/detail.do?cotId=2a115c66-9a01-4b59-bf17-ac2dd692ceea", subtype: "무장애 화장실", priority: "추천" },
 ];
 
-function buildDirectoryPlaces(rows: MasterDirectoryRow[]) {
-  const legacyByName = new Map(legacyDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
-  const built = rows
-    .filter((row) => row.address && !DELETED_PLACE_NAMES.has(normalizePlaceName(row.name)))
-    .map((row): DirectoryPlace => {
-      const name = normalizePlaceName(row.name);
-      const legacy = legacyByName.get(name);
-      const geocoded = geocodedPlaces[name] ?? geocodedPlaces[row.name];
-      const fallback = areaFallbacks[row.area] ?? { x: 50, y: 50 };
-      return {
-        id: legacy?.id ?? row.id,
-        name,
-        category: directoryCategory(row.category),
-        area: row.area,
-        address: row.address,
-        x: geocoded?.x ?? legacy?.x ?? fallback.x,
-        y: geocoded?.y ?? legacy?.y ?? fallback.y,
-        coordinateStatus: isCoreLandmarkName(name) ? "landmark" : geocoded ? "geocoded" : legacy?.coordinateStatus === "landmark" ? "landmark" : "unresolved",
-        latitude: geocoded?.latitude,
-        longitude: geocoded?.longitude,
-        sourceLabel: `마스터DB · ${row.subtype}`,
-        sourceUrl: row.sourceUrl,
-        subtype: row.subtype,
-        priority: row.priority,
-        description: row.description,
-        operatingInfo: row.operatingInfo,
-        notes: row.notes,
-        mapUrl: row.mapUrl,
-        checkedAt: row.checkedAt,
-      };
-    });
-  const names = new Set(built.map((place) => place.name));
-  return ensureSystemDirectoryPlaces([
-    ...built,
-    ...legacyDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))).map((place) => {
-      const geocoded = geocodedPlaces[normalizePlaceName(place.name)];
-      const category = directoryCategory(place.category);
-      return geocoded
-        ? { ...place, ...geocoded, category, coordinateStatus: isCoreLandmarkName(place.name) ? "landmark" as const : "geocoded" as const }
-        : { ...place, category, coordinateStatus: isCoreLandmarkName(place.name) ? "landmark" as const : place.coordinateStatus };
-    }),
-    ...supportDirectoryPlaces.filter((place) => !names.has(normalizePlaceName(place.name))).map((place) => {
-      const geocoded = geocodedPlaces[place.name];
-      return geocoded ? { ...place, ...geocoded, coordinateStatus: "geocoded" as const } : { ...place, coordinateStatus: "unresolved" as const };
-    }),
-  ]);
-}
+// 장소 DB의 생성·보정·시스템 항목 병합은 하나의 카탈로그 경계가 담당합니다.
+const { buildDirectoryPlaces, ensureSystemDirectoryPlaces } = createDirectoryCatalog({
+  legacyPlaces: legacyDirectoryPlaces,
+  supportPlaces: supportDirectoryPlaces,
+  deletedPlaceNames: DELETED_PLACE_NAMES,
+});
 
 // Keep the public viewer's initial bundle lean. The full master directory is
 // loaded only when an editor needs the bundled database fallback.
@@ -547,69 +477,7 @@ const defaultDirectoryPlaces = buildDirectoryPlaces([]).map((place) => {
   return mapped ? { ...place, ...mapped } : place;
 });
 
-function directoryRecordFromPlace(place: DirectoryPlace): PlaceDirectoryRecord {
-  const name = normalizePlaceName(place.name);
-  const decorated = withDirectoryMetadata({ ...place, name });
-  return {
-    id: decorated.id,
-    name,
-    category: directoryCategory(decorated.category),
-    area: decorated.area ?? "",
-    address: decorated.address ?? "",
-    subtype: decorated.subtype ?? "",
-    priority: decorated.priority ?? "",
-    description: decorated.description ?? "",
-    operatingInfo: decorated.operatingInfo ?? "",
-    notes: decorated.notes ?? "",
-    sourceUrl: decorated.sourceUrl ?? "",
-    mapUrl: decorated.mapUrl ?? "",
-    checkedAt: decorated.checkedAt ?? "",
-    additionalCategories: sanitizeAdditionalCategories(decorated.additionalCategories),
-    convenienceAttributes: sanitizeConvenienceAttributes(decorated.convenienceAttributes),
-    locationGroupId: decorated.locationGroupId ?? "",
-    mapAnchorId: decorated.mapAnchorId ?? "",
-    featuredRole: decorated.featuredRole ?? "",
-    aliases: decorated.aliases ?? [],
-  };
-}
-
-function mergeDirectoryRecords(records: PlaceDirectoryRecord[], current: DirectoryPlace[]): DirectoryPlace[] {
-  const currentById = new Map(current.map((place) => [place.id, place]));
-  const currentByName = new Map(current.map((place) => [normalizePlaceName(place.name), place]));
-  const defaultById = new Map(defaultDirectoryPlaces.map((place) => [place.id, place]));
-  const defaultByName = new Map(defaultDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
-  return ensureSystemDirectoryPlaces(records.map((record) => {
-    const name = normalizePlaceName(record.name);
-    const category = directoryCategory(record.category);
-    const geocoded = geocodedPlaces[name];
-    const calibrated = calibratedPlaceCoordinates(name, geocoded?.latitude, geocoded?.longitude, initialCalibrationPoints);
-    const base = currentById.get(record.id)
-      ?? currentByName.get(name)
-      ?? defaultById.get(record.id)
-      ?? defaultByName.get(name);
-    const addressChanged = Boolean(base && base.address.trim() !== record.address.trim());
-    return withDirectoryMetadata({
-      ...(base ?? {
-        x: calibrated?.x ?? geocoded?.x ?? 50,
-        y: calibrated?.y ?? geocoded?.y ?? 50,
-        coordinateStatus: geocoded ? "geocoded" as const : "unresolved" as const,
-        latitude: geocoded?.latitude,
-        longitude: geocoded?.longitude,
-        sourceLabel: "내부 DB",
-      }),
-      ...record,
-      name,
-      category,
-      sourceLabel: `내부 DB${record.subtype ? ` · ${record.subtype}` : ""}`,
-      ...(addressChanged && base?.coordinateStatus !== "landmark" ? {
-        coordinateStatus: "unresolved" as const,
-        latitude: undefined,
-        longitude: undefined,
-      } : {}),
-      ...(isCoreLandmarkName(name) ? { coordinateStatus: "landmark" as const } : {}),
-    });
-  }));
-}
+const mergeDirectoryRecords = createDirectoryRecordMerger(defaultDirectoryPlaces, ensureSystemDirectoryPlaces);
 
 const directoryByName = new Map(defaultDirectoryPlaces.map((place) => [normalizePlaceName(place.name), place]));
 
@@ -645,26 +513,10 @@ const builtInMarkerAssets: MapAsset[] = bundledMarkerAssets.map((asset) => ({
 const builtInAssets: MapAsset[] = [...builtInLandmarkAssets, ...builtInMarkerAssets];
 const builtInAssetIds = new Set(builtInAssets.map((asset) => asset.id));
 const canonicalMarkerAssetIds = new Set(builtInMarkerAssets.map((asset) => asset.id));
-
-function isBundledMarkerCategory(category: CategoryId): category is BundledMarkerCategory {
-  return category !== "landmark";
-}
-
-function defaultMarkerAssetId(category: CategoryId, style: BundledMarkerStyle = recommendedMarkerStyle, descriptor = "") {
-  return isBundledMarkerCategory(category) ? markerAssetIdForPlace(style, category, descriptor) : null;
-}
-
-function assetIdAfterDirectoryCategoryChange(element: MapElement, category: CategoryId) {
-  if (category === "landmark") {
-    if (element.assetId && !canonicalMarkerAssetIds.has(element.assetId)) return element.assetId;
-    return landmarkLocationByName.get(normalizePlaceName(element.name))?.assetId ?? null;
-  }
-  if (element.category === category) return element.assetId;
-  if (element.category === "landmark" || canonicalMarkerAssetIds.has(element.assetId ?? "")) {
-    return defaultMarkerAssetId(category, recommendedMarkerStyle, element.name);
-  }
-  return element.assetId;
-}
+const assetIdAfterDirectoryCategoryChange = createDirectoryMarkerPolicy(
+  canonicalMarkerAssetIds,
+  new Map([...landmarkLocationByName].map(([name, location]) => [name, location.assetId])),
+);
 
 const initialLandmarkElements: MapElement[] = landmarkLocations.map((location, index) => {
   const directoryPlace = directoryByName.get(normalizePlaceName(location.name));
@@ -765,36 +617,6 @@ function reviewStatusForCoordinateLock(locked: boolean): AssetStatus {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
-}
-
-function directoryCategory(category: CategoryId): CategoryId {
-  return normalizeDirectoryCategory(category) as CategoryId;
-}
-
-function databaseEditorCategoryForPlace(place: Pick<DirectoryPlace, "category">): Exclude<DatabaseEditorCategoryFilter, "all"> {
-  const category = directoryCategory(place.category);
-  return isPrimaryPublicCategory(category) ? category : "other";
-}
-
-function mapCategoryForDirectoryPlace(place: Pick<DirectoryPlace, "name" | "category" | "featuredRole">): CategoryId {
-  return isCoreLandmarkName(place.name) || place.featuredRole === MAIN_HUB_ROLE || isPrimaryHubLabel(place.name)
-    ? "landmark"
-    : place.category;
-}
-
-function publicCategoryIdForPlace(place: DirectoryPlace, anchor: MapElement): PublicPlaceCategoryFilter {
-  const primary = place.category === "landmark" ? anchor.category : place.category;
-  if (
-    primary === "culture"
-    || primary === "landmark"
-    || isCoreLandmarkName(place.name)
-    || place.featuredRole === MAIN_HUB_ROLE
-    || isPrimaryHubLabel(place.name)
-  ) return "culture";
-  if (primary === "food") return "food";
-  if (primary === "cafe") return "cafe";
-  if (primary === "shop") return "shop";
-  return "convenience";
 }
 
 function publicCategoryMetaForPlace(place: DirectoryPlace, anchor: MapElement) {
