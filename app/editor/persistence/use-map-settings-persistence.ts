@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { normalizePlaceName } from "../../core-landmarks";
 import {
   CALIBRATION_LANDMARK_NAMES,
@@ -82,6 +82,9 @@ export function useMapSettingsPersistence({
   const [lockedCoordinateStorage, setLockedCoordinateStorage] = useState<StorageState>("loading");
   const [lockedCoordinatesRemoteReady, setLockedCoordinatesRemoteReady] = useState(false);
   const [placementSettingsRemoteReady, setPlacementSettingsRemoteReady] = useState(false);
+  const calibrationRevisionRef = useRef(0);
+  const lockedCoordinateRevisionRef = useRef(0);
+  const placementRevisionRef = useRef(0);
 
   useEffect(() => {
     if (!hydrated || publicLayoutAccess !== "editor" || !primaryCalibrationRemoteReady) return;
@@ -108,10 +111,11 @@ export function useMapSettingsPersistence({
     let cancelled = false;
     fetch(CALIBRATION_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => response.ok
-        ? await response.json() as { points?: CalibrationPoint[]; updatedAt?: string | null }
+        ? await response.json() as { points?: CalibrationPoint[]; updatedAt?: string | null; revision?: number }
         : null)
       .then((payload) => {
         if (cancelled) return;
+        calibrationRevisionRef.current = Number.isInteger(payload?.revision) ? Number(payload?.revision) : 0;
         const remotePoints = Array.isArray(payload?.points)
           ? payload.points.filter((point) => PRIMARY_CALIBRATION_NAMES.has(point.name))
           : [];
@@ -180,8 +184,11 @@ export function useMapSettingsPersistence({
           points: calibrationPointsRef.current.map(({ name, sourceX, sourceY, targetX, targetY }) => (
             { name, sourceX, sourceY, targetX, targetY }
           )),
+          revision: calibrationRevisionRef.current,
         }),
-      }).then((response) => {
+      }).then(async (response) => {
+        const payload = await response.json().catch(() => null) as { revision?: number } | null;
+        if (response.ok) calibrationRevisionRef.current = Number(payload?.revision ?? calibrationRevisionRef.current + 1);
         setPrimaryCalibrationStorage(response.ok ? "persistent" : "local");
       }).catch(() => setPrimaryCalibrationStorage("local"));
     }, 700);
@@ -193,10 +200,11 @@ export function useMapSettingsPersistence({
     let cancelled = false;
     fetch(LOCKED_COORDINATE_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => response.ok
-        ? await response.json() as { settings?: LockedCoordinateSetting[]; updatedAt?: string | null }
+        ? await response.json() as { settings?: LockedCoordinateSetting[]; updatedAt?: string | null; revision?: number }
         : null)
       .then((payload) => {
         if (cancelled) return;
+        lockedCoordinateRevisionRef.current = Number.isInteger(payload?.revision) ? Number(payload?.revision) : 0;
         const remoteSettings = Array.isArray(payload?.settings) ? payload.settings : [];
         const remoteUpdatedAt = Date.parse(payload?.updatedAt ?? "") || 0;
         const shouldRestoreRemote = remoteUpdatedAt > 0
@@ -252,8 +260,10 @@ export function useMapSettingsPersistence({
       void fetch(LOCKED_COORDINATE_SETTINGS_API, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ settings }),
-      }).then((response) => {
+        body: JSON.stringify({ settings, revision: lockedCoordinateRevisionRef.current }),
+      }).then(async (response) => {
+        const payload = await response.json().catch(() => null) as { revision?: number } | null;
+        if (response.ok) lockedCoordinateRevisionRef.current = Number(payload?.revision ?? lockedCoordinateRevisionRef.current + 1);
         setLockedCoordinateStorage(response.ok ? "persistent" : "local");
       }).catch(() => setLockedCoordinateStorage("local"));
     }, 700);
@@ -272,10 +282,11 @@ export function useMapSettingsPersistence({
     let cancelled = false;
     fetch(PLACEMENT_SETTINGS_API, { cache: "no-store" })
       .then(async (response) => response.ok
-        ? await response.json() as { settings?: PlacementOverride[]; updatedAt?: string | null }
+        ? await response.json() as { settings?: PlacementOverride[]; updatedAt?: string | null; revision?: number }
         : null)
       .then((payload) => {
         if (cancelled) return;
+        placementRevisionRef.current = Number.isInteger(payload?.revision) ? Number(payload?.revision) : 0;
         const remoteSettings = sanitizePlacementOverrides(payload?.settings);
         const remoteUpdatedAt = Date.parse(payload?.updatedAt ?? "") || 0;
         const shouldRestoreRemote = remoteUpdatedAt > 0
@@ -326,7 +337,10 @@ export function useMapSettingsPersistence({
       void fetch(PLACEMENT_SETTINGS_API, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({ settings, revision: placementRevisionRef.current }),
+      }).then(async (response) => {
+        const payload = await response.json().catch(() => null) as { revision?: number } | null;
+        if (response.ok) placementRevisionRef.current = Number(payload?.revision ?? placementRevisionRef.current + 1);
       }).catch(() => undefined);
     }, 550);
     return () => window.clearTimeout(timer);

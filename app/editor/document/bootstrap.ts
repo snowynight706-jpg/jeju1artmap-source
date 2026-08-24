@@ -5,6 +5,10 @@ import { bundledMarkerAssets, recommendedMarkerStyle } from "../../marker-assets
 import { calibratedPlaceCoordinates, initialCalibrationPoints, type CalibrationPoint } from "../../map/calibration/model";
 import { isPrimaryHubLabel, type CategoryId } from "../../map/core/model";
 import { elementDefaults } from "../../map/core/element-defaults";
+import {
+  DENSE_LABEL_MAX_ITEMS,
+  DENSE_LABEL_MIN_ITEMS,
+} from "../../map/labels/settings-contract.mjs";
 import type {
   DirectoryPlace,
   DocumentState,
@@ -373,13 +377,18 @@ export function createMapDocumentModel({
       ],
       directoryPlaces: sanitizedDirectoryPlaces,
       denseLabelPositions: [...new Map((document.denseLabelPositions ?? [])
-        .filter((position) => position && typeof position.key === "string" && position.key.length > 0 && Array.isArray(position.elementIds) && position.elementIds.length >= 2 && position.elementIds.length <= 4)
+        .filter((position) => position
+          && typeof position.key === "string"
+          && position.key.length > 0
+          && Array.isArray(position.elementIds)
+          && position.elementIds.length >= DENSE_LABEL_MIN_ITEMS
+          && position.elementIds.length <= DENSE_LABEL_MAX_ITEMS)
         .map((position) => [position.key, {
           key: position.key,
           elementIds: [...new Set(position.elementIds.filter((id) => typeof id === "string" && id.length > 0))].sort(),
           x: clamp(position.x, 0, 100),
           y: clamp(position.y, 0, 100),
-        }])).values()].filter((position) => position.elementIds.length >= 2),
+        }])).values()].filter((position) => position.elementIds.length >= DENSE_LABEL_MIN_ITEMS),
       denseLabelExcludedIds: [...new Set((document.denseLabelExcludedIds ?? []).filter((id) => typeof id === "string" && id.length > 0))],
       placementOverrides: sanitizePlacementOverrides(document.placementOverrides),
     };

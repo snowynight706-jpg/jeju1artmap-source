@@ -3,8 +3,8 @@
 - `app/page.tsx`: 공개 지도와 관리자 편집기의 최상위 상태 조립, 사용자 입력과 기능 모듈 연결
 - `app/map/core/`: 지도 요소 기본값, 분류·색상·표시 크기, 장소 식별 키와 공용 TypeScript 계약
 - `app/map/calibration/model.ts`: 지도 비율, 1·2·3차 좌표 보정 기준점 구성과 보정 좌표 계산을 담당하는 순수 도메인 모듈
-- `app/map/labels/`: 라벨 밀집도·통합 배치·화면 경계·겹침 기하와 통합 라벨 설정 저장
-- `app/map/interaction/`: PC·모바일 변환 정책과 공유 확대율·이동 ref 동기화, 휠·핀치 RAF 및 프로그램 이동 타이머, 포인터·드래그·크기 조절·키보드 편집·지도 포커스 생명주기
+- `app/map/labels/`: 라벨 밀집도·통합 배치·화면 경계·겹침 기하, 문서 복원과 API가 공유하는 `2~18곳` 통합 묶음 계약, 통합 라벨 설정 저장
+- `app/map/interaction/`: PC·모바일 변환 정책과 공유 확대율·이동 ref 동기화, 휠·핀치 RAF 및 프로그램 이동 타이머, 포인터 취소·리사이즈·포커스 전이 시 임시 변환 소유권, 드래그·크기 조절·키보드 편집·지도 포커스 생명주기
 - `app/map/print/`: 장소별 출력 설정, 인쇄 충돌 감사, 고해상도 PNG 캔버스 합성과 설정 저장
 - `app/map/rendering/`: 마커·연결선·통합 라벨 React 계층, 모바일 화면 밖 선별·성능 예산과 진단
 - `app/map/workspace/use-map-workspace-model.ts`: 지도 화면의 맞춤 축척, 화면 안 라벨 후보·예산·통합, 출력 정책·감사, 충돌 상태와 모바일 렌더 선별을 조립하는 큰 작업공간 모델. `map/labels`, `map/print`, `map/rendering`의 계산 모듈을 한 흐름으로 연결하고 `page.tsx`에는 상태와 사용자 동작 연결만 반환
@@ -41,7 +41,7 @@
 - `app/globals.css`: 지도·패널·모바일 PWA 반응형 스타일
 - `app/admin-*.tsx`: 지연 로딩되는 관리자 전용 화면
 - `app/admin-place-event-dialog.tsx`: 관리자 행사 등록·수정 시에만 불러오는 행사 입력 창
-- `app/api/`: 공개 배치, 장소 DB, 행사, 후기, 사진, 진단 기록 API
+- `app/api/`: 공개 배치, 장소 DB, 행사, 후기, 사진, 진단 기록 API. 설정 API의 revision/CAS 잠금은 `settings-concurrency.ts`, D1 단일 행 쓰기 전 UTF-8 안전 예산은 `storage-budget.mjs`가 공통 경계로 담당
 - `app/base-map-storage.ts`, `app/api/base-map/route.ts`: 현재 v20에만 버전이 고정된 화면용 2048·4096 WebP와 픽셀 동일 출력용 무손실 WebP를 연결하고, 이후 관리자 업로드 지도는 기존 R2 원본·파생본 경로 사용
 - `app/landmark-assets/index.ts`: 고해상도 원본·512px 화면본·고정 384px 모바일 파생본의 자산 경로와 revision
 - `scripts/extract-jfac-svg-assets.mjs`: 재단 공식 AI의 컬러 페이지를 Inkscape로 변환한 SVG에서 시그니처·심벌 경로만 추출하고 기존 화면 비율·헤더 팔레트를 보존하는 재현 스크립트

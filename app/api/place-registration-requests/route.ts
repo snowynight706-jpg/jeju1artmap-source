@@ -1,5 +1,9 @@
 import { normalizePlaceName } from "../../core-landmarks";
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import {
+  acquireNamedWriteLock,
+  settingsConflictResponse,
+} from "../settings-concurrency";
 
 export const runtime = "edge";
 
@@ -191,6 +195,16 @@ export async function POST(request: Request) {
   await ensureStorage(runtime.DB);
 
   const hash = await actorHash(request, visitorId);
+  const releases: Array<() => Promise<void>> = [];
+  try {
+    for (const resource of [`place-request-actor:${hash}`, `place-name:${fields.name.toLocaleLowerCase("ko-KR")}`].sort()) {
+      releases.push(await acquireNamedWriteLock(runtime.DB, resource));
+    }
+  } catch (error) {
+    for (const release of releases.reverse()) await release();
+    return settingsConflictResponse(error) ?? json({ error: "place request is busy" }, 409);
+  }
+  try {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const [existingPlaceResult, recentResult, duplicateResult] = await runtime.DB.batch([
     runtime.DB.prepare("SELECT id FROM place_directory WHERE lower(name) = lower(?) LIMIT 1").bind(fields.name),
@@ -239,6 +253,9 @@ export async function POST(request: Request) {
     status: "pending",
     createdAt,
   }, persistent: true }, 201);
+  } finally {
+    for (const release of releases.reverse()) await release();
+  }
 }
 
 export async function PATCH(request: Request) {
@@ -251,6 +268,13 @@ export async function PATCH(request: Request) {
   const action = cleanText(payload?.action, 20);
   if (!id || !["edit", "start-review", "move-marker", "approve", "reject"].includes(action)) return json({ error: "valid request action required" }, 400);
   await ensureStorage(runtime.DB);
+  let releaseRequestLock: (() => Promise<void>) | null = null;
+  try {
+    releaseRequestLock = await acquireNamedWriteLock(runtime.DB, `place-request:${id}`);
+  } catch (error) {
+    return settingsConflictResponse(error) ?? json({ error: "place request is being changed" }, 409);
+  }
+  try {
   const existing = await runtime.DB.prepare(`${REQUEST_SELECT} WHERE id = ?`).bind(id).first() as RegistrationRow | null;
   if (!existing) return json({ error: "request not found" }, 404);
 
@@ -319,12 +343,19 @@ export async function PATCH(request: Request) {
   const location = (payload ? validatedLocation(payload) : undefined)
     ?? (existing.markerX !== null && existing.markerY !== null ? { markerX: existing.markerX, markerY: existing.markerY } : null);
   if (!location) return json({ error: "marker location required before approval" }, 400);
-  const duplicate = await runtime.DB.prepare("SELECT id FROM place_directory WHERE lower(name) = lower(?) LIMIT 1")
-    .bind(fields.name).first() as { id?: string } | null;
-  if (duplicate?.id) return json({ error: "place already registered", directoryId: duplicate.id }, 409);
   const reviewedAt = new Date().toISOString();
   const directoryId = `community-${crypto.randomUUID()}`;
-  await runtime.DB.batch([
+  let releasePlaceNameLock: (() => Promise<void>) | null = null;
+  try {
+    releasePlaceNameLock = await acquireNamedWriteLock(runtime.DB, `place-name:${fields.name.toLocaleLowerCase("ko-KR")}`);
+  } catch (error) {
+    return settingsConflictResponse(error) ?? json({ error: "place name is being changed" }, 409);
+  }
+  try {
+    const duplicate = await runtime.DB.prepare("SELECT id FROM place_directory WHERE lower(name) = lower(?) LIMIT 1")
+      .bind(fields.name).first() as { id?: string } | null;
+    if (duplicate?.id) return json({ error: "place already registered", directoryId: duplicate.id }, 409);
+    await runtime.DB.batch([
     runtime.DB.prepare(
       `INSERT INTO place_directory
         (id, name, category, area, address, subtype, priority, description, operating_info,
@@ -346,7 +377,10 @@ export async function PATCH(request: Request) {
       fields.name, fields.area, fields.address, fields.description, fields.category, fields.markerStyle,
       location.markerX, location.markerY, directoryId, reviewedAt, reviewedAt, currentEmail, id,
     ),
-  ]);
+    ]);
+  } finally {
+    await releasePlaceNameLock();
+  }
   return json({
     request: { ...existing, ...fields, ...location, status: "approved", directoryId, rejectionNote: "", updatedAt: reviewedAt, reviewedAt },
     directory: {
@@ -355,6 +389,9 @@ export async function PATCH(request: Request) {
       operatingInfo: "", notes: "공개 지도 장소 등록 요청에서 승인됨", sourceUrl: "", mapUrl: "", checkedAt: reviewedAt.slice(0, 10),
     },
   });
+  } finally {
+    await releaseRequestLock();
+  }
 }
 
 export async function DELETE(request: Request) {
@@ -365,7 +402,17 @@ export async function DELETE(request: Request) {
   const id = new URL(request.url).searchParams.get("id")?.trim() ?? "";
   if (!id) return json({ error: "request id required" }, 400);
   await ensureStorage(runtime.DB);
-  const result = await runtime.DB.prepare("DELETE FROM place_registration_requests WHERE id = ?").bind(id).run();
-  if (!result.meta.changes) return json({ error: "request not found" }, 404);
-  return json({ deleted: true, id });
+  let releaseRequestLock: (() => Promise<void>) | null = null;
+  try {
+    releaseRequestLock = await acquireNamedWriteLock(runtime.DB, `place-request:${id}`);
+  } catch (error) {
+    return settingsConflictResponse(error) ?? json({ error: "place request is being changed" }, 409);
+  }
+  try {
+    const result = await runtime.DB.prepare("DELETE FROM place_registration_requests WHERE id = ?").bind(id).run();
+    if (!result.meta.changes) return json({ error: "request not found" }, 404);
+    return json({ deleted: true, id });
+  } finally {
+    await releaseRequestLock();
+  }
 }

@@ -98,6 +98,7 @@ type UsePublicPlaceWorkspaceOptions = {
   fitZoomRef: MutableRef<number>;
   publicNavigationInitializedRef: MutableRef<boolean>;
   publicNavigationApplyingRef: MutableRef<boolean>;
+  cancelMapTransforms: () => void;
   setZoom: (value: number) => void;
   setMapPan: (value: Point) => void;
   setMapRenderPan: (value: Point) => void;
@@ -125,6 +126,7 @@ export function usePublicPlaceWorkspace(options: UsePublicPlaceWorkspaceOptions)
     fitZoomRef,
     publicNavigationInitializedRef,
     publicNavigationApplyingRef,
+    cancelMapTransforms,
     setZoom,
     setMapPan,
     setMapRenderPan,
@@ -284,6 +286,7 @@ export function usePublicPlaceWorkspace(options: UsePublicPlaceWorkspaceOptions)
   }, [panRef, zoomRef]);
 
   const restorePublicMapView = useCallback((clear = false) => {
+    cancelMapTransforms();
     const previous = publicMapViewBeforeFocusRef.current;
     const nextZoom = clamp(previous?.zoom ?? fitZoomRef.current, fitZoomRef.current, 4);
     const nextPan = previous?.pan ?? { x: 0, y: 0 };
@@ -293,7 +296,7 @@ export function usePublicPlaceWorkspace(options: UsePublicPlaceWorkspaceOptions)
     setMapPan(nextPan);
     setMapRenderPan(nextPan);
     if (clear) publicMapViewBeforeFocusRef.current = null;
-  }, [fitZoomRef, panRef, setMapPan, setMapRenderPan, setZoom, zoomRef]);
+  }, [cancelMapTransforms, fitZoomRef, panRef, setMapPan, setMapRenderPan, setZoom, zoomRef]);
 
   const writePublicHistory = useCallback((
     panel: PublicPanelHistory,

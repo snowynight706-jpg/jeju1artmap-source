@@ -14,6 +14,7 @@ import {
 
 import type { PublicLayoutAccess } from "../core/types";
 import { mapStageGestureTransform } from "./stage-transform.mjs";
+import { touchLayersCanRelease } from "./gesture-lifecycle.mjs";
 
 export type MapPan = { x: number; y: number };
 
@@ -89,6 +90,7 @@ export function useMapTransformController({
   const pinchGestureRef = useRef<PinchGesture | null>(null);
   const panInteractionRef = useRef<PublicPanInteraction | null>(null);
   const touchTransformBaseZoomRef = useRef(0.72);
+  const committedReactZoomRef = useRef(zoom);
   const touchTransformFrameRef = useRef<number | null>(null);
   const touchLayerReleaseFrameRef = useRef<number | null>(null);
   const touchLayerReleaseTimerRef = useRef<number | null>(null);
@@ -102,6 +104,7 @@ export function useMapTransformController({
   const focusTransitionTimerRef = useRef<number | null>(null);
   const focusTransitionTargetRef = useRef<TransformTarget | null>(null);
   const pendingWheelRef = useRef<{ deltaY: number; cursorX: number; cursorY: number } | null>(null);
+  const touchLayerReleaseGenerationRef = useRef(0);
 
   const applyTouchMapTransform = useCallback((nextZoom: number, nextPan: MapPan) => {
     const stageWrap = stageWrapRef.current;
@@ -140,6 +143,7 @@ export function useMapTransformController({
   }, [applyTouchMapTransform, panRef, viewportRef, zoomRef]);
 
   const cancelTouchLayerRelease = useCallback(() => {
+    touchLayerReleaseGenerationRef.current += 1;
     if (touchLayerReleaseFrameRef.current !== null) {
       window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
       touchLayerReleaseFrameRef.current = null;
@@ -150,22 +154,38 @@ export function useMapTransformController({
     }
   }, []);
 
-  const scheduleTouchLayerRelease = useCallback((delayMs = 80) => {
+  const scheduleTouchLayerRelease = useCallback((delayMs = 80, expectedZoom = zoomRef.current) => {
     cancelTouchLayerRelease();
+    const generation = touchLayerReleaseGenerationRef.current;
+    const startedAt = performance.now();
+    const releaseWhenSettled = () => {
+      if (generation !== touchLayerReleaseGenerationRef.current) return;
+      if (activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) {
+        touchLayerReleaseTimerRef.current = window.setTimeout(releaseWhenSettled, 32);
+        return;
+      }
+      const zoomSettled = touchLayersCanRelease({
+        activeTouchCount: activeTouchPointersRef.current.size,
+        pinchActive: Boolean(pinchGestureRef.current),
+        committedZoom: committedReactZoomRef.current,
+        expectedZoom,
+      });
+      if (!zoomSettled && performance.now() - startedAt < 1200) {
+        touchLayerReleaseFrameRef.current = window.requestAnimationFrame(releaseWhenSettled);
+        return;
+      }
+      viewportRef.current?.classList.remove("is-direct-manipulation", "is-map-labels-suspended");
+    };
     touchLayerReleaseFrameRef.current = window.requestAnimationFrame(() => {
       touchLayerReleaseFrameRef.current = null;
       touchLayerReleaseTimerRef.current = window.setTimeout(() => {
         touchLayerReleaseTimerRef.current = null;
-        if (activeTouchPointersRef.current.size > 0 || pinchGestureRef.current) return;
-        viewportRef.current?.classList.remove("is-direct-manipulation", "is-map-labels-suspended");
+        releaseWhenSettled();
       }, delayMs);
     });
-  }, [cancelTouchLayerRelease, viewportRef]);
+  }, [cancelTouchLayerRelease, viewportRef, zoomRef]);
 
-  const finishProgrammaticMapFocus = useCallback(() => {
-    const target = focusTransitionTargetRef.current;
-    if (!target) return;
-    focusTransitionTargetRef.current = null;
+  const clearProgrammaticMapFocus = useCallback(() => {
     if (focusTransitionFrameRef.current !== null) {
       window.cancelAnimationFrame(focusTransitionFrameRef.current);
       focusTransitionFrameRef.current = null;
@@ -182,6 +202,18 @@ export function useMapTransformController({
       stage.style.removeProperty("transform");
     }
     mobileMarkerPlaceholderLayerRef.current?.style.removeProperty("--mobile-marker-gesture-scale");
+  }, [mobileMarkerPlaceholderLayerRef, stageRef, stageWrapRef]);
+
+  const cancelProgrammaticMapFocus = useCallback(() => {
+    focusTransitionTargetRef.current = null;
+    clearProgrammaticMapFocus();
+  }, [clearProgrammaticMapFocus]);
+
+  const finishProgrammaticMapFocus = useCallback(() => {
+    const target = focusTransitionTargetRef.current;
+    if (!target) return;
+    focusTransitionTargetRef.current = null;
+    clearProgrammaticMapFocus();
     setMapLayoutZoom(target.zoom);
     setMapPan(target.pan);
     setMapRenderPan(target.pan);
@@ -190,8 +222,8 @@ export function useMapTransformController({
     startTransition(() => {
       setZoom(target.zoom);
     });
-    scheduleTouchLayerRelease(viewportRef.current?.clientWidth && viewportRef.current.clientWidth <= 760 ? 170 : 80);
-  }, [mobileMarkerPlaceholderLayerRef, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan, setMapRenderPan, setZoom, stageRef, stageWrapRef, viewportRef, zoomRef]);
+    scheduleTouchLayerRelease(viewportRef.current?.clientWidth && viewportRef.current.clientWidth <= 760 ? 170 : 80, target.zoom);
+  }, [clearProgrammaticMapFocus, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan, setMapRenderPan, setZoom, viewportRef, zoomRef]);
 
   const beginTouchMapTransform = useCallback(() => {
     finishProgrammaticMapFocus();
@@ -217,7 +249,7 @@ export function useMapTransformController({
     startTransition(() => {
       setZoom(committedZoom);
     });
-    scheduleTouchLayerRelease(zoomChanged && viewportRef.current?.clientWidth && viewportRef.current.clientWidth <= 760 ? 170 : 80);
+    scheduleTouchLayerRelease(zoomChanged && viewportRef.current?.clientWidth && viewportRef.current.clientWidth <= 760 ? 170 : 80, committedZoom);
   }, [flushTouchMapTransform, mobileMarkerPlaceholderLayerRef, panRef, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan, setMapRenderPan, setZoom, stageRef, viewportRef, zoomRef]);
 
   const beginPinchGesture = useCallback(() => {
@@ -242,6 +274,29 @@ export function useMapTransformController({
     clearInteraction();
     return true;
   }, [beginTouchMapTransform, clearInteraction, panRef, viewportRef, zoomRef]);
+
+  const applyPendingWheelTransform = useCallback(() => {
+    const next = pendingWheelRef.current;
+    pendingWheelRef.current = null;
+    if (!next) return false;
+    const currentZoom = zoomRef.current;
+    const currentPan = panRef.current;
+    const nextZoom = clamp(currentZoom * Math.exp(-next.deltaY * 0.0012), fitZoom, 4);
+    const ratio = nextZoom / Math.max(currentZoom, 0.01);
+    queueTouchMapTransform(nextZoom, {
+      x: next.cursorX - (next.cursorX - currentPan.x) * ratio,
+      y: next.cursorY - (next.cursorY - currentPan.y) * ratio,
+    });
+    return true;
+  }, [fitZoom, panRef, queueTouchMapTransform, zoomRef]);
+
+  const flushPendingWheelFrame = useCallback(() => {
+    if (wheelFrameRef.current !== null) {
+      window.cancelAnimationFrame(wheelFrameRef.current);
+      wheelFrameRef.current = null;
+    }
+    return applyPendingWheelTransform();
+  }, [applyPendingWheelTransform]);
 
   const handleWheel = useCallback((
     event: ReactWheelEvent<HTMLDivElement>,
@@ -279,42 +334,46 @@ export function useMapTransformController({
     if (wheelFrameRef.current !== null) return;
     wheelFrameRef.current = window.requestAnimationFrame(() => {
       wheelFrameRef.current = null;
-      const next = pendingWheelRef.current;
-      pendingWheelRef.current = null;
-      if (!next) return;
-      const currentZoom = zoomRef.current;
-      const currentPan = panRef.current;
-      const nextZoom = clamp(currentZoom * Math.exp(-next.deltaY * 0.0012), fitZoom, 4);
-      const ratio = nextZoom / currentZoom;
-      const nextPan = {
-        x: next.cursorX - (next.cursorX - currentPan.x) * ratio,
-        y: next.cursorY - (next.cursorY - currentPan.y) * ratio,
-      };
-      queueTouchMapTransform(nextZoom, nextPan);
+      applyPendingWheelTransform();
     });
     if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
     wheelCommitTimerRef.current = window.setTimeout(() => {
       wheelCommitTimerRef.current = null;
       wheelGestureAnchorRef.current = null;
+      flushPendingWheelFrame();
       commitTouchMapTransform();
       onSettle("pinch-settle");
     }, 110);
-  }, [beginTouchMapTransform, commitTouchMapTransform, fitZoom, panRef, publicLayoutAccess, queueTouchMapTransform, setEditorMapPan, setZoom, viewportRef, zoomRef]);
+  }, [applyPendingWheelTransform, beginTouchMapTransform, commitTouchMapTransform, flushPendingWheelFrame, panRef, publicLayoutAccess, setEditorMapPan, setZoom, viewportRef, zoomRef]);
 
   const commitPendingWheelTransform = useCallback(() => {
-    if (wheelCommitTimerRef.current === null) return false;
-    window.clearTimeout(wheelCommitTimerRef.current);
+    const hadPendingWheel = wheelCommitTimerRef.current !== null
+      || wheelFrameRef.current !== null
+      || pendingWheelRef.current !== null;
+    if (!hadPendingWheel) return false;
+    if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
     wheelCommitTimerRef.current = null;
+    flushPendingWheelFrame();
     wheelGestureAnchorRef.current = null;
     commitTouchMapTransform();
     return true;
-  }, [commitTouchMapTransform]);
+  }, [commitTouchMapTransform, flushPendingWheelFrame]);
+
+  const discardPendingWheelTransform = useCallback(() => {
+    if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
+    if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
+    wheelFrameRef.current = null;
+    wheelCommitTimerRef.current = null;
+    pendingWheelRef.current = null;
+    wheelGestureAnchorRef.current = null;
+  }, []);
 
   const startProgrammaticMapFocus = useCallback((
     target: TransformTarget,
     viewportWidth: number,
     reduceMotion: boolean,
   ) => {
+    discardPendingWheelTransform();
     finishProgrammaticMapFocus();
     const stageWrap = stageWrapRef.current;
     const stage = stageRef.current;
@@ -339,13 +398,31 @@ export function useMapTransformController({
       stage.style.transform = mapStageGestureTransform(target.zoom / currentLayoutZoom, viewportWidth);
     });
     focusTransitionTimerRef.current = window.setTimeout(finishProgrammaticMapFocus, 320);
-  }, [cancelTouchLayerRelease, finishProgrammaticMapFocus, stageRef, stageWrapRef, viewportRef, zoomRef]);
+  }, [cancelTouchLayerRelease, discardPendingWheelTransform, finishProgrammaticMapFocus, stageRef, stageWrapRef, viewportRef, zoomRef]);
+
+  const cancelTransientMapTransforms = useCallback(() => {
+    discardPendingWheelTransform();
+    cancelProgrammaticMapFocus();
+    cancelTouchLayerRelease();
+    if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
+    touchTransformFrameRef.current = null;
+    pendingTouchTransformRef.current = null;
+    activeTouchPointersRef.current.clear();
+    pinchGestureRef.current = null;
+    panInteractionRef.current = null;
+    stageRef.current?.style.removeProperty("transform");
+    stageWrapRef.current?.style.removeProperty("transition");
+    mobileMarkerPlaceholderLayerRef.current?.style.removeProperty("--mobile-marker-gesture-scale");
+    viewportRef.current?.classList.remove("is-panning", "is-direct-manipulation", "is-map-labels-suspended");
+    touchTransformBaseZoomRef.current = zoomRef.current;
+  }, [cancelProgrammaticMapFocus, cancelTouchLayerRelease, discardPendingWheelTransform, mobileMarkerPlaceholderLayerRef, stageRef, stageWrapRef, viewportRef, zoomRef]);
 
   useLayoutEffect(() => {
     if (publicLayoutAccess === "viewer") setMapPan(panRef.current);
   }, [panRef, publicLayoutAccess, setMapPan]);
 
   useLayoutEffect(() => {
+    committedReactZoomRef.current = zoom;
     zoomRef.current = zoom;
     if (publicLayoutAccess === "viewer") setMapLayoutZoom(zoom);
   }, [publicLayoutAccess, setMapLayoutZoom, zoom, zoomRef]);
@@ -363,21 +440,9 @@ export function useMapTransformController({
   }, [publicLayoutAccess, viewportRef, zoom]);
 
   useEffect(() => () => {
-    if (wheelFrameRef.current !== null) window.cancelAnimationFrame(wheelFrameRef.current);
-    if (wheelCommitTimerRef.current !== null) window.clearTimeout(wheelCommitTimerRef.current);
+    cancelTransientMapTransforms();
     if (editorLabelRevealTimerRef.current !== null) window.clearTimeout(editorLabelRevealTimerRef.current);
-    if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
-    if (touchLayerReleaseFrameRef.current !== null) window.cancelAnimationFrame(touchLayerReleaseFrameRef.current);
-    if (touchLayerReleaseTimerRef.current !== null) window.clearTimeout(touchLayerReleaseTimerRef.current);
-    if (focusTransitionFrameRef.current !== null) window.cancelAnimationFrame(focusTransitionFrameRef.current);
-    if (focusTransitionTimerRef.current !== null) window.clearTimeout(focusTransitionTimerRef.current);
-    activeTouchPointersRef.current.clear();
-    panInteractionRef.current = null;
-    pinchGestureRef.current = null;
-    pendingTouchTransformRef.current = null;
-    wheelGestureAnchorRef.current = null;
-    focusTransitionTargetRef.current = null;
-  }, []);
+  }, [cancelTransientMapTransforms]);
 
   return {
     activeTouchPointersRef,
@@ -392,7 +457,10 @@ export function useMapTransformController({
     beginPinchGesture,
     handleWheel,
     commitPendingWheelTransform,
+    discardPendingWheelTransform,
     finishProgrammaticMapFocus,
+    cancelProgrammaticMapFocus,
+    cancelTransientMapTransforms,
     startProgrammaticMapFocus,
   };
 }

@@ -1,16 +1,20 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import {
+  validDenseLabelExcludedIds,
+  validDenseLabelPosition,
+  validateDenseLabelSettingsPayload,
+} from "../../map/labels/settings-contract.mjs";
+import {
+  expectedSettingsRevision,
+  readSettingsRevision,
+  settingsConflictResponse,
+  withSettingsWriteLock,
+} from "../settings-concurrency";
 
 export const runtime = "edge";
 
 type RuntimeEnv = AdminRuntimeEnv & {
   DB?: D1Database;
-};
-
-type DenseLabelPosition = {
-  key: string;
-  elementIds: string[];
-  x: number;
-  y: number;
 };
 
 const TABLE_SQL = `CREATE TABLE IF NOT EXISTS dense_label_settings (
@@ -35,54 +39,32 @@ function ownerAccess(request: Request, runtime: RuntimeEnv) {
   return { canEdit: access.allowed, currentEmail: access.actor };
 }
 
-function finiteCoordinate(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
-}
-
-function validPosition(value: unknown): value is DenseLabelPosition {
-  if (!value || typeof value !== "object") return false;
-  const position = value as Partial<DenseLabelPosition>;
-  return typeof position.key === "string"
-    && position.key.length > 0
-    && position.key.length <= 1200
-    && Array.isArray(position.elementIds)
-    && position.elementIds.length >= 2
-    && position.elementIds.length <= 4
-    && position.elementIds.every((id) => typeof id === "string" && id.length > 0 && id.length <= 220)
-    && new Set(position.elementIds).size === position.elementIds.length
-    && finiteCoordinate(position.x)
-    && finiteCoordinate(position.y);
-}
-
-function validExcludedIds(value: unknown): value is string[] {
-  return Array.isArray(value)
-    && value.length <= 500
-    && value.every((id) => typeof id === "string" && id.length > 0 && id.length <= 220)
-    && new Set(value).size === value.length;
-}
-
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit } = ownerAccess(request, runtime);
-  if (!runtime.DB) return json({ positions: [], excludedElementIds: [], persistent: false, canEdit, updatedAt: null }, 503);
+  if (!runtime.DB) return json({ positions: [], excludedElementIds: [], persistent: false, canEdit, updatedAt: null, revision: 0 }, 503);
   await runtime.DB.prepare(TABLE_SQL).run();
-  const row = await runtime.DB.prepare(
-    `SELECT positions_json AS positionsJson, excluded_element_ids_json AS excludedElementIdsJson,
-      updated_at AS updatedAt FROM dense_label_settings WHERE id = 1`,
-  ).first() as { positionsJson: string; excludedElementIdsJson: string; updatedAt: string } | null;
-  if (!row) return json({ positions: [], excludedElementIds: [], persistent: true, canEdit, updatedAt: null });
+  const [row, revision] = await Promise.all([
+    runtime.DB.prepare(
+      `SELECT positions_json AS positionsJson, excluded_element_ids_json AS excludedElementIdsJson,
+        updated_at AS updatedAt FROM dense_label_settings WHERE id = 1`,
+    ).first() as Promise<{ positionsJson: string; excludedElementIdsJson: string; updatedAt: string } | null>,
+    readSettingsRevision(runtime.DB, "dense-label-settings"),
+  ]);
+  if (!row) return json({ positions: [], excludedElementIds: [], persistent: true, canEdit, updatedAt: null, revision });
   try {
     const positions = JSON.parse(row.positionsJson) as unknown;
     const excludedElementIds = JSON.parse(row.excludedElementIdsJson) as unknown;
     return json({
-      positions: Array.isArray(positions) ? positions.filter(validPosition) : [],
-      excludedElementIds: validExcludedIds(excludedElementIds) ? excludedElementIds : [],
+      positions: Array.isArray(positions) ? positions.filter(validDenseLabelPosition) : [],
+      excludedElementIds: validDenseLabelExcludedIds(excludedElementIds) ? excludedElementIds : [],
       persistent: true,
       canEdit,
       updatedAt: row.updatedAt,
+      revision,
     });
   } catch {
-    return json({ positions: [], excludedElementIds: [], persistent: true, canEdit, updatedAt: row.updatedAt });
+    return json({ positions: [], excludedElementIds: [], persistent: true, canEdit, updatedAt: row.updatedAt, revision });
   }
 }
 
@@ -97,25 +79,31 @@ export async function PUT(request: Request) {
   } catch {
     return json({ error: "invalid json" }, 400);
   }
-  const positions = (payload as { positions?: unknown })?.positions;
-  const excludedElementIds = (payload as { excludedElementIds?: unknown })?.excludedElementIds;
-  if (!Array.isArray(positions) || positions.length > 500 || !positions.every(validPosition) || !validExcludedIds(excludedElementIds)) {
-    return json({ error: "valid dense label settings required" }, 400);
-  }
-  if (new Set(positions.map((position) => position.key)).size !== positions.length) {
-    return json({ error: "duplicate dense label key" }, 400);
-  }
+  const validation = validateDenseLabelSettingsPayload(payload);
+  if (!validation.ok) return json(validation, 400);
+  const { positions, excludedElementIds } = validation;
+  const expectedRevision = expectedSettingsRevision(payload);
+  if (expectedRevision === null) return json({ error: "settings revision required" }, 400);
   await runtime.DB.prepare(TABLE_SQL).run();
-  const updatedAt = new Date().toISOString();
-  await runtime.DB.prepare(
-    `INSERT INTO dense_label_settings
-      (id, positions_json, excluded_element_ids_json, updated_at, updated_by)
-     VALUES (1, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       positions_json = excluded.positions_json,
-       excluded_element_ids_json = excluded.excluded_element_ids_json,
-       updated_at = excluded.updated_at,
-       updated_by = excluded.updated_by`,
-  ).bind(JSON.stringify(positions), JSON.stringify(excludedElementIds), updatedAt, currentEmail).run();
-  return json({ positions, excludedElementIds, persistent: true, canEdit: true, updatedAt });
+  try {
+    return json(await withSettingsWriteLock({
+      db: runtime.DB,
+      resource: "dense-label-settings",
+      expectedRevision,
+      actor: currentEmail,
+      buildStatements: (_revision, updatedAt) => [runtime.DB!.prepare(
+        `INSERT INTO dense_label_settings
+          (id, positions_json, excluded_element_ids_json, updated_at, updated_by)
+         VALUES (1, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           positions_json = excluded.positions_json,
+           excluded_element_ids_json = excluded.excluded_element_ids_json,
+           updated_at = excluded.updated_at,
+           updated_by = excluded.updated_by`,
+      ).bind(JSON.stringify(positions), JSON.stringify(excludedElementIds), updatedAt, currentEmail)],
+      result: (revision, updatedAt) => ({ positions, excludedElementIds, persistent: true, canEdit: true, updatedAt, revision }),
+    }));
+  } catch (error) {
+    return settingsConflictResponse(error) ?? json({ error: "dense label settings save failed" }, 500);
+  }
 }

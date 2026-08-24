@@ -84,6 +84,19 @@ export const denseLabelSettings = sqliteTable("dense_label_settings", {
   updatedBy: text("updated_by").notNull(),
 });
 
+export const settingsResourceRevisions = sqliteTable("settings_resource_revisions", {
+  resource: text("resource").primaryKey(),
+  revision: integer("revision").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+});
+
+export const settingsResourceLocks = sqliteTable("settings_resource_locks", {
+  resource: text("resource").primaryKey(),
+  token: text("token").notNull(),
+  expiresAt: text("expires_at").notNull(),
+});
+
 export const placementSettings = sqliteTable("placement_settings", {
   placeKey: text("place_key").primaryKey(),
   directoryId: text("directory_id"),

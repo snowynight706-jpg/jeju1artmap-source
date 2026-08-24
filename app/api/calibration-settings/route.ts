@@ -1,4 +1,10 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import {
+  expectedSettingsRevision,
+  readSettingsRevision,
+  settingsConflictResponse,
+  withSettingsWriteLock,
+} from "../settings-concurrency";
 
 export const runtime = "edge";
 
@@ -49,13 +55,16 @@ function validPoint(value: unknown): value is CalibrationInput {
 
 export async function GET() {
   const runtime = await runtimeEnv();
-  if (!runtime.DB) return json({ points: [], persistent: false }, 503);
-  const result = await runtime.DB.prepare(
-    "SELECT name, source_x AS sourceX, source_y AS sourceY, target_x AS targetX, target_y AS targetY, updated_at AS updatedAt FROM primary_calibration_settings ORDER BY name",
-  ).all() as { results: Array<CalibrationInput & { updatedAt: string }> };
+  if (!runtime.DB) return json({ points: [], persistent: false, revision: 0 }, 503);
+  const [result, revision] = await Promise.all([
+    runtime.DB.prepare(
+      "SELECT name, source_x AS sourceX, source_y AS sourceY, target_x AS targetX, target_y AS targetY, updated_at AS updatedAt FROM primary_calibration_settings ORDER BY name",
+    ).all() as Promise<{ results: Array<CalibrationInput & { updatedAt: string }> }>,
+    readSettingsRevision(runtime.DB, "calibration-settings"),
+  ]);
   const rows = result.results.filter(validPoint);
   const updatedAt = rows.reduce((latest, point) => typeof point.updatedAt === "string" && point.updatedAt > latest ? point.updatedAt : latest, "");
-  return json({ points: rows, persistent: true, updatedAt: updatedAt || null });
+  return json({ points: rows, persistent: true, updatedAt: updatedAt || null, revision });
 }
 
 export async function PUT(request: Request) {
@@ -77,19 +86,30 @@ export async function PUT(request: Request) {
   if (new Set(points.map((point) => point.name)).size !== PRIMARY_NAMES.size) {
     return json({ error: "duplicate primary calibration point" }, 400);
   }
+  const expectedRevision = expectedSettingsRevision(payload);
+  if (expectedRevision === null) return json({ error: "settings revision required" }, 400);
 
-  const updatedAt = new Date().toISOString();
-  await runtime.DB.batch(points.map((point) => runtime.DB!.prepare(
-    `INSERT INTO primary_calibration_settings
-      (name, source_x, source_y, target_x, target_y, updated_at, updated_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(name) DO UPDATE SET
-      source_x = excluded.source_x,
-      source_y = excluded.source_y,
-      target_x = excluded.target_x,
-      target_y = excluded.target_y,
-      updated_at = excluded.updated_at,
-      updated_by = excluded.updated_by`,
-  ).bind(point.name, point.sourceX, point.sourceY, point.targetX, point.targetY, updatedAt, access.actor)));
-  return json({ points, persistent: true, updatedAt });
+  try {
+    return json(await withSettingsWriteLock({
+      db: runtime.DB,
+      resource: "calibration-settings",
+      expectedRevision,
+      actor: access.actor,
+      buildStatements: (_revision, updatedAt) => points.map((point) => runtime.DB!.prepare(
+        `INSERT INTO primary_calibration_settings
+          (name, source_x, source_y, target_x, target_y, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET
+          source_x = excluded.source_x,
+          source_y = excluded.source_y,
+          target_x = excluded.target_x,
+          target_y = excluded.target_y,
+          updated_at = excluded.updated_at,
+          updated_by = excluded.updated_by`,
+      ).bind(point.name, point.sourceX, point.sourceY, point.targetX, point.targetY, updatedAt, access.actor)),
+      result: (revision, updatedAt) => ({ points, persistent: true, updatedAt, revision }),
+    }));
+  } catch (error) {
+    return settingsConflictResponse(error) ?? json({ error: "calibration settings save failed" }, 500);
+  }
 }

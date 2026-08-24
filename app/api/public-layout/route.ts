@@ -4,10 +4,14 @@ import { contentSummaryFromBatchResults } from "../../content-summary.mjs";
 import { normalizeOptionalLabelScaleSteps } from "../../map/labels/density.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
 import { stabilizeMainHubDocument } from "../../editor/document/main-hub-persistence.mjs";
+import {
+  D1_SAFE_ROW_BYTES,
+  validateD1RowBudget,
+} from "../storage-budget.mjs";
 
 export const runtime = "edge";
 
-const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
+const MAX_DOCUMENT_BYTES = D1_SAFE_ROW_BYTES;
 const MAX_ELEMENTS = 1200;
 const MAX_ASSETS = 900;
 
@@ -78,6 +82,16 @@ async function runtimeEnv() {
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
+}
+
+function rowBudgetError(label: string, values: unknown[]) {
+  const budget = validateD1RowBudget(values);
+  return budget.ok ? null : json({
+    error: `${label} exceeds the safe D1 row budget`,
+    code: "D1_ROW_BUDGET_EXCEEDED",
+    bytes: budget.bytes,
+    maximumBytes: budget.maximumBytes,
+  }, 413);
 }
 
 async function cacheableJson(request: Request, body: unknown, status = 200) {
@@ -500,6 +514,13 @@ export async function PATCH(request: Request) {
   if (current && baseRevision !== current.revision) {
     return json({ error: "editor draft changed", updatedAt: current.updatedAt, draftRevision: current.revision }, 409);
   }
+  const draftBudgetError = rowBudgetError("editor draft", [
+    documentJson,
+    viewSettingsJson,
+    current?.documentJson,
+    current?.viewSettingsJson,
+  ]);
+  if (draftBudgetError) return draftBudgetError;
   const updatedAt = new Date().toISOString();
   const revision = (current?.revision ?? 0) + 1;
   await runtime.DB.prepare(
@@ -553,6 +574,12 @@ export async function PUT(request: Request) {
   if (current && baseRevision !== current.revision) {
     return json({ error: "public layout changed", publishedAt: current.publishedAt, revision: current.revision }, 409);
   }
+  const layoutBudgetError = rowBudgetError("public layout", [documentJson, viewSettingsJson, current?.documentJson, current?.viewSettingsJson]);
+  if (layoutBudgetError) return layoutBudgetError;
+  const publishedDraftBudgetError = rowBudgetError("editor draft", [documentJson, viewSettingsJson, currentDraft?.documentJson, currentDraft?.viewSettingsJson]);
+  if (publishedDraftBudgetError) return publishedDraftBudgetError;
+  const publishedHistoryBudgetError = rowBudgetError("layout history", [documentJson, viewSettingsJson]);
+  if (publishedHistoryBudgetError) return publishedHistoryBudgetError;
   const publishedAt = new Date().toISOString();
   const revision = (current?.revision ?? 0) + 1;
   const draftRevision = (currentDraft?.revision ?? 0) + 1;
@@ -651,6 +678,10 @@ export async function POST(request: Request) {
     const view = normalizeViewSettings(payload.view);
     const viewSettingsJson = JSON.stringify(view);
     const [current, currentDraft] = await Promise.all([readLayout(runtime.DB), readDraft(runtime.DB)]);
+    const historyBudgetError = rowBudgetError("layout history", [documentJson, viewSettingsJson]);
+    if (historyBudgetError) return historyBudgetError;
+    const historyDraftBudgetError = rowBudgetError("editor draft", [documentJson, viewSettingsJson, currentDraft?.documentJson, currentDraft?.viewSettingsJson]);
+    if (historyDraftBudgetError) return historyDraftBudgetError;
     const createdAt = new Date().toISOString();
     const historyId = crypto.randomUUID();
     const sourceRevision = current?.revision ?? 0;
@@ -691,6 +722,13 @@ export async function POST(request: Request) {
     }
     const restoredDraftDocument = stabilizeMainHubDocument(JSON.parse(currentDraft.previousDocumentJson) as unknown);
     const restoredDraftDocumentJson = JSON.stringify(restoredDraftDocument);
+    const restoredDraftBudgetError = rowBudgetError("editor draft", [
+      restoredDraftDocumentJson,
+      currentDraft.previousViewSettingsJson,
+      currentDraft.documentJson,
+      currentDraft.viewSettingsJson,
+    ]);
+    if (restoredDraftBudgetError) return restoredDraftBudgetError;
     const updatedAt = new Date().toISOString();
     const revision = currentDraft.revision + 1;
     await runtime.DB.prepare(
@@ -732,6 +770,12 @@ export async function POST(request: Request) {
   const publishedAt = new Date().toISOString();
   const revision = current.revision + 1;
   const currentDraft = await readDraft(runtime.DB);
+  const restoredLayoutBudgetError = rowBudgetError("public layout", [restoredDocumentJson, restoredViewSettingsJson, current.documentJson, current.viewSettingsJson]);
+  if (restoredLayoutBudgetError) return restoredLayoutBudgetError;
+  const restoredDraftBudgetError = rowBudgetError("editor draft", [restoredDocumentJson, restoredViewSettingsJson, currentDraft?.documentJson, currentDraft?.viewSettingsJson]);
+  if (restoredDraftBudgetError) return restoredDraftBudgetError;
+  const restoredHistoryBudgetError = rowBudgetError("layout history", [restoredDocumentJson, restoredViewSettingsJson]);
+  if (restoredHistoryBudgetError) return restoredHistoryBudgetError;
   const draftRevision = (currentDraft?.revision ?? 0) + 1;
   const historyId = crypto.randomUUID();
   const historyCounts = documentCounts(restoredCompleted.document);

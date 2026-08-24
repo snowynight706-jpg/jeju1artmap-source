@@ -324,6 +324,7 @@ export function useMapRuntimeLifecycle({
     const previousFitZoom = fitZoomRef.current;
     const wasAtFit = Math.abs(zoom - previousFitZoom) <= 0.018;
     fitZoomRef.current = fitZoom;
+    if (viewportRef.current?.classList.contains("is-direct-manipulation")) return;
     if (!fitZoomAppliedRef.current || wasAtFit || (publicLayoutAccess === "viewer" && zoom < fitZoom - 0.002)) {
       fitZoomAppliedRef.current = true;
       const frame = window.requestAnimationFrame(() => {
@@ -334,7 +335,7 @@ export function useMapRuntimeLifecycle({
       });
       return () => window.cancelAnimationFrame(frame);
     }
-  }, [fitZoom, fitZoomAppliedRef, fitZoomRef, publicLayoutAccess, setEditorMapPan, setMapPan, setZoom, viewportDimensions.height, viewportDimensions.width, zoom, zoomRef]);
+  }, [fitZoom, fitZoomAppliedRef, fitZoomRef, publicLayoutAccess, setEditorMapPan, setMapPan, setZoom, viewportDimensions.height, viewportDimensions.width, viewportRef, zoom, zoomRef]);
 
   useEffect(() => {
     if (

@@ -40,7 +40,6 @@ test("mobile PWA uses a light root fallback and lightweight category-colored omi
   assert.match(pageSource, /element\.category === "landmark"[\s\S]{0,260}element\.x >= bounds\.left/);
   assert.match(pageSource, /cluster\.elementIds\.every\(\(elementId\) => renderedElementsById\.has\(elementId\)\)/);
   assert.match(pageSource, /clusteredLabelElementIds=\{renderedClusteredLabelElementIds\}/);
-  assert.match(pageSource, /zoomChanged[\s\S]{0,680}scheduleTouchLayerRelease\([\s\S]{0,120}\? 170 : 80\)/);
   assert.match(pageSource, /<MobileMarkerPlaceholderLayer[\s\S]{0,180}elements=\{mobilePlaceholderElements\}/);
   assert.doesNotMatch(pageSource, /mobileMarkerBudgetForScale|chooseMobileMarkerRenderIds/);
   assert.match(pageSource, /if \(!overviewSimplified\) return \{ rendered: elements, placeholders: \[\] as MapElement\[\] \}/);

@@ -1,4 +1,10 @@
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import {
+  expectedSettingsRevision,
+  readSettingsRevision,
+  settingsConflictResponse,
+  withSettingsWriteLock,
+} from "../settings-concurrency";
 
 export const runtime = "edge";
 
@@ -61,19 +67,21 @@ function validSetting(value: unknown): value is LockedCoordinateInput {
 
 export async function GET() {
   const runtime = await runtimeEnv();
-  if (!runtime.DB) return json({ settings: [], persistent: false, updatedAt: null }, 503);
-  const [settingsResult, revision] = await Promise.all([
+  if (!runtime.DB) return json({ settings: [], persistent: false, updatedAt: null, revision: 0 }, 503);
+  const [settingsResult, legacyRevision, revision] = await Promise.all([
     runtime.DB.prepare(
       `SELECT element_key AS key, directory_id AS directoryId, name, category,
         anchor_x AS anchorX, anchor_y AS anchorY, output_x AS x, output_y AS y
        FROM locked_coordinate_settings ORDER BY name`,
     ).all() as Promise<{ results: LockedCoordinateInput[] }>,
     runtime.DB.prepare("SELECT updated_at AS updatedAt FROM locked_coordinate_revision WHERE id = 1").first() as Promise<{ updatedAt: string } | null>,
+    readSettingsRevision(runtime.DB, "locked-coordinate-settings"),
   ]);
   return json({
     settings: settingsResult.results.filter(validSetting),
     persistent: true,
-    updatedAt: revision?.updatedAt ?? null,
+    updatedAt: legacyRevision?.updatedAt ?? null,
+    revision,
   });
 }
 
@@ -96,32 +104,35 @@ export async function PUT(request: Request) {
   if (new Set(settings.map((setting) => setting.key)).size !== settings.length) {
     return json({ error: "duplicate locked coordinate key" }, 400);
   }
+  const expectedRevision = expectedSettingsRevision(payload);
+  if (expectedRevision === null) return json({ error: "settings revision required" }, 400);
 
-  const updatedAt = new Date().toISOString();
-  const statements = [runtime.DB.prepare("DELETE FROM locked_coordinate_settings")];
-  settings.forEach((setting) => {
-    statements.push(runtime.DB!.prepare(
-      `INSERT INTO locked_coordinate_settings
-        (element_key, directory_id, name, category, anchor_x, anchor_y, output_x, output_y, updated_at, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      setting.key,
-      setting.directoryId ?? null,
-      setting.name.trim(),
-      setting.category,
-      setting.anchorX,
-      setting.anchorY,
-      setting.x,
-      setting.y,
-      updatedAt,
-      access.actor,
-    ));
-  });
-  statements.push(runtime.DB.prepare(
-    `INSERT INTO locked_coordinate_revision (id, updated_at, updated_by)
-     VALUES (1, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-  ).bind(updatedAt, access.actor));
-  await runtime.DB.batch(statements);
-  return json({ settings, persistent: true, updatedAt });
+  try {
+    return json(await withSettingsWriteLock({
+      db: runtime.DB,
+      resource: "locked-coordinate-settings",
+      expectedRevision,
+      actor: access.actor,
+      buildStatements: (_revision, updatedAt) => {
+        const statements = [runtime.DB!.prepare("DELETE FROM locked_coordinate_settings")];
+        settings.forEach((setting) => {
+          statements.push(runtime.DB!.prepare(
+            `INSERT INTO locked_coordinate_settings
+              (element_key, directory_id, name, category, anchor_x, anchor_y, output_x, output_y, updated_at, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).bind(setting.key, setting.directoryId ?? null, setting.name.trim(), setting.category,
+            setting.anchorX, setting.anchorY, setting.x, setting.y, updatedAt, access.actor));
+        });
+        statements.push(runtime.DB!.prepare(
+          `INSERT INTO locked_coordinate_revision (id, updated_at, updated_by)
+           VALUES (1, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+        ).bind(updatedAt, access.actor));
+        return statements;
+      },
+      result: (revision, updatedAt) => ({ settings, persistent: true, updatedAt, revision }),
+    }));
+  } catch (error) {
+    return settingsConflictResponse(error) ?? json({ error: "locked coordinate settings save failed" }, 500);
+  }
 }

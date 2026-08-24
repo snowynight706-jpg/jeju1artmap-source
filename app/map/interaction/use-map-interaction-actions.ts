@@ -30,6 +30,7 @@ import type {
   StageDimensions,
 } from "../core/types";
 import type { useMapTransformController } from "./use-map-transform-controller";
+import { touchReleaseDecision } from "./gesture-lifecycle.mjs";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 type Point = { x: number; y: number };
@@ -250,7 +251,6 @@ export function useMapInteractionActions({
   }, [mobileSlowSettleSamplesRef, performanceSettleSamplesRef, publicLayoutAccess, sendPerformanceDiagnostic, setMobileRenderBudget, stageLabelElementCount, viewportDimensions.height, viewportDimensions.width, visibleElementCount]);
 
   useEffect(() => {
-    const viewportElement = viewportRef.current;
     let moveFrame: number | null = null;
     let pendingMove: { clientX: number; clientY: number } | null = null;
     const applyMove = ({ clientX, clientY }: { clientX: number; clientY: number }) => {
@@ -366,13 +366,18 @@ export function useMapInteractionActions({
     const handleUp = (event: PointerEvent) => {
       const trackedTouch = event.pointerType === "touch" && activeTouchPointersRef.current.has(event.pointerId);
       const pinch = pinchGestureRef.current;
+      const pinchMember = Boolean(pinch?.pointerIds.includes(event.pointerId));
       if (trackedTouch) activeTouchPointersRef.current.delete(event.pointerId);
-      if (pinch && pinch.pointerIds.includes(event.pointerId)) {
+      const releaseDecision = touchReleaseDecision({
+        trackedTouch,
+        pinchMember,
+        remainingTouchCount: activeTouchPointersRef.current.size,
+        hadPan: Boolean(panInteractionRef.current),
+      });
+      if (pinchMember) {
         pinchGestureRef.current = null;
-        commitTouchMapTransform();
-        recordMapSettle("pinch-settle");
         const remaining = activeTouchPointersRef.current.values().next().value as { clientX: number; clientY: number } | undefined;
-        if (remaining) {
+        if (releaseDecision === "continue-pan" && remaining) {
           panInteractionRef.current = {
             startX: remaining.clientX,
             startY: remaining.clientY,
@@ -381,6 +386,8 @@ export function useMapInteractionActions({
           };
           viewportRef.current?.classList.add("is-panning");
         } else {
+          commitTouchMapTransform();
+          recordMapSettle("pinch-settle");
           panInteractionRef.current = null;
           viewportRef.current?.classList.remove("is-panning");
           setInteraction(null);
@@ -428,12 +435,31 @@ export function useMapInteractionActions({
       setInteraction(null);
     };
     const handleCancel = (event: PointerEvent) => {
-      if (event.pointerType === "touch") activeTouchPointersRef.current.delete(event.pointerId);
-      if (pinchGestureRef.current?.pointerIds.includes(event.pointerId)) pinchGestureRef.current = null;
+      const trackedTouch = event.pointerType === "touch" && activeTouchPointersRef.current.has(event.pointerId);
+      const cancelledPinch = Boolean(pinchGestureRef.current?.pointerIds.includes(event.pointerId));
+      if (trackedTouch) activeTouchPointersRef.current.delete(event.pointerId);
+      if (cancelledPinch) pinchGestureRef.current = null;
       pendingMove = null;
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
       moveFrame = null;
-      if (panInteractionRef.current || event.pointerType === "touch") commitTouchMapTransform();
+      const remaining = activeTouchPointersRef.current.values().next().value as { clientX: number; clientY: number } | undefined;
+      const releaseDecision = touchReleaseDecision({
+        trackedTouch,
+        pinchMember: cancelledPinch,
+        remainingTouchCount: activeTouchPointersRef.current.size,
+        hadPan: Boolean(panInteractionRef.current),
+      });
+      if (releaseDecision === "continue-pan" && remaining) {
+        panInteractionRef.current = {
+          startX: remaining.clientX,
+          startY: remaining.clientY,
+          panX: panRef.current.x,
+          panY: panRef.current.y,
+        };
+        viewportRef.current?.classList.add("is-panning");
+        return;
+      }
+      if (releaseDecision === "commit") commitTouchMapTransform();
       panInteractionRef.current = null;
       viewportRef.current?.classList.remove("is-panning");
       scheduleTouchLayerRelease();
@@ -447,8 +473,6 @@ export function useMapInteractionActions({
       window.removeEventListener("pointerup", handleUp);
       window.removeEventListener("pointercancel", handleCancel);
       if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
-      panInteractionRef.current = null;
-      viewportElement?.classList.remove("is-panning");
     };
   }, [activeTouchPointersRef, clientToMap, commitTouchMapTransform, elementsRef, fitZoom, interaction, panInteractionRef, panRef, pinchGestureRef, placeEventFormOpen, placeEventMultiPlace, placeEventNoPlace, queueTouchMapTransform, recordMapSettle, scheduleTouchLayerRelease, selectPublicMarker, setEditorMapPan, setInteraction, setPlaceRequestLocation, setToast, stageRef, syncReviewedPlaceRequestLocation, togglePlaceEventMapSelection, updateCalibrationPoint, updateDenseLabelPosition, updateElement, viewportRef, zoomRef]);
 

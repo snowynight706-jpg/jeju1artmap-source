@@ -24,6 +24,7 @@ export function usePrintSettingsPersistence({
   onMessage,
 }: UsePrintSettingsPersistenceOptions) {
   const settingsRef = useRef<PrintPlaceSetting[]>([]);
+  const revisionRef = useRef(0);
   const [settings, setSettings] = useState<PrintPlaceSetting[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [storage, setStorage] = useState<"loading" | "persistent" | "local">("loading");
@@ -37,6 +38,7 @@ export function usePrintSettingsPersistence({
           settings?: PrintPlaceSetting[];
           persistent?: boolean;
           canEdit?: boolean;
+          revision?: number;
         } | null;
         if (!response.ok && response.status !== 503) throw new Error("print settings load failed");
         return payload;
@@ -47,6 +49,7 @@ export function usePrintSettingsPersistence({
         settingsRef.current = nextSettings;
         setSettings(nextSettings);
         setCanEdit(Boolean(payload?.canEdit));
+        revisionRef.current = Number.isInteger(payload?.revision) ? Number(payload?.revision) : 0;
         setStorage(payload?.persistent ? "persistent" : "local");
       })
       .catch(() => {
@@ -82,14 +85,21 @@ export function usePrintSettingsPersistence({
       const response = await fetch(PRINT_SETTINGS_API, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ setting: next }),
+        body: JSON.stringify({ setting: next, revision: revisionRef.current }),
       });
-      if (!response.ok) throw new Error("print setting save failed");
+      const payload = await response.json().catch(() => null) as { revision?: number; conflict?: boolean } | null;
+      if (!response.ok) {
+        if (response.status === 409 || payload?.conflict) throw new Error("conflict");
+        throw new Error("print setting save failed");
+      }
+      revisionRef.current = Number(payload?.revision ?? revisionRef.current + 1);
       setStorage("persistent");
-    } catch {
+    } catch (error) {
       settingsRef.current = previous;
       setSettings(previous);
-      onMessage("출력 추천 설정을 저장하지 못했습니다. 로그인 상태를 확인해 주세요.");
+      onMessage(error instanceof Error && error.message === "conflict"
+        ? "다른 관리자 변경과 충돌했습니다. 화면을 새로고침해 최신 출력 설정을 확인해 주세요."
+        : "출력 추천 설정을 저장하지 못했습니다. 로그인 상태를 확인해 주세요.");
     }
   }, [canEdit, onMessage]);
 

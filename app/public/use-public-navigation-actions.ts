@@ -37,6 +37,7 @@ type UsePublicNavigationActionsOptions = {
   confirmDiscardStoryPhoto: (nextPlaceId?: string | null) => boolean;
   rememberPublicMapView: () => void;
   restorePublicMapView: (clear?: boolean) => void;
+  cancelMapTransforms: () => void;
   currentPublicPlaceId: () => string | null;
   writePublicHistory: (
     panel: PublicPanelHistory,
@@ -92,6 +93,7 @@ export function usePublicNavigationActions(options: UsePublicNavigationActionsOp
     confirmDiscardStoryPhoto,
     rememberPublicMapView,
     restorePublicMapView,
+    cancelMapTransforms,
     currentPublicPlaceId,
     writePublicHistory,
     focusMapPosition,
@@ -257,6 +259,7 @@ export function usePublicNavigationActions(options: UsePublicNavigationActionsOp
 
   const resetPublicMap = () => {
     if (!confirmDiscardStoryPhoto()) return;
+    cancelMapTransforms();
     publicNavigationAfterPopRef.current = null;
     publicMapViewBeforeFocusRef.current = null;
     const nextPan = { x: 0, y: 0 };

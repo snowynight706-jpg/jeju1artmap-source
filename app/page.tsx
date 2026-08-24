@@ -423,6 +423,8 @@ export default function Home() {
   const editorDraftViewRef = useRef<PublicViewSettings | null>(null);
   const editorDraftRevisionRef = useRef(0);
   const labelDensitySettingsRevisionRef = useRef(0);
+  const cancelMapTransformsRef = useRef<() => void>(() => undefined);
+  const cancelMapTransforms = useCallback(() => cancelMapTransformsRef.current(), []);
 
   // 이하는 장소, 지도, 관리자 도구, 팝업의 현재 상태를 보관하는 코드입니다.
   const [elements, setElements] = useState(initialElements);
@@ -1099,6 +1101,7 @@ export default function Home() {
     fitZoomRef,
     publicNavigationInitializedRef,
     publicNavigationApplyingRef,
+    cancelMapTransforms,
     setZoom,
     setMapPan,
     setMapRenderPan,
@@ -1195,6 +1198,7 @@ export default function Home() {
   const {
     denseLabelSettingsCanEdit,
     denseLabelSettingsStorage,
+    denseLabelSettingsError,
   } = useDenseLabelSettingsPersistence({
     hydrated,
     publicLayoutAccess,
@@ -1301,6 +1305,12 @@ export default function Home() {
     },
     clearInteraction: clearMapInteraction,
   });
+  useLayoutEffect(() => {
+    cancelMapTransformsRef.current = mapTransformController.cancelTransientMapTransforms;
+    return () => {
+      cancelMapTransformsRef.current = () => undefined;
+    };
+  }, [mapTransformController.cancelTransientMapTransforms]);
 
   useEffect(() => {
     if (publicLayoutAccess === "loading" || (publicLayoutAccess === "viewer" && baseMap !== "uploaded")) return;
@@ -1731,6 +1741,7 @@ export default function Home() {
     confirmDiscardStoryPhoto,
     rememberPublicMapView,
     restorePublicMapView,
+    cancelMapTransforms,
     currentPublicPlaceId,
     writePublicHistory,
     focusMapPosition,
@@ -1843,6 +1854,8 @@ export default function Home() {
         : "sync-local";
   const printSyncLabel = printSettingsStorage === "loading" || denseLabelSettingsStorage === "loading"
     ? "동기화 확인 중"
+    : denseLabelSettingsStorage === "error"
+      ? denseLabelSettingsError ?? "라벨 설정 서버 저장 실패 · 기기 저장본 유지"
     : printSettingsStorage === "persistent" && denseLabelSettingsStorage === "persistent"
       ? "서버 동기화됨"
       : "기기 임시 저장";

@@ -1,5 +1,11 @@
 import { normalizePlaceName } from "../../core-landmarks";
 import { adminAccess, type AdminRuntimeEnv } from "../../admin-auth";
+import {
+  expectedSettingsRevision,
+  readSettingsRevision,
+  settingsConflictResponse,
+  withSettingsWriteLock,
+} from "../settings-concurrency";
 
 export const runtime = "edge";
 
@@ -70,17 +76,21 @@ function normalizeSetting(value: unknown): PrintSetting | null {
 export async function GET(request: Request) {
   const runtime = await runtimeEnv();
   const { canEdit } = ownerAccess(request, runtime);
-  if (!runtime.DB) return json({ settings: [], persistent: false, canEdit }, 503);
+  if (!runtime.DB) return json({ settings: [], persistent: false, canEdit, revision: 0 }, 503);
   await runtime.DB.prepare(TABLE_SQL).run();
-  const result = await runtime.DB.prepare(
-    `SELECT place_key AS key, directory_id AS directoryId, name, recommended,
-      marker_mode AS markerMode, label_mode AS labelMode
-     FROM place_print_settings ORDER BY name COLLATE NOCASE`,
-  ).all() as { results: Array<Omit<PrintSetting, "recommended"> & { recommended: number }> };
+  const [result, revision] = await Promise.all([
+    runtime.DB.prepare(
+      `SELECT place_key AS key, directory_id AS directoryId, name, recommended,
+        marker_mode AS markerMode, label_mode AS labelMode
+       FROM place_print_settings ORDER BY name COLLATE NOCASE`,
+    ).all() as Promise<{ results: Array<Omit<PrintSetting, "recommended"> & { recommended: number }> }>,
+    readSettingsRevision(runtime.DB, "print-settings"),
+  ]);
   return json({
     settings: result.results.map((setting) => ({ ...setting, recommended: Boolean(setting.recommended) })),
     persistent: true,
     canEdit,
+    revision,
   });
 }
 
@@ -97,29 +107,32 @@ export async function PUT(request: Request) {
   }
   const setting = normalizeSetting((payload as { setting?: unknown })?.setting);
   if (!setting) return json({ error: "valid print setting required" }, 400);
+  const expectedRevision = expectedSettingsRevision(payload);
+  if (expectedRevision === null) return json({ error: "settings revision required" }, 400);
   await runtime.DB.prepare(TABLE_SQL).run();
-  const updatedAt = new Date().toISOString();
-  await runtime.DB.prepare(
-    `INSERT INTO place_print_settings
-      (place_key, directory_id, name, recommended, marker_mode, label_mode, updated_at, updated_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(place_key) DO UPDATE SET
-       directory_id = excluded.directory_id,
-       name = excluded.name,
-       recommended = excluded.recommended,
-       marker_mode = excluded.marker_mode,
-       label_mode = excluded.label_mode,
-       updated_at = excluded.updated_at,
-       updated_by = excluded.updated_by`,
-  ).bind(
-    setting.key,
-    setting.directoryId ?? null,
-    setting.name,
-    setting.recommended ? 1 : 0,
-    setting.markerMode,
-    setting.labelMode,
-    updatedAt,
-    currentEmail,
-  ).run();
-  return json({ setting, persistent: true, canEdit: true, updatedAt });
+  try {
+    return json(await withSettingsWriteLock({
+      db: runtime.DB,
+      resource: "print-settings",
+      expectedRevision,
+      actor: currentEmail,
+      buildStatements: (_revision, updatedAt) => [runtime.DB!.prepare(
+        `INSERT INTO place_print_settings
+          (place_key, directory_id, name, recommended, marker_mode, label_mode, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(place_key) DO UPDATE SET
+           directory_id = excluded.directory_id,
+           name = excluded.name,
+           recommended = excluded.recommended,
+           marker_mode = excluded.marker_mode,
+           label_mode = excluded.label_mode,
+           updated_at = excluded.updated_at,
+           updated_by = excluded.updated_by`,
+      ).bind(setting.key, setting.directoryId ?? null, setting.name, setting.recommended ? 1 : 0,
+        setting.markerMode, setting.labelMode, updatedAt, currentEmail)],
+      result: (revision, updatedAt) => ({ setting, persistent: true, canEdit: true, updatedAt, revision }),
+    }));
+  } catch (error) {
+    return settingsConflictResponse(error) ?? json({ error: "print settings save failed" }, 500);
+  }
 }
