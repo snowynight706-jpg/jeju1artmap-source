@@ -67,8 +67,12 @@ import type {
 import { useLocalAutosave } from "./editor/persistence/use-local-autosave";
 import { useApplicationBootstrap } from "./editor/persistence/use-application-bootstrap";
 import { useAdminOutputWorkspace } from "./editor/workspace/use-admin-output-workspace";
-import { useAdminMapAssetActions } from "./editor/workspace/use-admin-map-asset-actions";
+import {
+  useAdminMapAssetActions,
+  useAdminMapAssetViewModel,
+} from "./editor/workspace/use-admin-map-asset-actions";
 import { useEditorMapEditActions } from "./editor/workspace/use-editor-map-edit-actions";
+import { usePlaceManagerWorkspace } from "./editor/places/use-place-manager-workspace";
 import {
   type BaseMapMode,
   type OptionalLabelScaleStep,
@@ -121,34 +125,16 @@ import {
   directoryCategory,
   directoryRecordFromPlace,
 } from "./place-directory/model";
-import {
-  usePlaceDirectoryViewModel,
-  type CoordinateLockFilter,
-  type PlacementFilter,
-  type RecommendationFilter,
-} from "./place-directory/use-place-directory-view-model";
-import type { DatabaseEditorCategoryFilter } from "./admin-database-editor";
+import { usePlaceSelectionModel } from "./place-directory/use-place-selection-model";
 import {
   sendPerformanceDiagnostic,
 } from "./content/client";
 import type {
-  GlobalContentTab,
-  PlaceEvent,
-  PlaceEventPlace,
-  PlaceReviewCount,
-  PlaceStory,
   StoryCameraPermissionState,
   StoryReportReason,
 } from "./content/types";
-import {
-  useExplorerDiagnostics,
-  useExplorerEvents,
-  useExplorerStories,
-  usePlaceRequests,
-} from "./content/use-explorer-content";
-import { usePlaceStoryActions } from "./content/use-place-story-actions";
-import { usePlaceEventRequestActions } from "./content/use-place-event-request-actions";
-import { usePlaceContentLifecycle } from "./content/use-place-content-lifecycle";
+import { usePlaceContentActions } from "./content/use-place-content-actions";
+import { usePlaceContentWorkspace } from "./content/use-place-content-workspace";
 import { UiThemePicker, UiThemeSwatch, useUiTheme } from "./shell/ui-theme";
 import {
   PUBLIC_VIEW_COOKIE,
@@ -402,18 +388,12 @@ export default function Home() {
   const publicNavigationInitializedRef = useRef(false);
   const publicNavigationApplyingRef = useRef(false);
   const publicNavigationAfterPopRef = useRef<"explorer" | null>(null);
-  const placeStoryDraftKeyRef = useRef<string | null>(null);
-  const selectedStoryKeyRef = useRef<string | null>(null);
-  const placeStoryTextRef = useRef("");
   const startupLoadCompletedRef = useRef(false);
   const performanceStartedAtRef = useRef(0);
   const performanceStartupSentRef = useRef(false);
   const performanceSettleSamplesRef = useRef({ pan: 0, pinch: 0 });
   const mobileSlowSettleSamplesRef = useRef(0);
   const geocodeRunRef = useRef(0);
-  const storyRequestRunRef = useRef(0);
-  const eventRequestRunRef = useRef(0);
-  const eventPlaceIndexBootstrappedRef = useRef(false);
   const elementsRef = useRef<MapElement[]>(initialElements);
   const assetsRef = useRef<MapAsset[]>(builtInAssets);
   const notesRef = useRef<ReviewNote[]>([]);
@@ -537,123 +517,9 @@ export default function Home() {
   const [editorDraftSaving, setEditorDraftSaving] = useState(false);
   const [optionalLabelScaleSaving, setOptionalLabelScaleSaving] = useState(false);
   const [editorDraftSyncState, setEditorDraftSyncState] = useState<"ready" | "saving" | "saved" | "error" | "conflict">("ready");
-  const [placeStories, setPlaceStories] = useState<PlaceStory[]>([]);
-  const [placeStoriesLoading, setPlaceStoriesLoading] = useState(false);
-  const [placeStoriesLoadedKey, setPlaceStoriesLoadedKey] = useState<string | null>(null);
-  const [, setPlaceStoriesCanModerate] = useState(false);
-  const [globalStoriesOpen, setGlobalStoriesOpen] = useState(false);
-  const [globalContentTab, setGlobalContentTab] = useState<GlobalContentTab>("places");
-  const {
-    globalStories,
-    globalStoriesPage,
-    globalStoriesPageCount,
-    globalStoriesTotal,
-    globalStoriesCanModerate,
-    globalStoriesLoading,
-    globalStoriesError,
-    setGlobalStories,
-    setGlobalStoriesPage,
-    setGlobalStoriesTotal,
-    setGlobalStoriesRefreshKey,
-  } = useExplorerStories({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
-  const {
-    uploadDiagnostics,
-    uploadDiagnosticsLoading,
-    uploadDiagnosticsError,
-    performanceDiagnostics,
-    performanceDiagnosticsLoading,
-    performanceDiagnosticsError,
-    setUploadDiagnostics,
-    setUploadDiagnosticsRefreshKey,
-    setPerformanceDiagnostics,
-    setPerformanceDiagnosticsRefreshKey,
-  } = useExplorerDiagnostics({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
-  const [uploadDiagnosticActionId, setUploadDiagnosticActionId] = useState<string | null>(null);
-  const [performanceDiagnosticActionId, setPerformanceDiagnosticActionId] = useState<string | null>(null);
-  const [placeStoryActionId, setPlaceStoryActionId] = useState<string | null>(null);
-  const [placeStoryFormOpen, setPlaceStoryFormOpen] = useState(false);
-  const [placeStoryAuthor, setPlaceStoryAuthor] = useState("");
-  const [placeStoryText, setPlaceStoryText] = useState("");
-  const [placeStoryPhoto, setPlaceStoryPhoto] = useState<File | null>(null);
-  const [placeStoryPhotoPreview, setPlaceStoryPhotoPreview] = useState<string | null>(null);
-  const [placeStorySubmitting, setPlaceStorySubmitting] = useState(false);
-  const [placeStoryPhotoRetaining, setPlaceStoryPhotoRetaining] = useState(false);
-  const [storyCameraPermission, setStoryCameraPermission] = useState<StoryCameraPermissionState>("unknown");
-  const placeStoryPhotoRetainTokenRef = useRef(0);
-  const [storyReportTarget, setStoryReportTarget] = useState<PlaceStory | null>(null);
-  const [storyReportReason, setStoryReportReason] = useState<StoryReportReason>("inappropriate");
-  const [storyReportDetail, setStoryReportDetail] = useState("");
-  const [storyReportSubmitting, setStoryReportSubmitting] = useState(false);
-  const [reportedStoryIds, setReportedStoryIds] = useState<Set<string>>(() => new Set());
-  const [placeEvents, setPlaceEvents] = useState<PlaceEvent[]>([]);
-  const [, setPlaceEventsLoading] = useState(false);
-  const [placeEventsLoadedKey, setPlaceEventsLoadedKey] = useState<string | null>(null);
-  const [, setPlaceEventsCanManage] = useState(false);
-  const [placeEventsRefreshKey, setPlaceEventsRefreshKey] = useState(0);
-  const [eventLinkedPlaces, setEventLinkedPlaces] = useState<PlaceEventPlace[]>([]);
-  const [reviewCountsByPlace, setReviewCountsByPlace] = useState<PlaceReviewCount[]>([]);
-  const [reviewBadgeNow, setReviewBadgeNow] = useState(() => Date.now());
-  const [placeEventFormOpen, setPlaceEventFormOpen] = useState(false);
-  const [placeEventEditingId, setPlaceEventEditingId] = useState<string | null>(null);
-  const [placeEventNoPlace, setPlaceEventNoPlace] = useState(false);
-  const [placeEventMultiPlace, setPlaceEventMultiPlace] = useState(false);
-  const [placeEventPlaces, setPlaceEventPlaces] = useState<PlaceEventPlace[]>([]);
-  const [placeEventDialogOffset, setPlaceEventDialogOffset] = useState({ x: 0, y: 0 });
-  const [placeEventName, setPlaceEventName] = useState("");
-  const [placeEventInfo, setPlaceEventInfo] = useState("");
-  const [placeEventStartsAt, setPlaceEventStartsAt] = useState("");
-  const [placeEventEndsAt, setPlaceEventEndsAt] = useState("");
-  const [placeEventVisibleFrom, setPlaceEventVisibleFrom] = useState("");
-  const [placeEventVisibleUntil, setPlaceEventVisibleUntil] = useState("");
-  const [placeEventPhoto, setPlaceEventPhoto] = useState<File | null>(null);
-  const [placeEventPhotoPreview, setPlaceEventPhotoPreview] = useState<string | null>(null);
-  const [placeEventExistingPhotoUrl, setPlaceEventExistingPhotoUrl] = useState<string | null>(null);
-  const [placeEventSubmitting, setPlaceEventSubmitting] = useState(false);
-  const [placeEventActionId, setPlaceEventActionId] = useState<string | null>(null);
-  const {
-    globalEvents,
-    globalEventsPage,
-    globalEventsPageCount,
-    globalEventsTotal,
-    globalEventsCanManage,
-    globalEventsLoading,
-    globalEventsError,
-    globalEventsRefreshKey,
-    setGlobalEvents,
-    setGlobalEventsPage,
-    setGlobalEventsTotal,
-    setGlobalEventsRefreshKey,
-  } = useExplorerEvents({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
-  const [placeRequestFormOpen, setPlaceRequestFormOpen] = useState(false);
-  const [placeRequestName, setPlaceRequestName] = useState("");
-  const [placeRequestArea, setPlaceRequestArea] = useState("");
-  const [placeRequestAddress, setPlaceRequestAddress] = useState("");
-  const [placeRequestDescription, setPlaceRequestDescription] = useState("");
-  const [placeRequestCategory, setPlaceRequestCategory] = useState<BundledMarkerCategory>("culture");
-  const [placeRequestMarkerStyle, setPlaceRequestMarkerStyle] = useState<BundledMarkerStyle>(recommendedMarkerStyle);
-  const [placeRequestLocation, setPlaceRequestLocation] = useState<{ x: number; y: number } | null>(null);
-  const [placeRequestPickingLocation, setPlaceRequestPickingLocation] = useState(false);
-  const [placeRequestSubmitting, setPlaceRequestSubmitting] = useState(false);
-  const {
-    placeRequests,
-    placeRequestsPage,
-    placeRequestsPageCount,
-    placeRequestsTotal,
-    placeRequestsLoading,
-    placeRequestsError,
-    setPlaceRequests,
-    setPlaceRequestsPage,
-    setPlaceRequestsTotal,
-    setPlaceRequestsRefreshKey,
-  } = usePlaceRequests({ access: publicLayoutAccess, open: globalStoriesOpen, tab: globalContentTab });
-  const [placeRequestActionId, setPlaceRequestActionId] = useState<string | null>(null);
   const [assetStatus, setAssetStatus] = useState<AssetStatus>("unchecked");
   const [assetCategory, setAssetCategory] = useState<CategoryId>("landmark");
   const [leftPanelMode, setLeftPanelMode] = useState<"assets" | "places" | "calibration" | "print">("places");
-  const [placeQuery, setPlaceQuery] = useState("");
-  const [coordinateLockFilter, setCoordinateLockFilter] = useState<CoordinateLockFilter>("all");
-  const [placementFilter, setPlacementFilter] = useState<PlacementFilter>("all");
-  const [recommendationFilter, setRecommendationFilter] = useState<RecommendationFilter>("all");
   const [expandedVisibilityGroups, setExpandedVisibilityGroups] = useState<Record<CategoryId, boolean>>({
     landmark: true,
     culture: false,
@@ -704,20 +570,6 @@ export default function Home() {
   const [assetVisualBounds, setAssetVisualBounds] = useState<Record<string, VisualBounds>>({});
   const [labelsRefreshing, setLabelsRefreshing] = useState(false);
   const [resourceOutputDragMode, setResourceOutputDragMode] = useState(false);
-  const [placeDirectoryStorage, setPlaceDirectoryStorage] = useState<"loading" | "persistent" | "bundled">("loading");
-  const [placeDirectoryCanEdit, setPlaceDirectoryCanEdit] = useState(false);
-  const [placeDirectoryUpdatedAt, setPlaceDirectoryUpdatedAt] = useState<string | null>(null);
-  const [databaseEditorOpen, setDatabaseEditorOpen] = useState(false);
-  const [databaseEditorSaving, setDatabaseEditorSaving] = useState(false);
-  const [databaseEditorDirty, setDatabaseEditorDirty] = useState(false);
-  const [databaseEditorQuery, setDatabaseEditorQuery] = useState("");
-  const [databaseEditorCategory, setDatabaseEditorCategory] = useState<DatabaseEditorCategoryFilter>("all");
-  const [databaseEditorSelectedId, setDatabaseEditorSelectedId] = useState<string | null>(null);
-  const [databaseDraftPlaces, setDatabaseDraftPlaces] = useState<DirectoryPlace[]>([]);
-  const [directoryTaxonomySync, setDirectoryTaxonomySync] = useState<{
-    placeId: string | null;
-    state: "ready" | "saving" | "saved" | "error";
-  }>({ placeId: null, state: "ready" });
   const [interaction, setInteraction] = useState<MapInteractionState>(null);
 
   const clearMapInteraction = useCallback(() => setInteraction(null), []);
@@ -831,8 +683,238 @@ export default function Home() {
     ensureMainHubMapElement,
   });
 
+  // 장소 목록·DB 편집 상태와 선택 인덱스는 서로 다른 책임의 작업공간에서 관리합니다.
+  const {
+    placeQuery,
+    coordinateLockFilter,
+    placementFilter,
+    recommendationFilter,
+    placeDirectoryStorage,
+    placeDirectoryCanEdit,
+    placeDirectoryUpdatedAt,
+    databaseEditorOpen,
+    databaseEditorSaving,
+    databaseEditorDirty,
+    databaseEditorQuery,
+    databaseEditorCategory,
+    databaseEditorSelectedId,
+    databaseDraftPlaces,
+    directoryTaxonomySync,
+    allUnifiedPlaceRows,
+    searchedUnifiedPlaceRows,
+    coordinateLockCounts,
+    unifiedPlaceRows,
+    unifiedPlaceGroups,
+    placeFiltersActive,
+    placedUnifiedPlaceCount,
+    selectedDatabasePlace,
+    databaseAreaOptions,
+    placeRequestAreaOptions,
+    databaseEditorCategoryCounts,
+    filteredDatabaseDraftPlaces,
+    setPlaceQuery,
+    setCoordinateLockFilter,
+    setPlacementFilter,
+    setRecommendationFilter,
+    setPlaceDirectoryStorage,
+    setPlaceDirectoryCanEdit,
+    setPlaceDirectoryUpdatedAt,
+    setDatabaseEditorOpen,
+    setDatabaseEditorSaving,
+    setDatabaseEditorDirty,
+    setDatabaseEditorQuery,
+    setDatabaseEditorCategory,
+    setDatabaseEditorSelectedId,
+    setDatabaseDraftPlaces,
+    setDirectoryTaxonomySync,
+  } = usePlaceManagerWorkspace({
+    elements,
+    directoryPlaces,
+    printSettings,
+    viewMode,
+    screenRecommendedOnly,
+  });
+  const {
+    elementsByNormalizedName,
+    requestMarkerByRequestId,
+    directoryPlacesById,
+    directoryPlacesByNormalizedName,
+    directoryPlacesByGroup,
+    selected,
+    selectedNote,
+    selectedDirectoryPlace,
+    selectedUnlinkedPrimaryCategory,
+    selectedUnlinkedTaxonomySaving,
+    selectedBasicInfoMeta,
+    selectedStoryKey,
+    selectedDisplayName,
+    selectedLocationGroupPlaces,
+    selectedPublicCategory,
+    selectedPublicCategoryName,
+  } = usePlaceSelectionModel({
+    elements,
+    reviewNotes,
+    directoryPlaces,
+    selectedId,
+    selectedFacilityId,
+    selectedNoteId,
+    directoryTaxonomySync,
+    placeDirectoryCanEdit,
+    publicCategoryMetaForPlace,
+  });
+  const {
+    compatibleAssets,
+    landmarkAssetGroups,
+    generalMarkerAssets,
+    customLandmarkAssets,
+    assetsById,
+  } = useAdminMapAssetViewModel({ assets, selected });
+  const contentWorkspace = usePlaceContentWorkspace({
+    selectedStoryKey,
+    publicLayoutAccess,
+    elementsRef,
+    setToast,
+  });
+  const {
+    eventPlaceIndexBootstrappedRef,
+    placeStoriesLoading,
+    placeStoriesLoadedKey,
+    publishedPlaceStories,
+    globalStoriesOpen,
+    globalContentTab,
+    globalStories,
+    globalStoriesPage,
+    globalStoriesPageCount,
+    globalStoriesTotal,
+    globalStoriesCanModerate,
+    globalStoriesLoading,
+    globalStoriesError,
+    uploadDiagnostics,
+    uploadDiagnosticsLoading,
+    uploadDiagnosticsError,
+    performanceDiagnostics,
+    performanceDiagnosticsLoading,
+    performanceDiagnosticsError,
+    uploadDiagnosticActionId,
+    performanceDiagnosticActionId,
+    placeStoryActionId,
+    placeStoryFormOpen,
+    placeStoryAuthor,
+    placeStoryText,
+    placeStoryPhoto,
+    placeStoryPhotoPreview,
+    placeStorySubmitting,
+    placeStoryPhotoRetaining,
+    storyCameraPermission,
+    storyReportTarget,
+    storyReportReason,
+    storyReportDetail,
+    storyReportSubmitting,
+    reportedStoryIds,
+    placeEvents,
+    placeEventsLoadedKey,
+    eventLinkedPlaces,
+    reviewCountsByPlace,
+    reviewBadgeNow,
+    placeEventFormOpen,
+    placeEventEditingId,
+    placeEventNoPlace,
+    placeEventMultiPlace,
+    placeEventPlaces,
+    placeEventDialogOffset,
+    placeEventName,
+    placeEventInfo,
+    placeEventStartsAt,
+    placeEventEndsAt,
+    placeEventVisibleFrom,
+    placeEventVisibleUntil,
+    placeEventPhoto,
+    placeEventPhotoPreview,
+    placeEventExistingPhotoUrl,
+    placeEventSubmitting,
+    placeEventActionId,
+    globalEvents,
+    globalEventsPage,
+    globalEventsPageCount,
+    globalEventsTotal,
+    globalEventsCanManage,
+    globalEventsLoading,
+    globalEventsError,
+    globalEventsRefreshKey,
+    placeRequestFormOpen,
+    placeRequestName,
+    placeRequestArea,
+    placeRequestAddress,
+    placeRequestDescription,
+    placeRequestCategory,
+    placeRequestMarkerStyle,
+    placeRequestLocation,
+    placeRequestPickingLocation,
+    placeRequestSubmitting,
+    placeRequests,
+    placeRequestsPage,
+    placeRequestsPageCount,
+    placeRequestsTotal,
+    placeRequestsLoading,
+    placeRequestsError,
+    placeRequestActionId,
+    setGlobalStoriesOpen,
+    setGlobalContentTab,
+    setGlobalStoriesPage,
+    setGlobalStoriesTotal,
+    setGlobalStoriesRefreshKey,
+    setUploadDiagnosticsRefreshKey,
+    setPerformanceDiagnosticsRefreshKey,
+    setPlaceStoryAuthor,
+    setPlaceStoryText,
+    setStoryReportReason,
+    setStoryReportDetail,
+    setEventLinkedPlaces,
+    setReviewCountsByPlace,
+    setPlaceEventNoPlace,
+    setPlaceEventMultiPlace,
+    setPlaceEventPlaces,
+    setPlaceEventName,
+    setPlaceEventInfo,
+    setPlaceEventStartsAt,
+    setPlaceEventEndsAt,
+    setPlaceEventVisibleFrom,
+    setPlaceEventVisibleUntil,
+    setGlobalEventsPage,
+    setGlobalEventsTotal,
+    setGlobalEventsRefreshKey,
+    setPlaceRequestFormOpen,
+    setPlaceRequestName,
+    setPlaceRequestArea,
+    setPlaceRequestAddress,
+    setPlaceRequestDescription,
+    setPlaceRequestCategory,
+    setPlaceRequestMarkerStyle,
+    setPlaceRequestLocation,
+    setPlaceRequestPickingLocation,
+    setPlaceRequestsPage,
+    setPlaceRequestsTotal,
+    setPlaceRequestsRefreshKey,
+    syncReviewedPlaceRequestLocation,
+    updatePlaceStoryPhoto,
+    retainPlaceStoryPhoto,
+    updatePlaceEventPhoto,
+    togglePlaceEventMapSelection,
+  } = contentWorkspace;
+
   // 좌표·앵커·요소 수정과 라벨 자동 정리는 관리자 지도 편집 작업공간이 담당합니다.
   const {
+    secondaryCalibrationPoints,
+    tertiaryCalibrationPoints,
+    calibrationReferenceNames,
+    selectedPrimaryCalibrationPoint,
+    selectedSecondaryCalibrationPoint,
+    selectedTertiaryCalibrationPoint,
+    selectedCalibrationPoint,
+    selectedLandmarkDefault,
+    selectedDisplayOffset,
+    selectedIsPrimaryCalibration,
+    selectedHasGeocodedSource,
     setPlacementOverride,
     updateDenseLabelPosition,
     setDenseLabelEligibility,
@@ -851,6 +933,11 @@ export default function Home() {
     zoom,
     labelsRefreshing,
     assetVisualBounds,
+    elements,
+    directoryPlaces,
+    calibrationPoints,
+    landmarkDefaultPositions,
+    selected,
     elementsRef,
     assetsRef,
     placesRef,
@@ -876,84 +963,7 @@ export default function Home() {
     setAssetVisualBounds,
     setLabelsRefreshing,
   });
-
-  // 선택 장소, 관리자 통합 목록, DB 필터는 장소 디렉터리 보기 모델에서 함께 계산합니다.
-  const {
-    elementsByNormalizedName,
-    requestMarkerByRequestId,
-    directoryPlacesById,
-    directoryPlacesByNormalizedName,
-    directoryPlacesByGroup,
-    selected,
-    selectedNote,
-    selectedDirectoryPlace,
-    selectedUnlinkedPrimaryCategory,
-    selectedUnlinkedTaxonomySaving,
-    selectedBasicInfoMeta,
-    selectedStoryKey,
-    selectedDisplayName,
-    selectedLocationGroupPlaces,
-    selectedPublicCategory,
-    selectedPublicCategoryName,
-    secondaryCalibrationPoints,
-    tertiaryCalibrationPoints,
-    calibrationReferenceNames,
-    selectedPrimaryCalibrationPoint,
-    selectedSecondaryCalibrationPoint,
-    selectedTertiaryCalibrationPoint,
-    selectedCalibrationPoint,
-    selectedLandmarkDefault,
-    selectedDisplayOffset,
-    selectedIsPrimaryCalibration,
-    selectedHasGeocodedSource,
-    compatibleAssets,
-    landmarkAssetGroups,
-    generalMarkerAssets,
-    customLandmarkAssets,
-    assetsById,
-    publishedPlaceStories,
-    allUnifiedPlaceRows,
-    searchedUnifiedPlaceRows,
-    coordinateLockCounts,
-    unifiedPlaceRows,
-    unifiedPlaceGroups,
-    placeFiltersActive,
-    placedUnifiedPlaceCount,
-    selectedDatabasePlace,
-    databaseAreaOptions,
-    placeRequestAreaOptions,
-    databaseEditorCategoryCounts,
-    filteredDatabaseDraftPlaces,
-  } = usePlaceDirectoryViewModel({
-    elements,
-    assets,
-    reviewNotes,
-    directoryPlaces,
-    calibrationPoints,
-    landmarkDefaultPositions,
-    selectedId,
-    selectedFacilityId,
-    selectedNoteId,
-    directoryTaxonomySync,
-    placeDirectoryCanEdit,
-    placeStories,
-    placeQuery,
-    coordinateLockFilter,
-    placementFilter,
-    recommendationFilter,
-    printSettings,
-    viewMode,
-    screenRecommendedOnly,
-    databaseDraftPlaces,
-    databaseEditorSelectedId,
-    databaseEditorCategory,
-    databaseEditorQuery,
-    publicCategoryMetaForPlace,
-  });
   // 이하는 화면 크기와 초기 로딩 상태를 실제 화면에 맞춰 동기화하는 코드입니다.
-  useLayoutEffect(() => {
-    selectedStoryKeyRef.current = selectedStoryKey;
-  }, [selectedStoryKey]);
   const publicPlaceDetailLoading = publicLayoutAccess === "viewer"
     && Boolean(selectedStoryKey)
     && (placeStoriesLoadedKey !== selectedStoryKey || placeEventsLoadedKey !== selectedStoryKey);
@@ -1034,12 +1044,6 @@ export default function Home() {
     if (!performanceStartedAtRef.current) performanceStartedAtRef.current = performance.now();
   }, []);
 
-  useEffect(() => {
-    if (publicLayoutAccess !== "viewer") return;
-    const timer = window.setInterval(() => setReviewBadgeNow(Date.now()), 5 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, [publicLayoutAccess]);
-
   // 이하는 화면 좌표를 지도 좌표로 바꾸고 선택된 장소 정보를 동기화하는 코드입니다.
   const clientToMap = useCallback((clientX: number, clientY: number) => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -1049,52 +1053,6 @@ export default function Home() {
       y: clamp(((clientY - rect.top) / rect.height) * 100, 0, 100),
     };
   }, []);
-
-  // 선택 장소의 후기·행사 로딩, 사진 보관, 초안 저장과 요청 마커 동기화는 콘텐츠 생명주기가 담당합니다.
-  const {
-    syncReviewedPlaceRequestLocation,
-    updatePlaceStoryPhoto,
-    retainPlaceStoryPhoto,
-    updatePlaceEventPhoto,
-    togglePlaceEventMapSelection,
-  } = usePlaceContentLifecycle({
-    selectedStoryKey,
-    publicLayoutAccess,
-    placeStoryText,
-    placeEventsRefreshKey,
-    elementsRef,
-    selectedStoryKeyRef,
-    placeStoryDraftKeyRef,
-    placeStoryTextRef,
-    placeStoryPhotoRetainTokenRef,
-    storyRequestRunRef,
-    eventRequestRunRef,
-    setPlaceRequests,
-    setPlaceStoryPhotoPreview,
-    setPlaceStoryPhoto,
-    setPlaceStoryPhotoRetaining,
-    setPlaceStoryText,
-    setPlaceStories,
-    setPlaceStoriesCanModerate,
-    setPlaceStoriesLoading,
-    setPlaceStoriesLoadedKey,
-    setPlaceStoryFormOpen,
-    setPlaceEventPhotoPreview,
-    setPlaceEventPhoto,
-    setPlaceEventPlaces,
-    setPlaceEvents,
-    setPlaceEventsCanManage,
-    setPlaceEventsLoading,
-    setPlaceEventsLoadedKey,
-    setPlaceEventFormOpen,
-    setPlaceEventEditingId,
-    setPlaceEventNoPlace,
-    setPlaceEventMultiPlace,
-    setPlaceEventName,
-    setPlaceEventInfo,
-    setPlaceEventExistingPhotoUrl,
-    setToast,
-  });
 
   const {
     publicPlaceItems,
@@ -1689,7 +1647,7 @@ export default function Home() {
     setCalibrationMode,
   });
 
-  // 방문 후기·사진 신고와 관리자 진단 변경은 콘텐츠 작업공간에서 조립합니다.
+  // 후기·행사·장소 요청 명령은 콘텐츠 상태 계약을 기준으로 한곳에서 조립합니다.
   const {
     togglePlaceStoryForm,
     requestPlaceStoryCameraPermission,
@@ -1703,53 +1661,6 @@ export default function Home() {
     clearUploadDiagnostics,
     deletePerformanceDiagnostic,
     clearPerformanceDiagnostics,
-  } = usePlaceStoryActions({
-    selected,
-    selectedDirectoryPlace,
-    selectedStoryKey,
-    placeStoryFormOpen,
-    placeStoryAuthor,
-    placeStoryText,
-    placeStoryPhoto,
-    placeStorySubmitting,
-    storyCameraPermission,
-    storyReportTarget,
-    storyReportReason,
-    storyReportDetail,
-    storyReportSubmitting,
-    reportedStoryIds,
-    placeStoryActionId,
-    uploadDiagnosticActionId,
-    performanceDiagnosticActionId,
-    uploadDiagnostics,
-    performanceDiagnostics,
-    placeStoryTextRef,
-    updatePlaceStoryPhoto,
-    setPlaceStoryFormOpen,
-    setPlaceStoryAuthor,
-    setPlaceStoryText,
-    setPlaceStorySubmitting,
-    setStoryCameraPermission,
-    setPlaceStories,
-    setReviewCountsByPlace,
-    setGlobalStoriesPage,
-    setGlobalStoriesRefreshKey,
-    setStoryReportTarget,
-    setStoryReportReason,
-    setStoryReportDetail,
-    setStoryReportSubmitting,
-    setReportedStoryIds,
-    setPlaceStoryActionId,
-    setGlobalStories,
-    setUploadDiagnosticActionId,
-    setUploadDiagnostics,
-    setPerformanceDiagnosticActionId,
-    setPerformanceDiagnostics,
-    setToast,
-  });
-
-  // 행사 관리와 장소 등록 요청 검수는 콘텐츠 작업공간에서 조립합니다.
-  const {
     closePlaceEventForm,
     openUnassignedPlaceEventForm,
     editPlaceEvent,
@@ -1766,76 +1677,23 @@ export default function Home() {
     approvePlaceRequest,
     rejectPlaceRequest,
     deletePlaceRequest,
-  } = usePlaceEventRequestActions({
-    placeEventEditingId,
-    placeEventNoPlace,
-    placeEventPlaces,
-    placeEventDialogOffset,
-    placeEventName,
-    placeEventInfo,
-    placeEventStartsAt,
-    placeEventEndsAt,
-    placeEventVisibleFrom,
-    placeEventVisibleUntil,
-    placeEventPhoto,
-    placeEventSubmitting,
-    placeEventActionId,
-    placeRequestSubmitting,
-    placeRequestName,
-    placeRequestArea,
-    placeRequestAddress,
-    placeRequestDescription,
-    placeRequestCategory,
-    placeRequestMarkerStyle,
-    placeRequestLocation,
-    placeRequestActionId,
+  } = usePlaceContentActions({
+    content: contentWorkspace,
+    selected,
+    selectedDirectoryPlace,
+    selectedStoryKey,
     markerGroupSize,
     selectedId,
     elementsRef,
-    updatePlaceEventPhoto,
     mergeDirectoryRecords,
     replaceElements,
     replaceDirectoryPlaces,
     pushHistory,
     focusMapPosition,
-    setPlaceEventFormOpen,
-    setPlaceEventEditingId,
-    setPlaceEventNoPlace,
-    setPlaceEventMultiPlace,
-    setPlaceEventPlaces,
-    setPlaceEventName,
-    setPlaceEventInfo,
-    setPlaceEventStartsAt,
-    setPlaceEventEndsAt,
-    setPlaceEventVisibleFrom,
-    setPlaceEventVisibleUntil,
-    setPlaceEventExistingPhotoUrl,
-    setPlaceEventDialogOffset,
-    setPlaceEventSubmitting,
-    setPlaceEventActionId,
-    setPlaceEvents,
-    setPlaceEventsRefreshKey,
-    setGlobalEvents,
-    setGlobalEventsPage,
-    setGlobalEventsRefreshKey,
-    setPlaceRequestSubmitting,
-    setPlaceRequestName,
-    setPlaceRequestArea,
-    setPlaceRequestAddress,
-    setPlaceRequestDescription,
-    setPlaceRequestCategory,
-    setPlaceRequestMarkerStyle,
-    setPlaceRequestLocation,
-    setPlaceRequestPickingLocation,
-    setPlaceRequestFormOpen,
-    setPlaceRequestActionId,
-    setPlaceRequests,
-    setPlaceRequestsRefreshKey,
     setSelectedId,
     setSelectedNoteId,
     setSelectedDenseLabelId,
     setRightOpen,
-    setGlobalStoriesOpen,
     setPlaceDirectoryUpdatedAt,
     setPlaceDirectoryStorage,
     setToast,

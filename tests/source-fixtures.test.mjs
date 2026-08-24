@@ -19,17 +19,21 @@ test("client source regression checks follow explicit extraction boundaries", as
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/types.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-explorer-content.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-content-lifecycle.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-content-actions.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-content-workspace.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-event-request-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.contentClient.includes("../app/content/use-place-story-actions.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.media.includes("../app/media/photo-processing.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/model.ts"));
-  assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/use-place-directory-view-model.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/contracts.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.placeDirectory.includes("../app/place-directory/use-place-selection-model.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.shell.includes("../app/shell/ui-theme.tsx"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.shell.includes("../app/shell/use-application-shell-lifecycle.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/rules.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorDocument.includes("../app/editor/document/use-editor-document-state.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPlaces.includes("../app/editor/places/actions.ts"));
+  assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPlaces.includes("../app/editor/places/use-place-manager-workspace.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-application-bootstrap.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorPersistence.includes("../app/editor/persistence/use-map-settings-persistence.ts"));
   assert.ok(APP_CLIENT_SOURCE_GROUPS.editorWorkspace.includes("../app/editor/workspace/use-admin-map-asset-actions.ts"));
@@ -102,19 +106,21 @@ test("admin exports, snapshots, history, and publishing stay behind one output w
   assert.match(workspaceSource, /const loadPublicHistoryEntry = async/);
 });
 
-test("selected place, manager list, and database filtering stay behind one directory view model", async () => {
-  const [pageSource, viewModelSource] = await Promise.all([
+test("place selection and manager database state follow separate feature boundaries", async () => {
+  const [pageSource, selectionSource, managerSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/place-directory/use-place-directory-view-model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/place-directory/use-place-selection-model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/editor/places/use-place-manager-workspace.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageSource, /usePlaceDirectoryViewModel\(\{/);
+  assert.match(pageSource, /usePlaceSelectionModel\(\{/);
+  assert.match(pageSource, /usePlaceManagerWorkspace\(\{/);
   assert.doesNotMatch(pageSource, /const elementsByNormalizedName = useMemo/);
   assert.doesNotMatch(pageSource, /const allUnifiedPlaceRows = useMemo/);
   assert.doesNotMatch(pageSource, /const filteredDatabaseDraftPlaces = useMemo/);
-  assert.match(viewModelSource, /const elementsByNormalizedName = useMemo/);
-  assert.match(viewModelSource, /const allUnifiedPlaceRows = useMemo/);
-  assert.match(viewModelSource, /const filteredDatabaseDraftPlaces = useMemo/);
+  assert.match(selectionSource, /const elementsByNormalizedName = useMemo/);
+  assert.match(managerSource, /const allUnifiedPlaceRows = useMemo/);
+  assert.match(managerSource, /const filteredDatabaseDraftPlaces = useMemo/);
 });
 
 test("theme persistence and administrator shell lifecycle stay outside the route component", async () => {
@@ -253,12 +259,14 @@ test("browser content storage, diagnostics, and photo processing stay outside th
 });
 
 test("selected-place photo, draft, and request loading stay behind one content lifecycle", async () => {
-  const [pageSource, lifecycleSource] = await Promise.all([
+  const [pageSource, workspaceSource, lifecycleSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-content-workspace.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/content/use-place-content-lifecycle.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageSource, /usePlaceContentLifecycle\(\{/);
+  assert.match(pageSource, /usePlaceContentWorkspace\(\{/);
+  assert.match(workspaceSource, /usePlaceContentLifecycle\(\{/);
   assert.doesNotMatch(pageSource, /const retainPlaceStoryPhoto = useCallback/);
   assert.doesNotMatch(pageSource, /writePlaceStoryDraft\(draftKey/);
   assert.doesNotMatch(pageSource, /fetch\(`\$\{PLACE_STORIES_API\}\?placeKey=/);
@@ -270,16 +278,18 @@ test("selected-place photo, draft, and request loading stay behind one content l
 });
 
 test("explorer content models and read-only loading stay behind the content boundary", async () => {
-  const [pageSource, typesSource, hookSource] = await Promise.all([
+  const [pageSource, workspaceSource, typesSource, hookSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-content-workspace.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/content/types.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/content/use-explorer-content.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageSource, /useExplorerStories\(\{/);
-  assert.match(pageSource, /useExplorerDiagnostics\(\{/);
-  assert.match(pageSource, /useExplorerEvents\(\{/);
-  assert.match(pageSource, /usePlaceRequests\(\{/);
+  assert.match(pageSource, /usePlaceContentWorkspace\(\{/);
+  assert.match(workspaceSource, /useExplorerStories\(\{/);
+  assert.match(workspaceSource, /useExplorerDiagnostics\(\{/);
+  assert.match(workspaceSource, /useExplorerEvents\(\{/);
+  assert.match(workspaceSource, /usePlaceRequests\(\{/);
   assert.doesNotMatch(pageSource, /setUploadDiagnosticsLoading/);
   assert.doesNotMatch(pageSource, /setPerformanceDiagnosticsLoading/);
   assert.doesNotMatch(pageSource, /setGlobalStoriesLoading/);
@@ -296,12 +306,14 @@ test("explorer content models and read-only loading stay behind the content boun
 });
 
 test("story submission, reporting, moderation, and diagnostics stay behind one content action boundary", async () => {
-  const [pageSource, actionsSource] = await Promise.all([
+  const [pageSource, facadeSource, actionsSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-content-actions.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/content/use-place-story-actions.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageSource, /usePlaceStoryActions\(\{/);
+  assert.match(pageSource, /usePlaceContentActions\(\{/);
+  assert.match(facadeSource, /usePlaceStoryActions\(\{/);
   assert.doesNotMatch(pageSource, /const submitPlaceStory = async/);
   assert.doesNotMatch(pageSource, /const submitPlaceStoryReport = async/);
   assert.doesNotMatch(pageSource, /const moderatePlaceStory = async/);
@@ -313,12 +325,14 @@ test("story submission, reporting, moderation, and diagnostics stay behind one c
 });
 
 test("event management and place-request review stay behind one content action boundary", async () => {
-  const [pageSource, actionsSource] = await Promise.all([
+  const [pageSource, facadeSource, actionsSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/content/use-place-content-actions.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/content/use-place-event-request-actions.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageSource, /usePlaceEventRequestActions\(\{/);
+  assert.match(pageSource, /usePlaceContentActions\(\{/);
+  assert.match(facadeSource, /usePlaceEventRequestActions\(\{/);
   assert.doesNotMatch(pageSource, /const submitPlaceEvent = async/);
   assert.doesNotMatch(pageSource, /const submitPlaceRegistrationRequest = async/);
   assert.doesNotMatch(pageSource, /const startPlaceRequestReview = async/);

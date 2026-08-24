@@ -10,8 +10,9 @@ import {
   type AdditionalCategoryId,
   type ConvenienceAttributeId,
 } from "./place-taxonomy";
+import type { DatabaseEditorCategoryFilter } from "./place-directory/contracts";
 
-export type DatabaseEditorCategoryFilter = "all" | "culture" | "food" | "cafe" | "shop" | "other";
+export type { DatabaseEditorCategoryFilter } from "./place-directory/contracts";
 
 export type AdminDatabasePlace = {
   id: string;

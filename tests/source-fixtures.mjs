@@ -21,6 +21,8 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/content/types.ts",
     "../app/content/use-explorer-content.ts",
     "../app/content/use-place-content-lifecycle.ts",
+    "../app/content/use-place-content-actions.ts",
+    "../app/content/use-place-content-workspace.ts",
     "../app/content/use-place-event-request-actions.ts",
     "../app/content/use-place-story-actions.ts",
   ]),
@@ -28,8 +30,9 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/media/photo-processing.ts",
   ]),
   placeDirectory: Object.freeze([
+    "../app/place-directory/contracts.ts",
     "../app/place-directory/model.ts",
-    "../app/place-directory/use-place-directory-view-model.ts",
+    "../app/place-directory/use-place-selection-model.ts",
   ]),
   shell: Object.freeze([
     "../app/shell/ui-theme.tsx",
@@ -50,6 +53,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
   ]),
   editorPlaces: Object.freeze([
     "../app/editor/places/actions.ts",
+    "../app/editor/places/use-place-manager-workspace.ts",
   ]),
   editorPersistence: Object.freeze([
     "../app/editor/persistence/editor-draft-restore.mjs",

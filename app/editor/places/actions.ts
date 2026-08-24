@@ -37,35 +37,25 @@ import {
   mapCategoryForDirectoryPlace,
   withDirectoryMetadata,
 } from "../../place-directory/model";
-import type { DatabaseEditorCategoryFilter } from "../../admin-database-editor";
+import type {
+  DatabaseEditorCategoryFilter,
+  DirectoryStorage,
+  DirectoryTaxonomySync,
+  UnifiedPlaceRow,
+} from "../../place-directory/contracts";
+export type { UnifiedPlaceRow } from "../../place-directory/contracts";
 import type { PlaceDirectoryRecord } from "../../content/types";
 
 type MutableRef<T> = { current: T };
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 type CollectionUpdater<T> = (updater: (current: T[]) => T[]) => void;
 type LeftPanelMode = "assets" | "places" | "calibration" | "print";
-type DirectoryStorage = "loading" | "persistent" | "bundled";
-type DirectoryTaxonomySync = {
-  placeId: string | null;
-  state: "ready" | "saving" | "saved" | "error";
-};
 type GeocodeProgress = {
   active: boolean;
   done: number;
   total: number;
   found: number;
   failed: number;
-};
-
-export type UnifiedPlaceRow = {
-  id: string;
-  name: string;
-  category: CategoryId;
-  address: string;
-  area: string;
-  sourceLabel: string;
-  place?: DirectoryPlace;
-  element?: MapElement;
 };
 
 type PlaceEditorActionOptions = {

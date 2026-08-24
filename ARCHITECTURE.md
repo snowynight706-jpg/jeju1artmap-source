@@ -12,19 +12,23 @@
 - `app/editor/document/`: 내장 자산·초기 지도 요소 생성, 메인 허브·LPP 보강, 저장 문서 정규화와 런타임 ID 복구·배치·잠금 좌표 규칙
 - `app/editor/document/use-editor-document-state.ts`: 현재 편집 문서 스냅샷, 저장 문서 복원·좌표 마이그레이션, 실행 취소 이력과 요소·자산·장소·라벨 설정의 state/ref 동기화를 묶는 문서 상태 작업공간
 - `app/editor/places/actions.ts`: 관리자 장소 작업의 큰 책임 경계. 랜드마크 기본 앵커, 주소 기반 좌표 탐색, 지도 배치·표시, DB 연결·분류·직접 편집 동작을 묶고 기존 `editor/document`와 `place-directory` 규칙을 조립
+- `app/editor/places/use-place-manager-workspace.ts`: 관리자 장소 검색·좌표 고정/배치/추천 필터, 장소 DB 편집 상태와 통합 목록·분류별 파생값을 함께 소유하는 장소 관리 작업공간
 - `app/editor/persistence/`: 편집 초안 복원 우선순위, 기기 자동저장, 공개 레이아웃 API 계약, 보정·잠금·배치 설정의 서버 비교와 지연 저장
 - `app/editor/persistence/use-application-bootstrap.ts`: 공개본·콘텐츠 요약의 최초 로드, 서버 초안과 기기 자동복구본 선택, 좌표·배치 마이그레이션, 편집 UI 설정과 장소 DB 초기 병합을 순서대로 조립하는 애플리케이션 복원 작업공간
-- `app/editor/workspace/use-admin-map-asset-actions.ts`: 사용자 지도 자산·베이스맵 업로드와 화면 파생본 생성, 선택 요소의 계층·크기·마커 스타일·복제·좌표 검토·삭제를 묶은 관리자 지도 자산 작업공간
+- `app/editor/workspace/use-admin-map-asset-actions.ts`: 선택 요소의 호환 자산·랜드마크/범용 자산 그룹 계산, 사용자 지도 자산·베이스맵 업로드와 화면 파생본 생성, 계층·크기·마커 스타일·복제·좌표 검토·삭제를 묶은 관리자 지도 자산 작업공간
 - `app/editor/workspace/use-admin-output-workspace.ts`: 고해상도 PNG·JSON·메모 내보내기와 복원, 라벨 밀도 설정 저장, 편집 초안 기록, 공개 이력 조회·불러오기와 공개본 게시를 한 흐름으로 조립하는 관리자 출력 작업공간
-- `app/editor/workspace/use-editor-map-edit-actions.ts`: 좌표 기준점 적용, 앵커·요소·메모 수정, 통합 라벨 대상·수동 위치와 DOM 충돌을 반영한 전체 라벨 자동 정리를 묶는 관리자 지도 편집 작업공간
+- `app/editor/workspace/use-editor-map-edit-actions.ts`: 1·2·3차 좌표 기준점과 선택 요소 보정 상태 계산, 기준점 적용, 앵커·요소·메모 수정, 통합 라벨 대상·수동 위치와 DOM 충돌을 반영한 전체 라벨 자동 정리를 묶는 관리자 지도 편집 작업공간
 - `app/content/types.ts`: 후기·행사·진단·장소 요청과 공개 콘텐츠 요약에서 공유하는 클라이언트 데이터 계약
 - `app/content/client.ts`: 후기·행사·장소 요청 API 경로, 익명 방문자 식별, 후기 세션 초안과 업로드·성능 진단 전송
 - `app/content/use-explorer-content.ts`: 원도심 탐색 탭의 후기·행사·관리자 진단·장소 요청 페이지 상태와 중단 가능한 읽기 요청
 - `app/content/use-place-content-lifecycle.ts`: 선택 장소 후기·행사 읽기 요청과 취소, 후기 초안·사진 임시 보관, 행사 사진과 지도 장소 선택, 검수 요청 마커 위치 동기화를 묶는 콘텐츠 생명주기
+- `app/content/use-place-content-workspace.ts`: 후기·행사·장소 요청 폼 상태, 원도심 탐색 탭별 로더, 선택 장소 콘텐츠 생명주기와 지도 배지용 요약 상태를 소유하는 콘텐츠 작업공간
+- `app/content/use-place-content-actions.ts`: 콘텐츠 작업공간 계약을 받아 후기 변경과 행사·장소 요청 변경 액션을 한 번에 조립하는 명령 파사드
 - `app/content/use-place-story-actions.ts`: 후기 등록·카메라 권한, 신고·공개 상태·삭제와 업로드·성능 진단 정리를 조립하는 후기 변경 작업공간
 - `app/content/use-place-event-request-actions.ts`: 행사 입력·수정·공개 상태·삭제와 장소 등록 요청 제출·지도 검수·DB 승인을 조립하는 행사·장소 요청 변경 작업공간
+- `app/place-directory/contracts.ts`: 장소 관리자 필터, 저장 상태, 분류 동기화와 통합 장소 행이 공유하는 UI 비종속 계약
 - `app/place-directory/model.ts`: 기본·마스터 장소 카탈로그 생성, 필수 시스템 장소 보강, 서버 레코드 병합, 공개 분류와 지도 마커 자산 선택을 묶은 장소 도메인 경계
-- `app/place-directory/use-place-directory-view-model.ts`: 지도 요소·장소 인덱스, 선택 장소·시설 그룹·좌표 기준점·호환 자산, 관리자 통합 장소 목록과 DB 검색/분류 필터를 한 번에 계산해 공개·관리자 화면에 공급하는 보기 모델
+- `app/place-directory/use-place-selection-model.ts`: 지도 요소·DB 장소 인덱스, 선택 장소·시설 그룹과 공개 표시 메타데이터를 계산하는 선택 모델
 - `app/shell/ui-theme.tsx`: 다섯 화면 테마의 정의·선택 UI와 기기 저장·복원을 담당하는 애플리케이션 셸 모듈
 - `app/shell/use-application-shell-lifecycle.ts`: 관리자 전역 단축키, 공유 관리자 세션, 공개 화면 쿠키 전환을 묶는 애플리케이션 셸 생명주기
 - `app/media/photo-processing.ts`: 후기와 관리자 행사에서 공유하는 사진 원본 제한, Worker 압축, 브라우저 캔버스 폴백과 인코딩 목표
@@ -47,7 +51,7 @@
 - `worker/`: 배포 Worker 진입점과 정적 자산 캐시 정책
 - `tests/`: 기능·회귀·PWA·성능 정적 검증
 
-`app/page.tsx`의 1차 큰 책임 경계는 모두 분리했다. 지도 계산은 `app/map/workspace`, 공개 장소 카탈로그·탐색·패널 이동은 `app/public`, 선택 장소와 관리자 장소·DB 파생 모델은 `app/place-directory`, 공개본·편집 초안·로컬 설정·장소 DB의 초기 복원은 `app/editor/persistence`, 관리자 지도 자산·출력·기록·게시는 `app/editor/workspace`, 테마·전역 단축키·공유 관리자 세션은 `app/shell`이 기존 하위 계산·저장 모듈을 조립하는 경계로 고정한다. 다음 분해는 각 Workspace 안에서 100~800줄 규모의 화면·hook·순수 계산 모듈을 대상으로 하며, 이미 분리된 `map`, `public`, `content`, `editor`, `place-directory`, `shell` 하위 모듈은 재통합하지 않는다.
+`app/page.tsx`의 1차 큰 책임 경계는 모두 분리했다. 지도 계산은 `app/map/workspace`, 공개 장소 카탈로그·탐색·패널 이동은 `app/public`, 장소 선택·도메인 계약은 `app/place-directory`, 관리자 장소·DB 상태는 `app/editor/places`, 후기·행사·장소 요청 상태와 명령 조립은 `app/content`, 공개본·편집 초안·로컬 설정·장소 DB의 초기 복원은 `app/editor/persistence`, 관리자 지도 자산·출력·기록·게시는 `app/editor/workspace`, 테마·전역 단축키·공유 관리자 세션은 `app/shell`이 기존 하위 계산·저장 모듈을 조립하는 경계로 고정한다. 다음 분해는 상태나 계산을 다시 잘게 흩뜨리지 않고, 변경 이유가 같은 화면 묶음이 독립적으로 수정·지연 로딩될 때만 UI 컴포넌트 경계를 추가한다.
 
 통합 라벨의 공개 연결선은 거리와 무관하게 불투명도 0.84를 유지한다. 관리자 한 열 통합 라벨은 항목명 길이로 폭을 정하며, 마커 왼쪽에 놓인 라벨은 항목명을 왼쪽 정렬하고 분류 표시점과 연결선 끝점을 행 오른쪽에 맞춘다.
 

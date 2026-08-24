@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useCallback, useMemo, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { isCoreLandmarkName, normalizePlaceName } from "../../core-landmarks";
 import { geocodedPlaces } from "../../geocoded-places";
 import {
   MAP_ASPECT,
+  PRIMARY_CALIBRATION_NAMES,
   buildEffectiveCalibrationPoints,
   calibratedPlaceCoordinates,
   canonicalAnchorForElement,
@@ -40,6 +41,11 @@ type UseEditorMapEditActionsOptions = {
   zoom: number;
   labelsRefreshing: boolean;
   assetVisualBounds: Record<string, VisualBounds>;
+  elements: MapElement[];
+  directoryPlaces: DirectoryPlace[];
+  calibrationPoints: CalibrationPoint[];
+  landmarkDefaultPositions: LandmarkDefaultPosition[];
+  selected: MapElement | null;
   elementsRef: MutableRef<MapElement[]>;
   assetsRef: MutableRef<MapAsset[]>;
   placesRef: MutableRef<DirectoryPlace[]>;
@@ -71,6 +77,11 @@ export function useEditorMapEditActions(options: UseEditorMapEditActionsOptions)
     zoom,
     labelsRefreshing,
     assetVisualBounds,
+    elements,
+    directoryPlaces,
+    calibrationPoints,
+    landmarkDefaultPositions,
+    selected,
     elementsRef,
     assetsRef,
     placesRef,
@@ -96,6 +107,49 @@ export function useEditorMapEditActions(options: UseEditorMapEditActionsOptions)
     setAssetVisualBounds,
     setLabelsRefreshing,
   } = options;
+
+  const effectiveCalibrationPoints = useMemo(
+    () => buildEffectiveCalibrationPoints(calibrationPoints, landmarkDefaultPositions, elements, directoryPlaces),
+    [calibrationPoints, directoryPlaces, elements, landmarkDefaultPositions],
+  );
+  const secondaryCalibrationPoints = useMemo(
+    () => effectiveCalibrationPoints.filter((point) => point.tier === "secondary"),
+    [effectiveCalibrationPoints],
+  );
+  const tertiaryCalibrationPoints = useMemo(
+    () => effectiveCalibrationPoints.filter((point) => point.tier === "tertiary"),
+    [effectiveCalibrationPoints],
+  );
+  const calibrationReferenceNames = useMemo(
+    () => new Set(effectiveCalibrationPoints.map((point) => point.name)),
+    [effectiveCalibrationPoints],
+  );
+  const selectedPrimaryCalibrationPoint = selected
+    ? calibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null
+    : null;
+  const selectedSecondaryCalibrationPoint = selected
+    ? secondaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null
+    : null;
+  const selectedTertiaryCalibrationPoint = selected
+    ? tertiaryCalibrationPoints.find((point) => point.name === normalizePlaceName(selected.name)) ?? null
+    : null;
+  const selectedCalibrationPoint = selectedPrimaryCalibrationPoint
+    ?? selectedSecondaryCalibrationPoint
+    ?? selectedTertiaryCalibrationPoint;
+  const selectedLandmarkDefault = selected?.category === "landmark"
+    ? landmarkDefaultPositions.find((position) => (
+      position.elementId === selected.id || position.name === normalizePlaceName(selected.name)
+    )) ?? {
+      elementId: selected.id,
+      name: normalizePlaceName(selected.name),
+      x: selected.anchorX,
+      y: selected.anchorY,
+      confirmed: false,
+    }
+    : null;
+  const selectedDisplayOffset = selected ? { x: selected.x - selected.anchorX, y: selected.y - selected.anchorY } : null;
+  const selectedIsPrimaryCalibration = selected ? PRIMARY_CALIBRATION_NAMES.has(normalizePlaceName(selected.name)) : false;
+  const selectedHasGeocodedSource = selected ? Boolean(geocodedPlaces[normalizePlaceName(selected.name)]) : false;
 
   const resolveRenderedLabelOverlaps = (total: number, notify: boolean) => {
     window.requestAnimationFrame(() => {
@@ -548,6 +602,17 @@ export function useEditorMapEditActions(options: UseEditorMapEditActionsOptions)
   }, [measuredAssetIdsRef, setAssetVisualBounds]);
 
   return {
+    secondaryCalibrationPoints,
+    tertiaryCalibrationPoints,
+    calibrationReferenceNames,
+    selectedPrimaryCalibrationPoint,
+    selectedSecondaryCalibrationPoint,
+    selectedTertiaryCalibrationPoint,
+    selectedCalibrationPoint,
+    selectedLandmarkDefault,
+    selectedDisplayOffset,
+    selectedIsPrimaryCalibration,
+    selectedHasGeocodedSource,
     setPlacementOverride,
     updateDenseLabelPosition,
     setDenseLabelEligibility,

@@ -73,8 +73,9 @@
 - 후기 등록·카메라 권한·신고·관리자 숨김/삭제와 업로드·성능 진단 정리를 `app/content/use-place-story-actions.ts`로 묶고 기존 사진 준비·오류 진단·기기 초안 형식을 유지
 - 행사 입력·수정·공개 상태·삭제와 장소 등록 요청 제출·지도 검수·DB 승인·반려를 `app/content/use-place-event-request-actions.ts`로 묶고 기존 좌표·마커·장소 DB 저장 형식을 유지
 - 선택 장소 후기·행사의 중단 가능한 읽기 요청, 후기 기기 초안·사진 임시 보관, 행사 사진·다중 장소 선택과 검수 요청 마커 위치 동기화를 `app/content` 생명주기로 묶고 기존 API·초안·진단 형식을 유지
+- 후기·행사·장소 요청의 폼 상태·전역 탐색 로더·선택 장소 콘텐츠 생명주기를 `app/content/use-place-content-workspace.ts`로 통합하고, 변경 명령은 `use-place-content-actions.ts` 파사드가 하위 후기/행사·요청 액션을 조립하도록 해 `page.tsx`가 콘텐츠 내부 상태와 액션 인자를 직접 연결하지 않게 함
 - 장소 DB의 기본·마스터 카탈로그 생성, 시스템 장소 보강, 서버 레코드 병합, 공개 카테고리 판정과 지도 마커 자산 선택 규칙을 `app/place-directory` 한 기능군으로 묶고 `page.tsx`에는 초기 자료와 화면 흐름 조립만 유지
-- 선택 장소·시설 그룹·좌표 기준점·호환 자산과 관리자 통합 장소 목록·DB 검색/분류 필터의 파생 계산을 `app/place-directory/use-place-directory-view-model.ts`로 묶어 지도 요소·장소 인덱스를 한 번 만들고 공개·관리자 화면이 함께 재사용
+- 장소 기능의 공용 계약을 `app/place-directory/contracts.ts`로 모으고, 선택 장소·시설 그룹·지도 요소/DB 인덱스는 `use-place-selection-model.ts`, 관리자 통합 장소 목록·DB 검색/분류 상태는 `app/editor/places/use-place-manager-workspace.ts`, 자산 후보는 지도 자산 작업공간, 좌표 기준점 파생값은 지도 편집 작업공간이 각각 소유하도록 기존 혼합 보기 모델을 해체
 - 관리자 장소 작업의 랜드마크 기본 앵커·주소 좌표 탐색·지도 배치·라벨 표시·DB 연결·분류·직접 편집 동작을 `app/editor/places`의 큰 책임 경계로 이동하고, `page.tsx`에는 상태와 기능군 연결만 유지
 - 지도 맞춤 축척·화면 경계·라벨 후보와 축척 예산·통합 배치·출력 정책과 감사·충돌 상태·모바일 화면 밖 선별을 `app/map/workspace`의 큰 조정 모델로 묶고, 기존 `map/labels`, `map/print`, `map/rendering` 계산 모듈을 그 경계에서 조립
 - 저사양 베이스맵의 2048→4096 승격, 시작 자산 준비, 지도·뷰포트 측정, 맞춤 축척·최초 주요 거점 시점과 라벨 정착·시작 성능 진단 순서를 `app/map/workspace`의 지도 런타임 생명주기로 분리

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChangeEvent, Dispatch, SetStateAction } from "react";
+import { useMemo, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import { normalizePlaceName } from "../../core-landmarks";
 import { loadImage } from "../../media/photo-processing";
 import { MAP_ASPECT } from "../../map/calibration/model";
@@ -22,6 +22,37 @@ import type { BaseMapMode, UploadedBaseMap } from "../persistence/public-layout-
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 type MutableRef<T> = { current: T };
+
+type UseAdminMapAssetViewModelOptions = {
+  assets: MapAsset[];
+  selected: MapElement | null;
+};
+
+export function useAdminMapAssetViewModel({ assets, selected }: UseAdminMapAssetViewModelOptions) {
+  const compatibleAssets = useMemo(() => selected ? assets.filter((asset) => (
+    asset.placeName ? asset.placeName === selected.name : asset.category === selected.category
+  )) : assets, [assets, selected]);
+  const landmarkAssetGroups = useMemo(() => {
+    const groups = new Map<string, MapAsset[]>();
+    assets.filter((asset) => asset.category === "landmark" && asset.placeName).forEach((asset) => {
+      const group = groups.get(asset.placeName!) ?? [];
+      group.push(asset);
+      groups.set(asset.placeName!, group);
+    });
+    return [...groups.entries()].map(([placeName, candidates]) => ({ placeName, candidates }));
+  }, [assets]);
+  const generalMarkerAssets = useMemo(() => assets.filter((asset) => asset.category !== "landmark"), [assets]);
+  const customLandmarkAssets = useMemo(() => assets.filter((asset) => asset.category === "landmark" && !asset.placeName), [assets]);
+  const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
+
+  return {
+    compatibleAssets,
+    landmarkAssetGroups,
+    generalMarkerAssets,
+    customLandmarkAssets,
+    assetsById,
+  };
+}
 
 type UseAdminMapAssetActionsOptions = {
   assetCategory: CategoryId;
