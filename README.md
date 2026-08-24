@@ -1,108 +1,116 @@
-# vinext-starter
+# 제주 원도심 아트맵
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+제주 원도심의 문화예술 공간, 상점, 먹거리, 행사와 지역 이야기를 한 장의 일러스트 지도에서 탐색하는 웹 애플리케이션입니다. 방문자는 장소를 찾아 상세 정보와 후기·행사를 확인할 수 있고, 운영자는 같은 지도 위에서 장소 데이터와 라벨, 자산, 공개본을 관리할 수 있습니다.
 
-## Prerequisites
+PC 웹과 모바일 웹을 함께 지원하며, 모바일에서는 PWA로 설치해 독립 실행형 앱처럼 사용할 수 있습니다.
 
-- Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+## 주요 기능
 
-## Sites Lifecycle
+### 방문자용 공개 지도
 
-The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
+- 문화공간·상점·음식점·공공시설 등 카테고리별 장소 탐색
+- 지도 이동, 확대·축소, 장소 검색과 현재 화면 중심의 라벨 표시
+- 장소별 주소, 소개, 운영 정보, 편의 정보와 길찾기 연결
+- 진행 중인 행사와 방문 후기·사진 확인 및 후기 등록
+- 새로운 장소 등록 요청과 지도 위치 제안
+- 장소 공유 링크와 브라우저 뒤로가기를 고려한 탐색 흐름
+- 모바일 화면과 저사양 기기에 맞춘 렌더링 최적화
+- PWA 설치, 오프라인 안내, 새 버전 업데이트와 자산 캐시 관리
 
-This starter does not use `wrangler.jsonc`.
+### 운영자용 지도 편집기
 
-`install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout and then validates the Sites artifact. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
+- 장소 DB 검색·분류·수정 및 지도 요소 연결
+- 마커·랜드마크·라벨의 위치, 크기, 표시 상태와 출력 설정 편집
+- 겹치는 장소의 통합 라벨 배치와 축척별 라벨 밀도 조절
+- 지도 좌표 보정, 잠금, 실행 취소와 기기 자동 복구
+- 행사·후기·장소 등록 요청 검수 및 공개 상태 관리
+- 편집 초안 저장, 공개 이력 기록, 이전본 불러오기와 공개본 게시
+- 고해상도 PNG 지도, JSON 데이터와 검토 메모 내보내기
 
-Scripts that need writable project-scoped home, npm, XDG, and temporary paths use `scripts/sites-env.sh`. The `dev` and `start` scripts honor the caller's runtime environment and keep Wrangler logs inside the checkout. The generated `.sites-runtime/` directory is disposable and ignored by Git.
+## 서비스 특징
 
-## Included Shape
+- **하나의 데이터, 두 개의 화면**: 공개 지도와 관리자 편집기가 동일한 장소·지도 문서를 공유합니다.
+- **모바일 우선 지도 조작**: 제스처 중 합성 렌더링과 화면 밖 요소 선별로 이동·확대 반응성을 유지합니다.
+- **정지 화면 화질 보존**: 기기 성능에 따라 화면용 자산을 선택하되, 확대 정착 화면과 고해상도 출력 품질을 보호합니다.
+- **축척 대응 라벨**: 현재 화면과 확대율에 맞춰 개별·통합 라벨 수와 배치를 다시 계산합니다.
+- **안전한 편집 흐름**: 초안, 자동 복구본, 공개 이력과 현재 공개본을 분리해 운영 중 변경을 관리합니다.
 
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+## 기술 구성
 
-## Workspace Auth Headers
+- React 19, Next.js 16, TypeScript
+- Vinext, Vite, Cloudflare Workers
+- Cloudflare D1 + Drizzle ORM: 장소, 후기, 행사, 편집·공개 이력 저장
+- Cloudflare R2: 지도 원본·파생본과 업로드 이미지 저장
+- Service Worker + Web App Manifest: PWA 설치·업데이트·캐시 제어
+- Node.js 기본 테스트 러너와 ESLint를 이용한 회귀 검증
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+## 프로젝트 구조
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+app/
+  public/            공개 장소 탐색과 패널·내비게이션
+  map/               지도 계산, 조작, 라벨, 렌더링과 출력
+  editor/            편집 문서, 장소 관리, 저장·게시 작업공간
+  content/           후기, 행사, 장소 등록 요청
+  place-directory/   장소 카탈로그와 선택 모델
+  media/             사진 압축·업로드 처리
+  api/               D1·R2 기반 API 라우트
+db/, drizzle/        데이터 스키마와 마이그레이션
+worker/              배포 Worker와 정적 자산 캐시 정책
+public/              PWA 파일, 지도·랜드마크·마커 자산
+tests/               기능·회귀·PWA·성능 정적 검증
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+세부 책임과 현재 구현 상태는 [ARCHITECTURE.md](./ARCHITECTURE.md), [PROJECT_STATE.md](./PROJECT_STATE.md)에서 확인할 수 있습니다.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## 로컬 실행
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+### 요구 환경
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+- Node.js `>=22.13.0`
+- Linux 또는 WSL 환경
+- `flock`, `curl`, GNU `timeout`
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+설치 및 개발 서버 실행:
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+```bash
+npm run install:ci
+npm run dev
+```
 
-## Diagnostic Commands
+기본 개발 환경은 `.openai/hosting.json`에 선언된 D1 `DB`, R2 `BUCKET` 바인딩을 사용합니다. 실제 운영 데이터나 관리자 인증값은 저장소에 직접 기록하지 말고 배포 환경에서 주입해야 합니다.
 
-- `npm run install:ci`: perform the one bounded lockfile install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build and validate the deployable Sites artifact
-- `npm run start`: start the built Vinext application
-- `npm test`: build, validate, and verify the rendered development-preview metadata
-- `npm run validate:artifact`: recheck an existing artifact's manifest and ESM `default.fetch` export
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+## 검증
 
-Use build and validation commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
+```bash
+npm run lint
+node --test tests/*.test.mjs
+```
 
-The timeout defaults can be overridden for a controlled canary with `SITES_INSTALL_TIMEOUT`, `SITES_INSTALL_KILL_AFTER`, `SITES_BUILD_TIMEOUT`, and `SITES_BUILD_KILL_AFTER`. A timeout fails the command; the helpers never retry an unchanged install or build.
+프로덕션 산출물 검증이 필요한 경우:
 
-## Learn More
+```bash
+npm run build
+npm run validate:artifact
+```
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+`npm run build`는 Sites 배포용 빌드를 생성하고 산출물의 Worker 진입점까지 확인합니다.
+
+## 배포
+
+이 프로젝트는 `.openai/hosting.json`의 Sites 설정과 Cloudflare D1·R2 바인딩을 기준으로 배포됩니다. 원격 빌더는 업로드된 커밋에 대해 잠금 파일 기반 설치와 프로덕션 빌드 검증을 수행합니다.
+
+배포 전에는 다음 사항을 확인합니다.
+
+- `npm run lint` 통과
+- `node --test tests/*.test.mjs` 통과
+- Sites 체크포인트의 프로덕션 빌드 검증 통과
+- D1 마이그레이션과 R2 자산 경로 호환성 확인
+- 공개 지도, 관리자 편집기, 모바일 PWA 설치 화면 점검
+
+## 운영 시 주의사항
+
+- 지도 좌표, 자산 경로와 DB 저장 형식은 공개본과 호환되도록 유지해야 합니다.
+- 관리자 인증 비밀번호와 세션 토큰은 환경 변수로만 관리해야 합니다.
+- 현재 공개 중인 지도와 편집 초안은 서로 다른 수명주기를 가지므로, 게시 전에 공개 이력과 출력 결과를 확인해야 합니다.
+- 원본 이미지의 저작권과 사용 권한은 실제 배포·재배포 범위에 맞게 별도로 확인해야 합니다.
