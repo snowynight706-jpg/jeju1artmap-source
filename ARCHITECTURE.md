@@ -49,7 +49,7 @@
 - `public/landmarks-mobile-384/`: 공개 모바일이 최초 진입에서 한 번 선택해 세션 내 계속 사용하는 랜드마크 WebP 파생본
 - `db/`, `drizzle/`: 영구 저장 스키마와 마이그레이션
 - `worker/`: 배포 Worker 진입점과 정적 자산 캐시 정책
-- `tests/`: 기능·회귀·PWA·성능 정적 검증
+- `tests/`: 기능·회귀·PWA·성능 검증과 설정 잠금·revision의 가짜 D1 동시 실행 행위 검증
 
 `app/page.tsx`의 1차 큰 책임 경계는 모두 분리했다. 지도 계산은 `app/map/workspace`, 공개 장소 카탈로그·탐색·패널 이동은 `app/public`, 장소 선택·도메인 계약은 `app/place-directory`, 관리자 장소·DB 상태는 `app/editor/places`, 후기·행사·장소 요청 상태와 명령 조립은 `app/content`, 공개본·편집 초안·로컬 설정·장소 DB의 초기 복원은 `app/editor/persistence`, 관리자 지도 자산·출력·기록·게시는 `app/editor/workspace`, 테마·전역 단축키·공유 관리자 세션은 `app/shell`이 기존 하위 계산·저장 모듈을 조립하는 경계로 고정한다. 다음 분해는 상태나 계산을 다시 잘게 흩뜨리지 않고, 변경 이유가 같은 화면 묶음이 독립적으로 수정·지연 로딩될 때만 UI 컴포넌트 경계를 추가한다.
 
