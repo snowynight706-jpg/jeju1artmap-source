@@ -37,13 +37,14 @@ test("map labels leave the paint path only after drag or zoom actually starts", 
   assert.doesNotMatch(pageSource, /beginTouchMapTransform[\s\S]{0,500}classList\.add\("is-map-labels-suspended"\)/);
 });
 
-test("touch transform handoff keeps the compositor layer through the settled frame", () => {
+test("touch transform handoff commits map width and displayed zoom in one render", () => {
   assert.match(pageSource, /touchLayerReleaseFrameRef\.current = window\.requestAnimationFrame/);
   assert.match(pageSource, /touchLayerReleaseTimerRef\.current = window\.setTimeout/);
   assert.match(pageSource, /activeTouchPointersRef\.current\.size > 0 \|\| pinchGestureRef\.current/);
   assert.match(pageSource, /panInteractionRef\.current = null;[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
-  assert.match(pageSource, /setMapLayoutZoom\(committedZoom\)[\s\S]{0,180}stageRef\.current\?\.style\.removeProperty\("transform"\)/);
-  assert.match(pageSource, /startTransition\(\(\) => \{\s*setZoom\(committedZoom\);\s*\}\)/);
+  assert.match(pageSource, /setZoom\(committedZoom\);\s*setMapLayoutZoom\(committedZoom\)[\s\S]{0,180}stageRef\.current\?\.style\.removeProperty\("transform"\)/);
+  assert.doesNotMatch(pageSource, /startTransition\(\(\) => \{\s*setZoom\(committedZoom\);\s*\}\)/);
+  assert.match(pageSource, /const mapScaleRatio = Math\.max\(1, zoom \/ Math\.max\(fitZoom, 0\.22\)\)/);
   assert.doesNotMatch(pageSource, /restartMapLabelHandoff|labelHandoffScaleRef/);
 });
 

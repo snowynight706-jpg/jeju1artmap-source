@@ -78,7 +78,7 @@ test("public explorer starts with all places and reports the filtered result cou
   assert.match(cssSource, /\.public-place-search-row \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)/);
   assert.match(cssSource, /\.public-place-filter-summary \{[^}]*min-height: 21px[^}]*margin-top: 1px/);
   assert.doesNotMatch(pageSource, /장소 \{publicPlaceItems\.length\} · 마커 \{visibleElements\.length\}/);
-  assert.match(pageSource, /const mapScaleRatio = Math\.max\(1, labelDetailRatio\)/);
+  assert.match(pageSource, /const mapScaleRatio = Math\.max\(1, zoom \/ Math\.max\(fitZoom, 0\.22\)\)/);
   assert.match(pageSource, /const mapVisiblePercent = Math\.max\(1, Math\.min\(100, Math\.round\(100 \/ mapScaleRatio\)\)\)/);
   assert.match(pageSource, /const outputLabelCount = stageLabelElements\.length/);
   assert.equal((pageSource.match(/맞춤 ×\{mapScaleRatioLabel\} · 지도 \{mapVisiblePercent\}% · 라벨 \{outputLabelCount\}개/g) ?? []).length, 2);

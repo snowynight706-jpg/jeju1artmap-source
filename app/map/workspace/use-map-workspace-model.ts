@@ -145,7 +145,9 @@ export function useMapWorkspaceModel(options: MapWorkspaceModelOptions) {
   }, [publicLayoutAccess, stageDimensions.height, stageDimensions.width, viewportDimensions.height, viewportDimensions.width]);
   const labelRenderZoom = publicLayoutAccess === "viewer" ? settledLabelZoom : zoom;
   const labelDetailRatio = labelRenderZoom / Math.max(fitZoom, 0.22);
-  const mapScaleRatio = Math.max(1, labelDetailRatio);
+  // The footer describes the committed map geometry, not the deferred label
+  // composition. This keeps its scale in lockstep with the post-gesture width.
+  const mapScaleRatio = Math.max(1, zoom / Math.max(fitZoom, 0.22));
   const mapScaleRatioLabel = mapScaleRatio.toFixed(2).replace(/\.?0+$/, "");
   const mapVisiblePercent = Math.max(1, Math.min(100, Math.round(100 / mapScaleRatio)));
   const labelCompositionSettled = Math.abs(settledLabelZoom - zoom) <= 0.002

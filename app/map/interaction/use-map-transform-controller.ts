@@ -238,6 +238,10 @@ export function useMapTransformController({
     const committedZoom = zoomRef.current;
     const committedPan = { ...panRef.current };
     const zoomChanged = Math.abs(committedZoom - touchTransformBaseZoomRef.current) > 0.002;
+    // The layout width and the public scale status must commit in the same
+    // render. Deferring only zoom left the map at the new CSS width while the
+    // status still described the previous scale for a visible PWA frame.
+    setZoom(committedZoom);
     setMapLayoutZoom(committedZoom);
     stageRef.current?.style.removeProperty("transform");
     mobileMarkerPlaceholderLayerRef.current?.style.removeProperty("--mobile-marker-gesture-scale");
@@ -246,9 +250,6 @@ export function useMapTransformController({
     setMapRenderPan((current) => (
       current.x === committedPan.x && current.y === committedPan.y ? current : committedPan
     ));
-    startTransition(() => {
-      setZoom(committedZoom);
-    });
     scheduleTouchLayerRelease(zoomChanged && viewportRef.current?.clientWidth && viewportRef.current.clientWidth <= 760 ? 170 : 80, committedZoom);
   }, [flushTouchMapTransform, mobileMarkerPlaceholderLayerRef, panRef, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan, setMapRenderPan, setZoom, stageRef, viewportRef, zoomRef]);
 
