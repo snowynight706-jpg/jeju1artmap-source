@@ -5,6 +5,7 @@ import test from "node:test";
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
+const routeSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const publicLayoutRoute = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
@@ -17,6 +18,7 @@ const publicPlaceDetailSource = await readFile(new URL("../app/public/place-deta
 const publicExplorerActivitySource = await readFile(new URL("../app/public/explorer-activity-content.tsx", import.meta.url), "utf8");
 const publicExplorerPanelSource = await readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8");
 const publicPlaceSheetSource = await readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8");
+const publicViewerDialogsSource = await readFile(new URL("../app/public/viewer-dialogs.tsx", import.meta.url), "utf8");
 const contentClientSource = await readFile(new URL("../app/content/client.ts", import.meta.url), "utf8");
 const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
 const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
@@ -126,6 +128,8 @@ test("administrator place request cards load only when their management tab is o
 });
 
 test("public place details, events, and review UI load only after a place is opened", () => {
+  assert.match(pageSource, /const PublicPlaceSheet = lazy\(\(\) => import\("\.\/public\/place-sheet"\)\)/);
+  assert.match(pageSource, /selected && !globalStoriesOpen && <Suspense fallback=/);
   assert.match(publicPlaceSheetSource, /const PublicPlaceDetailContent = lazy\(\(\) => import\("\.\/place-detail-content"\)\)/);
   assert.match(publicPlaceSheetSource, /<Suspense fallback=\{<div className="public-place-detail-loading"/);
   assert.match(publicPlaceSheetSource, /<PublicPlaceDetailContent/);
@@ -135,6 +139,8 @@ test("public place details, events, and review UI load only after a place is ope
 });
 
 test("mobile panel motion avoids height animation and explorer activity tabs are code-split", () => {
+  assert.match(pageSource, /const PublicExplorerPanel = lazy\(\(\) => import\("\.\/public\/explorer-panel"\)\)/);
+  assert.match(pageSource, /globalStoriesOpen && <Suspense fallback=/);
   assert.match(publicExplorerPanelSource, /const PublicExplorerActivityContent = lazy\(\(\) => import\("\.\/explorer-activity-content"\)\)/);
   assert.match(pageSource, /panel\.animate\(\[[\s\S]+duration: PUBLIC_PANEL_MOTION_MS/);
   assert.match(globalStyles, /--motion-standard: \.24s/);
@@ -145,4 +151,13 @@ test("mobile panel motion avoids height animation and explorer activity tabs are
   assert.match(publicExplorerActivitySource, /data-tab="reviews"/);
   assert.match(publicExplorerActivitySource, /data-tab="events"/);
   assert.match(publicExplorerActivitySource, /global-story-card/);
+});
+
+test("viewer forms stay out of the map-first initial bundle", () => {
+  assert.match(routeSource, /const PublicViewerDialogs = lazy\(\(\) => import\("\.\/public\/viewer-dialogs"\)\)/);
+  assert.match(routeSource, /storyReportTarget \|\| placeRequestFormOpen \|\| adminLoginOpen/);
+  assert.doesNotMatch(routeSource, /className="place-request-dialog"|className="story-report-dialog"|className="admin-login-dialog"/);
+  assert.match(publicViewerDialogsSource, /className="place-request-dialog"/);
+  assert.match(publicViewerDialogsSource, /className="story-report-dialog"/);
+  assert.match(publicViewerDialogsSource, /className="admin-login-dialog"/);
 });

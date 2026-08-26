@@ -12,6 +12,7 @@ import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
 const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-request-list.tsx", import.meta.url), "utf8");
+const publicViewerDialogsSource = await readFile(new URL("../app/public/viewer-dialogs.tsx", import.meta.url), "utf8");
 
 test("Chilseong shopping street and the placed Chilseong landmark converge on one DB identity", () => {
   assert.equal((masterDirectorySource.match(/"id": "master-v13-chilseong-ro"/g) ?? []).length, 1);
@@ -48,7 +49,7 @@ test("the approved v2 marker set registers all nine borderless final SVG assets 
   assert.match(markerAssetSource, /generic-marker-v2-information/);
   assert.match(registrationRouteSource, /MARKER_STYLES = new Set\(\["01", "02", "03", "v2"\]\)/);
   assert.match(pageSource, /\["v2", "리뉴얼 최종 원형"\]/);
-  assert.match(pageSource, /\["v2", "01", "02", "03"\]/);
+  assert.match(publicViewerDialogsSource, /\["v2", "01", "02", "03"\]/);
   assert.match(adminPlaceRequestSource, /markerAssetSrc\(request\.markerStyle, request\.category\)/);
-  assert.equal((pageSource.match(/markerAssetSrc\(placeRequestMarkerStyle, placeRequestCategory\)/g) ?? []).length, 2);
+  assert.equal((publicViewerDialogsSource.match(/markerAssetSrc\([^,\n]+, placeRequest\.category\)/g) ?? []).length, 2);
 });

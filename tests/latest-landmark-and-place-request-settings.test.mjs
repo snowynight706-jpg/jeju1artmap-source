@@ -5,6 +5,7 @@ import test from "node:test";
 import { readAppClientSource } from "./source-fixtures.mjs";
 
 const pageSource = await readAppClientSource();
+const publicViewerDialogsSource = await readFile(new URL("../app/public/viewer-dialogs.tsx", import.meta.url), "utf8");
 const landmarkSource = await readFile(new URL("../app/landmark-assets/index.ts", import.meta.url), "utf8");
 const requestRouteSource = await readFile(new URL("../app/api/place-registration-requests/route.ts", import.meta.url), "utf8");
 const publicLayoutRouteSource = await readFile(new URL("../app/api/public-layout/route.ts", import.meta.url), "utf8");
@@ -75,11 +76,11 @@ test("the current Chilseong-ro screen and export assets retain a real alpha chan
 
 test("public place requests choose and persist an existing area value", () => {
   assert.match(pageSource, /const placeRequestAreaOptions = useMemo/);
-  assert.match(pageSource, /aria-label="장소 등록 요청 권역·세부지역 선택"/);
-  assert.match(pageSource, /placeRequestAreaOptions\.map/);
+  assert.match(publicViewerDialogsSource, /aria-label="장소 등록 요청 권역·세부지역 선택"/);
+  assert.match(publicViewerDialogsSource, /placeRequest\.areaOptions\.map/);
   assert.match(pageSource, /area: placeRequestArea/);
   assert.match(pageSource, /area: request\.area/);
-  assert.match(pageSource, /!placeRequestArea \|\| placeRequestName/);
+  assert.match(pageSource, /Boolean\(placeRequestArea\) && placeRequestName/);
 
   assert.match(requestRouteSource, /submitted_area AS submittedArea/);
   assert.match(requestRouteSource, /const area = cleanText\(payload\.area, 160\)/);

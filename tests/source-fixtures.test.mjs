@@ -192,6 +192,9 @@ test("page and public shells keep heavyweight panels behind lazy import boundari
   const lazyBoundaries = [
     [pageSource, "./admin-database-editor"],
     [pageSource, "./admin-place-event-dialog"],
+    [pageSource, "./public/explorer-panel"],
+    [pageSource, "./public/place-sheet"],
+    [pageSource, "./public/viewer-dialogs"],
     [explorerSource, "../admin-diagnostics-panel"],
     [explorerSource, "../admin-place-request-list"],
     [explorerSource, "./explorer-activity-content"],
@@ -207,18 +210,23 @@ test("page and public shells keep heavyweight panels behind lazy import boundari
 });
 
 test("public place and explorer markup stay behind public display components", async () => {
-  const [pageSource, explorerSource, placeSheetSource] = await Promise.all([
+  const [pageSource, explorerSource, placeSheetSource, viewerDialogsSource] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/public/explorer-panel.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/public/place-sheet.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/public/viewer-dialogs.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(pageSource, /<PublicExplorerPanel/);
   assert.match(pageSource, /<PublicPlaceSheet/);
   assert.doesNotMatch(pageSource, /<section className="public-place-explorer">/);
   assert.doesNotMatch(pageSource, /<aside[^>]+className=\{`public-place-sheet/);
+  assert.doesNotMatch(pageSource, /className="place-request-dialog"|className="story-report-dialog"|className="admin-login-dialog"/);
   assert.match(explorerSource, /<section className="public-place-explorer">/);
   assert.match(placeSheetSource, /className=\{`public-place-sheet/);
+  assert.match(viewerDialogsSource, /className="place-request-dialog"/);
+  assert.match(viewerDialogsSource, /className="story-report-dialog"/);
+  assert.match(viewerDialogsSource, /className="admin-login-dialog"/);
 });
 
 test("public catalog and panel navigation stay behind the public place workspace", async () => {

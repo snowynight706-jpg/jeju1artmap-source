@@ -8,6 +8,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/public/explorer-activity-content.tsx",
     "../app/public/explorer-panel.tsx",
     "../app/public/navigation.mjs",
+    "../app/public/panel-loading.tsx",
     "../app/public/place-category.mjs",
     "../app/public/place-detail-content.tsx",
     "../app/public/place-focus.mjs",
@@ -15,6 +16,7 @@ export const APP_CLIENT_SOURCE_GROUPS = Object.freeze({
     "../app/public/use-public-navigation-actions.ts",
     "../app/public/use-public-navigation-lifecycle.ts",
     "../app/public/use-public-place-workspace.ts",
+    "../app/public/viewer-dialogs.tsx",
   ]),
   contentClient: Object.freeze([
     "../app/content/client.ts",

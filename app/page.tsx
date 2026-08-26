@@ -14,7 +14,6 @@ import {
 import {
   markerAssetSrc,
   recommendedMarkerStyle,
-  type BundledMarkerCategory,
   type BundledMarkerStyle,
 } from "./marker-assets";
 import { isCoreLandmarkName, normalizePlaceName } from "./core-landmarks";
@@ -82,8 +81,12 @@ import {
 } from "./editor/persistence/public-layout-client";
 import { useMapSettingsPersistence } from "./editor/persistence/use-map-settings-persistence";
 import { normalizeOptionalLabelScaleSteps } from "./map/labels/density.mjs";
-import PublicExplorerPanel, { type PublicExplorerTab } from "./public/explorer-panel";
-import PublicPlaceSheet from "./public/place-sheet";
+import type { PublicExplorerTab } from "./public/explorer-panel";
+import {
+  PublicDialogLoading,
+  PublicExplorerPanelLoading,
+  PublicPlaceSheetLoading,
+} from "./public/panel-loading";
 import {
   publicCategoryMetaForPlace,
   publicListCategories,
@@ -131,7 +134,6 @@ import {
 } from "./content/client";
 import type {
   StoryCameraPermissionState,
-  StoryReportReason,
 } from "./content/types";
 import { usePlaceContentActions } from "./content/use-place-content-actions";
 import { usePlaceContentWorkspace } from "./content/use-place-content-workspace";
@@ -146,6 +148,9 @@ import {
 const AdminDatabaseEditor = lazy(() => import("./admin-database-editor"));
 const AdminFolder = lazy(() => import("./admin-folder"));
 const AdminPlaceEventDialog = lazy(() => import("./admin-place-event-dialog"));
+const PublicExplorerPanel = lazy(() => import("./public/explorer-panel"));
+const PublicPlaceSheet = lazy(() => import("./public/place-sheet"));
+const PublicViewerDialogs = lazy(() => import("./public/viewer-dialogs"));
 
 // 이하는 지도 자산, 서버 API 주소, 저장 키에 관한 공통 설정 코드입니다.
 const MAP_SVG = "/maps/제주원도심_랜드마크탐색_베이스맵_v15_골목추가정리_검수본_마스터벡터.svg";
@@ -208,15 +213,6 @@ const UI_THEME_EASTER_EGG_PLACES = new Set([
 // 이하는 관리자 좌표 그룹과 공개 자산 프로필에 관한 타입입니다.
 type CalibrationGroupId = "primary" | "secondary" | "tertiary";
 type PublicAssetProfile = "mobile" | "standard";
-
-const storyReportReasons: Array<{ id: StoryReportReason; label: string }> = [
-  { id: "inappropriate", label: "부적절한 내용" },
-  { id: "privacy", label: "개인정보 노출" },
-  { id: "copyright", label: "사진·저작권 문제" },
-  { id: "spam", label: "광고·도배" },
-  { id: "other", label: "기타" },
-];
-
 
 // 이하는 지도 좌표 보정과 기준 랜드마크 위치를 계산하는 코드입니다.
 const landmarkLocations = [
@@ -2318,7 +2314,7 @@ export default function Home() {
             <div className="mobile-readonly">마커를 눌러 장소 정보와 기록을 확인하세요.</div>
             {viewMode === "collisions" && <div className="collision-legend"><span><i className="hard" />아이콘 겹침 {collisions.hard.size}</span><span><i className="near" />여유 구역 침범 {collisions.clearance.size}</span></div>}
           </div>
-          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <PublicPlaceSheet
+          {publicLayoutAccess === "viewer" && selected && !globalStoriesOpen && <Suspense fallback={<PublicPlaceSheetLoading expanded={publicPlaceExpanded} placeName={selectedDisplayName} />}><PublicPlaceSheet
             panelRef={publicPlacePanelRef}
             expanded={publicPlaceExpanded}
             dragging={publicPanelDrag?.target === "place"}
@@ -2369,7 +2365,7 @@ export default function Home() {
             onDragPointerEnd={finishPublicPanelDrag}
             onOpenPlaceList={openPublicPlaceList}
             onClose={closePublicPlacePanel}
-          />}
+          /></Suspense>}
           {publicLayoutAccess === "editor" ? <footer className="statusbar"><span className="status-ok"><i /> {baseMap === "uploaded" ? "업로드 베이스맵" : "기본 베이스맵"}</span><span className={editorSyncClass}>{editorSyncLabel}</span><span>{calibrationDirty ? "기준점 변경 · 보정 적용 대기" : `좌표 보정 ${6 + secondaryCalibrationPoints.length + tertiaryCalibrationPoints.length}점 적용`}</span><span className="map-scale-status">맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><span className="status-end">{saveState}</span></footer> : <footer className="statusbar public-statusbar"><span className="status-ok"><i /> 공개 배치본</span><span className="map-scale-status"><span>맞춤 ×{mapScaleRatioLabel} · 지도 {mapVisiblePercent}% · 라벨 {outputLabelCount}개</span><button type="button" className="map-render-refresh" onClick={refreshVisibleMapRenderInfo} aria-label="현재 화면 라벨과 마커 정보 새로고침" title="현재 화면 표시만 다시 계산">↻</button></span><span>{publicLayoutPublishedAt ? `${new Date(publicLayoutPublishedAt).toLocaleString("ko-KR")} 갱신` : "게시 준비 중"}</span><span className="status-end">확대하면 대부분 개별 표시되고, 밀집 구역은 통합 유지됩니다.</span></footer>}
         </section>
         {publicLayoutAccess === "editor" && !rightOpen && <button className="panel-reopen right" onClick={() => setRightOpen(true)}>‹ 속성</button>}
@@ -2440,7 +2436,10 @@ export default function Home() {
           </div>}
         </aside>}
       </section>
-      <PublicExplorerPanel
+      {publicLayoutAccess === "viewer" && !selected && !globalStoriesOpen && <button type="button" className="global-story-toggle" onClick={toggleGlobalStories} aria-expanded="false" aria-controls="global-story-panel">
+        <span aria-hidden="true">⌖</span><strong>장소 · 리뷰 · 행사</strong>{publicPlaceItems.length > 0 && <em>{publicPlaceItems.length}</em>}
+      </button>}
+      {globalStoriesOpen && <Suspense fallback={<PublicExplorerPanelLoading access={publicLayoutAccess === "editor" ? "editor" : "viewer"} expanded={publicPanelExpanded} />}><PublicExplorerPanel
         access={publicLayoutAccess === "editor" ? "editor" : "viewer"}
         panelRef={publicExplorerPanelRef}
         queryInputRef={publicPlaceQueryInputRef}
@@ -2561,19 +2560,52 @@ export default function Home() {
             onNext: () => setPlaceRequestsPage((page) => Math.min(placeRequestsPageCount, page + 1)),
           },
         }}
-      />
-      {publicLayoutAccess === "viewer" && storyReportTarget && <div className="story-report-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closePlaceStoryReport(); }}>
-        <section className="story-report-dialog" role="dialog" aria-modal="true" aria-labelledby="story-report-title" aria-describedby="story-report-note">
-          <header><div><strong id="story-report-title">후기·사진 신고</strong><span>{storyReportTarget.placeName} · {storyReportTarget.authorName}</span></div><button type="button" disabled={storyReportSubmitting} onClick={closePlaceStoryReport} aria-label="신고 창 닫기">×</button></header>
-          <div className="story-report-dialog-body">
-            <p className="story-report-preview">{storyReportTarget.reviewText}</p>
-            <label>신고 사유<select value={storyReportReason} onChange={(event) => setStoryReportReason(event.target.value as StoryReportReason)}>{storyReportReasons.map((reason) => <option value={reason.id} key={reason.id}>{reason.label}</option>)}</select></label>
-            <label>추가 설명 <span>선택</span><textarea value={storyReportDetail} maxLength={300} onChange={(event) => setStoryReportDetail(event.target.value)} placeholder="관리자가 확인할 내용을 적어주세요." /><small>{storyReportDetail.length}/300</small></label>
-            <p id="story-report-note">신고 즉시 삭제되지는 않으며, 관리자 검수 후 숨김 또는 삭제됩니다. 같은 후기는 한 번만 신고할 수 있습니다.</p>
-          </div>
-          <footer><button type="button" disabled={storyReportSubmitting} onClick={closePlaceStoryReport}>취소</button><button type="button" className="primary" disabled={storyReportSubmitting} onClick={() => void submitPlaceStoryReport()}>{storyReportSubmitting ? "접수 중…" : "신고 접수"}</button></footer>
-        </section>
-      </div>}
+      /></Suspense>}
+      {publicLayoutAccess === "viewer" && (storyReportTarget || placeRequestFormOpen || adminLoginOpen) && <Suspense fallback={<PublicDialogLoading />}>
+        <PublicViewerDialogs
+          storyReport={{
+            target: storyReportTarget,
+            reason: storyReportReason,
+            detail: storyReportDetail,
+            submitting: storyReportSubmitting,
+            onClose: closePlaceStoryReport,
+            onReasonChange: setStoryReportReason,
+            onDetailChange: setStoryReportDetail,
+            onSubmit: () => { void submitPlaceStoryReport(); },
+          }}
+          placeRequest={{
+            open: placeRequestFormOpen,
+            category: placeRequestCategory,
+            markerStyle: placeRequestMarkerStyle,
+            location: placeRequestLocation,
+            area: placeRequestArea,
+            areaOptions: placeRequestAreaOptions,
+            name: placeRequestName,
+            address: placeRequestAddress,
+            description: placeRequestDescription,
+            submitting: placeRequestSubmitting,
+            canSubmit: !placeRequestSubmitting && Boolean(placeRequestLocation) && Boolean(placeRequestArea) && placeRequestName.trim().length >= 2 && placeRequestAddress.trim().length >= 5 && placeRequestDescription.trim().length >= 10,
+            onClose: () => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); },
+            onCategoryChange: setPlaceRequestCategory,
+            onMarkerStyleChange: setPlaceRequestMarkerStyle,
+            onChooseLocation: () => { placeRequestLocationBeforePickingRef.current = placeRequestLocation; setPlaceRequestFormOpen(false); setGlobalStoriesOpen(false); setSelectedId(null); setPlaceRequestPickingLocation(true); },
+            onAreaChange: setPlaceRequestArea,
+            onNameChange: setPlaceRequestName,
+            onAddressChange: setPlaceRequestAddress,
+            onDescriptionChange: setPlaceRequestDescription,
+            onSubmit: () => { void submitPlaceRegistrationRequest(); },
+          }}
+          adminLogin={{
+            open: adminLoginOpen,
+            password: adminPassword,
+            error: adminLoginError,
+            submitting: adminLoginSubmitting,
+            onClose: () => setAdminLoginOpen(false),
+            onPasswordChange: (password) => { setAdminPassword(password); setAdminLoginError(""); },
+            onSubmit: submitSharedAdminLogin,
+          }}
+        />
+      </Suspense>}
       {publicLayoutAccess === "editor" && placeEventFormOpen && <Suspense fallback={<div className="place-event-dialog-layer" role="status"><div className="admin-module-loading"><span className="global-story-spinner" /><strong>행사 등록 화면을 불러오는 중입니다.</strong></div></div>}>
         <AdminPlaceEventDialog
           editingId={placeEventEditingId}
@@ -2608,33 +2640,6 @@ export default function Home() {
           onSubmit={() => void submitPlaceEvent()}
         />
       </Suspense>}
-      {publicLayoutAccess === "viewer" && placeRequestFormOpen && <div className="place-request-backdrop" role="presentation">
-        <section className="place-request-dialog" role="dialog" aria-modal="true" aria-labelledby="place-request-dialog-title">
-          <header><div><strong id="place-request-dialog-title">장소 등록 요청</strong><span>지도에 추가되면 좋을 원도심 장소를 알려주세요.</span></div><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }} aria-label="장소 등록 요청 닫기">×</button></header>
-          <div className="place-request-dialog-scroll">
-            <div className="place-request-marker-section"><div><strong>마커 형태</strong><span>장소의 주된 운영 목적에 맞는 기본분류 하나를 선택해 주세요.</span></div><label>기본분류<select value={placeRequestCategory} onChange={(event) => setPlaceRequestCategory(event.target.value as BundledMarkerCategory)}>{categories.filter((category) => (["culture", "cafe", "food", "shop"] as string[]).includes(category.id)).map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label><div className="place-request-style-grid" role="radiogroup" aria-label="마커 형태 선택">{(["v2", "01", "02", "03"] as BundledMarkerStyle[]).map((style) => <button type="button" role="radio" aria-checked={placeRequestMarkerStyle === style} className={placeRequestMarkerStyle === style ? "active" : ""} key={style} onClick={() => setPlaceRequestMarkerStyle(style)}><img src={markerAssetSrc(style, placeRequestCategory)} alt="" /><span>{style === "v2" ? "리뉴얼 최종" : `형태 ${style}`}</span></button>)}</div></div>
-            <section className={`place-request-location-field ${placeRequestLocation ? "selected" : ""}`}><div><img src={markerAssetSrc(placeRequestMarkerStyle, placeRequestCategory)} alt="" /><span><strong>지도에서 마커 위치 지정 <em>필수</em></strong><small>{placeRequestLocation ? `위치 선택됨 · ${placeRequestLocation.x.toFixed(2)}, ${placeRequestLocation.y.toFixed(2)}` : "실제 장소가 있는 지점을 지도에서 눌러 주세요."}</small></span></div><button type="button" onClick={() => { placeRequestLocationBeforePickingRef.current = placeRequestLocation; setPlaceRequestFormOpen(false); setGlobalStoriesOpen(false); setSelectedId(null); setPlaceRequestPickingLocation(true); }}>{placeRequestLocation ? "위치 다시 지정" : "지도에서 지정"}</button></section>
-            <label>장소 이름 <em>필수</em><input value={placeRequestName} maxLength={120} placeholder="예: 카페단단" onChange={(event) => setPlaceRequestName(event.target.value)} /></label>
-            <label>권역·세부지역 <em>필수 · 기존 값 선택</em><select value={placeRequestArea} aria-label="장소 등록 요청 권역·세부지역 선택" onChange={(event) => setPlaceRequestArea(event.target.value)}><option value="">선택해 주세요</option>{placeRequestAreaOptions.map((area) => <option value={area} key={area}>{area}</option>)}</select></label>
-            <label>주소 <em>필수</em><input value={placeRequestAddress} maxLength={260} placeholder="도로명 주소를 적어주세요." onChange={(event) => setPlaceRequestAddress(event.target.value)} /></label>
-            <label>장소 설명 <em>필수</em><textarea value={placeRequestDescription} maxLength={800} placeholder="어떤 장소인지, 지도에 소개할 핵심 내용을 짧게 적어주세요." onChange={(event) => setPlaceRequestDescription(event.target.value)} /><small>{placeRequestDescription.length}/800</small></label>
-            <p>요청은 곧바로 공개되지 않습니다. 관리자가 장소 정보와 마커를 수정·검수한 뒤 지도 편집 초안에 반영합니다.</p>
-          </div>
-          <footer><button type="button" onClick={() => { setPlaceRequestFormOpen(false); setPlaceRequestPickingLocation(false); }}>취소</button><button type="button" className="primary" disabled={placeRequestSubmitting || !placeRequestLocation || !placeRequestArea || placeRequestName.trim().length < 2 || placeRequestAddress.trim().length < 5 || placeRequestDescription.trim().length < 10} onClick={() => void submitPlaceRegistrationRequest()}>{placeRequestSubmitting ? "요청 저장 중…" : "등록 요청 보내기"}</button></footer>
-        </section>
-      </div>}
-      {publicLayoutAccess === "viewer" && adminLoginOpen && <div className="admin-login-backdrop" role="presentation">
-        <section className="admin-login-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-login-title">
-          <header><div><strong id="admin-login-title">관리자 로그인</strong><span>지도 편집과 리뷰·행사·장소 요청 관리</span></div><button type="button" onClick={() => setAdminLoginOpen(false)} aria-label="관리자 로그인 닫기">×</button></header>
-          <form onSubmit={(event) => void submitSharedAdminLogin(event)}>
-            <label htmlFor="shared-admin-password">공유 관리자 비밀번호</label>
-            <input id="shared-admin-password" type="password" value={adminPassword} autoComplete="current-password" autoFocus maxLength={200} onChange={(event) => { setAdminPassword(event.target.value); setAdminLoginError(""); }} />
-            {adminLoginError && <p role="alert">{adminLoginError}</p>}
-            <button type="submit" disabled={adminLoginSubmitting}>{adminLoginSubmitting ? "확인 중…" : "관리자 화면 들어가기"}</button>
-          </form>
-          <footer><span>사이트 소유자는 기존 계정으로도 들어갈 수 있습니다.</span><a href="/signin-with-chatgpt?return_to=/">소유자 계정 로그인</a></footer>
-        </section>
-      </div>}
       {publicLayoutAccess === "editor" && publicHistoryOpen && <div className="public-history-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPublicHistoryOpen(false); }}>
         <section className="public-history-dialog" role="dialog" aria-modal="true" aria-labelledby="public-history-title">
           <header>

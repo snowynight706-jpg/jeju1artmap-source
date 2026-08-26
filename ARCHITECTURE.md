@@ -36,8 +36,9 @@
 - `app/public/use-public-place-workspace.ts`: 공개 장소 카탈로그·행사 연결·검색·카테고리 표시 모델과 모바일 패널 드래그·안착 모션, History API 저장 원시 동작과 지도 시점 기억·복귀를 조립하는 공개 장소 작업공간
 - `app/public/use-public-navigation-actions.ts`: 공개 탐색·장소 패널 전환, 지도 초기화·장소 포커스, 주소 복사·장소 공유와 후기·행사 연결 장소 이동을 묶는 공개 내비게이션 작업공간
 - `app/public/use-public-navigation-lifecycle.ts`: 공개 지도 단축키, History API 초기화·`popstate` 복원과 Escape 닫기 우선순위를 묶는 공개 내비게이션 생명주기
-- `app/public/place-sheet.tsx`, `app/public/place-detail-content.tsx`: 장소 시트 외곽과 장소 선택 후에만 지연 로딩되는 상세·행사·후기 화면
-- `app/public/explorer-panel.tsx`, `app/public/explorer-activity-content.tsx`: 장소 목록·통합 탐색 외곽과 탭을 열 때만 지연 로딩되는 리뷰·행사 카드 화면; 관리자 진단·장소 요청도 해당 탭 경계에서 지연 로딩
+- `app/public/place-sheet.tsx`, `app/public/place-detail-content.tsx`: 장소를 선택할 때 시트 외곽을, 시트 안에서는 상세·행사·후기 화면을 단계적으로 지연 로딩
+- `app/public/explorer-panel.tsx`, `app/public/explorer-activity-content.tsx`: 탐색을 열 때 장소 목록·통합 탐색 외곽을, 탭을 열 때 리뷰·행사 카드 화면을 단계적으로 지연 로딩; 관리자 진단·장소 요청도 해당 탭 경계에서 지연 로딩
+- `app/public/viewer-dialogs.tsx`: 공개 후기 신고·장소 등록 요청·관리자 로그인처럼 지도 첫 화면에 필요하지 않은 대화상자를 한 보조 화면 묶음으로 지연 로딩
 - `app/globals.css`: 지도·패널·모바일 PWA 반응형 스타일
 - `app/admin-*.tsx`: 지연 로딩되는 관리자 전용 화면
 - `app/admin-place-event-dialog.tsx`: 관리자 행사 등록·수정 시에만 불러오는 행사 입력 창
