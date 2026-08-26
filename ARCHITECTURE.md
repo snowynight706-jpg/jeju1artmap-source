@@ -45,6 +45,7 @@
 - `app/base-map-storage.ts`, `app/api/base-map/route.ts`: 현재 v20에만 버전이 고정된 화면용 2048·4096 WebP와 픽셀 동일 출력용 무손실 WebP를 연결하고, 이후 관리자 업로드 지도는 기존 R2 원본·파생본 경로 사용
 - `app/landmark-assets/index.ts`: 고해상도 원본·512px 화면본·고정 384px 모바일 파생본의 자산 경로와 revision
 - `scripts/extract-jfac-svg-assets.mjs`: 재단 공식 AI의 컬러 페이지를 Inkscape로 변환한 SVG에서 시그니처·심벌 경로만 추출하고 기존 화면 비율·헤더 팔레트를 보존하는 재현 스크립트
+- `scripts/verify-performance-budget.mjs`, `performance-budget.json`: 프로덕션 자산 manifest에서 공개 초기 JS·CSS와 페이지 청크의 gzip 크기를 측정하고 CI에서 회귀를 차단하는 성능 예산
 - `public/`: 지도·랜드마크·마커 자산과 PWA manifest/service worker
 - `public/landmarks-mobile-384/`: 공개 모바일이 최초 진입에서 한 번 선택해 세션 내 계속 사용하는 랜드마크 WebP 파생본
 - `db/`, `drizzle/`: 영구 저장 스키마와 마이그레이션

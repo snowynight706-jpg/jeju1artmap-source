@@ -12,9 +12,10 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "typecheck": "bash scripts/sites-env.sh -- tsc --noEmit",
     "test:behavior": "node --test tests/*.test.mjs",
-    "validate": "npm run typecheck && npm run lint && npm run test:behavior && npm run build",
+    "validate": "npm run typecheck && npm run lint && npm run test:behavior && npm run build && npm run budget:performance",
     "test": "npm run validate",
     "validate:artifact": "bash scripts/validate-artifact.sh",
+    "budget:performance": "node scripts/verify-performance-budget.mjs",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .vinext --ignore-pattern .sites-runtime --ignore-pattern .wrangler --ignore-pattern node_modules --ignore-pattern work",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
   },

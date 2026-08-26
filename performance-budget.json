@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "initialRoute": {
+    "totalGzipBytes": 271360,
+    "pageChunkGzipBytes": 131072,
+    "cssGzipBytes": 46080
+  }
+}
