@@ -1,5 +1,24 @@
 export const LOW_TIER_BASE_MAP_PRELOAD_PIXEL_WIDTH = 1840;
 
+export function baseMapDisplayLayers({
+  lowTierMobile,
+  compactSource,
+  standardSource,
+  highResolutionSource,
+  decodedHighResolutionSource,
+}) {
+  const baseSource = lowTierMobile
+    ? compactSource || standardSource
+    : standardSource || compactSource;
+  const upgradeSource = lowTierMobile
+    && highResolutionSource
+    && decodedHighResolutionSource === highResolutionSource
+    && highResolutionSource !== baseSource
+    ? highResolutionSource
+    : "";
+  return { baseSource, upgradeSource };
+}
+
 export function lowTierBaseMapNeedsHighResolution({
   tier,
   viewportWidth,

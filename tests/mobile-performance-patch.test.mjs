@@ -37,12 +37,14 @@ test("map labels leave the paint path only after drag or zoom actually starts", 
   assert.doesNotMatch(pageSource, /beginTouchMapTransform[\s\S]{0,500}classList\.add\("is-map-labels-suspended"\)/);
 });
 
-test("touch transform handoff commits map width and displayed zoom in one render", () => {
+test("touch transform handoff keeps the compositor frame until the committed layout effect", () => {
   assert.match(pageSource, /touchLayerReleaseFrameRef\.current = window\.requestAnimationFrame/);
   assert.match(pageSource, /touchLayerReleaseTimerRef\.current = window\.setTimeout/);
   assert.match(pageSource, /activeTouchPointersRef\.current\.size > 0 \|\| pinchGestureRef\.current/);
   assert.match(pageSource, /panInteractionRef\.current = null;[\s\S]{0,180}scheduleTouchLayerRelease\(\)/);
-  assert.match(pageSource, /setZoom\(committedZoom\);\s*setMapLayoutZoom\(committedZoom\)[\s\S]{0,180}stageRef\.current\?\.style\.removeProperty\("transform"\)/);
+  assert.match(pageSource, /pendingTouchCommitRef\.current = \{ zoom: committedZoom, pan: committedPan, zoomChanged \};\s*setZoom\(committedZoom\)/);
+  assert.match(pageSource, /const pendingCommit = pendingTouchCommitRef\.current;[\s\S]{0,260}setMapLayoutZoom\(pendingCommit\.zoom\);\s*stageRef\.current\?\.style\.removeProperty\("transform"\)/);
+  assert.match(pageSource, /stageRef\.current\?\.style\.removeProperty\("transform"\)[\s\S]{0,260}scheduleTouchLayerRelease\(/);
   assert.doesNotMatch(pageSource, /startTransition\(\(\) => \{\s*setZoom\(committedZoom\);\s*\}\)/);
   assert.match(pageSource, /const mapScaleRatio = Math\.max\(1, zoom \/ Math\.max\(fitZoom, 0\.22\)\)/);
   assert.doesNotMatch(pageSource, /restartMapLabelHandoff|labelHandoffScaleRef/);
@@ -72,11 +74,18 @@ test("public label density follows settled zoom while admin labels follow direct
   assert.match(cssSource, /\.map-viewport\.editor-label-motion \{ --motion-label: \.28s; \}/);
 });
 
-test("low-tier mobile starts compact and upgrades the map only after decode", () => {
-  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap, compactBaseMapPreferred\) \|\| mapSvg/);
+test("low-tier mobile keeps the compact map visible while the decoded map is promoted", () => {
+  assert.match(pageSource, /const uploadedBaseMapLayers = baseMapDisplayLayers\(\{/);
+  assert.match(pageSource, /baseMapResolutionUpgradeSrc/);
   assert.match(pageSource, /lowTierBaseMapNeedsHighResolution\(\{/);
   assert.match(pageSource, /await image\.decode\(\)/);
   assert.match(pageSource, /setDecodedHighResolutionBaseMapSource\(highResolutionBaseMapSource\)/);
+  assert.match(pageSource, /className="base-map base-map-resolution-upgrade"/);
+  assert.match(pageSource, /setCommittedBaseMapUpgradeSource\(baseMapPrimarySrc\)/);
+  assert.match(pageSource, /baseMapPrimarySrc === uploadedBaseMap\?\.screen4096Url[\s\S]{0,140}setDecodedHighResolutionBaseMapSource\(baseMapPrimarySrc\)/);
+  assert.match(pageSource, /setCommittedBaseMapUpgradeSource\(pendingBaseMapUpgradeSrc\)/);
+  assert.match(cssSource, /\.base-map-resolution-upgrade \{ opacity: 0; transition: opacity \.14s linear; \}/);
+  assert.match(cssSource, /\.base-map-resolution-upgrade\.is-ready \{ opacity: 1; \}/);
   assert.doesNotMatch(pageSource, /setTimeout\(\(\) => setStartupRevealReady\(true\), 320\)/);
   assert.match(pageSource, /requestAnimationFrame\(\(\) => setStartupRevealReady\(true\)\)/);
 });

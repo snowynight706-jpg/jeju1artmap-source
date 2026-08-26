@@ -21,7 +21,10 @@ import type {
   PublicLayoutAccess,
   StageDimensions,
 } from "../core/types";
-import { lowTierBaseMapNeedsHighResolution } from "../rendering/base-map-quality.mjs";
+import {
+  baseMapDisplayLayers,
+  lowTierBaseMapNeedsHighResolution,
+} from "../rendering/base-map-quality.mjs";
 import type { MobileRenderBudget } from "../rendering/mobile-render";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
@@ -176,8 +179,6 @@ export function useMapRuntimeLifecycle({
     && baseMapViewportWidth <= 760;
   const useMobileLandmarkAssets = publicLayoutAccess === "viewer" && publicAssetProfile === "mobile";
   const highResolutionBaseMapSource = uploadedBaseMap?.screen4096Url ?? "";
-  const compactBaseMapPreferred = lowTierMobileBaseMap
-    && (!highResolutionBaseMapSource || decodedHighResolutionBaseMapSource !== highResolutionBaseMapSource);
   const uploadedBaseMapDisplaySource = (metadata: UploadedBaseMap | null, preferCompact = false) => {
     if (!metadata?.available) return "";
     if (preferCompact) {
@@ -185,11 +186,21 @@ export function useMapRuntimeLifecycle({
     }
     return metadata.screen4096Url ?? metadata.screen2048Url ?? uploadedBaseMapOriginalSource(metadata);
   };
+  const uploadedBaseMapLayers = baseMapDisplayLayers({
+    lowTierMobile: lowTierMobileBaseMap,
+    compactSource: uploadedBaseMapDisplaySource(uploadedBaseMap, true),
+    standardSource: uploadedBaseMapDisplaySource(uploadedBaseMap),
+    highResolutionSource: highResolutionBaseMapSource,
+    decodedHighResolutionSource: decodedHighResolutionBaseMapSource,
+  });
   const activeBaseMapSrc = baseMap === "svg"
     ? mapSvg
     : baseMap === "png"
       ? mapPng
-      : uploadedBaseMapDisplaySource(uploadedBaseMap, compactBaseMapPreferred) || mapSvg;
+      : uploadedBaseMapLayers.baseSource || mapSvg;
+  const baseMapResolutionUpgradeSrc = baseMap === "uploaded"
+    ? uploadedBaseMapLayers.upgradeSource
+    : "";
   const lowTierBaseMapUpgradeNeeded = baseMap === "uploaded"
     && lowTierMobileBaseMap
     && Boolean(highResolutionBaseMapSource)
@@ -486,6 +497,7 @@ export function useMapRuntimeLifecycle({
 
   return {
     activeBaseMapSrc,
+    baseMapResolutionUpgradeSrc,
     useMobileLandmarkAssets,
   };
 }

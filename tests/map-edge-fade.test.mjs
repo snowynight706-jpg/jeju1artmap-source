@@ -8,7 +8,8 @@ const pageSource = await readAppClientSource();
 const cssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("the soft edge fade sits between the unchanged base map and every interactive map layer", () => {
-  assert.match(pageSource, /<img ref=\{baseMapImgRef\} className="base-map"[\s\S]{0,400}<div className="base-map-edge-fade" data-south-edge-fade="on" aria-hidden="true" \/>[\s\S]{0,220}className="calibration-layer"/);
+  assert.match(pageSource, /<img key=\{baseMapPrimarySrc\} ref=\{baseMapImgRef\} className="base-map"/);
+  assert.match(pageSource, /className="base-map base-map-resolution-upgrade"[\s\S]{0,700}<div className="base-map-edge-fade" data-south-edge-fade="on" aria-hidden="true" \/>[\s\S]{0,220}className="calibration-layer"/);
   assert.match(cssSource, /\.base-map-edge-fade \{[^}]*position: absolute;[^}]*inset: 0;[^}]*z-index: 0;[^}]*pointer-events: none/);
   assert.match(cssSource, /\.calibration-layer \{[^}]*z-index: 1/);
   assert.match(cssSource, /\.connector-layer \{[^}]*z-index: 1/);

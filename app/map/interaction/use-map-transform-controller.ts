@@ -95,6 +95,7 @@ export function useMapTransformController({
   const touchLayerReleaseFrameRef = useRef<number | null>(null);
   const touchLayerReleaseTimerRef = useRef<number | null>(null);
   const pendingTouchTransformRef = useRef<TransformTarget | null>(null);
+  const pendingTouchCommitRef = useRef<(TransformTarget & { zoomChanged: boolean }) | null>(null);
   const wheelFrameRef = useRef<number | null>(null);
   const wheelCommitTimerRef = useRef<number | null>(null);
   const editorLabelRevealTimerRef = useRef<number | null>(null);
@@ -238,20 +239,17 @@ export function useMapTransformController({
     const committedZoom = zoomRef.current;
     const committedPan = { ...panRef.current };
     const zoomChanged = Math.abs(committedZoom - touchTransformBaseZoomRef.current) > 0.002;
-    // The layout width and the public scale status must commit in the same
-    // render. Deferring only zoom left the map at the new CSS width while the
-    // status still described the previous scale for a visible PWA frame.
+    // Keep the compositor transform visible until React has committed the
+    // matching zoom. The layout effect below swaps to the final map width
+    // before the browser can paint an old-scale frame on slower WebViews.
+    pendingTouchCommitRef.current = { zoom: committedZoom, pan: committedPan, zoomChanged };
     setZoom(committedZoom);
-    setMapLayoutZoom(committedZoom);
-    stageRef.current?.style.removeProperty("transform");
-    mobileMarkerPlaceholderLayerRef.current?.style.removeProperty("--mobile-marker-gesture-scale");
     touchTransformBaseZoomRef.current = committedZoom;
     setMapPan(committedPan);
     setMapRenderPan((current) => (
       current.x === committedPan.x && current.y === committedPan.y ? current : committedPan
     ));
-    scheduleTouchLayerRelease(zoomChanged && viewportRef.current?.clientWidth && viewportRef.current.clientWidth <= 760 ? 170 : 80, committedZoom);
-  }, [flushTouchMapTransform, mobileMarkerPlaceholderLayerRef, panRef, scheduleTouchLayerRelease, setMapLayoutZoom, setMapPan, setMapRenderPan, setZoom, stageRef, viewportRef, zoomRef]);
+  }, [flushTouchMapTransform, panRef, setMapPan, setMapRenderPan, setZoom, zoomRef]);
 
   const beginPinchGesture = useCallback(() => {
     const viewport = viewportRef.current?.getBoundingClientRect();
@@ -408,6 +406,7 @@ export function useMapTransformController({
     if (touchTransformFrameRef.current !== null) window.cancelAnimationFrame(touchTransformFrameRef.current);
     touchTransformFrameRef.current = null;
     pendingTouchTransformRef.current = null;
+    pendingTouchCommitRef.current = null;
     activeTouchPointersRef.current.clear();
     pinchGestureRef.current = null;
     panInteractionRef.current = null;
@@ -425,8 +424,21 @@ export function useMapTransformController({
   useLayoutEffect(() => {
     committedReactZoomRef.current = zoom;
     zoomRef.current = zoom;
-    if (publicLayoutAccess === "viewer") setMapLayoutZoom(zoom);
-  }, [publicLayoutAccess, setMapLayoutZoom, zoom, zoomRef]);
+    if (publicLayoutAccess !== "viewer") return;
+    const pendingCommit = pendingTouchCommitRef.current;
+    if (pendingCommit && Math.abs(pendingCommit.zoom - zoom) <= 0.002) {
+      pendingTouchCommitRef.current = null;
+      setMapLayoutZoom(pendingCommit.zoom);
+      stageRef.current?.style.removeProperty("transform");
+      mobileMarkerPlaceholderLayerRef.current?.style.removeProperty("--mobile-marker-gesture-scale");
+      scheduleTouchLayerRelease(
+        pendingCommit.zoomChanged && viewportRef.current?.clientWidth && viewportRef.current.clientWidth <= 760 ? 170 : 80,
+        pendingCommit.zoom,
+      );
+      return;
+    }
+    if (!pendingCommit) setMapLayoutZoom(zoom);
+  }, [mobileMarkerPlaceholderLayerRef, publicLayoutAccess, scheduleTouchLayerRelease, setMapLayoutZoom, stageRef, viewportRef, zoom, zoomRef]);
 
   useEffect(() => {
     const previousZoom = editorLabelZoomRef.current;

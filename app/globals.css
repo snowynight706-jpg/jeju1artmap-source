@@ -627,6 +627,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .map-viewport.is-label-viewport-settling :is(.label, .dense-label-layer, .dense-label-connector) { visibility: hidden; opacity: 0; pointer-events: none; transition-duration: 0s; }
 .map-viewport.editor-label-motion.is-panning :is(.label, .dense-label-layer, .dense-label-connector) { visibility: hidden; opacity: 0; pointer-events: none; transition-duration: 0s; }
 .base-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.base-map-resolution-upgrade { opacity: 0; transition: opacity .14s linear; }
+.base-map-resolution-upgrade.is-ready { opacity: 1; }
 .base-map-edge-fade { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .base-map-edge-fade::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 5.5%; background: linear-gradient(90deg, rgb(232 232 232 / 0%) 0%, rgb(232 232 232 / 3%) 22%, rgb(232 232 232 / 12%) 45%, rgb(232 232 232 / 34%) 68%, rgb(232 232 232 / 68%) 86%, #e8e8e8 100%); }
 .base-map-edge-fade::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 3.5%; background: linear-gradient(180deg, rgb(232 232 232 / 0%) 0%, rgb(232 232 232 / 3%) 30%, rgb(232 232 232 / 13%) 58%, rgb(232 232 232 / 35%) 82%, rgb(232 232 232 / 62%) 100%); }

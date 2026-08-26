@@ -475,6 +475,7 @@ export default function Home() {
   const [baseMap, setBaseMap] = useState<BaseMapMode>("svg");
   const [uploadedBaseMap, setUploadedBaseMap] = useState<UploadedBaseMap | null>(null);
   const [decodedHighResolutionBaseMapSource, setDecodedHighResolutionBaseMapSource] = useState("");
+  const [committedBaseMapUpgradeSource, setCommittedBaseMapUpgradeSource] = useState("");
   const [baseMapCanUpload, setBaseMapCanUpload] = useState<boolean | null>(null);
   const [baseMapUploading, setBaseMapUploading] = useState(false);
   const [exportWidth, setExportWidth] = useState<8944 | 12000>(12000);
@@ -1219,6 +1220,7 @@ export default function Home() {
   // 베이스맵 품질, 시작 자산, 화면 측정·초기 시점과 라벨 정착은 지도 런타임 생명주기가 담당합니다.
   const {
     activeBaseMapSrc,
+    baseMapResolutionUpgradeSrc,
     useMobileLandmarkAssets,
   } = useMapRuntimeLifecycle({
     baseMap,
@@ -1282,6 +1284,14 @@ export default function Home() {
     setMapPan,
     sendPerformanceDiagnostic,
   });
+  const baseMapPrimarySrc = baseMapResolutionUpgradeSrc
+    && committedBaseMapUpgradeSource === baseMapResolutionUpgradeSrc
+    ? baseMapResolutionUpgradeSrc
+    : activeBaseMapSrc;
+  const pendingBaseMapUpgradeSrc = baseMapResolutionUpgradeSrc
+    && committedBaseMapUpgradeSource !== baseMapResolutionUpgradeSrc
+    ? baseMapResolutionUpgradeSrc
+    : "";
 
   // 이하는 모바일 드래그·핀치와 지도 확대·이동을 처리하는 코드입니다.
   const mapTransformController = useMapTransformController({
@@ -2201,7 +2211,28 @@ export default function Home() {
             >
               <div className={`map-stage ${stageMapClass} ${forceIndividualLabels && !printPreviewMode ? "label-detail-individual" : ""} ${calibrationMode && editingEnabled ? "calibration-active" : ""}`} data-label-detail={denseLabelClusters.length ? forceIndividualLabels && !printPreviewMode ? "dense-exception" : "grouped" : "individual"} ref={stageRef} style={{ aspectRatio: `${MAP_ASPECT}` }} onPointerDown={editingEnabled ? handleStagePointerDown : publicLayoutAccess === "viewer" ? (event) => startPan(event, undefined, placeRequestPickingLocation) : undefined}>
                 {!mapLoaded && <div className="map-loading"><span />초고해상도 베이스맵 불러오는 중</div>}
-                <img ref={baseMapImgRef} className="base-map" src={activeBaseMapSrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => setMapLoaded(true)} />
+                <img key={baseMapPrimarySrc} ref={baseMapImgRef} className="base-map" src={baseMapPrimarySrc} alt="제주 원도심 검수용 베이스맵" draggable={false} decoding="async" fetchPriority="high" onLoad={() => {
+                  setMapLoaded(true);
+                  setCommittedBaseMapUpgradeSource(baseMapPrimarySrc);
+                  if (baseMapPrimarySrc === uploadedBaseMap?.screen4096Url) {
+                    setDecodedHighResolutionBaseMapSource(baseMapPrimarySrc);
+                  }
+                }} />
+                {pendingBaseMapUpgradeSrc && <img
+                  key={pendingBaseMapUpgradeSrc}
+                  className="base-map base-map-resolution-upgrade"
+                  src={pendingBaseMapUpgradeSrc}
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  decoding="async"
+                  fetchPriority="low"
+                  onLoad={(event) => {
+                    const image = event.currentTarget;
+                    window.requestAnimationFrame(() => image.classList.add("is-ready"));
+                    window.setTimeout(() => setCommittedBaseMapUpgradeSource(pendingBaseMapUpgradeSrc), 180);
+                  }}
+                />}
                 <div className="base-map-edge-fade" data-south-edge-fade="on" aria-hidden="true" />
                 {calibrationMode && editingEnabled && <svg className="calibration-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="좌표 보정 기준점 연결망">
                   {([ [0, 1], [1, 2], [2, 3], [2, 4], [4, 5], [5, 1], [0, 3] ] as Array<[number, number]>).map(([from, to]) => <line key={`${from}-${to}`} x1={calibrationPoints[from].targetX} y1={calibrationPoints[from].targetY} x2={calibrationPoints[to].targetX} y2={calibrationPoints[to].targetY} className="calibration-mesh-line" />)}

@@ -22,8 +22,9 @@ const adminPlaceRequestSource = await readFile(new URL("../app/admin-place-reque
 const performanceMigration = await readFile(new URL("../drizzle/0021_deep_galactus.sql", import.meta.url), "utf8");
 const workerSource = await readFile(new URL("../worker/index.ts", import.meta.url), "utf8");
 
-test("uploaded base maps use versioned screen derivatives while exports retain the original", () => {
-  assert.match(pageSource, /uploadedBaseMapDisplaySource\(uploadedBaseMap, compactBaseMapPreferred\)/);
+test("uploaded base maps use stable layered screen derivatives while exports retain the original", () => {
+  assert.match(pageSource, /const uploadedBaseMapLayers = baseMapDisplayLayers\(\{/);
+  assert.match(pageSource, /baseMapResolutionUpgradeSrc/);
   assert.match(pageSource, /metadata\.screen2048Url \?\? metadata\.screen4096Url/);
   assert.match(pageSource, /return metadata\.screen4096Url \?\? metadata\.screen2048Url \?\?/);
   assert.match(pageSource, /lowTierBaseMapNeedsHighResolution/);

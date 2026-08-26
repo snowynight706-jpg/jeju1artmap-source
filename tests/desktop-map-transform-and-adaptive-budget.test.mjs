@@ -3,7 +3,10 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { horizontalMapFitZoom, mapStageGestureTransform } from "../app/map/interaction/stage-transform.mjs";
-import { lowTierBaseMapNeedsHighResolution } from "../app/map/rendering/base-map-quality.mjs";
+import {
+  baseMapDisplayLayers,
+  lowTierBaseMapNeedsHighResolution,
+} from "../app/map/rendering/base-map-quality.mjs";
 import {
   HIGH_MOBILE_RENDER_BUDGET,
   LOW_MOBILE_RENDER_BUDGET,
@@ -57,7 +60,28 @@ test("low-tier map quality upgrades only when rendered pixels need it", () => {
   assert.equal(lowTierBaseMapNeedsHighResolution({ tier: "low", viewportWidth: 390, stageWidth: 328, zoom: 2.1, devicePixelRatio: 3 }), true);
   assert.equal(lowTierBaseMapNeedsHighResolution({ tier: "standard", viewportWidth: 390, stageWidth: 328, zoom: 4, devicePixelRatio: 3 }), false);
   assert.equal(lowTierBaseMapNeedsHighResolution({ tier: "low", viewportWidth: 900, stageWidth: 756, zoom: 4, devicePixelRatio: 2 }), false);
-  assert.match(pageSource, /compactBaseMapPreferred/);
+  assert.deepEqual(baseMapDisplayLayers({
+    lowTierMobile: true,
+    compactSource: "map-2048.webp",
+    standardSource: "map-4096.webp",
+    highResolutionSource: "map-4096.webp",
+    decodedHighResolutionSource: "",
+  }), { baseSource: "map-2048.webp", upgradeSource: "" });
+  assert.deepEqual(baseMapDisplayLayers({
+    lowTierMobile: true,
+    compactSource: "map-2048.webp",
+    standardSource: "map-4096.webp",
+    highResolutionSource: "map-4096.webp",
+    decodedHighResolutionSource: "map-4096.webp",
+  }), { baseSource: "map-2048.webp", upgradeSource: "map-4096.webp" });
+  assert.deepEqual(baseMapDisplayLayers({
+    lowTierMobile: false,
+    compactSource: "map-2048.webp",
+    standardSource: "map-4096.webp",
+    highResolutionSource: "map-4096.webp",
+    decodedHighResolutionSource: "map-4096.webp",
+  }), { baseSource: "map-4096.webp", upgradeSource: "" });
+  assert.match(pageSource, /baseMapResolutionUpgradeSrc/);
   assert.match(pageSource, /await image\.decode\(\)/);
 });
 
