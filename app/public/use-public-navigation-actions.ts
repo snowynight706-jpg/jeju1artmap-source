@@ -28,6 +28,7 @@ type UsePublicNavigationActionsOptions = {
   selectedDirectoryPlace: DirectoryPlace | null;
   selected: MapElement | null;
   selectedDisplayName: string;
+  siteDisplayName: string;
   fitZoom: number;
   zoomRef: MutableRef<number>;
   panRef: MutableRef<Point>;
@@ -84,6 +85,7 @@ export function usePublicNavigationActions(options: UsePublicNavigationActionsOp
     selectedDirectoryPlace,
     selected,
     selectedDisplayName,
+    siteDisplayName,
     fitZoom,
     zoomRef,
     panRef,
@@ -315,7 +317,7 @@ export function usePublicNavigationActions(options: UsePublicNavigationActionsOp
     const url = new URL(publicUrlWithPlace(window.location.href, placeId), window.location.origin).toString();
     try {
       if (navigator.share) {
-        await navigator.share({ title: `${selectedDisplayName} · 제주 원도심 아트맵`, text: `${selectedDisplayName} 장소 정보`, url });
+        await navigator.share({ title: `${selectedDisplayName} · ${siteDisplayName}`, text: `${selectedDisplayName} 장소 정보`, url });
         return;
       }
       await navigator.clipboard.writeText(url);

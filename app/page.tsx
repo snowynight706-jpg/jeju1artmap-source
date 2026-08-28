@@ -73,12 +73,19 @@ import {
 import { useEditorMapEditActions } from "./editor/workspace/use-editor-map-edit-actions";
 import { usePlaceManagerWorkspace } from "./editor/places/use-place-manager-workspace";
 import {
+  saveSiteIdentitySettings,
   type BaseMapMode,
   type OptionalLabelScaleStep,
   type PublicLayoutHistoryItem,
   type PublicViewSettings,
   type UploadedBaseMap,
 } from "./editor/persistence/public-layout-client";
+import {
+  DEFAULT_SITE_IDENTITY,
+  normalizeSiteDisplayName,
+  SITE_DISPLAY_NAME_MAX_LENGTH,
+  type SiteIdentitySettings,
+} from "./site-identity";
 import { useMapSettingsPersistence } from "./editor/persistence/use-map-settings-persistence";
 import { normalizeOptionalLabelScaleSteps } from "./map/labels/density.mjs";
 import type { PublicExplorerTab } from "./public/explorer-panel";
@@ -439,6 +446,13 @@ export default function Home() {
   const [saveState, setSaveState] = useState("자동 저장 준비");
   const [layoutName, setLayoutName] = useState("최근 자동복구");
   const [toast, setToast] = useState("");
+  const [siteIdentity, setSiteIdentity] = useState<SiteIdentitySettings>(DEFAULT_SITE_IDENTITY);
+  const [siteDisplayNameDraft, setSiteDisplayNameDraft] = useState(DEFAULT_SITE_IDENTITY.displayName);
+  const [siteIdentitySaving, setSiteIdentitySaving] = useState(false);
+  const applySiteIdentity = useCallback((settings: SiteIdentitySettings) => {
+    setSiteIdentity(settings);
+    setSiteDisplayNameDraft(settings.displayName);
+  }, []);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [publicHistoryOpen, setPublicHistoryOpen] = useState(false);
   const [publicHistory, setPublicHistory] = useState<PublicLayoutHistoryItem[]>([]);
@@ -1190,7 +1204,46 @@ export default function Home() {
     setPlaceDirectoryStorage,
     setPlaceDirectoryCanEdit,
     setPlaceDirectoryUpdatedAt,
+    setSiteIdentity: applySiteIdentity,
   });
+
+  useEffect(() => {
+    document.title = siteIdentity.displayName;
+    for (const name of ["application-name", "apple-mobile-web-app-title"]) {
+      let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+      if (!meta) {
+        meta = document.createElement("meta");
+        meta.name = name;
+        document.head.append(meta);
+      }
+      meta.content = siteIdentity.displayName;
+    }
+  }, [siteIdentity.displayName]);
+
+  const saveSiteDisplayName = useCallback(async () => {
+    const displayName = normalizeSiteDisplayName(siteDisplayNameDraft);
+    if (!displayName) {
+      setToast(`사이트 이름은 2~${SITE_DISPLAY_NAME_MAX_LENGTH}자로 입력해 주세요.`);
+      return;
+    }
+    if (displayName === siteIdentity.displayName) return;
+    setSiteIdentitySaving(true);
+    try {
+      const { response, payload } = await saveSiteIdentitySettings(displayName, siteIdentity.revision);
+      if (response.status === 409 && payload?.siteIdentity) {
+        applySiteIdentity(payload.siteIdentity);
+        setToast("다른 관리자 변경을 불러왔습니다. 이름을 다시 확인해 주세요.");
+        return;
+      }
+      if (!response.ok || !payload?.siteIdentity) throw new Error(payload?.error ?? "site identity save failed");
+      applySiteIdentity(payload.siteIdentity);
+      setToast("사이트 이름을 저장했습니다.");
+    } catch {
+      setToast("사이트 이름을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setSiteIdentitySaving(false);
+    }
+  }, [applySiteIdentity, siteDisplayNameDraft, siteIdentity]);
 
   const {
     denseLabelSettingsCanEdit,
@@ -1739,6 +1792,7 @@ export default function Home() {
     selectedDirectoryPlace,
     selected,
     selectedDisplayName,
+    siteDisplayName: siteIdentity.displayName,
     fitZoom,
     zoomRef,
     panRef,
@@ -1910,7 +1964,7 @@ export default function Home() {
       <main className={`app-shell ${publicLayoutAccess === "viewer" ? "public-readonly-shell" : ""} ${publicLayoutAccess === "viewer" && selected ? "public-place-selected" : ""}`} data-ui-theme={uiTheme}>
       {!startupRevealReady && <div className="public-loading public-loading-overlay">{startupLoadingCard}</div>}
       {publicLayoutAccess === "editor" ? <header className="topbar">
-        <div className="brand-block"><div className="brand-mark"><img src={JFAC_SYMBOL_SVG} width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
+        <div className="brand-block"><div className="brand-mark"><img src={JFAC_SYMBOL_SVG} width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>{siteIdentity.displayName} 관리</strong><span>제주문화예술재단 · 내부 디자인 도구</span></div><details className="admin-theme-menu">
             <summary aria-label={`현재 ${activeUiTheme.name} 테마 · 테마 선택 열기`} title="UI 테마 선택">
               <span>테마</span><UiThemeSwatch colors={activeUiTheme.colors} />
             </summary>
@@ -1933,7 +1987,7 @@ export default function Home() {
         <div className="toolbar-group public-layout-tools"><span className={publicLayoutPublishedAt ? "published" : "draft-only"}>{publicLayoutPublishedAt ? `공개본 ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")}` : "아직 게시 안 됨"}</span><button className="public-view-link" type="button" onClick={() => switchPublicView(true)}>배포본 보기</button><button className="publish-layout" disabled={publicLayoutPublishing || !hydrated} onClick={() => void publishCurrentLayout()}>{publicLayoutPublishing ? "저장 중…" : "공개본 업데이트"}</button></div>
         {adminAccessMethod === "shared" && <button className="shared-admin-signout" type="button" onClick={() => void signOutSharedAdmin()}>관리자 로그아웃</button>}
       </header> : <header className="topbar public-topbar">
-        <div className="brand-block"><div className="brand-mark"><img src={JFAC_SYMBOL_SVG} width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>제주 원도심 아트맵</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
+        <div className="brand-block"><div className="brand-mark"><img src={JFAC_SYMBOL_SVG} width={446} height={140} alt="" aria-hidden="true" /></div><div><strong>{siteIdentity.displayName}</strong><span>{publicLayoutPublishedAt ? `공개 배치본 · ${new Date(publicLayoutPublishedAt).toLocaleDateString("ko-KR")} 갱신` : "공개 배치본 준비 중"}</span></div></div>
         <div className="toolbar-group zoom-tools"><button onClick={() => setZoom((value) => clamp(value / 1.16, fitZoom, 4))} aria-label="축소">−</button><output>{Math.round(zoom * 100)}%</output><button onClick={() => setZoom((value) => clamp(value * 1.16, fitZoom, 4))} aria-label="확대">＋</button><button onClick={() => { setZoom(fitZoom); setMapPan({ x: 0, y: 0 }); setMapRenderPan({ x: 0, y: 0 }); }}>맞춤</button></div>
         <button className="main-hub-quick" type="button" onClick={() => { const hub = publicPlaceItems.find((item) => item.isMainHub); if (hub) { setGlobalStoriesOpen(false); focusPublicPlaceItem(hub); } }}>▼ 주요 거점</button>
         <span className="readonly-badge">마커 선택 · 기록 참여</span>
@@ -2018,6 +2072,11 @@ export default function Home() {
             <details className="place-manager-details screen-settings">
               <summary><span><strong>화면·라벨 표시 설정</strong><small>{screenRecommendedOnly ? `비추천 ${screenHiddenMarkerCount}곳 임시 숨김` : `라벨 ${editorLabelElements.length}/${editorLabelCandidates.length}`}</small></span></summary>
               <div className="place-manager-details-body">
+                <section className="site-identity-editor" aria-labelledby="site-identity-title">
+                  <header><span><b id="site-identity-title">사이트 이름</b><small>브라우저 탭과 PC 화면 상단에 함께 표시</small></span></header>
+                  <div className="site-identity-control"><input value={siteDisplayNameDraft} maxLength={SITE_DISPLAY_NAME_MAX_LENGTH} onChange={(event) => setSiteDisplayNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void saveSiteDisplayName(); } }} aria-label="사이트 이름" /><button type="button" disabled={siteIdentitySaving || !normalizeSiteDisplayName(siteDisplayNameDraft) || normalizeSiteDisplayName(siteDisplayNameDraft) === siteIdentity.displayName} onClick={() => void saveSiteDisplayName()}>{siteIdentitySaving ? "저장 중…" : "저장"}</button></div>
+                  <p>공개본 업데이트 없이 저장 즉시 관리자 화면과 배포 화면에 반영됩니다.</p>
+                </section>
                 <div className="view-toggle-list">
                   <label className={screenRecommendedOnly ? "active" : ""}><input type="checkbox" checked={screenRecommendedOnly} onChange={(event) => setScreenRecommendedOnly(event.target.checked)} /><span><b>추천 장소만 임시 표시</b><small>배치와 출력 포함 설정은 유지됩니다.</small></span></label>
                   <label><input type="checkbox" checked={markerLabelsVisible} onChange={(event) => setMarkerLabelsVisible(event.target.checked)} /><span><b>일반 마커 라벨</b><small>화면 표시만 한 번에 전환합니다.</small></span></label>

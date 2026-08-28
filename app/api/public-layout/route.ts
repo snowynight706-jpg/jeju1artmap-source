@@ -5,6 +5,11 @@ import { normalizeOptionalLabelScaleSteps } from "../../map/labels/density.mjs";
 import { completeReviewStatuses } from "../../review-status.mjs";
 import { stabilizeMainHubDocument } from "../../editor/document/main-hub-persistence.mjs";
 import {
+  DEFAULT_SITE_IDENTITY,
+  normalizeSiteDisplayName,
+  type SiteIdentitySettings,
+} from "../../site-identity";
+import {
   D1_SAFE_ROW_BYTES,
   validateD1RowBudget,
 } from "../storage-budget.mjs";
@@ -55,6 +60,12 @@ type StoredLabelDensitySettings = {
 
 type LabelDensitySettings = {
   optionalLabelScaleSteps: Array<{ maximumRatio: number; limit: number }>;
+  updatedAt: string;
+  revision: number;
+};
+
+type StoredSiteIdentity = {
+  displayName: string;
   updatedAt: string;
   revision: number;
 };
@@ -223,6 +234,22 @@ async function readLabelDensitySettings(db: D1Database) {
   ).first() as Promise<StoredLabelDensitySettings | null>;
 }
 
+async function readSiteIdentity(db: D1Database) {
+  return db.prepare(
+    `SELECT display_name AS displayName, updated_at AS updatedAt, revision
+     FROM site_identity_settings WHERE id = 1`,
+  ).first() as Promise<StoredSiteIdentity | null>;
+}
+
+function parseSiteIdentity(row: StoredSiteIdentity | null): SiteIdentitySettings {
+  if (!row) return DEFAULT_SITE_IDENTITY;
+  return {
+    displayName: normalizeSiteDisplayName(row.displayName) ?? DEFAULT_SITE_IDENTITY.displayName,
+    updatedAt: row.updatedAt,
+    revision: Math.max(0, Number(row.revision ?? 0)),
+  };
+}
+
 function parseLabelDensitySettings(row: StoredLabelDensitySettings | null): LabelDensitySettings | null {
   if (!row) return null;
   return {
@@ -367,6 +394,10 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
         updated_at AS updatedAt, revision
        FROM map_label_density_settings WHERE id = 1`,
     ),
+    db.prepare(
+      `SELECT display_name AS displayName, updated_at AS updatedAt, revision
+       FROM site_identity_settings WHERE id = 1`,
+    ),
     ...(canEdit ? [db.prepare(
       `SELECT document_json AS documentJson, view_settings_json AS viewSettingsJson,
         previous_document_json AS previousDocumentJson, previous_view_settings_json AS previousViewSettingsJson,
@@ -374,7 +405,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
        FROM map_editor_draft WHERE id = 1`,
     )] : []),
   ];
-  const [layoutResult, reviewResult, eventResult, placeRequestResult, eventPlaceResult, reviewPlaceResult, labelDensityResult, draftResult] = await db.batch(statements);
+  const [layoutResult, reviewResult, eventResult, placeRequestResult, eventPlaceResult, reviewPlaceResult, labelDensityResult, siteIdentityResult, draftResult] = await db.batch(statements);
   const contentSummary = contentSummaryFromBatchResults(reviewResult, eventResult, placeRequestResult, now);
   return {
     row: batchRow(layoutResult) as StoredLayout | null,
@@ -393,6 +424,7 @@ async function readInitialState(db: D1Database, canEdit: boolean) {
       latestCreatedAt: typeof row.latestCreatedAt === "string" ? row.latestCreatedAt : null,
     })),
     labelDensityRow: batchRow(labelDensityResult) as StoredLabelDensitySettings | null,
+    siteIdentityRow: batchRow(siteIdentityResult) as StoredSiteIdentity | null,
   };
 }
 
@@ -425,7 +457,7 @@ export async function GET(request: Request) {
   const requestedHistoryId = new URL(request.url).searchParams.get("historyId");
   if (!runtime.DB) {
     const uploadedBaseMap = await readUploadedBaseMapMetadata(runtime.BUCKET, canEdit);
-    return cacheableJson(request, { document: null, draft: null, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null, eventLinkedPlaces: [], reviewCountsByPlace: [], uploadedBaseMap }, 503);
+    return cacheableJson(request, { document: null, draft: null, siteIdentity: DEFAULT_SITE_IDENTITY, canEdit, accessMethod, persistent: false, publishedAt: null, revision: 0, hasPrevious: false, contentSummary: null, eventLinkedPlaces: [], reviewCountsByPlace: [], uploadedBaseMap }, 503);
   }
   if (requestedHistoryId) {
     if (!canEdit) return json({ error: "owner authentication required" }, 403);
@@ -441,7 +473,7 @@ export async function GET(request: Request) {
     if (!entry) return json({ error: "layout history entry unavailable" }, 404);
     return json({ historyEntry: parseHistoryDocument(entry) });
   }
-  const [{ row, draftRow, contentSummary, eventLinkedPlaces, reviewCountsByPlace, labelDensityRow }, uploadedBaseMap, historyResult] = await Promise.all([
+  const [{ row, draftRow, contentSummary, eventLinkedPlaces, reviewCountsByPlace, labelDensityRow, siteIdentityRow }, uploadedBaseMap, historyResult] = await Promise.all([
     readInitialState(runtime.DB, canEdit),
     readUploadedBaseMapMetadata(runtime.BUCKET, canEdit),
     canEdit ? readHistory(runtime.DB) : Promise.resolve({ results: [] as LayoutHistoryItem[] }),
@@ -452,6 +484,7 @@ export async function GET(request: Request) {
   } catch {
     labelDensitySettings = null;
   }
+  const siteIdentity = parseSiteIdentity(siteIdentityRow);
   const history = canEdit ? mergeHistory(historyResult.results ?? [], row) : undefined;
   let draft = null;
   try {
@@ -459,11 +492,11 @@ export async function GET(request: Request) {
   } catch {
     draft = null;
   }
-  if (!row) return cacheableJson(request, { document: null, draft, history, labelDensitySettings, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
+  if (!row) return cacheableJson(request, { document: null, draft, history, labelDensitySettings, siteIdentity, canEdit, accessMethod, persistent: true, publishedAt: null, revision: 0, hasPrevious: false, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
   try {
-    return cacheableJson(request, { ...parseStored(row, canEdit, labelDensitySettings), draft, history, labelDensitySettings, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
+    return cacheableJson(request, { ...parseStored(row, canEdit, labelDensitySettings), draft, history, labelDensitySettings, siteIdentity, canEdit, accessMethod, persistent: true, contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap });
   } catch {
-    return cacheableJson(request, { document: null, draft, history, labelDensitySettings, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap }, 500);
+    return cacheableJson(request, { document: null, draft, history, labelDensitySettings, siteIdentity, canEdit, accessMethod, persistent: true, publishedAt: row.publishedAt, revision: row.revision, hasPrevious: Boolean(row.previousDocumentJson), contentSummary, eventLinkedPlaces, reviewCountsByPlace, uploadedBaseMap }, 500);
   }
 }
 
@@ -474,6 +507,36 @@ export async function PATCH(request: Request) {
   if (!canEdit || !currentEmail) return json({ error: "owner authentication required" }, 403);
 
   const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (payload?.action === "save-site-identity") {
+    const displayName = normalizeSiteDisplayName(payload.displayName);
+    if (!displayName) return json({ error: "valid site display name required" }, 400);
+    const current = await readSiteIdentity(runtime.DB);
+    const baseRevision = typeof payload.baseRevision === "number" && Number.isInteger(payload.baseRevision) && payload.baseRevision >= 0
+      ? payload.baseRevision
+      : null;
+    if (baseRevision === null) return json({ error: "valid site identity revision required" }, 400);
+    if (baseRevision !== (current?.revision ?? 0)) {
+      return json({ error: "site identity changed", siteIdentity: parseSiteIdentity(current) }, 409);
+    }
+    const updatedAt = new Date().toISOString();
+    const revision = (current?.revision ?? 0) + 1;
+    const result = await runtime.DB.prepare(
+      `INSERT INTO site_identity_settings
+        (id, display_name, updated_at, updated_by, revision)
+       VALUES (1, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         display_name = excluded.display_name,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by,
+         revision = excluded.revision
+       WHERE site_identity_settings.revision = ?`,
+    ).bind(displayName, updatedAt, currentEmail, revision, baseRevision).run();
+    if (!result.success || Number(result.meta?.changes ?? 0) === 0) {
+      const latest = await readSiteIdentity(runtime.DB);
+      return json({ error: "site identity changed", siteIdentity: parseSiteIdentity(latest) }, 409);
+    }
+    return json({ siteIdentity: { displayName, updatedAt, revision }, canEdit: true, persistent: true });
+  }
   if (payload?.action === "save-label-density-settings") {
     if (!Array.isArray(payload.optionalLabelScaleSteps)) return json({ error: "valid label density settings required" }, 400);
     const current = await readLabelDensitySettings(runtime.DB);

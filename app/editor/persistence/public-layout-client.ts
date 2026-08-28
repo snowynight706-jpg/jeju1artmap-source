@@ -1,5 +1,6 @@
 import type { DocumentState } from "../../map/core/types";
 import type { PlaceEventPlace, PlaceReviewCount } from "../../content/types";
+import type { SiteIdentitySettings } from "../../site-identity";
 
 export type { PlaceEventPlace, PlaceReviewCount } from "../../content/types";
 
@@ -69,6 +70,7 @@ export type PublicLayoutPayload = {
   view?: PublicViewSettings;
   draft?: EditorDraftPayload | null;
   labelDensitySettings?: LabelDensitySettingsPayload | null;
+  siteIdentity?: SiteIdentitySettings;
   canEdit?: boolean;
   accessMethod?: "owner" | "shared" | null;
   persistent?: boolean;
@@ -113,6 +115,14 @@ export function saveLabelDensitySettings(
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action: "save-label-density-settings", optionalLabelScaleSteps, baseRevision }),
+  });
+}
+
+export function saveSiteIdentitySettings(displayName: string, baseRevision: number) {
+  return requestPublicLayout(PUBLIC_LAYOUT_API, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "save-site-identity", displayName, baseRevision }),
   });
 }
 

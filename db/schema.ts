@@ -157,6 +157,14 @@ export const mapLabelDensitySettings = sqliteTable("map_label_density_settings",
   revision: integer("revision").notNull(),
 });
 
+export const siteIdentitySettings = sqliteTable("site_identity_settings", {
+  id: integer("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  revision: integer("revision").notNull(),
+});
+
 export const placeStories = sqliteTable("place_stories", {
   id: text("id").primaryKey(),
   placeKey: text("place_key").notNull(),

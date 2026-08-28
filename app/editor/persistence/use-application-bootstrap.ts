@@ -19,6 +19,10 @@ import type {
 import { normalizeOptionalLabelScaleSteps } from "../../map/labels/density.mjs";
 import { readLocalDenseLabelSettings } from "../../map/labels/use-settings-persistence";
 import type { MasterDirectoryRow } from "../../master-directory";
+import {
+  DEFAULT_SITE_IDENTITY,
+  type SiteIdentitySettings,
+} from "../../site-identity";
 import { defaultMarkerAssetId, directoryRecordFromPlace, mapCategoryForDirectoryPlace } from "../../place-directory/model";
 import { PLACE_EVENTS_API } from "../../content/client";
 import type { PlaceDirectoryRecord, PlaceEventPlace, PlaceEventsPayload, PlaceReviewCount } from "../../content/types";
@@ -127,6 +131,7 @@ type UseApplicationBootstrapOptions = {
   setPlaceDirectoryStorage: StateSetter<DirectoryStorage>;
   setPlaceDirectoryCanEdit: StateSetter<boolean>;
   setPlaceDirectoryUpdatedAt: StateSetter<string | null>;
+  setSiteIdentity: (settings: SiteIdentitySettings) => void;
 };
 
 export function useApplicationBootstrap(options: UseApplicationBootstrapOptions) {
@@ -200,6 +205,7 @@ export function useApplicationBootstrap(options: UseApplicationBootstrapOptions)
     setPlaceDirectoryStorage,
     setPlaceDirectoryCanEdit,
     setPlaceDirectoryUpdatedAt,
+    setSiteIdentity,
   } = options;
 
   useEffect(() => {
@@ -232,6 +238,7 @@ export function useApplicationBootstrap(options: UseApplicationBootstrapOptions)
       .then((payload) => {
         if (cancelled) return;
         const canEdit = Boolean(payload?.canEdit);
+        setSiteIdentity(payload?.siteIdentity ?? DEFAULT_SITE_IDENTITY);
         setAdminAccessMethod(payload?.accessMethod ?? null);
         const publishedDocument = payload?.document && Array.isArray(payload.document.elements)
           ? sanitizeDocument(payload.document)
@@ -356,6 +363,7 @@ export function useApplicationBootstrap(options: UseApplicationBootstrapOptions)
     setSaveState,
     setScreenRecommendedOnly,
     setSelectedId,
+    setSiteIdentity,
     setUploadedBaseMap,
   ]);
 

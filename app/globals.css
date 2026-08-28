@@ -396,6 +396,15 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; backg
 .place-manager-details .view-toggle-list label { min-height: 36px; padding: 5px 2px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
 .place-manager-details .view-toggle-list label:last-child { border-bottom: 0; }
 .place-manager-details .view-toggle-list label.active { background: color-mix(in srgb, var(--ui-active, #ededed) 50%, transparent); }
+.site-identity-editor { display: grid; gap: 6px; padding: 0 2px 9px; border-bottom: 1px solid var(--line); }
+.site-identity-editor > header span, .site-identity-editor > header b, .site-identity-editor > header small { min-width: 0; display: block; }
+.site-identity-editor > header b { color: var(--ink); font-size: 8px; }
+.site-identity-editor > header small { margin-top: 2px; color: var(--muted); font-size: 7px; line-height: 1.35; }
+.site-identity-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+.site-identity-control input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--ui-control, #fff); color: var(--ink); font-size: 8px; }
+.site-identity-control button { min-width: 46px; min-height: 30px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--emerald) 54%, var(--line-strong)); border-radius: 6px; background: color-mix(in srgb, var(--emerald) 9%, var(--ui-control, #fff)); color: var(--emerald); cursor: pointer; font-size: 7px; font-weight: 750; }
+.site-identity-control button:disabled { cursor: default; opacity: .5; }
+.site-identity-editor > p { margin: 0; color: var(--muted); font-size: 6.5px; line-height: 1.45; }
 .place-manager-details.composition-settings { margin-top: 1px; }
 .place-manager-details .composition-helper { margin: 0; padding: 8px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .composition-helper { margin: 0 10px 9px; padding: 10px; border: 1px solid #d2d2d2; border-radius: 10px; background: linear-gradient(145deg, #f9f9f9, #f4f4f4); box-shadow: 0 4px 14px rgb(90 90 90 / 7%); }
