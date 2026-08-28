@@ -102,7 +102,7 @@ test("public mobile map culls only far-offscreen render nodes after a settled ge
 });
 
 test("versioned immutable images use cache-first without caching mutable APIs", () => {
-  assert.match(serviceWorkerSource, /CACHE_VERSION = "2026-08-20-v16"/);
+  assert.match(serviceWorkerSource, /CACHE_VERSION = "2026-08-28-v17"/);
   assert.match(serviceWorkerSource, /url\.searchParams\.has\("v"\)[\s\S]{0,160}cacheFirstVersionedImage/);
   assert.match(serviceWorkerSource, /url\.pathname\.startsWith\("\/api\/"\)\) return/);
   assert.match(serviceWorkerSource, /IMAGE_TRIM_INTERVAL = 12/);

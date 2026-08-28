@@ -142,7 +142,7 @@ export function usePlaceStoryActions(options: UsePlaceStoryActionsOptions) {
       const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
       setStoryCameraPermission(denied ? "denied" : "unavailable");
       setToast(denied
-        ? "카메라 권한이 차단되었습니다. 기기 설정의 원도심 아트맵 권한에서 카메라를 허용해 주세요."
+        ? "카메라 권한이 차단되었습니다. 기기 설정의 원도심 맵 권한에서 카메라를 허용해 주세요."
         : "이 기기에서 카메라를 사용할 수 없습니다. 갤러리의 ‘사진 1장 선택’을 이용해 주세요.");
     }
   };

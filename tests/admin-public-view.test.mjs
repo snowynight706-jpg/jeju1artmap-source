@@ -23,5 +23,5 @@ test("public deployment view downgrades every server-side admin permission check
 });
 
 test("the revised Chilseong-ro asset invalidates the previous PWA image cache", () => {
-  assert.match(serviceWorkerSource, /const CACHE_VERSION = "2026-08-20-v16"/);
+  assert.match(serviceWorkerSource, /const CACHE_VERSION = "2026-08-28-v17"/);
 });

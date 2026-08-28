@@ -29,7 +29,7 @@ test("the first screen waits only for the critical map and main-hub assets befor
   assert.match(pageSource, /!startupRevealReady && <div className="public-loading public-loading-overlay">/);
   assert.match(pageSource, /const sources = \[\.\.\.new Set\(\[\s*signatureSource,\s*mapSource/);
   assert.match(loaderBlock, /src=\{JFAC_SIGNATURE_B_SVG\} width=\{1182\} height=\{626\} alt="제주문화예술재단 국문 시그니처 B"/);
-  assert.doesNotMatch(loaderBlock, /JFAC_SYMBOL_SVG|jfac-symbol\.(?:png|webp|svg)|jfac-signature-c\.(?:png|webp|svg)|제주 원도심 아트맵/);
+  assert.doesNotMatch(loaderBlock, /JFAC_SYMBOL_SVG|jfac-symbol\.(?:png|webp|svg)|jfac-signature-c\.(?:png|webp|svg)|제주 원도심 맵/);
   assert.match(loaderBlock, />로딩 중</);
   assert.match(cssSource, /\.public-loading-track span \{[^}]*linear-gradient/);
   assert.match(cssSource, /\.public-loading \{[^}]*min-height: 100dvh[^}]*background: #fff/);

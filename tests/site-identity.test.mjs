@@ -12,7 +12,7 @@ const schemaSource = await readFile(new URL("../db/schema.ts", import.meta.url),
 const migrationSource = await readFile(new URL("../drizzle/0025_naive_king_cobra.sql", import.meta.url), "utf8");
 
 test("site display names have a safe default and bounded normalization", () => {
-  assert.match(identitySource, /DEFAULT_SITE_DISPLAY_NAME = "제주 원도심 아트맵"/);
+  assert.match(identitySource, /DEFAULT_SITE_DISPLAY_NAME = "제주 원도심 맵"/);
   assert.match(identitySource, /SITE_DISPLAY_NAME_MAX_LENGTH = 40/);
   assert.match(identitySource, /replace\(\/\\s\+\/g, " "\)/);
   assert.match(identitySource, /normalized\.length < 2[\s\S]*normalized\.length > SITE_DISPLAY_NAME_MAX_LENGTH/);

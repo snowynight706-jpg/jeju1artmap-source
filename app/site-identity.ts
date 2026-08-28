@@ -1,4 +1,4 @@
-export const DEFAULT_SITE_DISPLAY_NAME = "제주 원도심 아트맵";
+export const DEFAULT_SITE_DISPLAY_NAME = "제주 원도심 맵";
 export const SITE_DISPLAY_NAME_MAX_LENGTH = 40;
 
 export type SiteIdentitySettings = {

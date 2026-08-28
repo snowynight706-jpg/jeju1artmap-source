@@ -159,7 +159,7 @@ export default function PwaLifecycle() {
       if (startupAutoUpdateEligibleRef.current && !autoUpdateAttempted) {
         try { sessionStorage.setItem(autoUpdateSessionKey, "1"); } catch {}
         const loadingMessage = document.querySelector<HTMLElement>(".public-loading-card p");
-        if (loadingMessage) loadingMessage.textContent = "최신 아트맵을 자동 업데이트하고 있습니다.";
+        if (loadingMessage) loadingMessage.textContent = "최신 원도심 맵을 자동 업데이트하고 있습니다.";
         setWaitingWorker(null);
         setApplyingUpdate(true);
         updateRequestedRef.current = true;
@@ -269,11 +269,11 @@ export default function PwaLifecycle() {
           id="pwa-install-guide"
           className="pwa-install-guide"
           role="dialog"
-          aria-label="원도심 아트맵 앱 설치 안내"
+          aria-label="원도심 맵 앱 설치 안내"
         >
           <img src="/icons/icon-192.png" alt="" aria-hidden="true" />
           <span>
-            <strong>원도심 아트맵 앱 설치</strong>
+            <strong>원도심 맵 앱 설치</strong>
             <small>
               {mobilePlatform === "ios"
                 ? "Safari에서 공유 버튼을 누른 뒤 ‘홈 화면에 추가’를 선택하세요."
@@ -287,7 +287,7 @@ export default function PwaLifecycle() {
       )}
       {waitingWorker && (
         <aside className="pwa-update-notice" role="status" aria-live="polite">
-          <span><strong>새 버전이 있습니다.</strong><small>최신 원도심 아트맵으로 전환합니다.</small></span>
+          <span><strong>새 버전이 있습니다.</strong><small>최신 원도심 맵으로 전환합니다.</small></span>
           <button type="button" onClick={applyUpdate} disabled={applyingUpdate}>
             {applyingUpdate ? "적용 중" : "업데이트"}
           </button>

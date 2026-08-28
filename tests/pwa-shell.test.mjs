@@ -21,8 +21,8 @@ function pngDimensions(buffer) {
 }
 
 test("manifest keeps the existing site root and exposes standalone install metadata", () => {
-  assert.equal(manifest.name, "제주 원도심 아트맵");
-  assert.equal(manifest.short_name, "원도심 아트맵");
+  assert.equal(manifest.name, "제주 원도심 맵");
+  assert.equal(manifest.short_name, "원도심 맵");
   assert.equal(manifest.start_url, "/");
   assert.equal(manifest.scope, "/");
   assert.equal(manifest.display, "standalone");
@@ -64,13 +64,16 @@ test("production registration checks for updates without blocking development", 
   assert.match(lifecycleSource, /viewportTags\.slice\(0, -1\)\.forEach\(\(tag\) => tag\.remove\(\)\)/);
   assert.match(lifecycleSource, /document\.querySelector\("\.public-loading"\)/);
   assert.match(lifecycleSource, /sessionStorage\.getItem\(autoUpdateSessionKey\) === "1"/);
-  assert.match(lifecycleSource, /최신 아트맵을 자동 업데이트하고 있습니다/);
+  assert.match(lifecycleSource, /최신 원도심 맵을 자동 업데이트하고 있습니다/);
   assert.match(lifecycleSource, /applyDuringStartupOrNotify\(registration\.waiting\)/);
   assert.match(lifecycleSource, /applyDuringStartupOrNotify\(installing\)/);
   assert.match(lifecycleSource, /showUpdateNoticeAfterLoading/);
   assert.match(lifecycleSource, /if \(!document\.querySelector\("\.public-loading"\)\)/);
   assert.match(lifecycleSource, /loadingNoticeObserver\.observe\(document\.body, \{ childList: true, subtree: true \}\)/);
   assert.match(layoutSource, /manifest: "\/manifest\.webmanifest"/);
+  assert.match(layoutSource, /title: DEFAULT_SITE_DISPLAY_NAME/);
+  assert.match(layoutSource, /applicationName: DEFAULT_SITE_DISPLAY_NAME/);
+  assert.match(layoutSource, /apple-mobile-web-app-title" content="원도심 맵"/);
   assert.match(layoutSource, /viewport-fit=cover/);
   assert.match(layoutSource, /apple-mobile-web-app-capable" content="yes"/);
   assert.match(layoutSource, /apple-mobile-web-app-status-bar-style" content="black-translucent"/);
