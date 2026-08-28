@@ -364,6 +364,33 @@ export function usePlaceEventRequestActions(options: UsePlaceEventRequestActions
     }
   };
 
+  const togglePlaceEventPin = async (event: PlaceEvent) => {
+    if (placeEventActionId) return;
+    const isPinned = !event.isPinned;
+    setPlaceEventActionId(event.id);
+    try {
+      const response = await fetch(PLACE_EVENTS_API, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: event.id, isPinned }),
+      });
+      const payload = await response.json().catch(() => null) as { isPinned?: boolean } | null;
+      if (!response.ok || payload?.isPinned !== isPinned) throw new Error("event pin failed");
+      const updatePinnedEvent = (current: PlaceEvent[]) => current
+        .map((item) => item.id === event.id ? { ...item, isPinned } : item)
+        .sort(compareEventPriority);
+      setPlaceEvents(updatePinnedEvent);
+      setGlobalEvents(updatePinnedEvent);
+      setGlobalEventsPage(1);
+      setGlobalEventsRefreshKey((current) => current + 1);
+      setToast(isPinned ? "행사를 공개 목록 상단에 고정했습니다." : "행사 상단 고정을 해제했습니다.");
+    } catch {
+      setToast("행사 상단 고정 상태를 변경하지 못했습니다.");
+    } finally {
+      setPlaceEventActionId(null);
+    }
+  };
+
   const deletePlaceEvent = async (event: PlaceEvent) => {
     if (placeEventActionId || !window.confirm(`‘${event.eventName}’ 행사와 사진을 서버에서 완전히 삭제할까요?`)) return;
     setPlaceEventActionId(event.id);
@@ -693,6 +720,7 @@ export function usePlaceEventRequestActions(options: UsePlaceEventRequestActions
     endPlaceEventDialogDrag,
     submitPlaceEvent,
     moderatePlaceEvent,
+    togglePlaceEventPin,
     deletePlaceEvent,
     submitPlaceRegistrationRequest,
     updatePlaceRequestDraft,
@@ -713,6 +741,11 @@ function eventPlaceList(event: PlaceEvent): PlaceEventPlace[] {
   return Array.isArray(event.places) && event.places.length
     ? event.places
     : event.placeKey && event.placeName ? [{ placeKey: event.placeKey, placeName: event.placeName }] : [];
+}
+
+function compareEventPriority(left: PlaceEvent, right: PlaceEvent) {
+  if (left.isPinned !== right.isPinned) return left.isPinned ? -1 : 1;
+  return right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id);
 }
 
 function clamp(value: number, min: number, max: number) {

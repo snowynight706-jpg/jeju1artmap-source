@@ -32,6 +32,7 @@ type EventRow = {
   visibleFrom: string;
   visibleUntil: string;
   status: "active" | "hidden";
+  isPinned: number | boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -163,6 +164,7 @@ function publicEvent(row: EventRow, places: EventPlace[], now: string) {
     visibleFrom: row.visibleFrom,
     visibleUntil: row.visibleUntil,
     status: row.status,
+    isPinned: Boolean(row.isPinned),
     isVisible,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -175,8 +177,11 @@ const EVENT_SELECT = `SELECT e.id, e.place_key AS placeKey, e.place_name AS plac
   COALESCE(NULLIF(e.starts_at, ''), e.visible_from) AS startsAt,
   COALESCE(NULLIF(e.ends_at, ''), e.visible_until) AS endsAt,
   e.visible_from AS visibleFrom, e.visible_until AS visibleUntil, e.status,
+  e.is_pinned AS isPinned,
   e.created_at AS createdAt, e.updated_at AS updatedAt
  FROM place_events e`;
+
+const EVENT_PRIORITY_ORDER = "e.is_pinned DESC, e.created_at DESC, e.id DESC";
 
 async function eventPayload(db: D1Database, rows: EventRow[], now: string) {
   const relations = await placesForRows(db, rows);
@@ -210,7 +215,7 @@ export async function GET(request: Request) {
     const requestedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
     const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
     const countStatement = runtime.DB.prepare(`SELECT COUNT(*) AS count FROM place_events e WHERE ${where}`);
-    const pageStatement = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`);
+    const pageStatement = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY ${EVENT_PRIORITY_ORDER} LIMIT ? OFFSET ?`);
     const requestedOffset = (page - 1) * GLOBAL_PAGE_SIZE;
     const [countResult, pageResult] = await runtime.DB.batch(canManage
       ? [countStatement, pageStatement.bind(GLOBAL_PAGE_SIZE, requestedOffset)]
@@ -224,7 +229,7 @@ export async function GET(request: Request) {
     const normalizedPage = pageCount > 0 ? Math.min(page, pageCount) : 1;
     let rows = pageResult.results ?? [];
     if (normalizedPage !== page) {
-      const normalizedStatement = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC, e.id DESC LIMIT ? OFFSET ?`);
+      const normalizedStatement = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY ${EVENT_PRIORITY_ORDER} LIMIT ? OFFSET ?`);
       const normalizedResult = (canManage
         ? await normalizedStatement.bind(GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()
         : await normalizedStatement.bind(now, now, GLOBAL_PAGE_SIZE, (normalizedPage - 1) * GLOBAL_PAGE_SIZE).all()) as { results?: EventRow[] };
@@ -246,7 +251,7 @@ export async function GET(request: Request) {
   const where = `(${visibility}) AND EXISTS (
     SELECT 1 FROM place_event_places ep WHERE ep.event_id = e.id AND ep.place_key = ?
   )`;
-  const query = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY e.created_at DESC LIMIT ?`);
+  const query = runtime.DB.prepare(`${EVENT_SELECT} WHERE ${where} ORDER BY ${EVENT_PRIORITY_ORDER} LIMIT ?`);
   const result = (canManage
     ? await query.bind(placeKey, MAX_EVENTS_PER_PLACE).all()
     : await query.bind(now, now, placeKey, MAX_EVENTS_PER_PLACE).all()) as { results?: EventRow[] };
@@ -310,7 +315,7 @@ export async function POST(request: Request) {
     await runtime.BUCKET.delete(photoKey).catch(() => undefined);
     throw error;
   }
-  const row: EventRow = { id, placeKey: primaryPlace.placeKey, placeName: primaryPlace.placeName, eventName, eventInfo, photoKey, photoContentType: format.contentType, photoSize: buffer.byteLength, startsAt, endsAt, visibleFrom, visibleUntil, status: "active", createdAt, updatedAt: createdAt };
+  const row: EventRow = { id, placeKey: primaryPlace.placeKey, placeName: primaryPlace.placeName, eventName, eventInfo, photoKey, photoContentType: format.contentType, photoSize: buffer.byteLength, startsAt, endsAt, visibleFrom, visibleUntil, status: "active", isPinned: false, createdAt, updatedAt: createdAt };
   return json({ event: publicEvent(row, places, createdAt), persistent: true }, 201);
 }
 
@@ -320,16 +325,23 @@ export async function PATCH(request: Request) {
   const { canManage, currentEmail } = ownerAccess(request, runtime);
   if (!canManage || !currentEmail) return json({ error: "owner authentication required" }, 403);
   if (!request.headers.get("content-type")?.includes("multipart/form-data")) {
-    const payload = await request.json().catch(() => null) as { id?: unknown; status?: unknown } | null;
+    const payload = await request.json().catch(() => null) as { id?: unknown; status?: unknown; isPinned?: unknown } | null;
     const id = typeof payload?.id === "string" ? payload.id : "";
     const status = payload?.status === "active" || payload?.status === "hidden" ? payload.status : null;
-    if (!id || !status) return json({ error: "valid event and status required" }, 400);
+    const isPinned = typeof payload?.isPinned === "boolean" ? payload.isPinned : null;
+    if (!id || (status === null && isPinned === null) || (status !== null && isPinned !== null)) {
+      return json({ error: "valid event status or pin state required" }, 400);
+    }
     const updatedAt = new Date().toISOString();
-    const result = await runtime.DB.prepare(
-      "UPDATE place_events SET status = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-    ).bind(status, updatedAt, currentEmail, id).run();
+    const result = status !== null
+      ? await runtime.DB.prepare(
+        "UPDATE place_events SET status = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+      ).bind(status, updatedAt, currentEmail, id).run()
+      : await runtime.DB.prepare(
+        "UPDATE place_events SET is_pinned = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+      ).bind(isPinned ? 1 : 0, updatedAt, currentEmail, id).run();
     if (!result.meta.changes) return json({ error: "event not found" }, 404);
-    return json({ id, status, updatedAt });
+    return json(status !== null ? { id, status, updatedAt } : { id, isPinned, updatedAt });
   }
 
   if (!runtime.BUCKET) return json({ error: "storage unavailable" }, 503);

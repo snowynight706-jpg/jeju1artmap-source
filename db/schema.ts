@@ -227,12 +227,14 @@ export const placeEvents = sqliteTable("place_events", {
   visibleFrom: text("visible_from").notNull(),
   visibleUntil: text("visible_until").notNull(),
   status: text("status").notNull(),
+  isPinned: integer("is_pinned", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
   updatedBy: text("updated_by").notNull(),
 }, (table) => [
   index("place_events_place_status_visibility_idx").on(table.placeKey, table.status, table.visibleFrom, table.visibleUntil),
   index("place_events_status_visibility_created_idx").on(table.status, table.visibleFrom, table.visibleUntil, table.createdAt),
+  index("place_events_pinned_created_idx").on(table.isPinned, table.createdAt),
 ]);
 
 export const placeEventPlaces = sqliteTable("place_event_places", {

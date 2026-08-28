@@ -30,6 +30,7 @@ export type PublicExplorerActivityContentProps = {
   onOpenEventPlace: (place: ExplorerEventPlace) => void;
   onEditEvent: (event: ExplorerEvent) => void;
   onModerateEvent: (event: ExplorerEvent, status: "active" | "hidden") => void | Promise<void>;
+  onToggleEventPin: (event: ExplorerEvent) => void | Promise<void>;
   onDeleteEvent: (event: ExplorerEvent) => void | Promise<void>;
 };
 
@@ -96,6 +97,7 @@ export default function PublicExplorerActivityContent({
   onOpenEventPlace,
   onEditEvent,
   onModerateEvent,
+  onToggleEventPin,
   onDeleteEvent,
 }: PublicExplorerActivityContentProps) {
   if (tab === "reviews") {
@@ -115,7 +117,7 @@ export default function PublicExplorerActivityContent({
         : events.length ? <div className="global-story-list">{events.map((event) => {
           const visibility = eventVisibility(event);
           const places = eventPlaces(event);
-          return <article className={`global-story-card event-card has-photo ${!event.isVisible ? "hidden" : ""}`} key={event.id}><img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" decoding="async" /><div><div className="global-event-place-links" aria-label="행사 장소">{places.length ? places.map((place) => <button type="button" key={place.placeKey} onClick={() => onOpenEventPlace(place)}>{place.placeName}<span>지도 보기</span></button>) : <span className="global-event-unassigned">원도심 공통 행사 · 장소 지정 없음</span>}</div><div className="global-story-meta"><strong>{event.eventName}<em className={`event-visibility ${event.isVisible ? "visible" : ""}`}>{visibility}</em></strong><time dateTime={event.startsAt}>{eventScheduleLabel(event.startsAt, event.endsAt)}</time></div><p>{event.eventInfo}</p>{eventsCanManage && <div className="event-admin-visibility-period">화면 노출 {dateTimeLabel(event.visibleFrom)} ~ {dateTimeLabel(event.visibleUntil)}</div>}{eventsCanManage && <footer className="global-story-admin-actions"><button type="button" disabled={eventActionId !== null} onClick={() => onEditEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={eventActionId !== null} onClick={() => void onModerateEvent(event, event.status === "hidden" ? "active" : "hidden")}>{eventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={eventActionId !== null} onClick={() => void onDeleteEvent(event)}>영구 삭제</button></footer>}</div></article>;
+          return <article className={`global-story-card event-card has-photo ${!event.isVisible ? "hidden" : ""}`} key={event.id}><img src={event.photoUrl} alt={`${event.eventName} 행사 이미지`} loading="lazy" decoding="async" /><div><div className="global-event-place-links" aria-label="행사 장소">{places.length ? places.map((place) => <button type="button" key={place.placeKey} onClick={() => onOpenEventPlace(place)}>{place.placeName}<span>지도 보기</span></button>) : <span className="global-event-unassigned">원도심 공통 행사 · 장소 지정 없음</span>}</div><div className="global-story-meta"><strong>{event.eventName}<em className={`event-visibility ${event.isVisible ? "visible" : ""}`}>{visibility}</em></strong><time dateTime={event.startsAt}>{eventScheduleLabel(event.startsAt, event.endsAt)}</time></div><p>{event.eventInfo}</p>{eventsCanManage && <div className="event-admin-visibility-period">화면 노출 {dateTimeLabel(event.visibleFrom)} ~ {dateTimeLabel(event.visibleUntil)}</div>}{eventsCanManage && <footer className="global-story-admin-actions"><button type="button" className={`event-pin-toggle ${event.isPinned ? "active" : ""}`} aria-pressed={event.isPinned} title={event.isPinned ? "상단 고정 해제" : "공개 행사 목록 상단 고정"} disabled={eventActionId !== null} onClick={() => void onToggleEventPin(event)}><span aria-hidden="true">{event.isPinned ? "📌" : "📍"}</span>{event.isPinned ? "고정 해제" : "상단 고정"}</button><button type="button" disabled={eventActionId !== null} onClick={() => onEditEvent(event)}>수정</button>{visibility !== "기간 종료" && <button type="button" disabled={eventActionId !== null} onClick={() => void onModerateEvent(event, event.status === "hidden" ? "active" : "hidden")}>{eventActionId === event.id ? "처리 중…" : event.status === "hidden" ? "다시 활성화" : "숨기기"}</button>}<button type="button" className="danger" disabled={eventActionId !== null} onClick={() => void onDeleteEvent(event)}>영구 삭제</button></footer>}</div></article>;
         })}</div> : <div className="global-story-state"><strong>{access === "editor" ? "아직 등록된 행사가 없습니다." : "현재 노출 중인 행사가 없습니다."}</strong><span>{access === "editor" ? "위 등록 버튼에서 장소 지정 여부와 노출 기간을 정할 수 있습니다." : "새 행사가 등록되면 이곳에 표시됩니다."}</span></div>}
   </section>;
 }

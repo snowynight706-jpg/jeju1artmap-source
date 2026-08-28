@@ -124,6 +124,7 @@ export type PlaceEvent = {
   visibleFrom: string;
   visibleUntil: string;
   status: "active" | "hidden";
+  isPinned: boolean;
   isVisible: boolean;
   createdAt: string;
   updatedAt: string;

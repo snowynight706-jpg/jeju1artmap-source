@@ -169,6 +169,13 @@
       "when": 1787573761419,
       "tag": "0023_jazzy_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1787876033254,
+      "tag": "0024_minor_rogue",
+      "breakpoints": true
     }
   ]
 }

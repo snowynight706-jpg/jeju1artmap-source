@@ -1685,6 +1685,7 @@ export default function Home() {
     endPlaceEventDialogDrag,
     submitPlaceEvent,
     moderatePlaceEvent,
+    togglePlaceEventPin,
     deletePlaceEvent,
     submitPlaceRegistrationRequest,
     updatePlaceRequestDraft,
@@ -2519,6 +2520,7 @@ export default function Home() {
           onOpenEventPlace: openGlobalEventPlace,
           onEditEvent: editPlaceEvent,
           onModerateEvent: moderatePlaceEvent,
+          onToggleEventPin: togglePlaceEventPin,
           onDeleteEvent: deletePlaceEvent,
         }}
         requests={{
