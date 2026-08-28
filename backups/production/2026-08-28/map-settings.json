@@ -1,0 +1,2419 @@
+{
+  "exportedAt": "2026-08-28T15:26:44.4818240+09:00",
+  "source": "Sites production D1 binding DB",
+  "privacy": "Operator email and authentication-related fields omitted.",
+  "tables": {
+    "dense_label_settings": {
+      "columns": [
+        "id",
+        "positions_json",
+        "excluded_element_ids_json",
+        "updated_at"
+      ],
+      "rows": [
+        {
+          "id": 1,
+          "positions_json": "[{\"key\":\"element-2871df65-f0f2-4324-85c4-6ecb265efb39|element-e7703cae-83ba-4dc5-8aa6-fb6c6b2f1f3b|starter-marker-8\",\"elementIds\":[\"element-2871df65-f0f2-4324-85c4-6ecb265efb39\",\"element-e7703cae-83ba-4dc5-8aa6-fb6c6b2f1f3b\",\"starter-marker-8\"],\"x\":88.9416985395503,\"y\":76.75488909374464},{\"key\":\"element-efea649a-4287-446a-ade8-d28e3c811a14|starter-marker-11\",\"elementIds\":[\"element-efea649a-4287-446a-ade8-d28e3c811a14\",\"starter-marker-11\"],\"x\":59.88361212918957,\"y\":41.86736115923749},{\"key\":\"element-5444532e-53a9-4889-a5e0-1863984ebfa0|element-b5e22443-9986-4f05-9b90-55fc12011cfd\",\"elementIds\":[\"element-5444532e-53a9-4889-a5e0-1863984ebfa0\",\"element-b5e22443-9986-4f05-9b90-55fc12011cfd\"],\"x\":51.39649295624879,\"y\":40.402976927371114},{\"key\":\"element-8ba4a87f-ce98-46fc-8dac-12d7a99abc5f|element-8bb9c044-df0e-4f2b-96fe-07d1375281fa\",\"elementIds\":[\"element-8ba4a87f-ce98-46fc-8dac-12d7a99abc5f\",\"element-8bb9c044-df0e-4f2b-96fe-07d1375281fa\"],\"x\":69.89863395434392,\"y\":67.96046709551055},{\"key\":\"element-10316f76-2691-404e-890f-682f25327b45|element-521de01b-ff7f-47ac-a8a8-77cda8c256b9|element-87da2292-1297-4ebf-bda2-0b093504f490|element-ad6fa08a-12bb-49c5-bf10-cb2059a4f714\",\"elementIds\":[\"element-10316f76-2691-404e-890f-682f25327b45\",\"element-521de01b-ff7f-47ac-a8a8-77cda8c256b9\",\"element-87da2292-1297-4ebf-bda2-0b093504f490\",\"element-ad6fa08a-12bb-49c5-bf10-cb2059a4f714\"],\"x\":59.1019928359441,\"y\":65.97589736847002},{\"key\":\"element-7bd0bb8d-0140-410a-a567-464c94386de5|element-fb15a79c-ab0b-4bbc-9a5e-e12d9a8f5d62\",\"elementIds\":[\"element-7bd0bb8d-0140-410a-a567-464c94386de5\",\"element-fb15a79c-ab0b-4bbc-9a5e-e12d9a8f5d62\"],\"x\":16.68025466546336,\"y\":72.78532897689621},{\"key\":\"element-a00549ed-65ef-49b4-969c-c0c1e04c23d3|starter-marker-2\",\"elementIds\":[\"element-a00549ed-65ef-49b4-969c-c0c1e04c23d3\",\"starter-marker-2\"],\"x\":91.5061280398591,\"y\":65.42095370064155}]",
+          "excluded_element_ids_json": "[\"starter-marker-5\",\"element-34e406c8-e1d0-4c09-b6df-28e2c4f6c62d\",\"element-845c76b6-b418-4af4-b6eb-c376c515ce38\",\"element-d957202d-c8f1-4c31-97e4-1cf2c12bd9be\",\"element-84f9d9ed-3327-48ad-85d9-4df6459f9c11\",\"element-d9e16d02-7b59-4e4b-b9bd-9cdec135e084\",\"element-19322e2b-657c-4b33-9eae-7fc8dc783ae7\",\"element-b33b0b7d-4e01-4652-8c9d-671d92f8e216\",\"element-4098d78f-0384-4dc4-b3a9-253bd24a1b5c\",\"element-00684693-79a2-4a67-ae5e-fe4e93507f73\",\"element-218332d4-2af8-47d4-b5c5-0e6f1c26063a\",\"starter-marker-4\",\"element-f19a0187-13e4-456a-8983-e26896287925\"]",
+          "updated_at": "2026-08-28T05:14:56.368Z"
+        }
+      ]
+    },
+    "placement_settings": {
+      "columns": [
+        "place_key",
+        "directory_id",
+        "name",
+        "state",
+        "updated_at"
+      ],
+      "rows": [
+        {
+          "place_key": "directory:map-9508da7d-94d7-4e38-b72f-8135b2cef03c",
+          "directory_id": "map-9508da7d-94d7-4e38-b72f-8135b2cef03c",
+          "name": "제주특별자치도 민속자연사박물관",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:map-f7d2ec4c-3cb9-423a-a5b7-c317e36c280f",
+          "directory_id": "map-f7d2ec4c-3cb9-423a-a5b7-c317e36c280f",
+          "name": "제주특별자치도 문예회관",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:master-v10-59b6497db224",
+          "directory_id": "master-v10-59b6497db224",
+          "name": "칠성로",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:master-v10-6f87e2f39d1d",
+          "directory_id": "master-v10-6f87e2f39d1d",
+          "name": "리프리지",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:master-v10-8da7834fa5ab",
+          "directory_id": "master-v10-8da7834fa5ab",
+          "name": "진아떡집",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:master-v10-946c3bbd3a68",
+          "directory_id": "master-v10-946c3bbd3a68",
+          "name": "비아아트·대동호텔 아트센터",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:master-v10-a661a9a80078",
+          "directory_id": "master-v10-a661a9a80078",
+          "name": "순아커피",
+          "state": "unplaced",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:master-v10-bc695933eb6d",
+          "directory_id": "master-v10-bc695933eb6d",
+          "name": "성안올레 1코스",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:master-v10-eb19abd21aca",
+          "directory_id": "master-v10-eb19abd21aca",
+          "name": "성안올레 3코스",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-arario-tapdong",
+          "directory_id": "place-arario-tapdong",
+          "name": "아라리오뮤지엄 탑동시네마",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-artspace-ia",
+          "directory_id": "place-artspace-ia",
+          "name": "예술공간 이아",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-folklore-museum",
+          "directory_id": "place-folklore-museum",
+          "name": "제주특별자치도 민속자연사박물관",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-gwandeokjeong",
+          "directory_id": "place-gwandeokjeong",
+          "name": "관덕정",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-jeju-art-platform",
+          "directory_id": "place-jeju-art-platform",
+          "name": "제주아트플랫폼",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-jeju-arts-center",
+          "directory_id": "place-jeju-arts-center",
+          "name": "제주특별자치도 문예회관",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-kim-manduk-guesthouse",
+          "directory_id": "place-kim-manduk-guesthouse",
+          "name": "김만덕객주",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-kim-manduk-memorial",
+          "directory_id": "place-kim-manduk-memorial",
+          "name": "김만덕기념관",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-mokgwana",
+          "directory_id": "place-mokgwana",
+          "name": "제주목 관아",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-sanjicheon-gallery",
+          "directory_id": "place-sanjicheon-gallery",
+          "name": "산지천갤러리",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:place-tapdong-seaside-stage",
+          "directory_id": "place-tapdong-seaside-stage",
+          "name": "탑동해변공연장",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "directory:support-tapdong-toilet",
+          "directory_id": "support-tapdong-toilet",
+          "name": "탑동광장 무장애 화장실",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "name:culture:LPP (Local Player Platform)",
+          "directory_id": null,
+          "name": "LPP (Local Player Platform)",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "name:landmark:북수구광장",
+          "directory_id": null,
+          "name": "북수구광장",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "name:landmark:제주시소통협력센터AFEWFAE",
+          "directory_id": null,
+          "name": "제주시소통협력센터AFEWFAE",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "name:landmark:칠성로",
+          "directory_id": null,
+          "name": "칠성로",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        },
+        {
+          "place_key": "name:landmark:탑동광장",
+          "directory_id": null,
+          "name": "탑동광장",
+          "state": "deleted",
+          "updated_at": "2026-08-28T05:14:55.978Z"
+        }
+      ]
+    },
+    "primary_calibration_settings": {
+      "columns": [
+        "name",
+        "source_x",
+        "source_y",
+        "target_x",
+        "target_y",
+        "updated_at"
+      ],
+      "rows": [
+        {
+          "name": "관덕정",
+          "source_x": 32.74695652176581,
+          "source_y": 34.92339449542698,
+          "target_x": 35.74958737983302,
+          "target_y": 59.189847489691005,
+          "updated_at": "2026-08-28T05:14:55.947Z"
+        },
+        {
+          "name": "김만덕객주",
+          "source_x": 81.05260869565093,
+          "source_y": 19.982110091755693,
+          "target_x": 99.26371407228226,
+          "target_y": 31.085841299474627,
+          "updated_at": "2026-08-28T05:14:55.947Z"
+        },
+        {
+          "name": "김만덕기념관",
+          "source_x": 73.47217391303064,
+          "source_y": 22.624770642198094,
+          "target_x": 89.3165328501865,
+          "target_y": 37.72972393275184,
+          "updated_at": "2026-08-28T05:14:55.947Z"
+        },
+        {
+          "name": "제주아트플랫폼",
+          "source_x": 39.61521739129978,
+          "source_y": 42.24770642203441,
+          "target_x": 41.70357577308721,
+          "target_y": 75.30227850571869,
+          "updated_at": "2026-08-28T05:14:55.947Z"
+        },
+        {
+          "name": "탑동광장",
+          "source_x": 57.098260869564854,
+          "source_y": 12.513302752310512,
+          "target_x": 65.47176542211092,
+          "target_y": 16.841913256694887,
+          "updated_at": "2026-08-28T05:14:55.947Z"
+        },
+        {
+          "name": "탑동해변공연장",
+          "source_x": 58.25,
+          "source_y": 11.6,
+          "target_x": 51.61534016007473,
+          "target_y": 19.675915250183785,
+          "updated_at": "2026-08-28T05:14:55.947Z"
+        }
+      ]
+    },
+    "locked_coordinate_settings": {
+      "columns": [
+        "element_key",
+        "directory_id",
+        "name",
+        "category",
+        "anchor_x",
+        "anchor_y",
+        "output_x",
+        "output_y",
+        "updated_at"
+      ],
+      "rows": [
+        {
+          "element_key": "directory:community-1f880577-5b8d-4c6a-9041-a5ebfbd0979e",
+          "directory_id": "community-1f880577-5b8d-4c6a-9041-a5ebfbd0979e",
+          "name": "클래식문구사",
+          "category": "shop",
+          "anchor_x": 34.37260798250411,
+          "anchor_y": 63.00310923217469,
+          "output_x": 34.37260798250411,
+          "output_y": 63.00310923217469,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:community-52cdd5df-c977-4a1d-a1f7-f4daa014143e",
+          "directory_id": "community-52cdd5df-c977-4a1d-a1f7-f4daa014143e",
+          "name": "고씨주택",
+          "category": "culture",
+          "anchor_x": 77.31766599323579,
+          "anchor_y": 45.79360277088071,
+          "output_x": 77.31766599323579,
+          "output_y": 45.79360277088071,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:community-6b3e3830-7433-40b5-869b-54273a01d77d",
+          "directory_id": "community-6b3e3830-7433-40b5-869b-54273a01d77d",
+          "name": "다반사",
+          "category": "food",
+          "anchor_x": 29.257107709130672,
+          "anchor_y": 47.9702472261783,
+          "output_x": 29.257107709130672,
+          "output_y": 47.9702472261783,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:community-af33ad66-dc95-4410-9496-abec30e23555",
+          "directory_id": "community-af33ad66-dc95-4410-9496-abec30e23555",
+          "name": "풀고레",
+          "category": "food",
+          "anchor_x": 28.22249075235487,
+          "anchor_y": 48.90565815348757,
+          "output_x": 28.22249075235487,
+          "output_y": 48.90565815348757,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:community-ba8ec1bd-e4a7-4816-bb74-3364b966e753",
+          "directory_id": "community-ba8ec1bd-e4a7-4816-bb74-3364b966e753",
+          "name": "이후북스 제주점",
+          "category": "shop",
+          "anchor_x": 33.50328048113723,
+          "anchor_y": 63.05401950306307,
+          "output_x": 33.50328048113723,
+          "output_y": 63.05401950306307,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:map-0db13ab6-5c88-45ab-8ca9-1334a1169a6e",
+          "directory_id": "map-0db13ab6-5c88-45ab-8ca9-1334a1169a6e",
+          "name": "비아아트 아트센터",
+          "category": "culture",
+          "anchor_x": 68.7091214976795,
+          "anchor_y": 55.26623932960198,
+          "output_x": 68.7091214976795,
+          "output_y": 55.26623932960198,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:map-2dbe6e37-caed-4611-b345-b86c2a29ae77",
+          "directory_id": "map-2dbe6e37-caed-4611-b345-b86c2a29ae77",
+          "name": "북수구광장",
+          "category": "landmark",
+          "anchor_x": 73.78878625541127,
+          "anchor_y": 49.69640651609671,
+          "output_x": 73.65139106788331,
+          "output_y": 49.4899795933707,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:map-74e989c2-2488-4edc-a167-7554c1339c50",
+          "directory_id": "map-74e989c2-2488-4edc-a167-7554c1339c50",
+          "name": "칠성로",
+          "category": "landmark",
+          "anchor_x": 58.58388945172225,
+          "anchor_y": 57.44139687438846,
+          "output_x": 58.609566294748724,
+          "output_y": 59.211650258540786,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-0c66d5dc8762",
+          "directory_id": "master-v10-0c66d5dc8762",
+          "name": "화로향",
+          "category": "food",
+          "anchor_x": 66.34745762711864,
+          "anchor_y": 38.72443847932601,
+          "output_x": 66.34745762711864,
+          "output_y": 38.72443847932601,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-0c79a20a3f93",
+          "directory_id": "master-v10-0c79a20a3f93",
+          "name": "탑동산호전복",
+          "category": "food",
+          "anchor_x": 17.66447429036189,
+          "anchor_y": 17.253225104368745,
+          "output_x": 17.66447429036189,
+          "output_y": 17.253225104368745,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-0df54a9c42de",
+          "directory_id": "master-v10-0df54a9c42de",
+          "name": "섬돌레기",
+          "category": "cafe",
+          "anchor_x": 47.34896192173524,
+          "anchor_y": 88.31555585039443,
+          "output_x": 47.34896192173524,
+          "output_y": 88.31555585039443,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-0f15eb6e1ee6",
+          "directory_id": "master-v10-0f15eb6e1ee6",
+          "name": "해바라기 본점",
+          "category": "food",
+          "anchor_x": 64.34089666484418,
+          "anchor_y": 51.842360603748396,
+          "output_x": 64.34089666484418,
+          "output_y": 51.842360603748396,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-0f7f29dfc692",
+          "directory_id": "master-v10-0f7f29dfc692",
+          "name": "D&DEPARTMENT JEJU 식음공간",
+          "category": "food",
+          "anchor_x": 41.529269029050106,
+          "anchor_y": 19.950921710511526,
+          "output_x": 41.529269029050106,
+          "output_y": 19.950921710511526,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-0ff78ee8c20c",
+          "directory_id": "master-v10-0ff78ee8c20c",
+          "name": "참숯구이 몬트락 제주본점",
+          "category": "food",
+          "anchor_x": 68.31935631821253,
+          "anchor_y": 32.897542541240774,
+          "output_x": 68.31935631821253,
+          "output_y": 32.897542541240774,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-1024e804c1dd",
+          "directory_id": "master-v10-1024e804c1dd",
+          "name": "바오비",
+          "category": "food",
+          "anchor_x": 48.19136139967195,
+          "anchor_y": 84.05505736424833,
+          "output_x": 48.19136139967195,
+          "output_y": 84.05505736424833,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-11ce47609849",
+          "directory_id": "master-v10-11ce47609849",
+          "name": "스튜디오126",
+          "category": "culture",
+          "anchor_x": 37.39736604211145,
+          "anchor_y": 38.72742877695277,
+          "output_x": 37.39736604211145,
+          "output_y": 38.72742877695277,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-125c376442d5",
+          "directory_id": "master-v10-125c376442d5",
+          "name": "광해군 적거지 안내표석",
+          "category": "culture",
+          "anchor_x": 45.88750683433571,
+          "anchor_y": 81.16564931864129,
+          "output_x": 45.88750683433571,
+          "output_y": 81.16564931864129,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-13f4a7b40904",
+          "directory_id": "master-v10-13f4a7b40904",
+          "name": "팔즈",
+          "category": "cafe",
+          "anchor_x": 47.57763805358119,
+          "anchor_y": 48.729499762865785,
+          "output_x": 47.57763805358119,
+          "output_y": 48.729499762865785,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-1479893ad532",
+          "directory_id": "master-v10-1479893ad532",
+          "name": "기회횟집",
+          "category": "food",
+          "anchor_x": 55.77845182935566,
+          "anchor_y": 35.244830667214686,
+          "output_x": 55.77845182935566,
+          "output_y": 35.244830667214686,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-17e2cba925f6",
+          "directory_id": "master-v10-17e2cba925f6",
+          "name": "예술공간 이아",
+          "category": "landmark",
+          "anchor_x": 36.99373477430216,
+          "anchor_y": 80.96911703971725,
+          "output_x": 36.993734774302155,
+          "output_y": 80.96911703971725,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-19ac8d4dea84",
+          "directory_id": "master-v10-19ac8d4dea84",
+          "name": "하토말차",
+          "category": "cafe",
+          "anchor_x": 44.809732094040456,
+          "anchor_y": 92.68296409871374,
+          "output_x": 44.809732094040456,
+          "output_y": 92.68296409871374,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-1b64b405254c",
+          "directory_id": "master-v10-1b64b405254c",
+          "name": "우무 동문시장점",
+          "category": "cafe",
+          "anchor_x": 46.2251926467522,
+          "anchor_y": 90.77892576210581,
+          "output_x": 46.2251926467522,
+          "output_y": 90.77892576210581,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-1bb330471743",
+          "directory_id": "master-v10-1bb330471743",
+          "name": "다정이네김밥 제주공항점",
+          "category": "food",
+          "anchor_x": 23.21943464245932,
+          "anchor_y": 64.08177616049362,
+          "output_x": 23.21943464245932,
+          "output_y": 64.08177616049362,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-1d81ab44b9dc",
+          "directory_id": "master-v10-1d81ab44b9dc",
+          "name": "이꼬이&스테이",
+          "category": "cafe",
+          "anchor_x": 66.05084745762711,
+          "anchor_y": 44.75280153943177,
+          "output_x": 66.05084745762711,
+          "output_y": 44.75280153943177,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-1dabd4baa4aa",
+          "directory_id": "master-v10-1dabd4baa4aa",
+          "name": "미풍정 식당",
+          "category": "food",
+          "anchor_x": 43.99051115319212,
+          "anchor_y": 77.76493467958161,
+          "output_x": 43.99051115319212,
+          "output_y": 77.76493467958161,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-20c018ea436e",
+          "directory_id": "master-v10-20c018ea436e",
+          "name": "아라리오뮤지엄 동문모텔 II",
+          "category": "culture",
+          "anchor_x": 82.58957322953526,
+          "anchor_y": 45.552318180056,
+          "output_x": 82.58957322953526,
+          "output_y": 45.552318180056,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-21e95f15e763",
+          "directory_id": "master-v10-21e95f15e763",
+          "name": "THE BARN BERLIN JEJU",
+          "category": "cafe",
+          "anchor_x": 75.49043193001641,
+          "anchor_y": 58.631474415640916,
+          "output_x": 75.49043193001641,
+          "output_y": 58.631474415640916,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-238950eb6e5d",
+          "directory_id": "master-v10-238950eb6e5d",
+          "name": "골목식당",
+          "category": "food",
+          "anchor_x": 55.92605248769819,
+          "anchor_y": 71.67961229303455,
+          "output_x": 55.92605248769819,
+          "output_y": 71.67961229303455,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-277609f2c4b8",
+          "directory_id": "master-v10-277609f2c4b8",
+          "name": "다금바리스타 산지천",
+          "category": "cafe",
+          "anchor_x": 73.73052651259476,
+          "anchor_y": 45.35643494635992,
+          "output_x": 73.73052651259476,
+          "output_y": 45.35643494635992,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-280f3676bb41",
+          "directory_id": "master-v10-280f3676bb41",
+          "name": "마운트 에베레스트 레스토랑 제주",
+          "category": "food",
+          "anchor_x": 60.659923455440136,
+          "anchor_y": 44.88174179131021,
+          "output_x": 60.659923455440136,
+          "output_y": 44.88174179131021,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-2878a23bd887",
+          "directory_id": "master-v10-2878a23bd887",
+          "name": "야커피(Y.A.H Coffee)",
+          "category": "cafe",
+          "anchor_x": 69.7202022963368,
+          "anchor_y": 45.38334034759914,
+          "output_x": 69.7202022963368,
+          "output_y": 45.38334034759914,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-28b0bad98b36",
+          "directory_id": "master-v10-28b0bad98b36",
+          "name": "제주 동문공설시장 청년몰 B1",
+          "category": "cafe",
+          "anchor_x": 76.20831055221433,
+          "anchor_y": 65.81650114994767,
+          "output_x": 76.20831055221433,
+          "output_y": 65.81650114994767,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-29829ca43757",
+          "directory_id": "master-v10-29829ca43757",
+          "name": "카페단단",
+          "category": "cafe",
+          "anchor_x": 36.100974153270805,
+          "anchor_y": 66.68436164131045,
+          "output_x": 36.100974153270805,
+          "output_y": 66.68436164131045,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-2f7f8a208248",
+          "directory_id": "master-v10-2f7f8a208248",
+          "name": "키친요디 본점",
+          "category": "food",
+          "anchor_x": 53.25082012028431,
+          "anchor_y": 58.11526355509585,
+          "output_x": 53.25082012028431,
+          "output_y": 58.11526355509585,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-30072a3afb8a",
+          "directory_id": "master-v10-30072a3afb8a",
+          "name": "아라리오뮤지엄 동문모텔 I",
+          "category": "culture",
+          "anchor_x": 76.96677332406237,
+          "anchor_y": 57.081926863589395,
+          "output_x": 76.96677332406237,
+          "output_y": 57.081926863589395,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-307a3445e718",
+          "directory_id": "master-v10-307a3445e718",
+          "name": "호끄만거",
+          "category": "shop",
+          "anchor_x": 55.056811403408354,
+          "anchor_y": 76.1082576267734,
+          "output_x": 55.056811403408354,
+          "output_y": 76.1082576267734,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-3106326f8a23",
+          "directory_id": "master-v10-3106326f8a23",
+          "name": "아라리오뮤지엄 탑동시네마",
+          "category": "landmark",
+          "anchor_x": 45.81533945481625,
+          "anchor_y": 23.289319907377877,
+          "output_x": 45.815339454816254,
+          "output_y": 23.289319907377877,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-325abb1bdbbc",
+          "directory_id": "master-v10-325abb1bdbbc",
+          "name": "무슈부부커피스탠드",
+          "category": "cafe",
+          "anchor_x": 35.59911934131556,
+          "anchor_y": 62.488605898509036,
+          "output_x": 35.59911934131556,
+          "output_y": 62.488605898509036,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-377872aba797",
+          "directory_id": "master-v10-377872aba797",
+          "name": "바그다드",
+          "category": "food",
+          "anchor_x": 45.4161880634235,
+          "anchor_y": 86.76618136850502,
+          "output_x": 45.4161880634235,
+          "output_y": 86.76618136850502,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-37b2a610158e",
+          "directory_id": "master-v10-37b2a610158e",
+          "name": "노지커피하우스",
+          "category": "cafe",
+          "anchor_x": 26.981957353745216,
+          "anchor_y": 80.44644768133418,
+          "output_x": 26.981957353745216,
+          "output_y": 80.44644768133418,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-38aafea91956",
+          "directory_id": "master-v10-38aafea91956",
+          "name": "향사당",
+          "category": "culture",
+          "anchor_x": 35.98738173546431,
+          "anchor_y": 70.9045903293219,
+          "output_x": 35.98738173546431,
+          "output_y": 70.9045903293219,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-3e10dc1b6cde",
+          "directory_id": "master-v10-3e10dc1b6cde",
+          "name": "아트스페이스·씨",
+          "category": "culture",
+          "anchor_x": 54.44690290758684,
+          "anchor_y": 73.36715636563193,
+          "output_x": 54.44690290758684,
+          "output_y": 73.36715636563193,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-40cae3d69097",
+          "directory_id": "master-v10-40cae3d69097",
+          "name": "오랑우탄면사무소 제주공항점",
+          "category": "food",
+          "anchor_x": 37.40398345892024,
+          "anchor_y": 71.53576237626255,
+          "output_x": 37.40398345892024,
+          "output_y": 71.53576237626255,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-433f8fe646f5",
+          "directory_id": "master-v10-433f8fe646f5",
+          "name": "또제 동문시장 본점",
+          "category": "cafe",
+          "anchor_x": 67.03753763607293,
+          "anchor_y": 81.50925797853449,
+          "output_x": 67.03753763607293,
+          "output_y": 81.50925797853449,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-4564a5012220",
+          "directory_id": "master-v10-4564a5012220",
+          "name": "고요산책",
+          "category": "culture",
+          "anchor_x": 49.832733507713435,
+          "anchor_y": 73.40969761505868,
+          "output_x": 49.832733507713435,
+          "output_y": 73.40969761505868,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-47c79e57780e",
+          "directory_id": "master-v10-47c79e57780e",
+          "name": "칠성뷔페",
+          "category": "food",
+          "anchor_x": 58.16203780430095,
+          "anchor_y": 47.58139905997186,
+          "output_x": 58.16203780430095,
+          "output_y": 47.58139905997186,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-4c3f48a325c5",
+          "directory_id": "master-v10-4c3f48a325c5",
+          "name": "만첩",
+          "category": "cafe",
+          "anchor_x": 32.70851678129448,
+          "anchor_y": 54.63944201562012,
+          "output_x": 32.70851678129448,
+          "output_y": 54.63944201562012,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-5189f5102ba2",
+          "directory_id": "master-v10-5189f5102ba2",
+          "name": "잉가이",
+          "category": "food",
+          "anchor_x": 24.880076967211583,
+          "anchor_y": 62.223808228246554,
+          "output_x": 24.880076967211583,
+          "output_y": 62.223808228246554,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-542d130e41e8",
+          "directory_id": "master-v10-542d130e41e8",
+          "name": "영미식당",
+          "category": "food",
+          "anchor_x": 92.51424777128776,
+          "anchor_y": 67.71689718134266,
+          "output_x": 92.51424777128776,
+          "output_y": 67.71689718134266,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-5710026d4c1d",
+          "directory_id": "master-v10-5710026d4c1d",
+          "name": "도토리키친 본점",
+          "category": "food",
+          "anchor_x": 17.523236741388732,
+          "anchor_y": 42.03368033371888,
+          "output_x": 17.523236741388732,
+          "output_y": 42.03368033371888,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-57d04310f067",
+          "directory_id": "master-v10-57d04310f067",
+          "name": "월하의꿈",
+          "category": "shop",
+          "anchor_x": 78.60513179022382,
+          "anchor_y": 61.496877532100626,
+          "output_x": 78.60513179022382,
+          "output_y": 61.496877532100626,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-59b9d578ce11",
+          "directory_id": "master-v10-59b9d578ce11",
+          "name": "Apis Jeju",
+          "category": "food",
+          "anchor_x": 57.33843630399125,
+          "anchor_y": 38.267074102467845,
+          "output_x": 57.33843630399125,
+          "output_y": 38.267074102467845,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-5eebf83c6d12",
+          "directory_id": "master-v10-5eebf83c6d12",
+          "name": "내음커피바",
+          "category": "cafe",
+          "anchor_x": 85.22759915689595,
+          "anchor_y": 40.5382612567177,
+          "output_x": 85.22759915689595,
+          "output_y": 40.5382612567177,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-6320b9f090c8",
+          "directory_id": "master-v10-6320b9f090c8",
+          "name": "마음에온[溫]",
+          "category": "cafe",
+          "anchor_x": 61.947670162228576,
+          "anchor_y": 48.97712886450385,
+          "output_x": 61.947670162228576,
+          "output_y": 48.97712886450385,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-633c24121a48",
+          "directory_id": "master-v10-633c24121a48",
+          "name": "웰컴버거",
+          "category": "food",
+          "anchor_x": 74.69491525423729,
+          "anchor_y": 45.21851199042707,
+          "output_x": 74.69491525423729,
+          "output_y": 45.21851199042707,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-667a80a68855",
+          "directory_id": "master-v10-667a80a68855",
+          "name": "어반브루잉",
+          "category": "cafe",
+          "anchor_x": 32.35896856315352,
+          "anchor_y": 64.21048708968395,
+          "output_x": 32.35896856315352,
+          "output_y": 64.21048708968395,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-676ede714a25",
+          "directory_id": "master-v10-676ede714a25",
+          "name": "김영수도서관",
+          "category": "culture",
+          "anchor_x": 38.563215286892266,
+          "anchor_y": 46.42785862733898,
+          "output_x": 38.563215286892266,
+          "output_y": 46.42785862733898,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-6d05e3f0ba97",
+          "directory_id": "master-v10-6d05e3f0ba97",
+          "name": "물항식당 탑동점",
+          "category": "food",
+          "anchor_x": 80.96911620013864,
+          "anchor_y": 28.13543774647109,
+          "output_x": 80.96911620013864,
+          "output_y": 28.13543774647109,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-7402c2c567dc",
+          "directory_id": "master-v10-7402c2c567dc",
+          "name": "윤재커피",
+          "category": "cafe",
+          "anchor_x": 50.99810595264944,
+          "anchor_y": 73.1970798279289,
+          "output_x": 50.99810595264944,
+          "output_y": 73.1970798279289,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-783af1c64d0e",
+          "directory_id": "master-v10-783af1c64d0e",
+          "name": "노위스키",
+          "category": "cafe",
+          "anchor_x": 70.65035538545655,
+          "anchor_y": 40.38488144592582,
+          "output_x": 70.65035538545655,
+          "output_y": 40.38488144592582,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-7b7cf80cd7f0",
+          "directory_id": "master-v10-7b7cf80cd7f0",
+          "name": "사진예술공간 큰바다영",
+          "category": "culture",
+          "anchor_x": 96.57690410958551,
+          "anchor_y": 37.488747363518655,
+          "output_x": 96.57690410958551,
+          "output_y": 37.488747363518655,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-7b8431fd4ff2",
+          "directory_id": "master-v10-7b8431fd4ff2",
+          "name": "팔복만두",
+          "category": "food",
+          "anchor_x": 30.233050847457626,
+          "anchor_y": 61.535534677641046,
+          "output_x": 30.233050847457626,
+          "output_y": 61.535534677641046,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-7eec4dfee6b1",
+          "directory_id": "master-v10-7eec4dfee6b1",
+          "name": "산지천갤러리",
+          "category": "landmark",
+          "anchor_x": 77.8404484970615,
+          "anchor_y": 41.72176727857426,
+          "output_x": 78.23522143293314,
+          "output_y": 40.53507125354239,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-812ef52e9419",
+          "directory_id": "master-v10-812ef52e9419",
+          "name": "부가네얼큰이 본점",
+          "category": "food",
+          "anchor_x": 31.41949152542373,
+          "anchor_y": 60.6558593813166,
+          "output_x": 31.41949152542373,
+          "output_y": 60.6558593813166,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-816b566e63fb",
+          "directory_id": "master-v10-816b566e63fb",
+          "name": "우디버디",
+          "category": "shop",
+          "anchor_x": 35.50437397484965,
+          "anchor_y": 39.11716784063484,
+          "output_x": 35.50437397484965,
+          "output_y": 39.11716784063484,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-8375ff37baf7",
+          "directory_id": "master-v10-8375ff37baf7",
+          "name": "삼도해장국",
+          "category": "food",
+          "anchor_x": 31.05084745762712,
+          "anchor_y": 81.01375095828972,
+          "output_x": 31.05084745762712,
+          "output_y": 81.01375095828972,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-84aa34d3a3b7",
+          "directory_id": "master-v10-84aa34d3a3b7",
+          "name": "플라네하우스",
+          "category": "shop",
+          "anchor_x": 60.46134630088194,
+          "anchor_y": 39.53902997711473,
+          "output_x": 60.46134630088194,
+          "output_y": 39.53902997711473,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-85f8597d7089",
+          "directory_id": "master-v10-85f8597d7089",
+          "name": "탑부평 본점",
+          "category": "food",
+          "anchor_x": 68.22058691384969,
+          "anchor_y": 40.18213994469827,
+          "output_x": 68.22058691384969,
+          "output_y": 40.18213994469827,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-86003b659cd5",
+          "directory_id": "master-v10-86003b659cd5",
+          "name": "갈치음식점 궁서체 제주탑동본점",
+          "category": "food",
+          "anchor_x": 7.632312739201748,
+          "anchor_y": 29.020878534375154,
+          "output_x": 7.632312739201748,
+          "output_y": 29.020878534375154,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-87aca97956ec",
+          "directory_id": "master-v10-87aca97956ec",
+          "name": "아일랜드팩토리 풍류",
+          "category": "cafe",
+          "anchor_x": 46.471458511387176,
+          "anchor_y": 84.53545459186041,
+          "output_x": 46.471458511387176,
+          "output_y": 84.53545459186041,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-88d9ef56bbcd",
+          "directory_id": "master-v10-88d9ef56bbcd",
+          "name": "서쪽부엌 서부두점",
+          "category": "food",
+          "anchor_x": 83.94684598956634,
+          "anchor_y": 49.595625006466996,
+          "output_x": 83.94684598956634,
+          "output_y": 49.595625006466996,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-89589012f6af",
+          "directory_id": "master-v10-89589012f6af",
+          "name": "우진해장국",
+          "category": "food",
+          "anchor_x": 26.36896959326774,
+          "anchor_y": 75.76139674606068,
+          "output_x": 26.36896959326774,
+          "output_y": 75.76139674606068,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-8c64a1764607",
+          "directory_id": "master-v10-8c64a1764607",
+          "name": "제주에 가면",
+          "category": "food",
+          "anchor_x": 13.531984691088024,
+          "anchor_y": 47.85381588903537,
+          "output_x": 13.531984691088024,
+          "output_y": 47.85381588903537,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-8cb4881d7cd2",
+          "directory_id": "master-v10-8cb4881d7cd2",
+          "name": "슈푸",
+          "category": "cafe",
+          "anchor_x": 49.38600328048114,
+          "anchor_y": 89.45329250180153,
+          "output_x": 49.38600328048114,
+          "output_y": 89.45329250180153,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-8d49f85ac732",
+          "directory_id": "master-v10-8d49f85ac732",
+          "name": "키에키 로스팅 룸",
+          "category": "cafe",
+          "anchor_x": 48.06249723065916,
+          "anchor_y": 85.88680307485,
+          "output_x": 48.06249723065916,
+          "output_y": 85.88680307485,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-8e36d3a1ce95",
+          "directory_id": "master-v10-8e36d3a1ce95",
+          "name": "설농옥 본점",
+          "category": "food",
+          "anchor_x": 48.20393657736468,
+          "anchor_y": 73.53717856086982,
+          "output_x": 48.20393657736468,
+          "output_y": 73.53717856086982,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-90455a89777d",
+          "directory_id": "master-v10-90455a89777d",
+          "name": "키미디",
+          "category": "cafe",
+          "anchor_x": 45.96603743587425,
+          "anchor_y": 88.53862528027528,
+          "output_x": 45.96603743587425,
+          "output_y": 88.53862528027528,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-94049449a26d",
+          "directory_id": "master-v10-94049449a26d",
+          "name": "돌담갤러리",
+          "category": "culture",
+          "anchor_x": 52.512711864406775,
+          "anchor_y": 63.56546627641856,
+          "output_x": 53.11056447695687,
+          "output_y": 63.7191025179307,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-9479632e2f7e",
+          "directory_id": "master-v10-9479632e2f7e",
+          "name": "산지물식당",
+          "category": "food",
+          "anchor_x": 71.22033898305085,
+          "anchor_y": 33.13591306738248,
+          "output_x": 71.22033898305085,
+          "output_y": 33.13591306738248,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-95edbb8cd5ae",
+          "directory_id": "master-v10-95edbb8cd5ae",
+          "name": "제주공상",
+          "category": "food",
+          "anchor_x": 76.529250956807,
+          "anchor_y": 19.905729557803596,
+          "output_x": 76.529250956807,
+          "output_y": 19.905729557803596,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-9715556cd6eb",
+          "directory_id": "master-v10-9715556cd6eb",
+          "name": "산지해장국",
+          "category": "food",
+          "anchor_x": 77.46592901889525,
+          "anchor_y": 32.29354903585435,
+          "output_x": 77.46592901889525,
+          "output_y": 32.29354903585435,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-9aae818213d9",
+          "directory_id": "master-v10-9aae818213d9",
+          "name": "금복식당",
+          "category": "food",
+          "anchor_x": 72.4904319300164,
+          "anchor_y": 64.94851031692717,
+          "output_x": 72.4904319300164,
+          "output_y": 64.94851031692717,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-a404485df501",
+          "directory_id": "master-v10-a404485df501",
+          "name": "무화과한입",
+          "category": "cafe",
+          "anchor_x": 70.32953364780332,
+          "anchor_y": 43.895742203454645,
+          "output_x": 70.32953364780332,
+          "output_y": 43.895742203454645,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-a661a9a80078",
+          "directory_id": "master-v10-a661a9a80078",
+          "name": "순아커피",
+          "category": "cafe",
+          "anchor_x": 36.86509021323127,
+          "anchor_y": 62.51536299857106,
+          "output_x": 36.86509021323127,
+          "output_y": 62.51536299857106,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-a9dcae795c7b",
+          "directory_id": "master-v10-a9dcae795c7b",
+          "name": "탑동스페이스원",
+          "category": "culture",
+          "anchor_x": 35.7986604702023,
+          "anchor_y": 15.009503457273922,
+          "output_x": 35.7986604702023,
+          "output_y": 15.009503457273922,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-aa2c7f129a7b",
+          "directory_id": "master-v10-aa2c7f129a7b",
+          "name": "제주바솔트",
+          "category": "cafe",
+          "anchor_x": 55.48660470202296,
+          "anchor_y": 79.43728037580769,
+          "output_x": 55.48660470202296,
+          "output_y": 79.43728037580769,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-aaa85f0784bf",
+          "directory_id": "master-v10-aaa85f0784bf",
+          "name": "소설과 농담",
+          "category": "cafe",
+          "anchor_x": 40.771323127392016,
+          "anchor_y": 96.82845495235732,
+          "output_x": 40.771323127392016,
+          "output_y": 96.82845495235732,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-af0f68efc8ea",
+          "directory_id": "master-v10-af0f68efc8ea",
+          "name": "온차",
+          "category": "food",
+          "anchor_x": 72.66101694915255,
+          "anchor_y": 43.06522715737014,
+          "output_x": 72.66101694915255,
+          "output_y": 43.06522715737014,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-af6381743249",
+          "directory_id": "master-v10-af6381743249",
+          "name": "동진식당",
+          "category": "food",
+          "anchor_x": 74.27856033056473,
+          "anchor_y": 65.01527884254413,
+          "output_x": 74.27856033056473,
+          "output_y": 65.01527884254413,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-b00ef8c2938d",
+          "directory_id": "master-v10-b00ef8c2938d",
+          "name": "다이노바이트샌드위치",
+          "category": "food",
+          "anchor_x": 38.74726626571896,
+          "anchor_y": 61.796766717157006,
+          "output_x": 38.74726626571896,
+          "output_y": 61.796766717157006,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-b4382d8b3664",
+          "directory_id": "master-v10-b4382d8b3664",
+          "name": "말고기연구소",
+          "category": "food",
+          "anchor_x": 27.510251503553857,
+          "anchor_y": 40.508456860748694,
+          "output_x": 27.510251503553857,
+          "output_y": 40.508456860748694,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-b595e9112000",
+          "directory_id": "master-v10-b595e9112000",
+          "name": "아베베베이커리 제주",
+          "category": "cafe",
+          "anchor_x": 78.44997266265719,
+          "anchor_y": 66.68449198296815,
+          "output_x": 78.44997266265719,
+          "output_y": 66.68449198296815,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-b863fa8bc2df",
+          "directory_id": "master-v10-b863fa8bc2df",
+          "name": "텍사스바베큐",
+          "category": "food",
+          "anchor_x": 61.88189021548704,
+          "anchor_y": 32.2516138512002,
+          "output_x": 61.88189021548704,
+          "output_y": 32.2516138512002,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-b89fe53f4a3c",
+          "directory_id": "master-v10-b89fe53f4a3c",
+          "name": "자양식당",
+          "category": "food",
+          "anchor_x": 38.45750525150404,
+          "anchor_y": 75.1297730609663,
+          "output_x": 38.45750525150404,
+          "output_y": 75.1297730609663,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-b9720c766d29",
+          "directory_id": "master-v10-b9720c766d29",
+          "name": "젤라떼리아 브라보",
+          "category": "cafe",
+          "anchor_x": 83.51761309464676,
+          "anchor_y": 43.8963958743771,
+          "output_x": 83.51761309464676,
+          "output_y": 43.8963958743771,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-ba69f955bf7b",
+          "directory_id": "master-v10-ba69f955bf7b",
+          "name": "나이롱책방",
+          "category": "culture",
+          "anchor_x": 47.1148785381148,
+          "anchor_y": 74.18075482383091,
+          "output_x": 47.1148785381148,
+          "output_y": 74.18075482383091,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-bbcae4a6fc3c",
+          "directory_id": "master-v10-bbcae4a6fc3c",
+          "name": "아트스페이스 빈공간",
+          "category": "culture",
+          "anchor_x": 34.23628569517919,
+          "anchor_y": 49.461674575790475,
+          "output_x": 34.23628569517919,
+          "output_y": 49.461674575790475,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-bcc83b10353a",
+          "directory_id": "master-v10-bcc83b10353a",
+          "name": "뉴욕델리하우스",
+          "category": "cafe",
+          "anchor_x": 9.595407326407871,
+          "anchor_y": 39.917952631838894,
+          "output_x": 9.595407326407871,
+          "output_y": 39.917952631838894,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-bdd247be5b34",
+          "directory_id": "master-v10-bdd247be5b34",
+          "name": "명동손칼국수",
+          "category": "food",
+          "anchor_x": 53.14571259439209,
+          "anchor_y": 82.18414694403828,
+          "output_x": 53.14571259439209,
+          "output_y": 82.18414694403828,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-c0c966b42396",
+          "directory_id": "master-v10-c0c966b42396",
+          "name": "산지키친",
+          "category": "food",
+          "anchor_x": 92.30922609931643,
+          "anchor_y": 34.39689172370652,
+          "output_x": 92.30922609931643,
+          "output_y": 34.39689172370652,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-c192566f9da2",
+          "directory_id": "master-v10-c192566f9da2",
+          "name": "일통이반",
+          "category": "food",
+          "anchor_x": 39.22682813043886,
+          "anchor_y": 26.990356501478296,
+          "output_x": 39.22682813043886,
+          "output_y": 26.990356501478296,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-c2e1a0687ebd",
+          "directory_id": "master-v10-c2e1a0687ebd",
+          "name": "누아 제주",
+          "category": "cafe",
+          "anchor_x": 21.269783610177413,
+          "anchor_y": 75.4411098728452,
+          "output_x": 21.269783610177413,
+          "output_y": 75.4411098728452,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-c44f8514a045",
+          "directory_id": "master-v10-c44f8514a045",
+          "name": "딕시스",
+          "category": "food",
+          "anchor_x": 44.54131430216449,
+          "anchor_y": 78.81214039717015,
+          "output_x": 44.54131430216449,
+          "output_y": 78.81214039717015,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-cc7a91f975dc",
+          "directory_id": "master-v10-cc7a91f975dc",
+          "name": "음파",
+          "category": "food",
+          "anchor_x": 32.7392712738301,
+          "anchor_y": 67.56888523334912,
+          "output_x": 32.7392712738301,
+          "output_y": 67.56888523334912,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-cc8ce7ef82ec",
+          "directory_id": "master-v10-cc8ce7ef82ec",
+          "name": "카페성지 성지점",
+          "category": "cafe",
+          "anchor_x": 54.38542543060507,
+          "anchor_y": 92.18993171724411,
+          "output_x": 54.38542543060507,
+          "output_y": 92.18993171724411,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-cd6dda5119b0",
+          "directory_id": "master-v10-cd6dda5119b0",
+          "name": "푸아루",
+          "category": "cafe",
+          "anchor_x": 36.00710770913067,
+          "anchor_y": 88.20947288237737,
+          "output_x": 36.00710770913067,
+          "output_y": 88.20947288237737,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-cd8f828f2762",
+          "directory_id": "master-v10-cd8f828f2762",
+          "name": "지토의숲",
+          "category": "shop",
+          "anchor_x": 58.79620010934937,
+          "anchor_y": 38.9877502279,
+          "output_x": 58.79620010934937,
+          "output_y": 38.9877502279,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-d31d21eb7b93",
+          "directory_id": "master-v10-d31d21eb7b93",
+          "name": "미풍해장국 본점",
+          "category": "food",
+          "anchor_x": 43.1271186440678,
+          "anchor_y": 77.64024821619873,
+          "output_x": 43.1271186440678,
+          "output_y": 77.64024821619873,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-d43126561135",
+          "directory_id": "master-v10-d43126561135",
+          "name": "종이잡지클럽 제주",
+          "category": "culture",
+          "anchor_x": 84.20008978126393,
+          "anchor_y": 42.693302374032285,
+          "output_x": 84.20008978126393,
+          "output_y": 42.693302374032285,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-d4648f9c2e1f",
+          "directory_id": "master-v10-d4648f9c2e1f",
+          "name": "한라미담우동",
+          "category": "food",
+          "anchor_x": 59.07982504100602,
+          "anchor_y": 35.74322395561079,
+          "output_x": 59.07982504100602,
+          "output_y": 35.74322395561079,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-dba8e18334de",
+          "directory_id": "master-v10-dba8e18334de",
+          "name": "숲 제주",
+          "category": "food",
+          "anchor_x": 19.784718425369054,
+          "anchor_y": 55.4028456233412,
+          "output_x": 19.784718425369054,
+          "output_y": 55.4028456233412,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-ddd5979e2f69",
+          "directory_id": "master-v10-ddd5979e2f69",
+          "name": "자연몸국",
+          "category": "food",
+          "anchor_x": 56.63297386804847,
+          "anchor_y": 74.1127759684065,
+          "output_x": 56.63297386804847,
+          "output_y": 74.1127759684065,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-e0b5c633db69",
+          "directory_id": "master-v10-e0b5c633db69",
+          "name": "제주조개칼국수",
+          "category": "food",
+          "anchor_x": 65.54931337188043,
+          "anchor_y": 51.558799338334055,
+          "output_x": 65.54931337188043,
+          "output_y": 51.558799338334055,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-e177b459b223",
+          "directory_id": "master-v10-e177b459b223",
+          "name": "블레스크",
+          "category": "cafe",
+          "anchor_x": 53.357435757244396,
+          "anchor_y": 56.34005519215431,
+          "output_x": 53.357435757244396,
+          "output_y": 56.34005519215431,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-e57a222da65d",
+          "directory_id": "master-v10-e57a222da65d",
+          "name": "제주목 관아",
+          "category": "landmark",
+          "anchor_x": 39.72054308685938,
+          "anchor_y": 52.222418662335734,
+          "output_x": 39.66810685014254,
+          "output_y": 54.75179717362439,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-e99c2baca755",
+          "directory_id": "master-v10-e99c2baca755",
+          "name": "첨목",
+          "category": "food",
+          "anchor_x": 81.79237288135593,
+          "anchor_y": 46.95198978024288,
+          "output_x": 81.79237288135593,
+          "output_y": 46.95198978024288,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-ea1155a34dd4",
+          "directory_id": "master-v10-ea1155a34dd4",
+          "name": "리듬앤브루스",
+          "category": "cafe",
+          "anchor_x": 24.586286727999823,
+          "anchor_y": 54.57721908888186,
+          "output_x": 24.586286727999823,
+          "output_y": 54.57721908888186,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-ea7a6b88c8ff",
+          "directory_id": "master-v10-ea7a6b88c8ff",
+          "name": "먼슬리 제주",
+          "category": "cafe",
+          "anchor_x": 47.700289606644354,
+          "anchor_y": 62.702013828222675,
+          "output_x": 47.700289606644354,
+          "output_y": 62.702013828222675,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-ebc0d569247f",
+          "directory_id": "master-v10-ebc0d569247f",
+          "name": "마일스 탑동점",
+          "category": "cafe",
+          "anchor_x": 46.99125205030071,
+          "anchor_y": 20.577998466736446,
+          "output_x": 46.99125205030071,
+          "output_y": 20.577998466736446,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-eff1225e7f67",
+          "directory_id": "master-v10-eff1225e7f67",
+          "name": "산지나미",
+          "category": "food",
+          "anchor_x": 84.51175505740842,
+          "anchor_y": 42.139648588251575,
+          "output_x": 84.51175505740842,
+          "output_y": 42.139648588251575,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-f2e2c4acbcad",
+          "directory_id": "master-v10-f2e2c4acbcad",
+          "name": "정담밥상",
+          "category": "food",
+          "anchor_x": 40.986638373174166,
+          "anchor_y": 70.22850718050344,
+          "output_x": 40.986638373174166,
+          "output_y": 70.22850718050344,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-f303f80e5499",
+          "directory_id": "master-v10-f303f80e5499",
+          "name": "적점",
+          "category": "food",
+          "anchor_x": 84.69656236748305,
+          "anchor_y": 41.50687389807629,
+          "output_x": 84.69656236748305,
+          "output_y": 41.50687389807629,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-f3c09f6c4c82",
+          "directory_id": "master-v10-f3c09f6c4c82",
+          "name": "갤러리 레미콘 산지천",
+          "category": "culture",
+          "anchor_x": 80.07259111240882,
+          "anchor_y": 51.72417765826712,
+          "output_x": 80.07259111240882,
+          "output_y": 51.72417765826712,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-f3ecdbece2c7",
+          "directory_id": "master-v10-f3ecdbece2c7",
+          "name": "연호제 구내식당",
+          "category": "food",
+          "anchor_x": 90.9182928841257,
+          "anchor_y": 33.265458362431865,
+          "output_x": 90.9182928841257,
+          "output_y": 33.265458362431865,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-f53e312e85c1",
+          "directory_id": "master-v10-f53e312e85c1",
+          "name": "광명식당",
+          "category": "food",
+          "anchor_x": 77.57525949725006,
+          "anchor_y": 75.10871103166505,
+          "output_x": 77.57525949725006,
+          "output_y": 75.10871103166505,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-f94cf0460d97",
+          "directory_id": "master-v10-f94cf0460d97",
+          "name": "오현불백",
+          "category": "food",
+          "anchor_x": 84.23613289710056,
+          "anchor_y": 80.273908363857,
+          "output_x": 84.23613289710056,
+          "output_y": 80.273908363857,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-fa898068009d",
+          "directory_id": "master-v10-fa898068009d",
+          "name": "메밀밭에 가시리 일도점",
+          "category": "food",
+          "anchor_x": 67.91525423728815,
+          "anchor_y": 52.61813360068563,
+          "output_x": 67.91525423728815,
+          "output_y": 52.61813360068563,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v10-fad4fa805ad5",
+          "directory_id": "master-v10-fad4fa805ad5",
+          "name": "아주반점",
+          "category": "food",
+          "anchor_x": 62.79661016949152,
+          "anchor_y": 58.82917481929464,
+          "output_x": 62.79661016949152,
+          "output_y": 58.82917481929464,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-05fdabf81412",
+          "directory_id": "master-v11-05fdabf81412",
+          "name": "바다잔치",
+          "category": "food",
+          "anchor_x": 6.912496017830406,
+          "anchor_y": 20.787783965892068,
+          "output_x": 6.912496017830406,
+          "output_y": 20.787783965892068,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-07a94ec50804",
+          "directory_id": "master-v11-07a94ec50804",
+          "name": "채채채",
+          "category": "food",
+          "anchor_x": 33.17351194155113,
+          "anchor_y": 24.83045461045874,
+          "output_x": 33.17351194155113,
+          "output_y": 24.83045461045874,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-15aa71215a23",
+          "directory_id": "master-v11-15aa71215a23",
+          "name": "노타메노 스키야키 제주공항본점",
+          "category": "food",
+          "anchor_x": 27.10565882996173,
+          "anchor_y": 50.69983763815404,
+          "output_x": 27.10565882996173,
+          "output_y": 50.69983763815404,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-19f942c3a964",
+          "directory_id": "master-v11-19f942c3a964",
+          "name": "도바나 티룸",
+          "category": "cafe",
+          "anchor_x": 26.72954135594873,
+          "anchor_y": 90.15046902528451,
+          "output_x": 26.72954135594873,
+          "output_y": 90.15046902528451,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-25847b4730ab",
+          "directory_id": "master-v11-25847b4730ab",
+          "name": "장인더 제주점",
+          "category": "cafe",
+          "anchor_x": 15.926052487698195,
+          "anchor_y": 61.305580595030904,
+          "output_x": 15.926052487698195,
+          "output_y": 61.305580595030904,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-27f9162db4bc",
+          "directory_id": "master-v11-27f9162db4bc",
+          "name": "늘소담",
+          "category": "food",
+          "anchor_x": 35.02764635346103,
+          "anchor_y": 22.98163345101105,
+          "output_x": 35.02764635346103,
+          "output_y": 22.98163345101105,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-3eba83e93ffb",
+          "directory_id": "master-v11-3eba83e93ffb",
+          "name": "카고크루즈",
+          "category": "food",
+          "anchor_x": 27.807946710894075,
+          "anchor_y": 21.968048140285493,
+          "output_x": 27.807946710894075,
+          "output_y": 21.968048140285493,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-4a862816ee7a",
+          "directory_id": "master-v11-4a862816ee7a",
+          "name": "미세스묵",
+          "category": "cafe",
+          "anchor_x": 74.45161290322581,
+          "anchor_y": 68.98059588626985,
+          "output_x": 74.45161290322581,
+          "output_y": 68.98059588626985,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-5d30e03a560e",
+          "directory_id": "master-v11-5d30e03a560e",
+          "name": "귤메달 하우스",
+          "category": "cafe",
+          "anchor_x": 43.69014038695567,
+          "anchor_y": 26.095668105800492,
+          "output_x": 43.69014038695567,
+          "output_y": 26.095668105800492,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-65077a4e838c",
+          "directory_id": "master-v11-65077a4e838c",
+          "name": "레이어스베이크하우스",
+          "category": "cafe",
+          "anchor_x": 30.623608170399045,
+          "anchor_y": 44.59885476927366,
+          "output_x": 30.623608170399045,
+          "output_y": 44.59885476927366,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-6b2f6c87d3c8",
+          "directory_id": "master-v11-6b2f6c87d3c8",
+          "name": "유빈",
+          "category": "food",
+          "anchor_x": 19.202118015506713,
+          "anchor_y": 17.829131772227605,
+          "output_x": 19.202118015506713,
+          "output_y": 17.829131772227605,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-7828ad919d94",
+          "directory_id": "master-v11-7828ad919d94",
+          "name": "아살람 레스토랑",
+          "category": "food",
+          "anchor_x": 51.191944225060595,
+          "anchor_y": 31.70082978121934,
+          "output_x": 51.191944225060595,
+          "output_y": 31.70082978121934,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-80d393c43a55",
+          "directory_id": "master-v11-80d393c43a55",
+          "name": "우도근고기",
+          "category": "food",
+          "anchor_x": 37.719506395401375,
+          "anchor_y": 36.43917598009444,
+          "output_x": 37.719506395401375,
+          "output_y": 36.43917598009444,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-830241ab7621",
+          "directory_id": "master-v11-830241ab7621",
+          "name": "화진전복",
+          "category": "food",
+          "anchor_x": 20.398403369824493,
+          "anchor_y": 18.96816046511617,
+          "output_x": 20.398403369824493,
+          "output_y": 18.96816046511617,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-8554908a4929",
+          "directory_id": "master-v11-8554908a4929",
+          "name": "제주맑음",
+          "category": "food",
+          "anchor_x": 32.39406779661017,
+          "anchor_y": 60.371253006690516,
+          "output_x": 32.39406779661017,
+          "output_y": 60.371253006690516,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-8ce05d8f8114",
+          "directory_id": "master-v11-8ce05d8f8114",
+          "name": "엘리펀트힙",
+          "category": "food",
+          "anchor_x": 42.13642122851419,
+          "anchor_y": 23.44480410064438,
+          "output_x": 42.13642122851419,
+          "output_y": 23.44480410064438,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-a3b068d52f6b",
+          "directory_id": "master-v11-a3b068d52f6b",
+          "name": "제주칼치집 탑동본점",
+          "category": "food",
+          "anchor_x": 20.150033381203666,
+          "anchor_y": 21.167739326502435,
+          "output_x": 20.150033381203666,
+          "output_y": 21.167739326502435,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-abf2a5664cff",
+          "directory_id": "master-v11-abf2a5664cff",
+          "name": "임제 제주본점",
+          "category": "food",
+          "anchor_x": 12.341707230645852,
+          "anchor_y": 52.550846106543375,
+          "output_x": 12.341707230645852,
+          "output_y": 52.550846106543375,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-c0f294faaa66",
+          "directory_id": "master-v11-c0f294faaa66",
+          "name": "가치 제주본점",
+          "category": "food",
+          "anchor_x": 0.7551644648668523,
+          "anchor_y": 32.42161726692977,
+          "output_x": 0.7551644648668523,
+          "output_y": 32.42161726692977,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-d22b4ac56dd2",
+          "directory_id": "master-v11-d22b4ac56dd2",
+          "name": "무근성 양과점",
+          "category": "cafe",
+          "anchor_x": 32.50021230964385,
+          "anchor_y": 48.608742778131955,
+          "output_x": 32.50021230964385,
+          "output_y": 48.608742778131955,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-dacf7f4df821",
+          "directory_id": "master-v11-dacf7f4df821",
+          "name": "제주시새우리",
+          "category": "food",
+          "anchor_x": 30.674807634435236,
+          "anchor_y": 48.34461857422643,
+          "output_x": 30.674807634435236,
+          "output_y": 48.34461857422643,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-e068d1afd21f",
+          "directory_id": "master-v11-e068d1afd21f",
+          "name": "뤼미에흐",
+          "category": "food",
+          "anchor_x": 23.766697854651486,
+          "anchor_y": 46.797766312617654,
+          "output_x": 23.766697854651486,
+          "output_y": 46.797766312617654,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-e614e66dc009",
+          "directory_id": "master-v11-e614e66dc009",
+          "name": "송림반점",
+          "category": "food",
+          "anchor_x": 24.16660415171642,
+          "anchor_y": 68.53734397963528,
+          "output_x": 24.16660415171642,
+          "output_y": 68.53734397963528,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-f029b3338478",
+          "directory_id": "master-v11-f029b3338478",
+          "name": "ABC 에이팩토리베이커리카페",
+          "category": "cafe",
+          "anchor_x": 45.47419345759477,
+          "anchor_y": 30.86862684737195,
+          "output_x": 45.47419345759477,
+          "output_y": 30.86862684737195,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v11-fcca49cc6ff3",
+          "directory_id": "master-v11-fcca49cc6ff3",
+          "name": "고미미",
+          "category": "cafe",
+          "anchor_x": 11.831573736323307,
+          "anchor_y": 42.903161963894675,
+          "output_x": 11.831573736323307,
+          "output_y": 42.903161963894675,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v12-lpp-local-player-platform",
+          "directory_id": "master-v12-lpp-local-player-platform",
+          "name": "LPP (Local Player Platform)",
+          "category": "culture",
+          "anchor_x": 49.26085933308044,
+          "anchor_y": 74.8710449946997,
+          "output_x": 49.26085933308044,
+          "output_y": 74.8710449946997,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:master-v13-dongmun-market",
+          "directory_id": "master-v13-dongmun-market",
+          "name": "동문시장",
+          "category": "landmark",
+          "anchor_x": 65.86257497530178,
+          "anchor_y": 67.37487706531269,
+          "output_x": 65.33821260813342,
+          "output_y": 68.65557504571201,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:place-sotong-center",
+          "directory_id": "place-sotong-center",
+          "name": "제주시소통협력센터",
+          "category": "landmark",
+          "anchor_x": 50.37000451298094,
+          "anchor_y": 62.77949110245229,
+          "output_x": 50.37000451298094,
+          "output_y": 59.98540912331089,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:support-buksugu-parking",
+          "directory_id": "support-buksugu-parking",
+          "name": "북수구공영주차장",
+          "category": "parking",
+          "anchor_x": 69.99348111169331,
+          "anchor_y": 48.94195898013105,
+          "output_x": 69.99348111169331,
+          "output_y": 48.94195898013105,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:support-chilseong-parking-1",
+          "directory_id": "support-chilseong-parking-1",
+          "name": "칠성제1공영주차장",
+          "category": "parking",
+          "anchor_x": 64.47560415532882,
+          "anchor_y": 53.81337893463533,
+          "output_x": 64.47560415532882,
+          "output_y": 53.81337893463533,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:support-dongmun-center",
+          "directory_id": "support-dongmun-center",
+          "name": "동문시장 고객지원센터·화장실",
+          "category": "utility",
+          "anchor_x": 61.51638953214878,
+          "anchor_y": 74.7340195638602,
+          "output_x": 61.51638953214878,
+          "output_y": 74.7340195638602,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:support-dongmun-parking",
+          "directory_id": "support-dongmun-parking",
+          "name": "동문재래시장 공영주차장",
+          "category": "parking",
+          "anchor_x": 62.699838048210765,
+          "anchor_y": 80.92780257097152,
+          "output_x": 62.699838048210765,
+          "output_y": 80.92780257097152,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:support-dongmun-public-toilet",
+          "directory_id": "support-dongmun-public-toilet",
+          "name": "동문공설시장 공중화장실",
+          "category": "utility",
+          "anchor_x": 75.63659234557055,
+          "anchor_y": 71.42561424644948,
+          "output_x": 75.63659234557055,
+          "output_y": 71.42561424644948,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:support-tapdong-info",
+          "directory_id": "support-tapdong-info",
+          "name": "탑동관광안내소",
+          "category": "utility",
+          "anchor_x": 48.89902144832325,
+          "anchor_y": 24.849147895253243,
+          "output_x": 48.89902144832325,
+          "output_y": 24.849147895253243,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        },
+        {
+          "element_key": "directory:support-tapdong-parking-1",
+          "directory_id": "support-tapdong-parking-1",
+          "name": "탑동 제1공영주차장",
+          "category": "parking",
+          "anchor_x": 51.56156317117416,
+          "anchor_y": 25.915164099926372,
+          "output_x": 51.56156317117416,
+          "output_y": 25.915164099926372,
+          "updated_at": "2026-08-28T05:14:55.981Z"
+        }
+      ]
+    },
+    "place_print_settings": {
+      "columns": [
+        "place_key",
+        "directory_id",
+        "name",
+        "recommended",
+        "marker_mode",
+        "label_mode",
+        "updated_at"
+      ],
+      "rows": [
+        {
+          "place_key": "directory:master-v10-1024e804c1dd",
+          "directory_id": "master-v10-1024e804c1dd",
+          "name": "바오비",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:56:15.986Z"
+        },
+        {
+          "place_key": "directory:master-v10-1b64b405254c",
+          "directory_id": "master-v10-1b64b405254c",
+          "name": "우무 동문시장점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T00:00:16.357Z"
+        },
+        {
+          "place_key": "directory:master-v10-1bb330471743",
+          "directory_id": "master-v10-1bb330471743",
+          "name": "다정이네김밥 제주공항점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:55:31.841Z"
+        },
+        {
+          "place_key": "directory:master-v10-1dabd4baa4aa",
+          "directory_id": "master-v10-1dabd4baa4aa",
+          "name": "미풍정 식당",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:56:14.033Z"
+        },
+        {
+          "place_key": "directory:master-v10-297b7bbd2296",
+          "directory_id": "master-v10-297b7bbd2296",
+          "name": "제주고로 산지",
+          "recommended": 0,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:57:01.679Z"
+        },
+        {
+          "place_key": "directory:master-v10-2f7f8a208248",
+          "directory_id": "master-v10-2f7f8a208248",
+          "name": "키친요디 본점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:57:15.994Z"
+        },
+        {
+          "place_key": "directory:master-v10-307a3445e718",
+          "directory_id": "master-v10-307a3445e718",
+          "name": "호끄만거",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-19T02:47:29.376Z"
+        },
+        {
+          "place_key": "directory:master-v10-325abb1bdbbc",
+          "directory_id": "master-v10-325abb1bdbbc",
+          "name": "무슈부부커피스탠드",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T00:00:00.987Z"
+        },
+        {
+          "place_key": "directory:master-v10-377872aba797",
+          "directory_id": "master-v10-377872aba797",
+          "name": "바그다드",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:56:15.350Z"
+        },
+        {
+          "place_key": "directory:master-v10-37b2a610158e",
+          "directory_id": "master-v10-37b2a610158e",
+          "name": "노지커피하우스",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:59:48.061Z"
+        },
+        {
+          "place_key": "directory:master-v10-3e10dc1b6cde",
+          "directory_id": "master-v10-3e10dc1b6cde",
+          "name": "아트스페이스·씨",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T00:49:45.949Z"
+        },
+        {
+          "place_key": "directory:master-v10-433f8fe646f5",
+          "directory_id": "master-v10-433f8fe646f5",
+          "name": "또제 동문시장 본점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:59:24.961Z"
+        },
+        {
+          "place_key": "directory:master-v10-4c3f48a325c5",
+          "directory_id": "master-v10-4c3f48a325c5",
+          "name": "만첩",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:59:55.721Z"
+        },
+        {
+          "place_key": "directory:master-v10-5189f5102ba2",
+          "directory_id": "master-v10-5189f5102ba2",
+          "name": "잉가이",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:58:15.200Z"
+        },
+        {
+          "place_key": "directory:master-v10-5710026d4c1d",
+          "directory_id": "master-v10-5710026d4c1d",
+          "name": "도토리키친 본점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:55:30.386Z"
+        },
+        {
+          "place_key": "directory:master-v10-86003b659cd5",
+          "directory_id": "master-v10-86003b659cd5",
+          "name": "갈치음식점 궁서체 제주탑동본점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:55:28.231Z"
+        },
+        {
+          "place_key": "directory:master-v10-88d9ef56bbcd",
+          "directory_id": "master-v10-88d9ef56bbcd",
+          "name": "서쪽부엌 서부두점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:56:37.569Z"
+        },
+        {
+          "place_key": "directory:master-v10-8c64a1764607",
+          "directory_id": "master-v10-8c64a1764607",
+          "name": "제주에 가면",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:57:49.379Z"
+        },
+        {
+          "place_key": "directory:master-v10-8cb4881d7cd2",
+          "directory_id": "master-v10-8cb4881d7cd2",
+          "name": "슈푸",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T00:00:03.481Z"
+        },
+        {
+          "place_key": "directory:master-v10-946c3bbd3a68",
+          "directory_id": "master-v10-946c3bbd3a68",
+          "name": "비아아트·대동호텔 아트센터",
+          "recommended": 0,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T01:04:51.568Z"
+        },
+        {
+          "place_key": "directory:master-v10-b00ef8c2938d",
+          "directory_id": "master-v10-b00ef8c2938d",
+          "name": "다이노바이트샌드위치",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T01:14:56.429Z"
+        },
+        {
+          "place_key": "directory:master-v10-b4382d8b3664",
+          "directory_id": "master-v10-b4382d8b3664",
+          "name": "말고기연구소",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:56:10.481Z"
+        },
+        {
+          "place_key": "directory:master-v10-b595e9112000",
+          "directory_id": "master-v10-b595e9112000",
+          "name": "아베베베이커리 제주",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-19T02:42:57.388Z"
+        },
+        {
+          "place_key": "directory:master-v10-c2e1a0687ebd",
+          "directory_id": "master-v10-c2e1a0687ebd",
+          "name": "누아 제주",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:59:49.451Z"
+        },
+        {
+          "place_key": "directory:master-v10-c44f8514a045",
+          "directory_id": "master-v10-c44f8514a045",
+          "name": "딕시스",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:58:54.704Z"
+        },
+        {
+          "place_key": "directory:master-v10-e177b459b223",
+          "directory_id": "master-v10-e177b459b223",
+          "name": "블레스크",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T00:00:01.744Z"
+        },
+        {
+          "place_key": "directory:master-v10-eff1225e7f67",
+          "directory_id": "master-v10-eff1225e7f67",
+          "name": "산지나미",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:58:33.929Z"
+        },
+        {
+          "place_key": "directory:master-v10-fa898068009d",
+          "directory_id": "master-v10-fa898068009d",
+          "name": "메밀밭에 가시리 일도점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-09T23:56:12.135Z"
+        },
+        {
+          "place_key": "directory:master-v11-15aa71215a23",
+          "directory_id": "master-v11-15aa71215a23",
+          "name": "노타메노 스키야키 제주공항본점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T01:14:55.219Z"
+        },
+        {
+          "place_key": "directory:master-v11-25847b4730ab",
+          "directory_id": "master-v11-25847b4730ab",
+          "name": "장인더 제주점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T01:31:04.981Z"
+        },
+        {
+          "place_key": "directory:master-v11-27f9162db4bc",
+          "directory_id": "master-v11-27f9162db4bc",
+          "name": "늘소담",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T01:14:51.574Z"
+        },
+        {
+          "place_key": "directory:master-v11-4a862816ee7a",
+          "directory_id": "master-v11-4a862816ee7a",
+          "name": "미세스묵",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T01:11:12.847Z"
+        },
+        {
+          "place_key": "directory:master-v11-d22b4ac56dd2",
+          "directory_id": "master-v11-d22b4ac56dd2",
+          "name": "무근성 양과점",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T00:44:18.407Z"
+        },
+        {
+          "place_key": "directory:master-v11-fcca49cc6ff3",
+          "directory_id": "master-v11-fcca49cc6ff3",
+          "name": "고미미",
+          "recommended": 1,
+          "marker_mode": "auto",
+          "label_mode": "auto",
+          "updated_at": "2026-08-10T00:41:41.727Z"
+        }
+      ]
+    },
+    "map_label_density_settings": {
+      "columns": [
+        "id",
+        "optional_label_scale_steps_json",
+        "updated_at",
+        "revision"
+      ],
+      "rows": [
+        {
+          "id": 1,
+          "optional_label_scale_steps_json": "[{\"maximumRatio\":1.25,\"limit\":0},{\"maximumRatio\":1.7,\"limit\":0},{\"maximumRatio\":2.1,\"limit\":0},{\"maximumRatio\":2.5,\"limit\":0},{\"maximumRatio\":3,\"limit\":10},{\"maximumRatio\":3.6,\"limit\":25},{\"maximumRatio\":4.5,\"limit\":40}]",
+          "updated_at": "2026-08-24T11:13:15.186Z",
+          "revision": 7
+        }
+      ]
+    }
+  }
+}

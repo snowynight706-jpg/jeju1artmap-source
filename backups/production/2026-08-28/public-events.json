@@ -1,0 +1,370 @@
+{
+  "events": [
+    {
+      "id": "3dd4f8f9-3c34-4bf6-b136-98b35b965ec2",
+      "placeKey": "directory:place-sotong-center",
+      "placeName": "제주시소통협력센터",
+      "places": [
+        {
+          "placeKey": "directory:place-sotong-center",
+          "placeName": "제주시소통협력센터"
+        }
+      ],
+      "eventName": "[질문도서관] 정지혜 책처방사와 함께하는 <책 읽는 나>",
+      "eventInfo": "● 일     시 : 26. 9. 8. (화) 19:00 - 21:00\n● 장     소 : 제주소통협력센터 1층 질문도서관 (제주시 관덕로44)\n● 진     행 : 윈드스톤\n● 연     사 : 정 지 혜( '사적인 서점' 대표이자 『사적인 서점이지만 공공연하게』, 『좋아하는 마음이 우릴 구할 거야』, 『꼭 맞는 책』 저자) / @sajeokinbookshop\n● 모집인원 : 책을 통하여 삶의 질문에 답을 찾는 책생활자 누구나 / 50명 \n● 모집기간 : 26. 8. 11. (화) ~ 9. 6. (일), 18:00\n● 참가안내 : 26. 9. 7. (월) 예정 ※ 선착순 조기 마감시 마감과 동시에 안내 예정\n● 문      의 : 기획협력팀 064-759-8551\n● 신      청 : https://www.jejusotong.kr/bbs/board.php?bo_table=2_1_1_1&wr_id=225",
+      "photoUrl": "/api/place-event-photo?id=3dd4f8f9-3c34-4bf6-b136-98b35b965ec2",
+      "startsAt": "2026-08-14T01:46:00.000Z",
+      "endsAt": "2026-09-09T01:46:00.000Z",
+      "visibleFrom": "2026-08-14T01:46:00.000Z",
+      "visibleUntil": "2026-09-09T01:46:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-14T01:48:51.469Z",
+      "updatedAt": "2026-08-14T01:50:22.276Z"
+    },
+    {
+      "id": "288d83f9-0cd4-4d7d-b4d7-782ae24446d2",
+      "placeKey": "",
+      "placeName": "",
+      "places": [],
+      "eventName": "고치타래(뜨개 사랑방)",
+      "eventInfo": "뜨개 경력 수십 년의 선배 시민과 함께 한 코 한 코, 한라봉 말랑이를 만들어요.\n인테리어 소품으로, 또는 가방에 달거나 주머니에 넣어 스트레스 해소용으로 사용해 보아요.\n\n여름 끝자락의 주말 오후,\n시원한 에어컨 바람 밑에 나란히 앉아 두 세 시간쯤 손을 움직이다 보면 나만의 말랑이가 완성될 거예요.🧡\n\n• 진행 일정\n2026년 8월 29일(토) ~ 9월 20일(일) 중 원하시는 주말 하루,\n오후 2시 ~ 5시 (3시간 이내)\n* 소수정예 뜨개 사랑방으로, 회차당 9명 선착순(1인당 1회 참여 가능)\n\n• 진행 장소: 제주시 칠성로 근처 (예약 확정자에 한해 오픈합니다.)\n\n• 대상: 뜨개가 처음이어도 괜찮은 분 누구나(20세 이상 ~)\n제주 도민, 여행 중인 분, 제주에 머무는 분 모두 환영합니다:)\n* 고치타래는 선배 시민(시니어)과 청년이 함께 뜨개를 배우고 이야기를 나누는 세대교류 프로그램이에요.\n\n• 참가비: 전액 무료\n\n• 제공사항\n🧶 뜨개 키트 (코바늘, 돗바늘, 실, 솜, 눈 부자재, 도안)\n🧃간단한 음료 등\n\n• 신청방법\n@gochi_tarae 인스타그램 팔로우 후, 프로필 링크 신청서 작성\n(적어주신 연락처로 확정 안내를 보내드리나, 혹시 모를 상황에 대비해 @gochi_tarae 팔로우 부탁드려요.)\n\n• 커리큘럼\n뜨개 초보자를 위한 기초 클래스에요.\n동그랗게 몸통을 뜨고, 솜을 넣어 말랑하게 채우고, 초록 잎을 달아 마무리해 한라봉 말랑이를 완성할 거에요.\n• 문의\nDM : @gochi_tarae (인스타그램)",
+      "photoUrl": "/api/place-event-photo?id=288d83f9-0cd4-4d7d-b4d7-782ae24446d2",
+      "startsAt": "2026-08-14T01:36:00.000Z",
+      "endsAt": "2026-09-21T01:36:00.000Z",
+      "visibleFrom": "2026-08-14T01:36:00.000Z",
+      "visibleUntil": "2026-09-21T01:36:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-14T01:41:56.056Z",
+      "updatedAt": "2026-08-14T01:42:14.973Z"
+    },
+    {
+      "id": "d2a88bbd-a44b-4186-9e4e-9a28fddc34cc",
+      "placeKey": "directory:master-v10-38aafea91956",
+      "placeName": "향사당",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-38aafea91956",
+          "placeName": "향사당"
+        },
+        {
+          "placeKey": "directory:master-v10-585316ec775b",
+          "placeName": "김만덕기념관"
+        }
+      ],
+      "eventName": "2026 제주 국가유산 방문의 해",
+      "eventInfo": "행사기간 : 2026. 03. 27. (금) ~ 2026. 11. 22. (일)\n행사장소 : 제주특별자치도 전역 (국가유산 100개소)\n이용요금 : 무 료\n문의처 : 064-752-3337(방문자센터 향사당)\n주요 프로그램\n - 제주 전역 100개 유산 자유 탐방\n - 4개 테마 스토리 기반 여행 구성\n - 핵심코스(36개) + 일반코스(64개) 운영",
+      "photoUrl": "/api/place-event-photo?id=d2a88bbd-a44b-4186-9e4e-9a28fddc34cc",
+      "startsAt": "2026-03-27T06:22:00.000Z",
+      "endsAt": "2026-11-22T06:22:00.000Z",
+      "visibleFrom": "2026-03-27T06:22:00.000Z",
+      "visibleUntil": "2026-11-22T06:22:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T06:23:53.916Z",
+      "updatedAt": "2026-08-11T06:23:53.916Z"
+    },
+    {
+      "id": "a7cb64d4-8a93-4f5f-9e95-cfb796df3f10",
+      "placeKey": "element:default-landmark-9",
+      "placeName": "칠성로",
+      "places": [
+        {
+          "placeKey": "element:default-landmark-9",
+          "placeName": "칠성로"
+        }
+      ],
+      "eventName": "2026 거리예술제 (예정)",
+      "eventInfo": "장소: 칠성로상점가\n기간: 2026.09.04~2026.11.13\n시간: 14:00~15:30\n(일정확인후 수정)",
+      "photoUrl": "/api/place-event-photo?id=a7cb64d4-8a93-4f5f-9e95-cfb796df3f10",
+      "startsAt": "2026-08-11T06:07:00.000Z",
+      "endsAt": "2026-11-13T06:07:00.000Z",
+      "visibleFrom": "2026-08-11T06:07:00.000Z",
+      "visibleUntil": "2026-11-13T06:07:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T06:09:20.815Z",
+      "updatedAt": "2026-08-11T06:09:20.815Z"
+    },
+    {
+      "id": "1af88be7-a234-4550-b0a2-d03aab4c5c1e",
+      "placeKey": "directory:master-v10-7eec4dfee6b1",
+      "placeName": "산지천갤러리",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-7eec4dfee6b1",
+          "placeName": "산지천갤러리"
+        }
+      ],
+      "eventName": "SJC 아카이브 윈도우: 푸른 날",
+      "eventInfo": "장소: 산지천갤러리 1층 윈도우갤러리\n일시: 2026. 6. 18.(목)–10. 18.(일)\n정보: 노기훈 작가가 제주4·3 유적과 현장을 장노출 사진으로 기록한 《푸른 날》 연작을 중심으로 구성한 전시입니다. 완성 작품뿐 아니라 현장 답사 기록, 작업 노트, 실물 필름 등도 함께 소개합니다. 요청한 2주 동안 계속 관람할 수 있습니다.",
+      "photoUrl": "/api/place-event-photo?id=1af88be7-a234-4550-b0a2-d03aab4c5c1e",
+      "startsAt": "2026-06-18T05:08:00.000Z",
+      "endsAt": "2026-10-19T05:08:00.000Z",
+      "visibleFrom": "2026-06-18T05:08:00.000Z",
+      "visibleUntil": "2026-10-19T05:08:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T05:09:29.841Z",
+      "updatedAt": "2026-08-11T05:09:29.841Z"
+    },
+    {
+      "id": "adcc369a-2345-418b-b2f3-2c6fcf0d6f59",
+      "placeKey": "directory:master-v10-7eec4dfee6b1",
+      "placeName": "산지천갤러리",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-7eec4dfee6b1",
+          "placeName": "산지천갤러리"
+        }
+      ],
+      "eventName": "꿈과 현상: 한국의 굿1983-1993",
+      "eventInfo": "장소: 산지천갤러리 1층 김수남관\n일시: 2026. 3. 26 ~2027. 3. 31 (매주 월요일·공휴일 휴관)  10:00~18:00\n사진가 김수남이 1980년대 전국 20곳의 굿 현장을 기록한 사진과 육필 메모, 아카이브 자료를 소개하는 상설전입니다",
+      "photoUrl": "/api/place-event-photo?id=adcc369a-2345-418b-b2f3-2c6fcf0d6f59",
+      "startsAt": "2026-03-25T05:03:00.000Z",
+      "endsAt": "2026-12-31T05:00:00.000Z",
+      "visibleFrom": "2026-03-25T05:03:00.000Z",
+      "visibleUntil": "2026-12-31T05:00:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T05:07:20.682Z",
+      "updatedAt": "2026-08-11T05:07:20.682Z"
+    },
+    {
+      "id": "15ebe0fe-e422-4b22-828b-8aa6a31a1d21",
+      "placeKey": "directory:master-v10-7eec4dfee6b1",
+      "placeName": "산지천갤러리",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-7eec4dfee6b1",
+          "placeName": "산지천갤러리"
+        }
+      ],
+      "eventName": "제주신화전 21주년전 《다시 여는 열두본풀이》",
+      "eventInfo": "장소: 산지천갤러리\n제주시 중앙로3길 36\n일시: 2026. 8. 25.(화)–9. 6.(일)\n관람시간 10:00–18:00, 월요일·공휴일 휴관\n※ 요청 기간 중 실제 관람 가능일은 9. 1.(화)–9. 6.(일)\n정보: 제주 신화의 ‘열두본풀이’를 다양한 시각예술 작품으로 풀어낸 제주문화포럼 주관 전시입니다. 비엔날레와는 별개의 전시이며 관람료는 무료입니다. 공식 행사 페이지 본문에는 연계 강좌 기간인 6월 12일–7월 12일이 섞여 있지만, 공식 포스터의 전시 일정은 8월 25일–9월 6일로 명시돼 있어 포스터 일정을 기준으로 보는 것이 타당합니다.",
+      "photoUrl": "/api/place-event-photo?id=15ebe0fe-e422-4b22-828b-8aa6a31a1d21",
+      "startsAt": "2026-08-01T04:55:00.000Z",
+      "endsAt": "2026-09-07T04:55:00.000Z",
+      "visibleFrom": "2026-08-01T04:55:00.000Z",
+      "visibleUntil": "2026-09-07T04:55:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T04:56:09.796Z",
+      "updatedAt": "2026-08-11T04:56:09.796Z"
+    },
+    {
+      "id": "facb6880-f98b-4c0c-a4f8-5870bd7a2611",
+      "placeKey": "directory:master-v10-519a5dc3941e",
+      "placeName": "제주아트플랫폼",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-519a5dc3941e",
+          "placeName": "제주아트플랫폼"
+        }
+      ],
+      "eventName": "계절이 들리는 원도심 (버스킹 있는 날 in 제주시)",
+      "eventInfo": "일자: 2026.04.01 ~ 2026.12.09 \n시간: 매주 수요일 11:30 ~ 12:30\n장소: 제주아트플랫폼 1층 야외무대  (제주시 중앙로14길 18)\n문의: 064-800-9171\n확대된 문화가 있는 날!\n매주 수요일, 버스킹 공연이 제주시 원도심을 찾아옵니다. 🎶🎵🕺",
+      "photoUrl": "/api/place-event-photo?id=facb6880-f98b-4c0c-a4f8-5870bd7a2611",
+      "startsAt": "2026-08-11T02:10:00.000Z",
+      "endsAt": "2026-09-10T02:10:00.000Z",
+      "visibleFrom": "2026-08-11T02:10:00.000Z",
+      "visibleUntil": "2026-09-10T02:10:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T02:15:33.300Z",
+      "updatedAt": "2026-08-11T02:15:33.300Z"
+    },
+    {
+      "id": "569a288f-5b99-4adf-bf22-08e491efe9b3",
+      "placeKey": "directory:master-v10-3106326f8a23",
+      "placeName": "아라리오뮤지엄 탑동시네마",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-3106326f8a23",
+          "placeName": "아라리오뮤지엄 탑동시네마"
+        }
+      ],
+      "eventName": "옌헝: 새벽의 파문에서 고요한 어둠까지",
+      "eventInfo": "옌헝: 새벽의 파문에서 고요한 어둠까지  \nYan Heng: From Dawn’s Breaking to the Gentle Dark\n전시기간\n- 2025. 9. 27 – 2026. 9. 13\n아라리오뮤지엄은 1982년 중국에서 태어나 2000년대 초반 중국 미술의 화려한 부흥기를 경험하고 현재 중국 대표 중견작가로 성장한 옌헝이 2013년부터 2024년 제작한 작품 중 시대 저항 정신과 고민을 예술적으로 승화시키려 노력한 시도가 돋보이는 13점의 대표작을 선보입니다.\n구조적 측면에서 옌헝 작품의 특수성은 회화와 설치, 회화와 레디메이드 오브제를 결합하는 데 있습니다. 이는 작가가 일찍이 시도해 온 창작 방법으로, 일견 연관성 없어 보이는 대상들의 상징적 나열과 계산된 직조가 작가의 냉철한 시선과 비판적 견해를 드러냅니다. 특유의 기계적 요소와 레디메이드 오브제의 결합, 구조적인 캔버스 구조물 구축 등과 같은 탈구조적 시도는 캔버스 속 도상과 적절한 조율을 거쳐 작가의 저항적 목소리를 극대화합니다. 캔버스 속 도상과 내러티브를 통한 표현을 넘어서서 자신의 철학을 가장 적절히 표현해 줄 지점을 회화의 구조적인 측면까지 확장해서 적절히 표현한다는 점에서 옌헝만의 영특함과 작가적 특수성이 있습니다.\n내용적 측면에서 옌헝의 작품들에는 개인적 경험과 급변하는 현대 사회에서 발생하는 다양한 현상이나 문제점 등에 대한 작가의 비판적 시선이나 깊은 통찰력이 수수께끼처럼 혼재되어 있습니다. 현실에 대한 지독한 관심과 애정이 있는 그의 작품에는 삶의 아이러니와 희망, 그리고 부조리함이 은유적으로 표현되어 있습니다. 일견 서로 관련 없어 보이는 대상들은 이미지가 지닌 힘과 회화적 표현들을 통해 묘하게 연결됩니다. 옌헝이 현실 사회를 바라보는 시선은 냉철하고 비판적이면서 동시에 따뜻합니다. 그렇기 때문에 그의 작품들은 비판적 대상 너머 언젠가 다시 회귀할 예전의 그 찬란했던 순간과 순수한 열정을 끊임없이 소환하고 환기시키는 역할을 수행합니다.",
+      "photoUrl": "/api/place-event-photo?id=569a288f-5b99-4adf-bf22-08e491efe9b3",
+      "startsAt": "2025-09-26T15:00:00.000Z",
+      "endsAt": "2026-09-13T03:55:00.000Z",
+      "visibleFrom": "2025-09-26T15:00:00.000Z",
+      "visibleUntil": "2026-09-13T03:55:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T00:55:26.785Z",
+      "updatedAt": "2026-08-11T00:55:26.785Z"
+    },
+    {
+      "id": "6cd4e90d-c7fb-4d6c-ae45-ed6ea3e74ca3",
+      "placeKey": "directory:master-v10-20c018ea436e",
+      "placeName": "아라리오뮤지엄 동문모텔 II",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-20c018ea436e",
+          "placeName": "아라리오뮤지엄 동문모텔 II"
+        }
+      ],
+      "eventName": "<밤이 되어 집으로 돌아온 이 과장의 이야기 – 아빠 왔다>展",
+      "eventInfo": "- 2017. 9. 1. – 2026. 9. 6.\n아라리오뮤지엄은 구본주(1967~2003)의 개인전 <밤이 되어 집으로 돌아온 이 과장의 이야기 – 아빠 왔다>展을 동문모텔II 전관에서 개최합니다. 이번 전시는 “21세기를 빛낼 조각계의 떠오르는 별”로 불렸으며, 1990년대 한국 구상조각의 전성기를 이끌어냈으나 불의의 사고로 37세의 나이에 세상을 떠난 비운의 조각가 구본주의 15주기를 추모하기 위해 기획되었습니다. 나무, 흙, 철, 청동 등 전통적인 재료를 자유자재로 다룬 형상조소예술의 정수를 보여주는 구본주의 대표작 40여 점이 전시됩니다. 아라리오뮤지엄은 이번 전시를 통해 ‘아버지’로 형상화되는 소시민의 애환을 유머러스하고도 통쾌한 필치로 그려낸 구본주의 작품 전반을 회고함으로써 이미 흘러가버린 아버지의 옛 청춘과 힘겨운 시기를 견디고 있는 오늘날의 청춘 모두에게 따뜻한 위로와 공감의 메시지를 전하고자 합니다.\n\n\n- 구본주 Gu Bon Ju (1967~2003)\n\n홍익대학교 및 동대학원 조소과를 졸업한 구본주(1967~2003)는 1993년 대상, 1995년 <모란미술대상전> 모란미술작가상을 수상하며 구상조각의 차세대 주자로 떠올랐습니다. 그는 전통 조각재료를 다루는 천재성과 특유의 해학적 표현을 살려 동시대의 정치, 사회상을 조각으로 표현하였으며 국립현대미술관, 경기문화재단, 대전시립미술관, 부산시립미술관, MBC문화방송, 명동성당, 금호미술관, 성곡미술관 등에 작품이 소장되어 있습니다.",
+      "photoUrl": "/api/place-event-photo?id=6cd4e90d-c7fb-4d6c-ae45-ed6ea3e74ca3",
+      "startsAt": "2026-01-01T00:50:00.000Z",
+      "endsAt": "2026-09-07T00:50:00.000Z",
+      "visibleFrom": "2026-01-01T00:50:00.000Z",
+      "visibleUntil": "2026-09-07T00:50:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T00:51:10.579Z",
+      "updatedAt": "2026-08-11T00:51:10.579Z"
+    },
+    {
+      "id": "4243f7b5-9bb0-4522-b62b-5de6b18a28b8",
+      "placeKey": "directory:community-52cdd5df-c977-4a1d-a1f7-f4daa014143e",
+      "placeName": "고씨주택",
+      "places": [
+        {
+          "placeKey": "directory:community-52cdd5df-c977-4a1d-a1f7-f4daa014143e",
+          "placeName": "고씨주택"
+        }
+      ],
+      "eventName": "도심 속 숨겨진 진짜 제주를 만나는 길: 해설사와 함께하는 원도심 도보투어",
+      "eventInfo": "기 간 : 2026년 4월 ~ 11월 (7월 ~ 8월 혹서기 미운영)  \n참 여 : 시민, 관광객 등 누구나 (1회 15명 내외)  \n내 용 : 해설사와 함께하는 원도심 도보투어 (성안올레+별별투어)  \n신 청 : 제주착한여행 홈페이지(www.jejugoodtravel.com) 및 포스터 QR코드  \n참가비 : 5,000원 [노쇼(No Show) 방지용, 참여 시 탐나는전으로 환급]  \n운 영 : 성안올레 도보투어(4월~11월) + 원도심 별별투어(4월 및 9월~11월)  \n주최 / 주관 : 제주시  \n사업 운영기관 : (주)제주착한여행 (문의: 064-758-5152)  \n안내사항 : 프로그램 내용, 운영시간 등은 기상 상황, 현장 여건 등에 따라 변동 가능 \n               (변동 사항은 제주시청, 제주착한여행 홈페이지 공지 예정)",
+      "photoUrl": "/api/place-event-photo?id=4243f7b5-9bb0-4522-b62b-5de6b18a28b8",
+      "startsAt": "2026-04-11T00:36:00.000Z",
+      "endsAt": "2026-11-29T15:00:00.000Z",
+      "visibleFrom": "2026-04-11T00:36:00.000Z",
+      "visibleUntil": "2026-11-29T15:00:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T00:38:02.943Z",
+      "updatedAt": "2026-08-11T00:39:21.234Z"
+    },
+    {
+      "id": "dfe805b6-2624-4dff-adbe-bf4f186b91de",
+      "placeKey": "directory:master-v10-f3c09f6c4c82",
+      "placeName": "갤러리 레미콘 산지천",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-f3c09f6c4c82",
+          "placeName": "갤러리 레미콘 산지천"
+        },
+        {
+          "placeKey": "directory:master-v10-17e2cba925f6",
+          "placeName": "예술공간 이아"
+        },
+        {
+          "placeKey": "directory:master-v10-519a5dc3941e",
+          "placeName": "제주아트플랫폼"
+        }
+      ],
+      "eventName": "<말하는 미술관> 전문가 3인의 시선으로 듣는 제주비엔날레",
+      "eventInfo": "장소: 갤러리 레미콘 집결\n원도심 A코스: 갤러리 레미콘 → 새탕라움 → 예술공간 이아 → 제주아트플랫폼 → 갤러리 레미콘\n일시: 2026. 9. 2.(수)–9. 13.(일) 중 지정 회차\n정보: 미술 전문 기자·독립큐레이터·전 미술관장 등 전문가의 해설과 함께 제주비엔날레 전시장을 순회하는 프로그램입니다.\n문의: 운영사 유한회사 켈파트에서 평일 10:00–17:00에 받습니다.",
+      "photoUrl": "/api/place-event-photo?id=dfe805b6-2624-4dff-adbe-bf4f186b91de",
+      "startsAt": "2026-08-11T00:15:00.000Z",
+      "endsAt": "2026-09-10T00:15:00.000Z",
+      "visibleFrom": "2026-08-11T00:15:00.000Z",
+      "visibleUntil": "2026-09-10T00:15:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T00:18:30.839Z",
+      "updatedAt": "2026-08-11T00:18:30.839Z"
+    },
+    {
+      "id": "b64f49ea-6c99-404c-8701-bf6565795a69",
+      "placeKey": "directory:master-v10-3106326f8a23",
+      "placeName": "아라리오뮤지엄 탑동시네마",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-3106326f8a23",
+          "placeName": "아라리오뮤지엄 탑동시네마"
+        }
+      ],
+      "eventName": "박웅규 개인전 -새 몸(New Body)-",
+      "eventInfo": "장소: 아라리오뮤지엄 탑동시네마\n일시: 2026/06/17~09/06 (월요일 휴관)\n요금: 성인 15000원 / 청소년 9000원 / 어린이 6000원\n아라리오뮤지엄은 탑동시네마 ‘프로젝트 언더그라운드’에서 박웅규의 개인전 《새 몸》을 개최합니다. 박웅규는 종교화의 형식을 빌려 혐오, 공포, 더러움 등 ‘부정성’을 탐구하는 작업을 이어오고 있습니다. 이번 전시에서는 불교 회화와 설화를 재해석한 ‘유사-설화‘ 시리즈와 그 모티브가 된 작품을 함께 선보입니다.",
+      "photoUrl": "/api/place-event-photo?id=b64f49ea-6c99-404c-8701-bf6565795a69",
+      "startsAt": "2026-06-16T15:00:00.000Z",
+      "endsAt": "2026-09-06T15:00:00.000Z",
+      "visibleFrom": "2026-06-16T15:00:00.000Z",
+      "visibleUntil": "2026-09-06T15:00:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-11T00:14:45.900Z",
+      "updatedAt": "2026-08-11T00:14:45.900Z"
+    },
+    {
+      "id": "e71f5c50-1575-4c17-a1a2-4f50b54532b1",
+      "placeKey": "directory:master-v10-519a5dc3941e",
+      "placeName": "제주아트플랫폼",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-519a5dc3941e",
+          "placeName": "제주아트플랫폼"
+        },
+        {
+          "placeKey": "directory:master-v10-f3c09f6c4c82",
+          "placeName": "갤러리 레미콘 산지천"
+        },
+        {
+          "placeKey": "directory:master-v10-17e2cba925f6",
+          "placeName": "예술공간 이아"
+        }
+      ],
+      "eventName": "2026 제5회 제주비엔날레 허끄곡 모닥치곡 이야홍: 변용의 기술 [출처] 2026 제5회 제주비엔날레 허끄곡 모닥치곡 이야홍: 변용의 기술",
+      "eventInfo": "장소: 제주도립미술관 전관, 제주돌문화공원 오백장군갤러리, 제주 원도심 일대\n일시: 2026년 8월 25일~11월 15일\n정보: 제5회 제주비엔날레 「허끄곡 모닥치곡 이야홍: 변용의 기술」 전시로, 제주도립미술관 외 전시 장소는 무료 관람",
+      "photoUrl": "/api/place-event-photo?id=e71f5c50-1575-4c17-a1a2-4f50b54532b1",
+      "startsAt": "2026-08-10T04:35:00.000Z",
+      "endsAt": "2026-11-16T08:35:00.000Z",
+      "visibleFrom": "2026-08-10T04:35:00.000Z",
+      "visibleUntil": "2026-11-16T08:35:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-10T08:41:23.355Z",
+      "updatedAt": "2026-08-11T00:02:01.200Z"
+    },
+    {
+      "id": "b498175f-f9cf-4f07-96ac-417d1f073b51",
+      "placeKey": "directory:master-v10-e57a222da65d",
+      "placeName": "제주목 관아",
+      "places": [
+        {
+          "placeKey": "directory:master-v10-e57a222da65d",
+          "placeName": "제주목 관아"
+        }
+      ],
+      "eventName": "2026 제주목관아 야간개장",
+      "eventInfo": "개장 기간: 05.01~10.31 \n(매주수~일18:00~21:00/월·화 제외)\n장소: 제주목 관아 및 관덕정 일원\n입장료: 무료\n주최:  제주특별자치도 세계유산본부 \n문의:  064-710-6717",
+      "photoUrl": "/api/place-event-photo?id=b498175f-f9cf-4f07-96ac-417d1f073b51",
+      "startsAt": "2026-05-01T03:00:00.000Z",
+      "endsAt": "2026-10-31T03:00:00.000Z",
+      "visibleFrom": "2026-05-01T03:00:00.000Z",
+      "visibleUntil": "2026-10-31T03:00:00.000Z",
+      "status": "active",
+      "isPinned": false,
+      "isVisible": true,
+      "createdAt": "2026-08-10T08:26:08.775Z",
+      "updatedAt": "2026-08-10T08:26:08.775Z"
+    }
+  ],
+  "canManage": false,
+  "persistent": true,
+  "page": 1,
+  "pageSize": 15,
+  "pageCount": 1,
+  "total": 15
+}

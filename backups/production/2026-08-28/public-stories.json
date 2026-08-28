@@ -1,0 +1,70 @@
+{
+  "stories": [
+    {
+      "id": "aa6a97cc-6037-430f-804e-db4899ae09a9",
+      "placeKey": "directory:master-v10-ea7a6b88c8ff",
+      "placeName": "먼슬리 제주",
+      "authorName": "아파톡신4869",
+      "reviewText": "한달에 한번 다같이 즐길 수 있는 문화행사를 하는 작은 공간",
+      "photoUrl": "/api/place-story-photo?id=aa6a97cc-6037-430f-804e-db4899ae09a9",
+      "status": "published",
+      "reportCount": 0,
+      "createdAt": "2026-08-23T00:03:12.376Z",
+      "updatedAt": "2026-08-23T00:03:12.376Z"
+    },
+    {
+      "id": "3845b25c-f3d0-4f17-95d7-148bd2b6a2ca",
+      "placeKey": "directory:master-v11-dacf7f4df821",
+      "placeName": "제주시새우리",
+      "authorName": "관리자",
+      "reviewText": "맛있는 새우 음식들 먹을 수 있는 곳",
+      "photoUrl": "/api/place-story-photo?id=3845b25c-f3d0-4f17-95d7-148bd2b6a2ca",
+      "status": "published",
+      "reportCount": 0,
+      "createdAt": "2026-08-20T08:15:34.808Z",
+      "updatedAt": "2026-08-20T08:15:34.808Z"
+    },
+    {
+      "id": "a13f1d96-eb58-4706-b175-76c45c87df82",
+      "placeKey": "directory:master-v11-d22b4ac56dd2",
+      "placeName": "무근성 양과점",
+      "authorName": "관리자",
+      "reviewText": "훠낭시에랑 마들렌이 맛있는 곳. 레몬맛이 특히 상큼해서 좋았습니다.",
+      "photoUrl": "/api/place-story-photo?id=a13f1d96-eb58-4706-b175-76c45c87df82",
+      "status": "published",
+      "reportCount": 0,
+      "createdAt": "2026-08-11T02:40:34.923Z",
+      "updatedAt": "2026-08-11T02:40:34.923Z"
+    },
+    {
+      "id": "a2eda9c1-821c-4522-83bd-dc7e5980125c",
+      "placeKey": "directory:master-v10-cc7a91f975dc",
+      "placeName": "음파",
+      "authorName": "관리자",
+      "reviewText": "크림 바질 파스타& 식전빵 맛있게 먹었습니다. 라구오픈샌드위치가 되게 맛있어 보이던데 다음에 먹어볼 예정입니다.",
+      "photoUrl": "/api/place-story-photo?id=a2eda9c1-821c-4522-83bd-dc7e5980125c",
+      "status": "published",
+      "reportCount": 0,
+      "createdAt": "2026-08-11T02:39:07.858Z",
+      "updatedAt": "2026-08-11T02:39:07.858Z"
+    },
+    {
+      "id": "08af0c53-0011-4b90-ab6a-8483cba6e479",
+      "placeKey": "directory:master-v10-af0f68efc8ea",
+      "placeName": "온차",
+      "authorName": "관리자",
+      "reviewText": "온차라는 이름에 걸맞게 따듯한 차와 같이 맛있는 음식들을 즐길 수 있는 곳입니다.",
+      "photoUrl": "/api/place-story-photo?id=08af0c53-0011-4b90-ab6a-8483cba6e479",
+      "status": "published",
+      "reportCount": 0,
+      "createdAt": "2026-08-10T08:50:27.661Z",
+      "updatedAt": "2026-08-10T08:50:27.661Z"
+    }
+  ],
+  "canModerate": false,
+  "persistent": true,
+  "page": 1,
+  "pageSize": 5,
+  "pageCount": 1,
+  "total": 5
+}
